@@ -17,7 +17,7 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
 
 class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=False)
-# ... (rest of the file)
+    is_admin = serializers.BooleanField(required=False)
 
     class Meta:
         model = User
@@ -25,6 +25,10 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = ['date_joined']
 
     def create(self, validated_data):
+        is_admin = validated_data.pop('is_admin', None)
+        if is_admin is not None:
+            validated_data['role'] = 'ADMIN' if is_admin else 'STUDENT'
+        
         password = validated_data.pop('password', None)
         user = super().create(validated_data)
         if password:
@@ -33,6 +37,14 @@ class UserSerializer(serializers.ModelSerializer):
         return user
 
     def update(self, instance, validated_data):
+        is_admin = validated_data.pop('is_admin', None)
+        if is_admin is not None:
+            instance.role = 'ADMIN' if is_admin else 'STUDENT'
+            # We don't need to add it to validated_data for super().update 
+            # because it's a model property that is now handled here.
+            # But we should save the instance if we changed the role.
+            instance.save()
+
         password = validated_data.pop('password', None)
         user = super().update(instance, validated_data)
         if password:
