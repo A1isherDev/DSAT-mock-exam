@@ -46,7 +46,7 @@ const QuestionReviewModal = ({ question, showCorrectAnswers, onClose }: Question
                 <div className="flex-1 overflow-hidden flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x divide-slate-100">
                     {/* Left Pane: Question Content */}
                     <div className="md:w-3/5 p-8 md:p-10 overflow-y-auto bg-white">
-                        <div className="max-w-none text-slate-800 font-sans leading-relaxed text-base">
+                        <div className="max-w-none text-slate-800 font-[Georgia] leading-relaxed text-base">
                             {question.image && (
                                 <div className="mb-6 rounded-xl overflow-hidden border border-slate-100 bg-slate-50 flex justify-center">
                                     <img
@@ -57,7 +57,7 @@ const QuestionReviewModal = ({ question, showCorrectAnswers, onClose }: Question
                                 </div>
                             )}
                             <div
-                                className="bg-slate-50/50 p-6 rounded-2xl border border-slate-100 text-slate-700 leading-normal"
+                                className="bg-slate-50/50 p-6 rounded-2xl border border-slate-100 text-slate-700 leading-normal mathjax-process"
                                 dangerouslySetInnerHTML={{ __html: question.text?.replace(/\n/g, '<br/>') || 'Question text missing' }}
                             />
                         </div>
@@ -71,7 +71,7 @@ const QuestionReviewModal = ({ question, showCorrectAnswers, onClose }: Question
                                     <BookOpen className="w-3 h-3 mr-2" /> Question Prompt
                                 </h3>
                                 <div
-                                    className="font-sans text-slate-900 leading-relaxed border-l-4 border-blue-500 pl-5 py-1 text-base font-medium"
+                                    className="font-[Georgia] text-slate-900 leading-relaxed border-l-4 border-blue-500 pl-5 py-1 text-base font-medium mathjax-process"
                                     dangerouslySetInnerHTML={{ __html: question.question_prompt.replace(/\n/g, '<br/>') }}
                                 />
                             </div>
@@ -108,7 +108,10 @@ const QuestionReviewModal = ({ question, showCorrectAnswers, onClose }: Question
                                                 <div className={`w-7 h-7 rounded-lg border-2 flex items-center justify-center font-bold text-xs shrink-0 mr-4 ${showCorrectAnswers && isCorrect ? 'bg-emerald-500 border-emerald-500 text-white' : isStudent && showCorrectAnswers ? 'bg-red-500 border-red-500 text-white' : isStudent ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-300 text-slate-500'}`}>
                                                     {key}
                                                 </div>
-                                                <div className="font-sans text-sm">{val as string}</div>
+                                                <div 
+                                                    className="font-[Georgia] text-sm mathjax-process w-full"
+                                                    dangerouslySetInnerHTML={{ __html: (val as string).replace(/\n/g, '<br/>') }}
+                                                />
                                                 {icon}
                                             </div>
                                         );
@@ -136,7 +139,7 @@ const QuestionReviewModal = ({ question, showCorrectAnswers, onClose }: Question
                         {showCorrectAnswers && question.explanation && (
                             <div className="bg-blue-50/30 p-6 rounded-2xl border border-blue-100">
                                 <h4 className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-3">Explanation</h4>
-                                <p className="text-slate-700 font-normal leading-relaxed text-sm">{question.explanation}</p>
+                                <p className="text-slate-700 font-[Georgia] leading-relaxed text-sm mathjax-process">{question.explanation}</p>
                             </div>
                         )}
                     </div>
