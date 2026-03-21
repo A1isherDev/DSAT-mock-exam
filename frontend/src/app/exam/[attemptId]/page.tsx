@@ -129,7 +129,13 @@ const RightPane = memo(({
             }`}
             style={{ fontSize: `${15 * zoomLevel}px` }}
         >
-            <div className={attempt.practice_test_details.subject !== 'READING_WRITING' && !currentQuestion.is_math_input && !showCalculator ? 'w-full max-w-2xl px-10 py-10' : 'w-full max-w-3xl'}>
+            <div className={
+                attempt.practice_test_details.subject === 'READING_WRITING' 
+                    ? 'w-full px-10' // English equalized 50/50 proportion
+                    : (attempt.practice_test_details.subject !== 'READING_WRITING' && !currentQuestion.is_math_input && !showCalculator 
+                        ? 'w-full max-w-2xl px-10 py-10' // Plain Math
+                        : 'w-full max-w-3xl') // Math SPR or Math with Calculator
+            }>
                 {/* Question header bar: number + Mark for Review */}
                 <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-6">
@@ -397,7 +403,7 @@ export default function ExamPlayerPage() {
             const cleanup = renderMath();
             return cleanup;
         }
-    }, [currentQuestionIndex, loading, attempt?.current_module_details?.id, showAnswerPreview, renderMath]);
+    }, [currentQuestionIndex, loading, attempt?.current_module_details?.id, showAnswerPreview, renderMath, answers[currentQuestion?.id]]);
 
     // Fullscreen behavior listeners
     useEffect(() => {
