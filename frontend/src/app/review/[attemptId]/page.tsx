@@ -111,17 +111,17 @@ const QuestionReviewModal = ({ question, showCorrectAnswers, onClose, onNext, on
                                                     {key}
                                                 </div>
                                                 <div className="font-[Georgia] text-sm mathjax-process w-full">
-                                                    {typeof val === 'object' && val?.image ? (
+                                                    {typeof val === 'object' && val !== null && (val as any).image ? (
                                                         <div className="py-1">
                                                             {/* eslint-disable-next-line @next/next/no-img-element */}
                                                             <img 
-                                                                src={getImageUrl(val.image)} 
+                                                                src={getImageUrl((val as any).image)} 
                                                                 alt={`Option ${key}`} 
                                                                 className="max-w-full h-auto max-h-[150px] object-contain rounded-lg border border-slate-100 bg-white" 
                                                             />
                                                         </div>
                                                     ) : (
-                                                        <div dangerouslySetInnerHTML={{ __html: (typeof val === 'object' ? val.text : (val as string))?.replace(/\n/g, '<br/>') }} />
+                                                        <div dangerouslySetInnerHTML={{ __html: (typeof val === 'object' && val !== null ? (val as any).text : (val as string))?.replace(/\n/g, '<br/>') }} />
                                                     )}
                                                 </div>
                                                 {icon}

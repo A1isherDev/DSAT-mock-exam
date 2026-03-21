@@ -252,17 +252,17 @@ const RightPane = memo(({
                                                 className={`w-full mathjax-process ${highlighterActive ? 'cursor-text' : ''}`}
                                                 onMouseUp={(e) => highlighterActive && handleShowPopover(`option-${key}`, e)}
                                             >
-                                                {typeof val === 'object' && val?.image ? (
+                                                {typeof val === 'object' && val !== null && (val as any).image ? (
                                                     <div className="py-2">
                                                         {/* eslint-disable-next-line @next/next/no-img-element */}
                                                         <img 
-                                                            src={getImageUrl(val.image)} 
+                                                            src={getImageUrl((val as any).image)} 
                                                             alt={`Option ${key}`} 
                                                             className="max-w-full h-auto max-h-[200px] object-contain rounded-lg border border-slate-100 shadow-sm" 
                                                         />
                                                     </div>
                                                 ) : (
-                                                    <div dangerouslySetInnerHTML={{ __html: optionHighlights[key] || (typeof val === 'object' ? val.text : (val as string))?.replace(/\n/g, '<br/>') }} />
+                                                    <div dangerouslySetInnerHTML={{ __html: optionHighlights[key] || (typeof val === 'object' && val !== null ? (val as any).text : (val as string))?.replace(/\n/g, '<br/>') }} />
                                                 )}
                                             </div>
                                         </div>
