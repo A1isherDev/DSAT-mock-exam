@@ -9,15 +9,7 @@ class QuestionSerializer(serializers.ModelSerializer):
         
     def to_representation(self, instance):
         representation = super().to_representation(instance)
-        
-        # Build the options dict dynamically to prevent breaking the frontend
-        options = {}
-        if instance.option_a: options['A'] = instance.option_a
-        if instance.option_b: options['B'] = instance.option_b
-        if instance.option_c: options['C'] = instance.option_c
-        if instance.option_d: options['D'] = instance.option_d
-            
-        representation['options'] = options if options else None
+        representation['options'] = instance.get_options()
         return representation
 
 class ModuleSerializer(serializers.ModelSerializer):
