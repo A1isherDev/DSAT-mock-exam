@@ -112,6 +112,10 @@ const RichTextEditor = ({ value, onChange, label, placeholder = "" }: { value: s
         { label: 'Sub', icon: <span className="text-xs font-bold">xᵢ</span>, syntax: '_{ }' },
         { label: 'Degree', icon: <span className="text-xs font-bold">°</span>, syntax: '°' },
         { label: 'Pi', icon: <span className="text-xs font-bold italic">π</span>, syntax: 'π' },
+        { label: 'Less', icon: <span className="text-xs font-bold">{'<'}</span>, syntax: '<' },
+        { label: 'Greater', icon: <span className="text-xs font-bold">{'>'}</span>, syntax: '>' },
+        { label: 'LE', icon: <span className="text-xs font-bold">≤</span>, syntax: '\\le ' },
+        { label: 'GE', icon: <span className="text-xs font-bold">≥</span>, syntax: '\\ge ' },
     ];
 
     return (
