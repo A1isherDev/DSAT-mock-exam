@@ -63,6 +63,7 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
         exam_ids = request.data.get('exam_ids', [])
         user_ids = request.data.get('user_ids', [])
         assignment_type = request.data.get('assignment_type', 'FULL') # 'FULL', 'MATH', 'ENGLISH'
+        form_type = request.data.get('form_type') # Optional: 'INTERNATIONAL', 'US'
         
         from django.contrib.auth import get_user_model
         User = get_user_model()
@@ -77,13 +78,21 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
         to_add_subjects, to_remove_subjects = subject_map.get(assignment_type, (['MATH', 'READING_WRITING'], []))
         
         # 1. Handle Additions
-        add_tests = PracticeTest.objects.filter(mock_exam_id__in=exam_ids, subject__in=to_add_subjects)
+        add_filters = {'mock_exam_id__in': exam_ids, 'subject__in': to_add_subjects}
+        if form_type:
+            add_filters['form_type'] = form_type
+            
+        add_tests = PracticeTest.objects.filter(**add_filters)
         for pt in add_tests:
             pt.assigned_users.add(*users)
             
         # 2. Handle Removals (Exclusive assignment)
         if to_remove_subjects:
-            remove_tests = PracticeTest.objects.filter(mock_exam_id__in=exam_ids, subject__in=to_remove_subjects)
+            remove_filters = {'mock_exam_id__in': exam_ids, 'subject__in': to_remove_subjects}
+            if form_type:
+                remove_filters['form_type'] = form_type
+                
+            remove_tests = PracticeTest.objects.filter(**remove_filters)
             for pt in remove_tests:
                 pt.assigned_users.remove(*users)
                 
@@ -280,9 +289,18 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
         """Create a new PracticeTest (with auto-generated modules) under this MockExam."""
         exam = self.get_object()
         subject = request.data.get('subject')
+        label = request.data.get('label', '')
+        form_type = request.data.get('form_type', 'INTERNATIONAL')
+        
         if subject not in ('READING_WRITING', 'MATH'):
             return Response({'error': 'Invalid subject'}, status=status.HTTP_400_BAD_REQUEST)
-        test = PracticeTest.objects.create(mock_exam=exam, subject=subject)
+        
+        test = PracticeTest.objects.create(
+            mock_exam=exam, 
+            subject=subject,
+            label=label,
+            form_type=form_type
+        )
         from .serializers import AdminPracticeTestSerializer
         return Response(AdminPracticeTestSerializer(test).data, status=status.HTTP_201_CREATED)
 

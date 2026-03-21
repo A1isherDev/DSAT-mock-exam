@@ -114,8 +114,8 @@ export const adminApi = {
     createMockExam: async (data: object) => { const r = await api.post('/exams/admin/mock-exams/', data); return r.data; },
     updateMockExam: async (id: number, data: object) => { const r = await api.patch(`/exams/admin/mock-exams/${id}/`, data); return r.data; },
     deleteMockExam: async (id: number) => { await api.delete(`/exams/admin/mock-exams/${id}/`); },
-    addTestToExam: async (examId: number, subject: string) => {
-        const r = await api.post(`/exams/admin/mock-exams/${examId}/add_test/`, { subject });
+    addTestToExam: async (examId: number, subject: string, label: string = '', formType: string = 'INTERNATIONAL') => {
+        const r = await api.post(`/exams/admin/mock-exams/${examId}/add_test/`, { subject, label, form_type: formType });
         return r.data;
     },
     removeTestFromExam: async (examId: number, testId: number) => {
@@ -126,12 +126,14 @@ export const adminApi = {
         const r = await api.post(`/exams/admin/mock-exams/${examId}/assign_users/`, { user_ids: userIds });
         return r.data;
     },
-    bulkAssignStudents: async (examIds: number[], userIds: number[], assignmentType: string = 'FULL') => {
-        const res = await api.post('/exams/bulk_assign/', { 
+    bulkAssignStudents: async (examIds: number[], userIds: number[], assignmentType: string = 'FULL', formType?: string) => {
+        const payload: any = { 
             exam_ids: examIds, 
             user_ids: userIds,
             assignment_type: assignmentType 
-        });
+        };
+        if (formType) payload.form_type = formType;
+        const res = await api.post('/exams/bulk_assign/', payload);
         return res.data;
     },
 

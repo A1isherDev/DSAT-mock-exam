@@ -37,7 +37,7 @@ class PracticeTestSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = PracticeTest
-        fields = ['id', 'subject', 'modules']
+        fields = ['id', 'subject', 'label', 'form_type', 'modules']
 
 class MockExamSerializer(serializers.ModelSerializer):
     tests = PracticeTestSerializer(many=True, read_only=True)
@@ -115,7 +115,7 @@ class AdminPracticeTestSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PracticeTest
-        fields = ['id', 'subject', 'mock_exam', 'modules']
+        fields = ['id', 'subject', 'label', 'form_type', 'mock_exam', 'modules']
 
 
 class AdminMockExamSerializer(serializers.ModelSerializer):

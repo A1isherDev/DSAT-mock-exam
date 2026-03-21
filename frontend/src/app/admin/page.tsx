@@ -219,9 +219,14 @@ export default function AdminPage() {
     const [bulkAssignExams, setBulkAssignExams] = useState<number[]>([]);
     const [bulkAssignUsers, setBulkAssignUsers] = useState<number[]>([]);
     const [bulkAssignType, setBulkAssignType] = useState<string>('FULL');
+    const [bulkAssignFormType, setBulkAssignFormType] = useState<string>(''); // empty means all
     const [showBulkModal, setShowBulkModal] = useState(false);
     const [bulkTestSearch, setBulkTestSearch] = useState('');
     const [bulkUserSearch, setBulkUserSearch] = useState('');
+
+    // New Test Creation State
+    const [newTestLabel, setNewTestLabel] = useState('');
+    const [newTestFormType, setNewTestFormType] = useState('INTERNATIONAL');
 
     const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
@@ -324,9 +329,10 @@ export default function AdminPage() {
 
         setSaving(true);
         try {
-            await adminApi.addTestToExam(targetMockId, subject);
+            await adminApi.addTestToExam(targetMockId, subject, newTestLabel, newTestFormType);
             await fetchMockExams();
             showToast(`${subject === 'READING_WRITING' ? 'English' : 'Math'} test added ✓`);
+            setNewTestLabel(''); // Reset after add
         } finally { setSaving(false); }
     };
 
@@ -418,6 +424,7 @@ export default function AdminPage() {
         setBulkAssignExams([]);
         setBulkAssignUsers([]);
         setBulkAssignType('FULL');
+        setBulkAssignFormType('');
         setBulkTestSearch('');
         setBulkUserSearch('');
     };
@@ -429,8 +436,8 @@ export default function AdminPage() {
         }
         setSaving(true);
         try {
-            await adminApi.bulkAssignStudents(bulkAssignExams, bulkAssignUsers, bulkAssignType);
-            showToast(`Successfully assigned ${bulkAssignExams.length} exams (Type: ${bulkAssignType}) to ${bulkAssignUsers.length} users!`);
+            await adminApi.bulkAssignStudents(bulkAssignExams, bulkAssignUsers, bulkAssignType, bulkAssignFormType || undefined);
+            showToast(`Successfully assigned ${bulkAssignExams.length} exams (Type: ${bulkAssignType}${bulkAssignFormType ? `, Form: ${bulkAssignFormType}` : ''}) to ${bulkAssignUsers.length} users!`);
             setSelectedMockId(bulkAssignExams[0]);
             closeBulkModal();
             fetchMockExams();
@@ -541,19 +548,50 @@ export default function AdminPage() {
                                                     <button className={BTN_DANGER + " bg-white shadow-sm border border-slate-100"} onClick={e => { e.stopPropagation(); handleDeleteMock(mock.id); }}><Trash2 className="w-3.5 h-3.5" /> Delete</button>
                                                 </div>
                                             </div>
-                                            <div className="p-4 border-t border-slate-100 bg-white grid grid-cols-1 md:grid-cols-3 gap-3">
+                                            <div className="p-4 border-t border-slate-100 bg-white grid grid-cols-1 md:grid-cols-2 gap-3">
                                                 {(mock.tests || []).map((t: any) => (
                                                     <div key={t.id} className="p-3 rounded-xl border border-slate-100 bg-slate-50/50 flex items-center justify-between">
-                                                        <div className="flex items-center gap-2">
-                                                            <div className={`w-2 h-2 rounded-full ${t.subject === 'MATH' ? 'bg-emerald-500' : 'bg-blue-500'}`} />
-                                                            <span className="text-[11px] font-extrabold text-slate-600 uppercase tracking-wider">{t.subject === 'MATH' ? 'Mathematics' : 'Reading & Writing'}</span>
+                                                        <div className="flex flex-col gap-0.5">
+                                                            <div className="flex items-center gap-2">
+                                                                <div className={`w-2 h-2 rounded-full ${t.subject === 'MATH' ? 'bg-emerald-500' : 'bg-blue-500'}`} />
+                                                                <span className="text-[11px] font-extrabold text-slate-600 uppercase tracking-wider">{t.subject === 'MATH' ? 'Mathematics' : 'Reading & Writing'}</span>
+                                                                {t.label && <span className="text-[10px] font-bold bg-slate-200 text-slate-700 px-1.5 rounded">{t.label}</span>}
+                                                            </div>
+                                                            <span className="text-[9px] text-slate-400 font-bold uppercase tracking-tight ml-4">{t.form_type === 'US' ? 'US Form' : 'International Form'}</span>
                                                         </div>
                                                         <button onClick={(e) => { e.stopPropagation(); handleRemoveTest(t.id, mock.id); }} className="text-slate-300 hover:text-red-500 transition-colors"><X className="w-3.5 h-3.5" /></button>
                                                     </div>
                                                 ))}
-                                                <div className="flex gap-2 col-span-full">
-                                                    <button onClick={(e) => { e.stopPropagation(); handleAddTest('READING_WRITING', mock.id); }} className="flex-1 flex items-center justify-center gap-2 py-2 border border-blue-100 bg-blue-50/50 text-blue-600 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-blue-100 transition-all"><Plus className="w-3 h-3" /> English</button>
-                                                    <button onClick={(e) => { e.stopPropagation(); handleAddTest('MATH', mock.id); }} className="flex-1 flex items-center justify-center gap-2 py-2 border border-emerald-100 bg-emerald-50/50 text-emerald-600 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-emerald-100 transition-all"><Plus className="w-3 h-3" /> Mathematics</button>
+                                                
+                                                <div className="md:col-span-2 mt-2 pt-3 border-t border-slate-50 space-y-3">
+                                                    <div className="grid grid-cols-2 gap-3">
+                                                        <div className="flex flex-col gap-1">
+                                                            <span className="text-[10px] font-bold text-slate-400 uppercase ml-1">Test Label (e.g. A, B)</span>
+                                                            <input 
+                                                                value={newTestLabel} 
+                                                                onChange={e => setNewTestLabel(e.target.value)} 
+                                                                placeholder="Optional label"
+                                                                className={INPUT + " !py-1.5 !text-xs"}
+                                                                onClick={e => e.stopPropagation()}
+                                                            />
+                                                        </div>
+                                                        <div className="flex flex-col gap-1">
+                                                            <span className="text-[10px] font-bold text-slate-400 uppercase ml-1">Form Type</span>
+                                                            <select 
+                                                                value={newTestFormType} 
+                                                                onChange={e => setNewTestFormType(e.target.value)}
+                                                                className={INPUT + " !py-1.5 !text-xs"}
+                                                                onClick={e => e.stopPropagation()}
+                                                            >
+                                                                <option value="INTERNATIONAL">International Form</option>
+                                                                <option value="US">US Form</option>
+                                                            </select>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex gap-2">
+                                                        <button onClick={(e) => { e.stopPropagation(); handleAddTest('READING_WRITING', mock.id); }} className="flex-1 flex items-center justify-center gap-2 py-2.5 border border-blue-100 bg-blue-50/50 text-blue-600 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-blue-100 transition-all"><Plus className="w-3 h-3" /> English</button>
+                                                        <button onClick={(e) => { e.stopPropagation(); handleAddTest('MATH', mock.id); }} className="flex-1 flex items-center justify-center gap-2 py-2.5 border border-emerald-100 bg-emerald-50/50 text-emerald-600 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-emerald-100 transition-all"><Plus className="w-3 h-3" /> Mathematics</button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
@@ -951,11 +989,33 @@ export default function AdminPage() {
                                             ))}
                                         </div>
                                     </div>
+
+                                    <div className="flex flex-col border-l border-slate-200 pl-6 ml-2">
+                                        <span className="text-xs font-extrabold text-slate-500 uppercase mb-2">Step 4: Form Type</span>
+                                        <div className="flex gap-4">
+                                            {[
+                                                { id: '', label: 'All Forms' },
+                                                { id: 'INTERNATIONAL', label: 'Intl Only' },
+                                                { id: 'US', label: 'US Only' }
+                                            ].map(t => (
+                                                <label key={t.id} className="flex items-center gap-2 cursor-pointer group">
+                                                    <input 
+                                                        type="radio" 
+                                                        name="assignFormType" 
+                                                        checked={bulkAssignFormType === t.id}
+                                                        onChange={() => setBulkAssignFormType(t.id)}
+                                                        className="w-4 h-4 text-indigo-600 focus:ring-indigo-500 border-slate-300"
+                                                    />
+                                                    <span className={`text-sm font-bold ${bulkAssignFormType === t.id ? 'text-indigo-600' : 'text-slate-500 group-hover:text-slate-700'}`}>{t.label}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
                                 </div>
                                 
                                 <div className="flex items-center justify-between pt-4 border-t border-slate-50">
                                     <div className="text-xs text-slate-500 font-medium">
-                                        This will grant <span className="font-bold text-slate-900">{bulkAssignUsers.length}</span> students <span className="font-bold text-blue-600">{bulkAssignType}</span> access to <span className="font-bold text-slate-900">{bulkAssignExams.length}</span> selected exams.
+                                        Granting <span className="font-bold text-slate-900">{bulkAssignUsers.length}</span> students <span className="font-bold text-blue-600">{bulkAssignType}</span> {bulkAssignFormType && <span className="text-indigo-600">({bulkAssignFormType})</span>} access to <span className="font-bold text-slate-900">{bulkAssignExams.length}</span> exams.
                                     </div>
                                     <div className="flex gap-3">
                                         <button onClick={closeBulkModal} className={BTN_GHOST}>Cancel</button>

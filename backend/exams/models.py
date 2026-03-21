@@ -79,8 +79,14 @@ class PracticeTest(TimestampedModel):
         ('READING_WRITING', 'Reading & Writing'),
         ('MATH', 'Math'),
     ]
+    FORM_TYPES = [
+        ('INTERNATIONAL', 'International Form'),
+        ('US', 'US Form'),
+    ]
     mock_exam = models.ForeignKey(MockExam, on_delete=models.CASCADE, related_name='tests', null=True, blank=True)
     subject = models.CharField(max_length=20, choices=SUBJECT_CHOICES, db_index=True)
+    label = models.CharField(max_length=10, blank=True, help_text="e.g., A, B, C, D")
+    form_type = models.CharField(max_length=20, choices=FORM_TYPES, default='INTERNATIONAL', db_index=True)
     assigned_users = models.ManyToManyField(User, related_name='assigned_tests', blank=True)
     
     class Meta:
@@ -88,7 +94,8 @@ class PracticeTest(TimestampedModel):
 
     def __str__(self):
         exam_title = self.mock_exam.title if self.mock_exam else "Unassigned"
-        return f"{exam_title} - {self.get_subject_display()}"
+        label_str = f" ({self.label})" if self.label else ""
+        return f"{exam_title} - {self.get_subject_display()}{label_str} [{self.get_form_type_display()}]"
 
 from django.db.models.signals import post_save
 from django.dispatch import receiver
