@@ -9,9 +9,11 @@ interface QuestionReviewModalProps {
     question: any;
     showCorrectAnswers: boolean;
     onClose: () => void;
+    onNext?: () => void;
+    onPrevious?: () => void;
 }
 
-const QuestionReviewModal = ({ question, showCorrectAnswers, onClose }: QuestionReviewModalProps) => {
+const QuestionReviewModal = ({ question, showCorrectAnswers, onClose, onNext, onPrevious }: QuestionReviewModalProps) => {
     if (!question) return null;
 
     // Fix for image URL if it's relative
@@ -27,8 +29,25 @@ const QuestionReviewModal = ({ question, showCorrectAnswers, onClose }: Question
             <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose}></div>
             <div className="bg-white w-full max-w-7xl h-[92vh] rounded-[24px] shadow-2xl overflow-hidden flex flex-col relative animate-in zoom-in-95 duration-200">
                 {/* Modal Header */}
-                <div className="px-8 py-5 border-b border-slate-100 flex justify-between items-center bg-white">
+                <div className="px-8 py-5 border-b border-slate-100 flex justify-between items-center bg-white shrink-0">
                     <div className="flex items-center gap-4">
+                        <div className="flex items-center bg-slate-100 rounded-xl p-1 border border-slate-200 mr-2">
+                            <button 
+                                onClick={onPrevious}
+                                disabled={!onPrevious}
+                                className={`p-2 rounded-lg transition-all ${onPrevious ? 'hover:bg-white hover:shadow-sm text-slate-900' : 'text-slate-300 cursor-not-allowed'}`}
+                            >
+                                <ArrowLeft className="w-4 h-4" />
+                            </button>
+                            <div className="w-px h-4 bg-slate-200 mx-1"></div>
+                            <button 
+                                onClick={onNext}
+                                disabled={!onNext}
+                                className={`p-2 rounded-lg transition-all ${onNext ? 'hover:bg-white hover:shadow-sm text-slate-900' : 'text-slate-300 cursor-not-allowed'}`}
+                            >
+                                <ChevronRight className="w-4 h-4" />
+                            </button>
+                        </div>
                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center border ${question.is_correct ? 'bg-emerald-50 border-emerald-100 text-emerald-600' : 'bg-red-50 border-red-100 text-red-500'}`}>
                             {question.is_correct ? <CheckCircle2 className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
                         </div>
@@ -349,6 +368,34 @@ export default function ReviewPage() {
                     question={selectedQuestion}
                     showCorrectAnswers={showCorrectAnswers}
                     onClose={() => setSelectedQuestion(null)}
+                    onNext={(() => {
+                        if (!selectedQuestion || !review.module_results) return undefined;
+                        const allQs: any[] = [];
+                        review.module_results.forEach((m: any) => {
+                            m.questions.forEach((q: any, i: number) => {
+                                allQs.push({ ...q, index_in_module: i + 1 });
+                            });
+                        });
+                        const currentIdx = allQs.findIndex(q => q.id === selectedQuestion.id);
+                        if (currentIdx !== -1 && currentIdx < allQs.length - 1) {
+                            return () => setSelectedQuestion(allQs[currentIdx + 1]);
+                        }
+                        return undefined;
+                    })()}
+                    onPrevious={(() => {
+                        if (!selectedQuestion || !review.module_results) return undefined;
+                        const allQs: any[] = [];
+                        review.module_results.forEach((m: any) => {
+                            m.questions.forEach((q: any, i: number) => {
+                                allQs.push({ ...q, index_in_module: i + 1 });
+                            });
+                        });
+                        const currentIdx = allQs.findIndex(q => q.id === selectedQuestion.id);
+                        if (currentIdx > 0) {
+                            return () => setSelectedQuestion(allQs[currentIdx - 1]);
+                        }
+                        return undefined;
+                    })()}
                 />
             </div>
         </AuthGuard>
