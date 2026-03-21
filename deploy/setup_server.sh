@@ -44,8 +44,9 @@ echo "✓ Node.js $(node -v) installed"
 npm install -g pm2
 echo "✓ PM2 installed"
 
-# ── Python 3.11 ───────────────────────────────────────────────
-apt-get install -y python3.11 python3.11-venv python3.11-dev python3-pip
+# ── Python 3 (System Default) ──────────────────────────────────
+apt-get install -y python3 python3-venv python3-dev python3-pip
+echo "✓ Python 3 installed"
 # ── Nginx ─────────────────────────────────────────────────────
 apt-get install -y nginx
 systemctl enable --now nginx

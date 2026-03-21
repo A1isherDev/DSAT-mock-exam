@@ -22,7 +22,7 @@ git -C $APP_DIR pull origin main
 
 # ── Backend ───────────────────────────────────────────────────
 echo "→ Setting up Python virtual environment..."
-python3.11 -m venv $VENV_DIR
+python3 -m venv $VENV_DIR
 
 echo "→ Installing backend dependencies..."
 $VENV_DIR/bin/pip install --upgrade pip

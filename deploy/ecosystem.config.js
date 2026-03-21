@@ -8,8 +8,8 @@ module.exports = {
       // ── Next.js Frontend ──────────────────────────────────
       name: 'sat-frontend',
       cwd: '/var/www/satapp/frontend',
-      script: 'node_modules/.bin/next',
-      args: 'start -p 3000',
+      script: '.next/standalone/server.js',
+      args: '',
       instances: 1,
       autorestart: true,
       watch: false,
@@ -18,8 +18,6 @@ module.exports = {
         NODE_ENV: 'production',
         PORT: 3000,
       },
-      error_file: '/var/log/pm2/sat-frontend-error.log',
-      out_file: '/var/log/pm2/sat-frontend-out.log',
       log_date_format: 'YYYY-MM-DD HH:mm:ss',
     },
     {
@@ -36,8 +34,6 @@ module.exports = {
       env: {
         DJANGO_SETTINGS_MODULE: 'config.settings',
       },
-      error_file: '/var/log/pm2/sat-backend-error.log',
-      out_file: '/var/log/pm2/sat-backend-out.log',
       log_date_format: 'YYYY-MM-DD HH:mm:ss',
     },
   ],

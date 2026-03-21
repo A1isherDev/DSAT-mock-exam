@@ -18,7 +18,7 @@ const QuestionReviewModal = ({ question, showCorrectAnswers, onClose }: Question
     const getImageUrl = (path: string | null | undefined) => {
         if (!path) return undefined;
         if (path.startsWith('http')) return path;
-        const baseUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:8000';
+        const baseUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || '';
         return `${baseUrl}${path}`;
     };
 
