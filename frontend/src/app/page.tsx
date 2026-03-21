@@ -311,35 +311,89 @@ export default function DashboardPage() {
                   if (!dateStr) return 'No Date';
                   try {
                     const date = new Date(dateStr);
-                    return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+                    return date.toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
                   } catch (e) {
                     return dateStr;
                   }
                 };
 
-                const isExpanded = expandedExams.has(group.title);
+                const tests = group.tests || [];
+                const completedCount = tests.filter((t: any) => {
+                    const att = attempts.find(a => a.practice_test === t.id);
+                    return att?.is_completed;
+                }).length;
+                const totalTests = tests.length;
+                const percentDone = totalTests > 0 ? Math.round((completedCount / totalTests) * 100) : 0;
 
                 return (
-                  <div key={group.id} className="bg-white rounded-[28px] shadow-sm overflow-hidden flex flex-col border border-slate-200 hover:shadow-xl hover:shadow-slate-200/50 transition-all duration-300">
-                    <div className="p-8 pb-6 relative overflow-hidden transition-colors bg-slate-50/50">
-                      <div className="flex items-center justify-between mb-4">
-                        <span className="text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full border shadow-sm bg-white text-slate-600 border-slate-200">
-                          {formatDate(group.practice_date)}
-                        </span>
-                        <div className="w-8 h-8 rounded-full bg-blue-100 flex justify-center items-center text-blue-600">
-                           <BookOpen className="w-4 h-4" />
+                  <div key={group.id} className="group bg-white rounded-[32px] shadow-sm overflow-hidden flex flex-col border border-slate-200 hover:shadow-2xl hover:shadow-indigo-500/10 hover:-translate-y-1 transition-all duration-500">
+                    <div className="p-8 pb-4 relative">
+                      <div className="flex items-center justify-between mb-6">
+                        <div className="flex flex-col gap-1">
+                          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-500">Digital SAT Mock</span>
+                          <span className="text-xs font-bold text-slate-400">{formatDate(group.practice_date)}</span>
+                        </div>
+                        <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-all duration-500 shadow-sm">
+                           <FileText className="w-6 h-6" />
                         </div>
                       </div>
-                      <h3 className="text-2xl font-bold text-slate-900 transition-colors mb-2">
+                      
+                      <h3 className="text-2xl font-black text-slate-900 mb-3 tracking-tight group-hover:text-indigo-600 transition-colors">
                         {group.title}
                       </h3>
-                      <p className="text-[13px] text-slate-500 font-medium">Digital SAT System mock exam matching modern College Board formats.</p>
+                      
+                      <div className="flex items-center gap-2 mb-6">
+                        <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div 
+                             className="h-full bg-indigo-500 transition-all duration-1000 ease-out" 
+                             style={{ width: `${percentDone}%` }}
+                          />
+                        </div>
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">{percentDone}%</span>
+                      </div>
                     </div>
 
-                    <div className="p-6 bg-white flex flex-col justify-center flex-1">
+                    <div className="px-8 pb-8 flex-1 flex flex-col gap-3">
+                        <p className="text-[11px] font-black text-slate-400 uppercase tracking-[0.1em] mb-1">Assigned Modules</p>
+                        {tests.length > 0 ? (
+                            <div className="flex flex-col gap-2">
+                                {tests.map((t: any) => {
+                                    const att = attempts.find(a => a.practice_test === t.id);
+                                    const isCompleted = att?.is_completed;
+                                    return (
+                                        <div key={t.id} className={`flex items-center justify-between p-3 rounded-2xl border transition-all ${isCompleted ? 'bg-emerald-50/30 border-emerald-100' : 'bg-slate-50/50 border-slate-100'}`}>
+                                            <div className="flex items-center gap-3">
+                                                <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${t.subject === 'MATH' ? 'bg-emerald-100 text-emerald-600' : 'bg-blue-100 text-blue-600'}`}>
+                                                    {t.subject === 'MATH' ? <Calculator className="w-4 h-4" /> : <BookOpen className="w-4 h-4" />}
+                                                </div>
+                                                <div>
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className="text-xs font-bold text-slate-800">{t.subject === 'MATH' ? 'Math' : 'Reading'}</span>
+                                                        {t.label && <span className="text-[10px] font-black bg-white border border-slate-200 text-slate-500 px-1.5 rounded-md leading-none py-0.5">{t.label}</span>}
+                                                    </div>
+                                                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">{t.form_type === 'US' ? 'US Form' : 'Intl Form'}</span>
+                                                </div>
+                                            </div>
+                                            {isCompleted ? (
+                                                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                                            ) : (
+                                                <div className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        ) : (
+                            <div className="py-4 text-center border-2 border-dashed border-slate-100 rounded-2xl">
+                                <p className="text-[10px] font-bold text-slate-300 uppercase italic">No modules assigned</p>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="p-6 pt-0 mt-auto">
                       <button
                         onClick={() => router.push(`/mock/${group.id}`)}
-                        className="group/btn w-full flex items-center justify-center gap-3 font-black py-4 px-6 rounded-2xl transition-all text-sm uppercase tracking-widest bg-slate-900 text-white hover:bg-blue-600 shadow-xl shadow-slate-200 hover:shadow-blue-200 active:scale-[0.98]"
+                        className="group/btn w-full flex items-center justify-center gap-3 font-black py-4 px-6 rounded-2xl transition-all text-sm uppercase tracking-widest bg-slate-900 text-white hover:bg-indigo-600 shadow-xl shadow-slate-200 hover:shadow-indigo-200 active:scale-[0.98]"
                       >
                         Enter Mock Exam <ArrowRight className="w-5 h-5 group-hover/btn:translate-x-1 transition-transform" />
                       </button>
