@@ -415,7 +415,10 @@ export default function ExamPlayerPage() {
         passageHighlights[currentQuestion?.id],
         questionHighlights[currentQuestion?.id],
         questionPromptHighlights[currentQuestion?.id],
-        optionHighlights[currentQuestion?.id]
+        optionHighlights[currentQuestion?.id],
+        showCalculator,
+        showReferenceSheet,
+        showNavigation
     ]);
 
     // Fullscreen behavior listeners
