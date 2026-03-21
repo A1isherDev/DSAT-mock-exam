@@ -123,7 +123,7 @@ const RightPane = memo(({
 
     return (
         <div
-            className={`overflow-y-auto bg-white pb-8 ${((attempt.practice_test_details.subject === 'READING_WRITING' && !showCalculator) || currentQuestion.is_math_input) ? 'w-1/2' : 'w-full'} flex justify-center transition-transform duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${showCalculator ? 'translate-x-[12vw] translate-y-0' : 'translate-x-0 translate-y-0'} ${
+            className={`overflow-y-auto bg-white pb-8 ${((attempt.practice_test_details.subject === 'READING_WRITING' && !showCalculator) || currentQuestion.is_math_input) ? 'w-1/2' : 'w-full'} flex justify-center transition-transform duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${(showCalculator && !currentQuestion.is_math_input) ? 'translate-x-[12vw] translate-y-0' : 'translate-x-0 translate-y-0'} ${
                 attempt.practice_test_details.subject === 'READING_WRITING' || currentQuestion.is_math_input
                     ? 'p-10' : ''
             }`}
@@ -182,7 +182,7 @@ const RightPane = memo(({
                 {currentQuestion.question_prompt && !currentQuestion.is_math_input && (
                     <div
                         id="question-prompt-content"
-                        className={`mb-8 font-[Georgia] font-medium text-slate-900 leading-relaxed ${highlighterActive ? 'cursor-text' : ''}`}
+                        className={`mb-8 font-[Georgia] font-medium text-slate-900 leading-relaxed mathjax-process ${highlighterActive ? 'cursor-text' : ''}`}
                         style={{ fontSize: `${16 * zoomLevel * 1.2}px` }}
                         onMouseUp={(e) => highlighterActive && handleShowPopover('question-prompt', e)}
                         dangerouslySetInnerHTML={{ __html: questionPromptHighlights[currentQuestion.id] || currentQuestion.question_prompt.replace(/\n/g, '<br/>') }}
@@ -192,7 +192,7 @@ const RightPane = memo(({
                 {attempt.practice_test_details.subject !== 'READING_WRITING' && (
                     <div
                         id="question-content"
-                        className={`mb-8 font-[Georgia] font-medium text-slate-900 leading-relaxed ${highlighterActive ? 'cursor-text' : ''}`}
+                        className={`mb-8 font-[Georgia] font-medium text-slate-900 leading-relaxed mathjax-process ${highlighterActive ? 'cursor-text' : ''}`}
                         style={{ fontSize: `${16 * zoomLevel * 1.2}px` }}
                         onMouseUp={(e) => highlighterActive && handleShowPopover('question', e)}
                         dangerouslySetInnerHTML={{ __html: questionHighlights[currentQuestion.id] || currentQuestion.question_text?.replace(/\n/g, '<br/>') || 'Question text goes here...' }}
@@ -249,7 +249,7 @@ const RightPane = memo(({
                                         <div className={`ml-4 text-left font-sans text-[15px] text-slate-800 w-full ${isEliminated ? 'line-through decoration-slate-400' : ''}`}>
                                             <div
                                                 id={`option-content-${key}`}
-                                                className={`w-full ${highlighterActive ? 'cursor-text' : ''}`}
+                                                className={`w-full mathjax-process ${highlighterActive ? 'cursor-text' : ''}`}
                                                 onMouseUp={(e) => highlighterActive && handleShowPopover(`option-${key}`, e)}
                                                 dangerouslySetInnerHTML={{ __html: optionHighlights[key] || (val as string).replace(/\n/g, '<br/>') }}
                                             />
@@ -403,7 +403,20 @@ export default function ExamPlayerPage() {
             const cleanup = renderMath();
             return cleanup;
         }
-    }, [currentQuestionIndex, loading, attempt?.current_module_details?.id, showAnswerPreview, renderMath, answers[currentQuestion?.id]]);
+    }, [
+        currentQuestionIndex, 
+        loading, 
+        attempt?.current_module_details?.id, 
+        showAnswerPreview, 
+        renderMath, 
+        answers[currentQuestion?.id],
+        zoomLevel,
+        highlighterActive,
+        passageHighlights[currentQuestion?.id],
+        questionHighlights[currentQuestion?.id],
+        questionPromptHighlights[currentQuestion?.id],
+        optionHighlights[currentQuestion?.id]
+    ]);
 
     // Fullscreen behavior listeners
     useEffect(() => {
