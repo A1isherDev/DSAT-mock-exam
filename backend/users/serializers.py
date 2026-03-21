@@ -19,6 +19,11 @@ class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=False)
     is_admin = serializers.BooleanField(required=False)
 
+    def validate_username(self, value):
+        if value == '':
+            return None
+        return value
+
     class Meta:
         model = User
         fields = ['id', 'email', 'username', 'first_name', 'last_name', 'role', 'is_admin', 'is_active', 'date_joined', 'password']
