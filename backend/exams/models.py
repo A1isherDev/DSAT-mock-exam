@@ -142,7 +142,7 @@ class TestAttempt(TimestampedModel):
         ordering = ['-created_at']
 
     def __str__(self):
-        return f"{self.student.email} - {self.practice_test.title}"
+        return f"{self.student.email} - {self.practice_test}"
 
     def start_test(self):
         if self.started_at:
