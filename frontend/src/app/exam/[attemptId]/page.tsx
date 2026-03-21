@@ -352,30 +352,52 @@ export default function ExamPlayerPage() {
         fetchAttempt();
     }, [attemptId, router]);
 
-    // Math Rendering Trigger
-    useEffect(() => {
-        if (typeof window !== 'undefined') {
+    // Robust Math Rendering Logic
+    const renderMath = useCallback(() => {
+        if (typeof window === 'undefined') return;
+        
+        const tryRender = () => {
             const container = document.body;
+            if (!container) return;
             container.classList.add('mathjax-process');
-            
-            // KaTeX
-            if ((window as any).renderMathInElement && !loading) {
-                (window as any).renderMathInElement(container, {
-                    delimiters: [
-                        {left: '$$', right: '$$', display: true},
-                        {left: '\\(', right: '\\)', display: false},
-                        {left: '\\[', right: '\\]', display: true}
-                    ],
-                    throwOnError: false
-                });
+
+            // KaTeX Auto-render
+            if ((window as any).renderMathInElement) {
+                try {
+                    (window as any).renderMathInElement(container, {
+                        delimiters: [
+                            {left: '$$', right: '$$', display: true},
+                            {left: '\\(', right: '\\)', display: false},
+                            {left: '\\[', right: '\\]', display: true}
+                        ],
+                        throwOnError: false
+                    });
+                } catch (e) {
+                    console.error("KaTeX render error:", e);
+                }
             }
             
             // MathJax 3
             if ((window as any).MathJax && (window as any).MathJax.typesetPromise) {
-                (window as any).MathJax.typesetPromise([container]);
+                (window as any).MathJax.typesetPromise([container]).catch((err: any) => {
+                    // console.debug("MathJax process error (likely interrupted):", err);
+                });
             }
+        };
+
+        // Execute multiple times to ensure rendering happens after React DOM updates
+        // and after external scripts (KaTeX/MathJax) are fully loaded.
+        tryRender();
+        const timers = [100, 300, 800, 2000].map(ms => setTimeout(tryRender, ms));
+        return () => timers.forEach(t => clearTimeout(t));
+    }, []);
+
+    useEffect(() => {
+        if (!loading) {
+            const cleanup = renderMath();
+            return cleanup;
         }
-    }, [currentQuestionIndex, loading, attempt?.current_module_details?.id, showAnswerPreview]);
+    }, [currentQuestionIndex, loading, attempt?.current_module_details?.id, showAnswerPreview, renderMath]);
 
     // Fullscreen behavior listeners
     useEffect(() => {
