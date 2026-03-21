@@ -164,10 +164,10 @@ CORS_ALLOWED_ORIGINS = os.getenv(
 ).split(',')
 
 CSRF_TRUSTED_ORIGINS = [
-    'http://guts.uz',
-    'https://guts.uz',
-    'http://www.guts.uz',
-    'https://www.guts.uz',
+    'http://mastersat.uz',
+    'https://mastersat.uz',
+    'http://www.mastersat.uz',
+    'https://www.mastersat.uz',
     'http://65.109.100.104',
 ]
 
