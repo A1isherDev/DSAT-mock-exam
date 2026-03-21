@@ -6,7 +6,7 @@ import { adminApi, examsApi } from '@/lib/api';
 import {
     Users, BookOpen, ShieldCheck, LogOut, Plus, Pencil, Trash2, Save,
     X, Loader2, ChevronRight, CheckSquare, Square, Layers, HelpCircle, Search, Upload, Image as ImageIcon, ArrowUp, ArrowDown,
-    Bold as BoldIcon, Underline as UnderlineIcon, Sigma, Percent, Variable
+    Bold as BoldIcon, Italic as ItalicIcon, Underline as UnderlineIcon, Sigma, Percent, Variable
 } from 'lucide-react';
 
 // KaTeX dynamic import for rendering math in previews
@@ -103,6 +103,7 @@ const RichTextEditor = ({ value, onChange, label, placeholder = "" }: { value: s
 
     const tools = [
         { label: 'Bold', icon: <BoldIcon className="w-3.5 h-3.5" />, syntax: '<b></b>' },
+        { label: 'Italic', icon: <ItalicIcon className="w-3.5 h-3.5" />, syntax: '<i></i>' },
         { label: 'Underline', icon: <UnderlineIcon className="w-3.5 h-3.5" />, syntax: '<u></u>' },
         { label: 'Formula', icon: <Sigma className="w-3.5 h-3.5" />, syntax: '\\(  \\)' },
         { label: 'Sqrt', icon: <span className="text-xs font-bold font-serif">√</span>, syntax: '\\sqrt{ }' },
