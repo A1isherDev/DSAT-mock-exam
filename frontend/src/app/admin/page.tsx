@@ -224,9 +224,9 @@ export default function AdminPage() {
     const [bulkTestSearch, setBulkTestSearch] = useState('');
     const [bulkUserSearch, setBulkUserSearch] = useState('');
 
-    // New Test Creation State
-    const [newTestLabel, setNewTestLabel] = useState('');
-    const [newTestFormType, setNewTestFormType] = useState('INTERNATIONAL');
+    // New Test Creation State (per mock id)
+    const [newTestLabels, setNewTestLabels] = useState<Record<number, string>>({});
+    const [newTestFormTypes, setNewTestFormTypes] = useState<Record<number, string>>({});
 
     const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
@@ -327,12 +327,17 @@ export default function AdminPage() {
         const targetMockId = mockId || selectedMockId;
         if (!targetMockId) return;
 
+        const label = newTestLabels[targetMockId] || '';
+        const formType = newTestFormTypes[targetMockId] || 'INTERNATIONAL';
+
         setSaving(true);
         try {
-            await adminApi.addTestToExam(targetMockId, subject, newTestLabel, newTestFormType);
+            await adminApi.addTestToExam(targetMockId, subject, label, formType);
             await fetchMockExams();
             showToast(`${subject === 'READING_WRITING' ? 'English' : 'Math'} test added ✓`);
-            setNewTestLabel(''); // Reset after add
+            
+            // Reset only for this mock
+            setNewTestLabels(prev => ({ ...prev, [targetMockId]: '' }));
         } finally { setSaving(false); }
     };
 
@@ -568,8 +573,8 @@ export default function AdminPage() {
                                                         <div className="flex flex-col gap-1">
                                                             <span className="text-[10px] font-bold text-slate-400 uppercase ml-1">Test Label (e.g. A, B)</span>
                                                             <input 
-                                                                value={newTestLabel} 
-                                                                onChange={e => setNewTestLabel(e.target.value)} 
+                                                                value={newTestLabels[mock.id] || ''} 
+                                                                onChange={e => setNewTestLabels({ ...newTestLabels, [mock.id]: e.target.value })} 
                                                                 placeholder="Optional label"
                                                                 className={INPUT + " !py-1.5 !text-xs"}
                                                                 onClick={e => e.stopPropagation()}
@@ -578,8 +583,8 @@ export default function AdminPage() {
                                                         <div className="flex flex-col gap-1">
                                                             <span className="text-[10px] font-bold text-slate-400 uppercase ml-1">Form Type</span>
                                                             <select 
-                                                                value={newTestFormType} 
-                                                                onChange={e => setNewTestFormType(e.target.value)}
+                                                                value={newTestFormTypes[mock.id] || 'INTERNATIONAL'} 
+                                                                onChange={e => setNewTestFormTypes({ ...newTestFormTypes, [mock.id]: e.target.value })}
                                                                 className={INPUT + " !py-1.5 !text-xs"}
                                                                 onClick={e => e.stopPropagation()}
                                                             >
@@ -628,7 +633,13 @@ export default function AdminPage() {
                                         </select>
                                         <select className={INPUT + ' !w-auto'} value={selectedPracticeTestId || ''} onChange={e => { setSelectedPracticeTestId(Number(e.target.value)); setSelectedModuleId(null); }}>
                                             <option value="">Select Test</option>
-                                            {practiceTests.map(t => <option key={t.id} value={t.id}>{t.subject === 'MATH' ? 'Math' : 'English'}</option>)}
+                                            {practiceTests.map(t => (
+                                                <option key={t.id} value={t.id}>
+                                                    {t.subject === 'MATH' ? 'Math' : 'English'} 
+                                                    {t.label ? ` [${t.label}]` : ''} 
+                                                    ({t.form_type === 'US' ? 'US' : 'Intl'})
+                                                </option>
+                                            ))}
                                         </select>
                                         <select className={INPUT + ' !w-auto'} value={selectedModuleId || ''} onChange={e => setSelectedModuleId(Number(e.target.value))}>
                                             <option value="">Select Module</option>
