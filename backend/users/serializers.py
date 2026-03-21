@@ -24,6 +24,16 @@ class UserSerializer(serializers.ModelSerializer):
             return None
         return value
 
+    def validate_email(self, value):
+        # Manual unique check to avoid issues with instance exclusion in some environments
+        user_qs = User.objects.filter(email__iexact=value)
+        if self.instance and self.instance.pk:
+            user_qs = user_qs.exclude(pk=self.instance.pk)
+        
+        if user_qs.exists():
+            raise serializers.ValidationError("user with this email already exists.")
+        return value
+
     class Meta:
         model = User
         fields = ['id', 'email', 'username', 'first_name', 'last_name', 'role', 'is_admin', 'is_active', 'date_joined', 'password']
