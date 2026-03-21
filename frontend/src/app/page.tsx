@@ -43,19 +43,6 @@ export default function DashboardPage() {
     return attempt;
   };
 
-  const handleRetake = async (testId: number, moduleId: number) => {
-    if (!isLoggedIn) { router.push('/login'); return; }
-    setStartingModuleId(moduleId);
-    try {
-      const newAttempt = await examsApi.startTest(testId);
-      setAttempts(prev => [...prev.filter(a => a.practice_test !== testId), newAttempt]);
-      await examsApi.startModule(newAttempt.id, moduleId);
-      router.push(`/exam/${newAttempt.id}`);
-    } catch (e) {
-      console.error('Failed to retake', e);
-      setStartingModuleId(null);
-    }
-  };
 
   const handleStartModule = async (testId: number, moduleId: number) => {
     if (!isLoggedIn) {
@@ -151,41 +138,16 @@ export default function DashboardPage() {
             <div className="flex gap-2">
               <button
                 onClick={() => router.push(`/review/${attempt.id}`)}
-                className="flex-[2] flex items-center justify-center gap-2 font-bold py-2.5 px-3 rounded-xl transition-all text-xs uppercase tracking-wider bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 hover:text-blue-600 shadow-sm"
+                className="w-full flex items-center justify-center gap-2 font-bold py-2.5 px-3 rounded-xl transition-all text-xs uppercase tracking-wider bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 hover:text-blue-600 shadow-sm"
               >
                 <ArrowRight className="w-4 h-4" />
-                Review
-              </button>
-              <button
-                disabled={startingModuleId !== null}
-                onClick={() => {
-                  const firstModule = modules.sort((a: any, b: any) => a.module_order - b.module_order)[0];
-                  if (firstModule) handleRetake(test.id, firstModule.id);
-                }}
-                className="flex-1 flex items-center justify-center gap-2 font-bold py-2.5 px-3 rounded-xl transition-all text-xs uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-200 hover:bg-slate-200 shadow-sm"
-              >
-                <Play className="w-3.5 h-3.5" />
-                Retake
+                Review Performance
               </button>
             </div>
           ) : attempt?.is_expired ? (
-            <button
-              disabled={startingModuleId !== null}
-              onClick={() => {
-                const firstModule = modules.sort((a: any, b: any) => a.module_order - b.module_order)[0];
-                if (firstModule) handleRetake(test.id, firstModule.id);
-              }}
-              className="w-full flex items-center justify-center gap-2 font-bold py-2.5 px-4 rounded-xl transition-all text-xs uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 shadow-sm"
-            >
-              {startingModuleId !== null ? (
-                <div className="w-4 h-4 border-2 border-amber-300 border-t-amber-600 rounded-full animate-spin" />
-              ) : (
-                <>
-                  <Play className="w-3.5 h-3.5" />
-                  Retake Exam
-                </>
-              )}
-            </button>
+            <div className="w-full py-2.5 px-4 rounded-xl text-xs font-bold uppercase tracking-wider bg-slate-100 text-slate-400 border border-slate-200 text-center">
+              Session Expired
+            </div>
           ) : (
             <button
               disabled={startingModuleId !== null}

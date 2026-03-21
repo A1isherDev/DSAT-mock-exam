@@ -54,18 +54,6 @@ export default function MockExamDetailPage() {
     }
   };
 
-  const handleRetake = async (testId: number, moduleId: number) => {
-    setStartingModuleId(moduleId);
-    try {
-      const newAttempt = await examsApi.startTest(testId);
-      setAttempts(prev => [...prev.filter(a => a.practice_test !== testId), newAttempt]);
-      await examsApi.startModule(newAttempt.id, moduleId);
-      router.push(`/exam/${newAttempt.id}`);
-    } catch (e) {
-      console.error('Failed to retake', e);
-      setStartingModuleId(null);
-    }
-  };
 
   const renderTestCard = (test: any) => {
     if (!test) return null;
@@ -80,78 +68,74 @@ export default function MockExamDetailPage() {
     const isCompleted = attempt?.is_completed;
 
     return (
-      <div key={test.id} className={`group p-8 rounded-[40px] border-2 transition-all duration-500 ${isRW ? 'border-blue-50 bg-white hover:border-blue-400' : 'border-emerald-50 bg-white hover:border-emerald-400'} shadow-sm hover:shadow-2xl hover:shadow-slate-200/50 relative overflow-hidden`}>
-        {/* Top Accent Bar */}
-        <div className={`absolute top-0 left-0 right-0 h-1.5 ${isRW ? 'bg-blue-500' : 'bg-emerald-500'} opacity-30 group-hover:opacity-100 transition-opacity duration-500`} />
+      <div key={test.id} className={`group p-10 rounded-[48px] border-2 transition-all duration-500 ${isRW ? 'border-blue-50 bg-white hover:border-blue-400' : 'border-emerald-50 bg-white hover:border-emerald-400'} shadow-sm hover:shadow-2xl hover:shadow-slate-200/50 relative overflow-hidden flex flex-col`}>
+        {/* Progress Hint */}
+        {isCompleted && (
+          <div className="absolute top-8 right-8 flex items-center gap-2.5 px-5 py-3 bg-[#10b981] text-white rounded-[20px] shadow-lg shadow-emerald-100/50 animate-in fade-in slide-in-from-right-4 duration-500 z-10">
+            <CheckCircle2 className="w-5 h-5" />
+            <span className="text-[11px] font-black uppercase tracking-widest whitespace-nowrap">Section Completed</span>
+          </div>
+        )}
 
-        <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 mb-10">
-          <div className="flex items-start gap-6">
-            <div className={`p-6 rounded-[28px] transition-colors duration-500 shrink-0 ${isRW ? 'bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white' : 'bg-emerald-50 text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white'} shadow-sm`}>
-              <Icon className="w-12 h-12" />
+        <div className="flex flex-col gap-8 mb-10">
+          <div className="flex items-start gap-8">
+            <div className={`p-8 rounded-[36px] transition-all duration-500 shrink-0 bg-white shadow-[0_12px_40px_rgba(0,0,0,0.04)] border border-slate-100/50 group-hover:shadow-xl group-hover:-translate-y-1 ${isRW ? 'text-blue-600' : 'text-emerald-600'} relative`}>
+              <Icon className="w-14 h-14 relative z-10" />
+              <div className={`absolute inset-0 rounded-[36px] opacity-0 group-hover:opacity-5 transition-opacity duration-500 ${isRW ? 'bg-blue-600' : 'bg-emerald-600'}`} />
             </div>
-            <div className="flex flex-col gap-2">
-              <div className="flex flex-wrap items-center gap-3">
-                <h3 className="text-3xl font-black text-slate-900 tracking-tight leading-none">{label}</h3>
-                {test.label && (
-                    <span className="bg-slate-900 text-white text-[11px] font-black px-3 py-1.5 rounded-xl uppercase tracking-[0.2em] shadow-lg shadow-slate-200">
-                        {test.label}
-                    </span>
-                )}
+            <div className="flex flex-col gap-4 pt-2">
+              <div className="flex flex-col gap-2">
+                <h3 className="text-[44px] font-black text-slate-900 tracking-tighter leading-[0.9]">{label}</h3>
               </div>
-              <div className="flex items-center gap-4">
-                <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border-2 font-black text-[10px] uppercase tracking-widest ${isRW ? 'bg-blue-50 border-blue-100 text-blue-600' : 'bg-emerald-50 border-emerald-100 text-emerald-600'}`}>
+              
+              <div className="flex flex-wrap items-center gap-4">
+                <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-2xl border-2 font-black text-[11px] uppercase tracking-[0.15em] ${isRW ? 'bg-blue-50 border-blue-100 text-blue-600' : 'bg-emerald-50 border-emerald-100 text-emerald-600'}`}>
                     {test.form_type === 'US' ? 'US Standard Form' : 'International Form'}
                 </div>
-                <div className="flex items-center gap-2 text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+                <div className="flex items-center gap-2 text-[12px] font-black text-slate-400 uppercase tracking-widest">
                   {modules.length} Modules • {modules.reduce((acc: number, m: any) => acc + m.time_limit_minutes, 0)}m
                 </div>
               </div>
             </div>
           </div>
-          {isCompleted && (
-            <div className="flex items-center gap-2 px-5 py-3 bg-emerald-500 text-white rounded-2xl shadow-lg shadow-emerald-100 animate-in fade-in zoom-in duration-500 shrink-0">
-              <CheckCircle2 className="w-5 h-5 shadow-sm" />
-              <span className="text-[11px] font-black uppercase tracking-[0.1em]">Section Completed</span>
-            </div>
-          )}
         </div>
 
-        <div className="grid grid-cols-1 gap-4">
+        <div className="mt-auto">
           {isCompleted ? (
             <div className="flex gap-4">
               <button 
                 onClick={() => router.push(`/review/${attempt.id}`)}
-                className="flex-[2] flex items-center justify-center gap-3 bg-slate-900 hover:bg-indigo-600 text-white py-5 rounded-[24px] font-black transition-all duration-300 shadow-xl shadow-slate-200 hover:shadow-indigo-200 active:scale-[0.98]"
+                className="flex-1 flex items-center justify-center gap-4 bg-[#0f172a] hover:bg-[#1e293b] text-white py-6 rounded-[28px] font-black transition-all duration-300 shadow-xl shadow-slate-200 active:scale-[0.98]"
               >
-                <Eye className="w-5 h-5" /> REVIEW PERFORMANCE
+                <Eye className="w-6 h-6" /> <span className="text-sm tracking-widest uppercase">Review Performance</span>
               </button>
               <button 
-                onClick={() => handleRetake(test.id, modules[0]?.id)}
-                className="flex-1 flex items-center justify-center gap-3 bg-white border-2 border-slate-100 hover:border-slate-300 text-slate-400 hover:text-slate-600 py-5 rounded-[24px] font-black transition-all duration-300 active:scale-[0.98]"
+                onClick={() => handleStartModule(test.id, modules[0]?.id)}
                 disabled={startingModuleId !== null}
-                title="Retake Test"
+                className="w-24 group/redo flex items-center justify-center border-2 border-slate-100 hover:border-blue-200 bg-white text-slate-300 hover:text-blue-600 rounded-[28px] transition-all duration-300 active:scale-[0.98] shadow-sm hover:shadow-md"
+                title="Restart Practice"
               >
-                <RotateCcw className={`w-6 h-6 ${startingModuleId === modules[0]?.id ? 'animate-spin' : ''}`} />
+                <RotateCcw className={`w-7 h-7 transition-transform duration-500 group-hover/redo:rotate-[-45deg] ${startingModuleId === modules[0]?.id ? 'animate-spin' : ''}`} />
               </button>
             </div>
           ) : (
             <button 
               onClick={() => handleStartModule(test.id, modules[0]?.id)}
               disabled={startingModuleId !== null}
-              className={`w-full flex items-center justify-center gap-4 py-6 rounded-[24px] font-black transition-all duration-300 shadow-xl active:scale-[0.98] ${
+              className={`w-full flex items-center justify-center gap-5 py-7 rounded-[28px] font-black transition-all duration-300 shadow-2xl active:scale-[0.98] ${
                 isRW 
                 ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200 hover:shadow-blue-300' 
                 : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200 hover:shadow-emerald-300'
               }`}
             >
               {startingModuleId === modules[0]?.id ? (
-                <div className="w-7 h-7 border-4 border-white/30 border-t-white rounded-full animate-spin" />
+                <div className="w-8 h-8 border-4 border-white/30 border-t-white rounded-full animate-spin" />
               ) : (
                 <>
-                    <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
-                        <Play className="w-5 h-5 fill-current ml-1" />
+                    <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center">
+                        <Play className="w-6 h-6 fill-current ml-1" />
                     </div>
-                    <span className="text-lg tracking-widest">{attempt ? 'RESUME SESSION' : 'START PRACTICE'}</span>
+                    <span className="text-xl tracking-[0.2em]">{attempt ? 'RESUME SESSION' : 'START PRACTICE'}</span>
                 </>
               )}
             </button>
