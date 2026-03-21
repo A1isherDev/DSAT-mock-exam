@@ -201,7 +201,7 @@ export default function AdminPage() {
     const [selectedModuleId, setSelectedModuleId] = useState<number | null>(null);
 
     // Forms
-    const [userForm, setUserForm] = useState({ first_name: '', last_name: '', username: '', email: '', password: '', is_admin: false });
+    const [userForm, setUserForm] = useState({ first_name: '', last_name: '', username: '', email: '', password: '', is_admin: false, role: 'STUDENT' });
     const [mockForm, setMockForm] = useState({ title: '', practice_date: '', is_active: true });
     const [questionForm, setQuestionForm] = useState({ 
         question_text: '', question_prompt: '', 
@@ -291,7 +291,7 @@ export default function AdminPage() {
             else { await adminApi.createUser(userForm); }
             await fetchUsers();
             setEditingUser(null);
-            setUserForm({ first_name: '', last_name: '', username: '', email: '', password: '', is_admin: false });
+            setUserForm({ first_name: '', last_name: '', username: '', email: '', password: '', is_admin: false, role: 'STUDENT' });
             showToast('User saved ✓');
         } finally { setSaving(false); }
     };
@@ -774,7 +774,7 @@ export default function AdminPage() {
                             <div className="space-y-6 max-w-4xl">
                                 <div className="flex items-center justify-between">
                                     <h2 className="text-xl font-bold text-slate-900">User Management</h2>
-                                    <button className={BTN_PRIMARY} onClick={() => { setEditingUser({}); setUserForm({ first_name: '', last_name: '', username: '', email: '', password: '', is_admin: false }); }}>
+                                    <button className={BTN_PRIMARY} onClick={() => { setEditingUser({}); setUserForm({ first_name: '', last_name: '', username: '', email: '', password: '', is_admin: false, role: 'STUDENT' }); }}>
                                         <Plus className="w-4 h-4" /> New User
                                     </button>
                                 </div>
@@ -785,7 +785,31 @@ export default function AdminPage() {
                                         <Field label="Username"><input className={INPUT} value={userForm.username || ''} onChange={e => setUserForm({ ...userForm, username: e.target.value })} /></Field>
                                         <Field label="Email"><input className={INPUT} value={userForm.email || ''} onChange={e => setUserForm({ ...userForm, email: e.target.value })} /></Field>
                                         <Field label="Password"><input className={INPUT} type="password" value={userForm.password || ''} onChange={e => setUserForm({ ...userForm, password: e.target.value })} placeholder={editingUser.id ? "Leave blank to keep current" : "Set password"} /></Field>
-                                        <div className="flex items-center gap-2 mt-4"><input type="checkbox" id="adm" checked={!!userForm.is_admin} onChange={e => setUserForm({ ...userForm, is_admin: e.target.checked })} /><label htmlFor="adm" className="text-sm font-bold text-slate-600">Admin Privileges</label></div>
+                                        <Field label="User Role">
+                                            <select 
+                                                className={INPUT} 
+                                                value={userForm.role} 
+                                                onChange={e => {
+                                                    const newRole = e.target.value;
+                                                    setUserForm({ ...userForm, role: newRole, is_admin: newRole === 'ADMIN' });
+                                                }}
+                                            >
+                                                <option value="STUDENT">Student (Standard User)</option>
+                                                <option value="ADMIN">Administrator</option>
+                                            </select>
+                                        </Field>
+                                        <div className="flex items-center gap-2 mt-4">
+                                            <input 
+                                                type="checkbox" 
+                                                id="adm" 
+                                                checked={!!userForm.is_admin} 
+                                                onChange={e => {
+                                                    const checked = e.target.checked;
+                                                    setUserForm({ ...userForm, is_admin: checked, role: checked ? 'ADMIN' : 'STUDENT' });
+                                                }} 
+                                            />
+                                            <label htmlFor="adm" className="text-sm font-bold text-slate-600">Admin Privileges (Mirror Role)</label>
+                                        </div>
                                         <div className="col-span-2 flex justify-end gap-2">
                                             <button className={BTN_GHOST} onClick={() => setEditingUser(null)}><X className="w-4 h-4" /> Cancel</button>
                                             <button className={BTN_PRIMARY} onClick={handleSaveUser} disabled={saving}>{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save User</button>
@@ -800,7 +824,7 @@ export default function AdminPage() {
                                                 <div><p className="font-bold text-sm text-slate-900">{user.first_name} {user.last_name} {user.is_admin && <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded ml-1">ADMIN</span>}</p><p className="text-[11px] text-slate-400">{user.email} · @{user.username}</p></div>
                                             </div>
                                             <div className="flex items-center gap-2">
-                                                <button className={BTN_GHOST} onClick={() => { setEditingUser(user); setUserForm({ first_name: user.first_name, last_name: user.last_name, username: user.username, email: user.email, password: '', is_admin: !!user.is_admin }); }}><Pencil className="w-3.5 h-3.5" /></button>
+                                                <button className={BTN_GHOST} onClick={() => { setEditingUser(user); setUserForm({ first_name: user.first_name, last_name: user.last_name, username: user.username, email: user.email, password: '', is_admin: !!user.is_admin, role: user.role || 'STUDENT' }); }}><Pencil className="w-3.5 h-3.5" /></button>
                                                 <button className={BTN_DANGER} onClick={() => handleDeleteUser(user.id)}><Trash2 className="w-3.5 h-3.5" /></button>
                                             </div>
                                         </div>
