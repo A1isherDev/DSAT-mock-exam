@@ -163,6 +163,14 @@ CORS_ALLOWED_ORIGINS = os.getenv(
     'CORS_ALLOWED_ORIGINS', 'http://localhost:3000'
 ).split(',')
 
+CSRF_TRUSTED_ORIGINS = [
+    'http://guts.uz',
+    'https://guts.uz',
+    'http://www.guts.uz',
+    'https://www.guts.uz',
+    'http://65.109.100.104',
+]
+
 
 # ─── Django REST Framework ────────────────────────────────────────────────────
 
