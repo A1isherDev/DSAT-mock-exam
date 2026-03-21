@@ -70,21 +70,28 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
         
         # Mapping from assignment_type to PracticeTest subjects
         subject_map = {
-            'MATH': ['MATH'],
-            'ENGLISH': ['READING_WRITING'],
-            'FULL': ['MATH', 'READING_WRITING']
+            'MATH': (['MATH'], ['READING_WRITING']),
+            'ENGLISH': (['READING_WRITING'], ['MATH']),
+            'FULL': (['MATH', 'READING_WRITING'], [])
         }
-        target_subjects = subject_map.get(assignment_type, ['MATH', 'READING_WRITING'])
+        to_add_subjects, to_remove_subjects = subject_map.get(assignment_type, (['MATH', 'READING_WRITING'], []))
         
-        practice_tests = PracticeTest.objects.filter(mock_exam_id__in=exam_ids, subject__in=target_subjects)
-        
-        for pt in practice_tests:
+        # 1. Handle Additions
+        add_tests = PracticeTest.objects.filter(mock_exam_id__in=exam_ids, subject__in=to_add_subjects)
+        for pt in add_tests:
             pt.assigned_users.add(*users)
             
+        # 2. Handle Removals (Exclusive assignment)
+        if to_remove_subjects:
+            remove_tests = PracticeTest.objects.filter(mock_exam_id__in=exam_ids, subject__in=to_remove_subjects)
+            for pt in remove_tests:
+                pt.assigned_users.remove(*users)
+                
         return Response({
             'status': 'bulk_assigned', 
             'exams_count': len(exam_ids),
-            'tests_count': practice_tests.count(),
+            'tests_added': add_tests.count(),
+            'tests_removed': len(to_remove_subjects) * len(exam_ids) if to_remove_subjects else 0,
             'users_count': len(users),
             'type': assignment_type
         })
