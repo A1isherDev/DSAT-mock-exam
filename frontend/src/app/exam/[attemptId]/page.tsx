@@ -123,7 +123,7 @@ const RightPane = memo(({
 
     return (
         <div
-            className={`overflow-y-auto bg-white pb-8 w-full flex justify-center transition-transform duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${showCalculator ? 'translate-x-[12vw] translate-y-0' : 'translate-x-0 translate-y-0'} ${
+            className={`overflow-y-auto bg-white pb-8 ${((attempt.practice_test_details.subject === 'READING_WRITING' && !showCalculator) || currentQuestion.is_math_input) ? 'w-1/2' : 'w-full'} flex justify-center transition-transform duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${showCalculator ? 'translate-x-[12vw] translate-y-0' : 'translate-x-0 translate-y-0'} ${
                 attempt.practice_test_details.subject === 'READING_WRITING' || currentQuestion.is_math_input
                     ? 'p-10' : ''
             }`}
