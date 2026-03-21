@@ -31,23 +31,6 @@ const QuestionReviewModal = ({ question, showCorrectAnswers, onClose, onNext, on
                 {/* Modal Header */}
                 <div className="px-8 py-5 border-b border-slate-100 flex justify-between items-center bg-white shrink-0">
                     <div className="flex items-center gap-4">
-                        <div className="flex items-center bg-slate-100 rounded-xl p-1 border border-slate-200 mr-2">
-                            <button 
-                                onClick={onPrevious}
-                                disabled={!onPrevious}
-                                className={`p-2 rounded-lg transition-all ${onPrevious ? 'hover:bg-white hover:shadow-sm text-slate-900' : 'text-slate-300 cursor-not-allowed'}`}
-                            >
-                                <ArrowLeft className="w-4 h-4" />
-                            </button>
-                            <div className="w-px h-4 bg-slate-200 mx-1"></div>
-                            <button 
-                                onClick={onNext}
-                                disabled={!onNext}
-                                className={`p-2 rounded-lg transition-all ${onNext ? 'hover:bg-white hover:shadow-sm text-slate-900' : 'text-slate-300 cursor-not-allowed'}`}
-                            >
-                                <ChevronRight className="w-4 h-4" />
-                            </button>
-                        </div>
                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center border ${question.is_correct ? 'bg-emerald-50 border-emerald-100 text-emerald-600' : 'bg-red-50 border-red-100 text-red-500'}`}>
                             {question.is_correct ? <CheckCircle2 className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
                         </div>
@@ -162,6 +145,26 @@ const QuestionReviewModal = ({ question, showCorrectAnswers, onClose, onNext, on
                             </div>
                         )}
                     </div>
+                </div>
+                
+                {/* Modal Footer */}
+                <div className="px-8 py-4 border-t border-slate-100 bg-white flex justify-end items-center gap-3 shrink-0">
+                    <button
+                        onClick={onPrevious}
+                        disabled={!onPrevious}
+                        className={`flex items-center gap-2 font-bold px-8 py-2 rounded-full border-2 border-slate-800 transition-all text-sm ${onPrevious ? 'text-slate-800 bg-white hover:bg-slate-50 active:scale-95' : 'text-slate-300 border-slate-200 cursor-not-allowed'}`}
+                    >
+                        <ArrowLeft className="w-4 h-4" />
+                        Back
+                    </button>
+                    <button
+                        onClick={onNext}
+                        disabled={!onNext}
+                        className={`flex items-center gap-2 font-bold px-8 py-2 rounded-full transition-all text-sm shadow-md ${onNext ? 'bg-[#2563eb] text-white hover:bg-blue-700 active:scale-95' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}
+                    >
+                        Next
+                        <ChevronRight className="w-4 h-4" />
+                    </button>
                 </div>
             </div>
         </div>
