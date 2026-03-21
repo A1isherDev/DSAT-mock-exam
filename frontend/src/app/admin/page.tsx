@@ -556,13 +556,13 @@ export default function AdminPage() {
                                             <div className="p-4 border-t border-slate-100 bg-white grid grid-cols-1 md:grid-cols-2 gap-3">
                                                 {(mock.tests || []).map((t: any) => (
                                                     <div key={t.id} className="p-3 rounded-xl border border-slate-100 bg-slate-50/50 flex items-center justify-between">
-                                                        <div className="flex flex-col gap-0.5">
-                                                            <div className="flex items-center gap-2">
-                                                                <div className={`w-2 h-2 rounded-full ${t.subject === 'MATH' ? 'bg-emerald-500' : 'bg-blue-500'}`} />
-                                                                <span className="text-[11px] font-extrabold text-slate-600 uppercase tracking-wider">{t.subject === 'MATH' ? 'Mathematics' : 'Reading & Writing'}</span>
-                                                                {t.label && <span className="text-[10px] font-bold bg-slate-200 text-slate-700 px-1.5 rounded">{t.label}</span>}
+                                                        <div className="flex flex-col gap-1">
+                                                            <div className="flex items-center gap-3">
+                                                                <div className={`w-2 h-2 rounded-full ${t.subject === 'MATH' ? 'bg-emerald-500' : 'bg-blue-500 shadow-sm shadow-blue-200'}`} />
+                                                                <span className="text-[12px] font-black text-slate-800 uppercase tracking-wider">{t.subject === 'MATH' ? 'Mathematics' : 'Reading & Writing'}</span>
+                                                                {t.label && <span className="text-[10px] font-black bg-slate-900 text-white px-2 py-0.5 rounded-lg shadow-sm">{t.label}</span>}
                                                             </div>
-                                                            <span className="text-[9px] text-slate-400 font-bold uppercase tracking-tight ml-4">{t.form_type === 'US' ? 'US Form' : 'International Form'}</span>
+                                                            <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest ml-5">{t.form_type === 'US' ? 'US Standard' : 'International Form'}</span>
                                                         </div>
                                                         <button onClick={(e) => { e.stopPropagation(); handleRemoveTest(t.id, mock.id); }} className="text-slate-300 hover:text-red-500 transition-colors"><X className="w-3.5 h-3.5" /></button>
                                                     </div>
@@ -977,48 +977,42 @@ export default function AdminPage() {
                                 </div>
                             </div>
                             
-                            <div className="p-6 bg-white border-t border-slate-100 flex flex-col gap-4">
-                                <div className="flex items-center justify-between">
+                            <div className="p-8 bg-white border-t border-slate-100 flex flex-col gap-8">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                     <div className="flex flex-col">
-                                        <span className="text-xs font-extrabold text-slate-500 uppercase mb-2">Step 3: Assignment Type</span>
-                                        <div className="flex gap-4">
+                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Step 3: Assignment Type</span>
+                                        <div className="flex bg-slate-100 p-1 rounded-2xl">
                                             {[
                                                 { id: 'FULL', label: 'Full Exam' },
                                                 { id: 'MATH', label: 'Math Only' },
                                                 { id: 'ENGLISH', label: 'English Only' }
                                             ].map(t => (
-                                                <label key={t.id} className="flex items-center gap-2 cursor-pointer group">
-                                                    <input 
-                                                        type="radio" 
-                                                        name="assignType" 
-                                                        checked={bulkAssignType === t.id}
-                                                        onChange={() => setBulkAssignType(t.id)}
-                                                        className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-slate-300"
-                                                    />
-                                                    <span className={`text-sm font-bold ${bulkAssignType === t.id ? 'text-blue-600' : 'text-slate-500 group-hover:text-slate-700'}`}>{t.label}</span>
-                                                </label>
+                                                <button 
+                                                    key={t.id}
+                                                    onClick={() => setBulkAssignType(t.id)}
+                                                    className={`flex-1 py-3 px-4 rounded-xl text-xs font-black transition-all ${bulkAssignType === t.id ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                                                >
+                                                    {t.label}
+                                                </button>
                                             ))}
                                         </div>
                                     </div>
 
-                                    <div className="flex flex-col border-l border-slate-200 pl-6 ml-2">
-                                        <span className="text-xs font-extrabold text-slate-500 uppercase mb-2">Step 4: Form Type</span>
-                                        <div className="flex gap-4">
+                                    <div className="flex flex-col">
+                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Step 4: Form Type</span>
+                                        <div className="flex bg-slate-100 p-1 rounded-2xl">
                                             {[
                                                 { id: '', label: 'All Forms' },
-                                                { id: 'INTERNATIONAL', label: 'Intl Only' },
-                                                { id: 'US', label: 'US Only' }
+                                                { id: 'INTERNATIONAL', label: 'Intl' },
+                                                { id: 'US', label: 'US' }
                                             ].map(t => (
-                                                <label key={t.id} className="flex items-center gap-2 cursor-pointer group">
-                                                    <input 
-                                                        type="radio" 
-                                                        name="assignFormType" 
-                                                        checked={bulkAssignFormType === t.id}
-                                                        onChange={() => setBulkAssignFormType(t.id)}
-                                                        className="w-4 h-4 text-indigo-600 focus:ring-indigo-500 border-slate-300"
-                                                    />
-                                                    <span className={`text-sm font-bold ${bulkAssignFormType === t.id ? 'text-indigo-600' : 'text-slate-500 group-hover:text-slate-700'}`}>{t.label}</span>
-                                                </label>
+                                                <button 
+                                                    key={t.id}
+                                                    onClick={() => setBulkAssignFormType(t.id)}
+                                                    className={`flex-1 py-3 px-4 rounded-xl text-xs font-black transition-all ${bulkAssignFormType === t.id ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                                                >
+                                                    {t.label}
+                                                </button>
                                             ))}
                                         </div>
                                     </div>

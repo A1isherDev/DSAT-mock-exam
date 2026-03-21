@@ -353,42 +353,6 @@ export default function DashboardPage() {
                       </div>
                     </div>
 
-                    <div className="px-8 pb-8 flex-1 flex flex-col gap-3">
-                        <p className="text-[11px] font-black text-slate-400 uppercase tracking-[0.1em] mb-1">Assigned Modules</p>
-                        {tests.length > 0 ? (
-                            <div className="flex flex-col gap-2">
-                                {tests.map((t: any) => {
-                                    const att = attempts.find(a => a.practice_test === t.id);
-                                    const isCompleted = att?.is_completed;
-                                    return (
-                                        <div key={t.id} className={`flex items-center justify-between p-3 rounded-2xl border transition-all ${isCompleted ? 'bg-emerald-50/30 border-emerald-100' : 'bg-slate-50/50 border-slate-100'}`}>
-                                            <div className="flex items-center gap-3">
-                                                <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${t.subject === 'MATH' ? 'bg-emerald-100 text-emerald-600' : 'bg-blue-100 text-blue-600'}`}>
-                                                    {t.subject === 'MATH' ? <Calculator className="w-4 h-4" /> : <BookOpen className="w-4 h-4" />}
-                                                </div>
-                                                <div>
-                                                    <div className="flex items-center gap-1.5">
-                                                        <span className="text-xs font-bold text-slate-800">{t.subject === 'MATH' ? 'Math' : 'Reading'}</span>
-                                                        {t.label && <span className="text-[10px] font-black bg-white border border-slate-200 text-slate-500 px-1.5 rounded-md leading-none py-0.5">{t.label}</span>}
-                                                    </div>
-                                                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">{t.form_type === 'US' ? 'US Form' : 'Intl Form'}</span>
-                                                </div>
-                                            </div>
-                                            {isCompleted ? (
-                                                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                                            ) : (
-                                                <div className="w-1.5 h-1.5 rounded-full bg-slate-300" />
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        ) : (
-                            <div className="py-4 text-center border-2 border-dashed border-slate-100 rounded-2xl">
-                                <p className="text-[10px] font-bold text-slate-300 uppercase italic">No modules assigned</p>
-                            </div>
-                        )}
-                    </div>
 
                     <div className="p-6 pt-0 mt-auto">
                       <button

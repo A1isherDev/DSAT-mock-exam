@@ -80,36 +80,38 @@ export default function MockExamDetailPage() {
     const isCompleted = attempt?.is_completed;
 
     return (
-      <div key={test.id} className={`group p-8 rounded-[32px] border-2 transition-all duration-500 ${isRW ? 'border-blue-50 bg-white hover:border-blue-400' : 'border-emerald-50 bg-white hover:border-emerald-400'} shadow-sm hover:shadow-2xl hover:shadow-slate-200/50`}>
-        <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 mb-8">
-          <div className="flex items-center gap-6">
-            <div className={`p-5 rounded-3xl transition-colors duration-500 ${isRW ? 'bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white' : 'bg-emerald-50 text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white'}`}>
-              <Icon className="w-10 h-10" />
+      <div key={test.id} className={`group p-8 rounded-[40px] border-2 transition-all duration-500 ${isRW ? 'border-blue-50 bg-white hover:border-blue-400' : 'border-emerald-50 bg-white hover:border-emerald-400'} shadow-sm hover:shadow-2xl hover:shadow-slate-200/50 relative overflow-hidden`}>
+        {/* Top Accent Bar */}
+        <div className={`absolute top-0 left-0 right-0 h-1.5 ${isRW ? 'bg-blue-500' : 'bg-emerald-500'} opacity-30 group-hover:opacity-100 transition-opacity duration-500`} />
+
+        <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 mb-10">
+          <div className="flex items-start gap-6">
+            <div className={`p-6 rounded-[28px] transition-colors duration-500 shrink-0 ${isRW ? 'bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white' : 'bg-emerald-50 text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white'} shadow-sm`}>
+              <Icon className="w-12 h-12" />
             </div>
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <h3 className="text-3xl font-black text-slate-900 tracking-tight">{label}</h3>
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-wrap items-center gap-3">
+                <h3 className="text-3xl font-black text-slate-900 tracking-tight leading-none">{label}</h3>
                 {test.label && (
-                    <span className="bg-slate-100 text-slate-500 text-[10px] font-black px-2 py-1 rounded-lg uppercase tracking-widest border border-slate-200">
-                        Form {test.label}
+                    <span className="bg-slate-900 text-white text-[11px] font-black px-3 py-1.5 rounded-xl uppercase tracking-[0.2em] shadow-lg shadow-slate-200">
+                        {test.label}
                     </span>
                 )}
               </div>
-              <div className="flex items-center gap-3">
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">
-                  {modules.length} Modules • {modules.reduce((acc: number, m: any) => acc + m.time_limit_minutes, 0)}m Total
-                </p>
-                <span className="w-1 h-1 rounded-full bg-slate-200" />
-                <span className={`text-xs font-black uppercase tracking-widest ${isRW ? 'text-blue-500' : 'text-emerald-500'}`}>
-                    {test.form_type === 'US' ? 'US Standard' : 'International'}
-                </span>
+              <div className="flex items-center gap-4">
+                <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border-2 font-black text-[10px] uppercase tracking-widest ${isRW ? 'bg-blue-50 border-blue-100 text-blue-600' : 'bg-emerald-50 border-emerald-100 text-emerald-600'}`}>
+                    {test.form_type === 'US' ? 'US Standard Form' : 'International Form'}
+                </div>
+                <div className="flex items-center gap-2 text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+                  {modules.length} Modules • {modules.reduce((acc: number, m: any) => acc + m.time_limit_minutes, 0)}m
+                </div>
               </div>
             </div>
           </div>
           {isCompleted && (
-            <div className="flex items-center gap-2 px-5 py-2.5 bg-emerald-50 text-emerald-700 rounded-2xl border border-emerald-100 w-fit animate-in fade-in zoom-in duration-500">
-              <CheckCircle2 className="w-5 h-5" />
-              <span className="text-[11px] font-black uppercase tracking-[0.1em]">Test Completed</span>
+            <div className="flex items-center gap-2 px-5 py-3 bg-emerald-500 text-white rounded-2xl shadow-lg shadow-emerald-100 animate-in fade-in zoom-in duration-500 shrink-0">
+              <CheckCircle2 className="w-5 h-5 shadow-sm" />
+              <span className="text-[11px] font-black uppercase tracking-[0.1em]">Section Completed</span>
             </div>
           )}
         </div>
