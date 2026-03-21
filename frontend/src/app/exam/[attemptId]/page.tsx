@@ -207,7 +207,7 @@ const RightPane = memo(({
                             type="text"
                             placeholder="Enter your answer"
                             maxLength={5}
-                            className="w-full max-w-xs text-xl font-bold p-3 px-4 border-2 border-slate-300 rounded-lg hover:border-slate-400 focus:border-blue-600 focus:outline outline-2 outline-blue-600 outline-offset-1 transition-all shadow-sm text-center tracking-widest"
+                            className="w-full max-w-xs text-xl font-[Georgia] font-bold p-3 px-4 border-2 border-slate-300 rounded-lg hover:border-slate-400 focus:border-blue-600 focus:outline outline-2 outline-blue-600 outline-offset-1 transition-all shadow-sm text-center tracking-widest"
                             value={answers[currentQuestion.id] || ''}
                             onChange={(e) => {
                                 const val = e.target.value.slice(0, 5);
@@ -218,7 +218,7 @@ const RightPane = memo(({
                         />
                         <div className="mt-3 flex items-center justify-start gap-2 max-w-xs">
                             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Recorded Answer:</span>
-                            <span className="text-sm font-black text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 min-w-[30px] min-h-[30px] flex items-center justify-center text-center">
+                            <span className="text-sm font-[Georgia] font-black text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 min-w-[30px] min-h-[30px] flex items-center justify-center text-center">
                                 <SprFraction text={answers[currentQuestion.id] || ''} />
                             </span>
                         </div>
@@ -241,12 +241,12 @@ const RightPane = memo(({
                                                     : 'border-slate-300 hover:border-slate-400 bg-white'
                                         }`}
                                     >
-                                        <div className={`w-7 h-7 rounded-full border-2 flex items-center justify-center font-bold text-sm shrink-0 ${
+                                        <div className={`w-7 h-7 rounded-full border-2 flex items-center justify-center font-[Georgia] font-bold text-sm shrink-0 ${
                                             isSelected ? 'border-blue-600 bg-blue-600 text-white' : isEliminated ? 'border-slate-300 text-slate-400' : 'border-slate-400 text-slate-800'
                                         }`}>
                                             {key}
                                         </div>
-                                        <div className={`ml-4 text-left font-sans text-[15px] text-slate-800 w-full ${isEliminated ? 'line-through decoration-slate-400' : ''}`}>
+                                        <div className={`ml-4 text-left font-[Georgia] text-[15px] text-slate-800 w-full ${isEliminated ? 'line-through decoration-slate-400' : ''}`}>
                                             <div
                                                 id={`option-content-${key}`}
                                                 className={`w-full mathjax-process ${highlighterActive ? 'cursor-text' : ''}`}
