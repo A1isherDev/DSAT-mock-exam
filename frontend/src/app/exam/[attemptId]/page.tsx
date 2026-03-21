@@ -57,7 +57,7 @@ const QuestionPane = memo(({ currentQuestion, zoomLevel, highlighterActive, pass
                 )}
                 <div
                     id="passage-text-container"
-                    className="leading-relaxed font-[Georgia] font-semibold"
+                    className="leading-relaxed font-[Georgia] font-medium"
                     style={{ fontSize: `${16 * zoomLevel * 1.2}px` }}
                     dangerouslySetInnerHTML={{ __html: passageHtml || currentQuestion.question_text?.replace(/\n/g, '<br/>') || 'Question text goes here...' }}
                 />
@@ -134,7 +134,7 @@ const RightPane = memo(({
                 <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-6">
                         <div className="bg-slate-900 text-white px-3 py-1.5 rounded-md flex items-center justify-center">
-                            <span className="text-sm font-black tracking-tight">{currentQuestionIndex + 1}</span>
+                            <span className="text-sm font-bold tracking-tight">{currentQuestionIndex + 1}</span>
                         </div>
                         <button
                             onClick={toggleFlag}
@@ -176,7 +176,7 @@ const RightPane = memo(({
                 {currentQuestion.question_prompt && !currentQuestion.is_math_input && (
                     <div
                         id="question-prompt-content"
-                        className={`mb-8 font-[Georgia] font-semibold text-slate-900 leading-relaxed ${highlighterActive ? 'cursor-text' : ''}`}
+                        className={`mb-8 font-[Georgia] font-medium text-slate-900 leading-relaxed ${highlighterActive ? 'cursor-text' : ''}`}
                         style={{ fontSize: `${16 * zoomLevel * 1.2}px` }}
                         onMouseUp={(e) => highlighterActive && handleShowPopover('question-prompt', e)}
                         dangerouslySetInnerHTML={{ __html: questionPromptHighlights[currentQuestion.id] || currentQuestion.question_prompt.replace(/\n/g, '<br/>') }}
@@ -186,7 +186,7 @@ const RightPane = memo(({
                 {attempt.practice_test_details.subject !== 'READING_WRITING' && (
                     <div
                         id="question-content"
-                        className={`mb-8 font-[Georgia] font-semibold text-slate-900 leading-relaxed ${highlighterActive ? 'cursor-text' : ''}`}
+                        className={`mb-8 font-[Georgia] font-medium text-slate-900 leading-relaxed ${highlighterActive ? 'cursor-text' : ''}`}
                         style={{ fontSize: `${16 * zoomLevel * 1.2}px` }}
                         onMouseUp={(e) => highlighterActive && handleShowPopover('question', e)}
                         dangerouslySetInnerHTML={{ __html: questionHighlights[currentQuestion.id] || currentQuestion.question_text?.replace(/\n/g, '<br/>') || 'Question text goes here...' }}
