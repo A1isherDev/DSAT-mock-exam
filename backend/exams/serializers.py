@@ -123,4 +123,4 @@ class AdminMockExamSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = MockExam
-        fields = ['id', 'title', 'practice_date', 'is_active', 'assigned_users', 'tests']
+        fields = ['id', 'title', 'practice_date', 'is_active', 'tests']

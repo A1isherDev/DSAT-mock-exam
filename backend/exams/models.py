@@ -65,7 +65,7 @@ class MockExam(TimestampedModel):
     title = models.CharField(max_length=200, db_index=True, help_text="e.g., International Form C")
     practice_date = models.DateField(null=True, blank=True, db_index=True)
     is_active = models.BooleanField(default=True, db_index=True)
-    assigned_users = models.ManyToManyField(User, related_name='assigned_exams', blank=True)
+    # assigned_users moved to PracticeTest to allow granular assignments
     
     class Meta:
         db_table = 'mock_exams'
@@ -81,6 +81,7 @@ class PracticeTest(TimestampedModel):
     ]
     mock_exam = models.ForeignKey(MockExam, on_delete=models.CASCADE, related_name='tests', null=True, blank=True)
     subject = models.CharField(max_length=20, choices=SUBJECT_CHOICES, db_index=True)
+    assigned_users = models.ManyToManyField(User, related_name='assigned_tests', blank=True)
     
     class Meta:
         db_table = 'practice_tests'

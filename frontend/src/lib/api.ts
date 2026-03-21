@@ -126,8 +126,12 @@ export const adminApi = {
         const r = await api.post(`/exams/admin/mock-exams/${examId}/assign_users/`, { user_ids: userIds });
         return r.data;
     },
-    bulkAssignStudents: async (examIds: number[], userIds: number[]) => {
-        const res = await api.post('/exams/bulk_assign/', { exam_ids: examIds, user_ids: userIds });
+    bulkAssignStudents: async (examIds: number[], userIds: number[], assignmentType: string = 'FULL') => {
+        const res = await api.post('/exams/bulk_assign/', { 
+            exam_ids: examIds, 
+            user_ids: userIds,
+            assignment_type: assignmentType 
+        });
         return res.data;
     },
 

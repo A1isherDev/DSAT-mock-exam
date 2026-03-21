@@ -218,6 +218,7 @@ export default function AdminPage() {
     const [editingQuestion, setEditingQuestion] = useState<any>(null);
     const [bulkAssignExams, setBulkAssignExams] = useState<number[]>([]);
     const [bulkAssignUsers, setBulkAssignUsers] = useState<number[]>([]);
+    const [bulkAssignType, setBulkAssignType] = useState<string>('FULL');
     const [showBulkModal, setShowBulkModal] = useState(false);
     const [bulkTestSearch, setBulkTestSearch] = useState('');
     const [bulkUserSearch, setBulkUserSearch] = useState('');
@@ -416,6 +417,7 @@ export default function AdminPage() {
         setShowBulkModal(false);
         setBulkAssignExams([]);
         setBulkAssignUsers([]);
+        setBulkAssignType('FULL');
         setBulkTestSearch('');
         setBulkUserSearch('');
     };
@@ -427,8 +429,8 @@ export default function AdminPage() {
         }
         setSaving(true);
         try {
-            await adminApi.bulkAssignStudents(bulkAssignExams, bulkAssignUsers);
-            showToast(`Successfully assigned ${bulkAssignExams.length} exams to ${bulkAssignUsers.length} users!`);
+            await adminApi.bulkAssignStudents(bulkAssignExams, bulkAssignUsers, bulkAssignType);
+            showToast(`Successfully assigned ${bulkAssignExams.length} exams (Type: ${bulkAssignType}) to ${bulkAssignUsers.length} users!`);
             setSelectedMockId(bulkAssignExams[0]);
             closeBulkModal();
             fetchMockExams();
@@ -926,22 +928,49 @@ export default function AdminPage() {
                                 </div>
                             </div>
                             
-                            <div className="p-6 bg-white border-t border-slate-100 flex items-center justify-between">
-                                <div className="text-xs text-slate-500 font-medium">
-                                    This will grant <span className="font-bold text-slate-900">{bulkAssignUsers.length}</span> students access to <span className="font-bold text-slate-900">{bulkAssignExams.length}</span> selected exams.
+                            <div className="p-6 bg-white border-t border-slate-100 flex flex-col gap-4">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex flex-col">
+                                        <span className="text-xs font-extrabold text-slate-500 uppercase mb-2">Step 3: Assignment Type</span>
+                                        <div className="flex gap-4">
+                                            {[
+                                                { id: 'FULL', label: 'Full Exam' },
+                                                { id: 'MATH', label: 'Math Only' },
+                                                { id: 'ENGLISH', label: 'English Only' }
+                                            ].map(t => (
+                                                <label key={t.id} className="flex items-center gap-2 cursor-pointer group">
+                                                    <input 
+                                                        type="radio" 
+                                                        name="assignType" 
+                                                        checked={bulkAssignType === t.id}
+                                                        onChange={() => setBulkAssignType(t.id)}
+                                                        className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-slate-300"
+                                                    />
+                                                    <span className={`text-sm font-bold ${bulkAssignType === t.id ? 'text-blue-600' : 'text-slate-500 group-hover:text-slate-700'}`}>{t.label}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
                                 </div>
-                                <div className="flex gap-3">
-                                    <button onClick={closeBulkModal} className={BTN_GHOST}>Cancel</button>
-                                    <button 
-                                        onClick={handleBulkAssign} 
-                                        disabled={saving || !bulkAssignExams.length || !bulkAssignUsers.length}
-                                        className={`${BTN_PRIMARY} !px-8 !py-3 !text-sm h-12 shadow-xl shadow-blue-200/50 disabled:opacity-50 disabled:shadow-none`}
-                                    >
-                                        {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <ShieldCheck className="w-5 h-5" />}
-                                        {saving ? 'Processing...' : 'Confirm Bulk Assignment'}
-                                    </button>
+                                
+                                <div className="flex items-center justify-between pt-4 border-t border-slate-50">
+                                    <div className="text-xs text-slate-500 font-medium">
+                                        This will grant <span className="font-bold text-slate-900">{bulkAssignUsers.length}</span> students <span className="font-bold text-blue-600">{bulkAssignType}</span> access to <span className="font-bold text-slate-900">{bulkAssignExams.length}</span> selected exams.
+                                    </div>
+                                    <div className="flex gap-3">
+                                        <button onClick={closeBulkModal} className={BTN_GHOST}>Cancel</button>
+                                        <button 
+                                            onClick={handleBulkAssign} 
+                                            disabled={saving || !bulkAssignExams.length || !bulkAssignUsers.length}
+                                            className={`${BTN_PRIMARY} !px-8 !py-3 !text-sm h-12 shadow-xl shadow-blue-200/50 disabled:opacity-50 disabled:shadow-none`}
+                                        >
+                                            {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <ShieldCheck className="w-5 h-5" />}
+                                            {saving ? 'Processing...' : 'Confirm Bulk Assignment'}
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
+
                         </div>
                     </div>
                 )}

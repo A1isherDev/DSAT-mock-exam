@@ -34,7 +34,14 @@ class MockExamViewSet(viewsets.ReadOnlyModelViewSet):
         user = self.request.user
         if getattr(user, 'is_admin', False):
             return MockExam.objects.filter(is_active=True).prefetch_related('tests__modules')
-        return MockExam.objects.filter(is_active=True, assigned_users=user).prefetch_related('tests__modules')
+        
+        # Filter mock exams that have at least one test assigned to the user
+        # Also ensure that when serialized, only assigned tests are included
+        from django.db.models import Prefetch
+        assigned_tests = PracticeTest.objects.filter(assigned_users=user)
+        return MockExam.objects.filter(is_active=True, tests__assigned_users=user).prefetch_related(
+            Prefetch('tests', queryset=assigned_tests.prefetch_related('modules'))
+        ).distinct()
 
 
 class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
@@ -45,30 +52,41 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
         user = self.request.user
         if getattr(user, 'is_admin', False):
             return PracticeTest.objects.all().prefetch_related('modules')
-        # Return tests where the parent MockExam is assigned to the user
-        return PracticeTest.objects.filter(mock_exam__assigned_users=user, mock_exam__is_active=True).prefetch_related('modules')
+        # Return tests assigned directly to the user
+        return PracticeTest.objects.filter(assigned_users=user, mock_exam__is_active=True).prefetch_related('modules')
 
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
     def bulk_assign(self, request):
         if not getattr(request.user, 'is_admin', False):
             return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
         
-        # Now assignment is at the MockExam level
         exam_ids = request.data.get('exam_ids', [])
         user_ids = request.data.get('user_ids', [])
+        assignment_type = request.data.get('assignment_type', 'FULL') # 'FULL', 'MATH', 'ENGLISH'
         
         from django.contrib.auth import get_user_model
         User = get_user_model()
         users = list(User.objects.filter(id__in=user_ids))
-        exams = MockExam.objects.filter(id__in=exam_ids)
         
-        for exam in exams:
-            exam.assigned_users.add(*users)
+        # Mapping from assignment_type to PracticeTest subjects
+        subject_map = {
+            'MATH': ['MATH'],
+            'ENGLISH': ['READING_WRITING'],
+            'FULL': ['MATH', 'READING_WRITING']
+        }
+        target_subjects = subject_map.get(assignment_type, ['MATH', 'READING_WRITING'])
+        
+        practice_tests = PracticeTest.objects.filter(mock_exam_id__in=exam_ids, subject__in=target_subjects)
+        
+        for pt in practice_tests:
+            pt.assigned_users.add(*users)
             
         return Response({
             'status': 'bulk_assigned', 
-            'exams_count': exams.count(),
-            'users_count': len(users)
+            'exams_count': len(exam_ids),
+            'tests_count': practice_tests.count(),
+            'users_count': len(users),
+            'type': assignment_type
         })
 
 class TestAttemptViewSet(viewsets.ModelViewSet):
@@ -242,9 +260,13 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
         exam = self.get_object()
         from django.contrib.auth import get_user_model
         User = get_user_model()
-        users = User.objects.filter(id__in=request.data.get('user_ids', []))
-        exam.assigned_users.set(users)
-        return Response({'status': 'assigned', 'users_count': users.count()})
+        users = list(User.objects.filter(id__in=request.data.get('user_ids', [])))
+        
+        # Default single exam assign: assign to all tests in that exam
+        for test in exam.tests.all():
+            test.assigned_users.set(users)
+            
+        return Response({'status': 'assigned', 'users_count': len(users)})
 
     @action(detail=True, methods=['post'])
     def add_test(self, request, pk=None):
