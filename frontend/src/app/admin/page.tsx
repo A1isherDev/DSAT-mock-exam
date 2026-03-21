@@ -209,6 +209,10 @@ export default function AdminPage() {
         correct_answer: 'A', score: 10, question_type: 'MATH', is_math_input: false 
     });
     const [questionImage, setQuestionImage] = useState<File | null>(null);
+    const [optionAImage, setOptionAImage] = useState<File | null>(null);
+    const [optionBImage, setOptionBImage] = useState<File | null>(null);
+    const [optionCImage, setOptionCImage] = useState<File | null>(null);
+    const [optionDImage, setOptionDImage] = useState<File | null>(null);
     const [assignments, setAssignments] = useState<Record<number, number[]>>({});
     const [userSearch, setUserSearch] = useState('');
 
@@ -383,6 +387,10 @@ export default function AdminPage() {
             if (questionImage) {
                 formData.append('question_image', questionImage);
             }
+            if (optionAImage) formData.append('option_a_image', optionAImage);
+            if (optionBImage) formData.append('option_b_image', optionBImage);
+            if (optionCImage) formData.append('option_c_image', optionCImage);
+            if (optionDImage) formData.append('option_d_image', optionDImage);
 
             if (editingQuestion?.id) { 
                 await adminApi.updateQuestion(selectedPracticeTestId, selectedModuleId, editingQuestion.id, formData, true); 
@@ -398,6 +406,10 @@ export default function AdminPage() {
                 correct_answer: 'A', score: 10, question_type: (currentTest?.subject === 'MATH' ? 'MATH' : 'READING'), is_math_input: (currentTest?.subject === 'MATH')
             });
             setQuestionImage(null);
+            setOptionAImage(null);
+            setOptionBImage(null);
+            setOptionCImage(null);
+            setOptionDImage(null);
             showToast('Question saved ✓');
         } catch (e: any) { alert('Error: ' + (e?.response?.status === 404 ? '404 - Endpoint not found or IDs mismatch' : (e?.message || 'Invalid'))); }
         finally { setSaving(false); }
@@ -690,10 +702,53 @@ export default function AdminPage() {
                                                 </div>
                                             )}
                                             <div className="col-span-2 grid grid-cols-1 gap-6">
-                                                <RichTextEditor label="Option A" value={questionForm.option_a} onChange={val => setQuestionForm({...questionForm, option_a: val})} />
-                                                <RichTextEditor label="Option B" value={questionForm.option_b} onChange={val => setQuestionForm({...questionForm, option_b: val})} />
-                                                <RichTextEditor label="Option C" value={questionForm.option_c} onChange={val => setQuestionForm({...questionForm, option_c: val})} />
-                                                <RichTextEditor label="Option D" value={questionForm.option_d} onChange={val => setQuestionForm({...questionForm, option_d: val})} />
+                                                <div className="space-y-2">
+                                                    <RichTextEditor label="Option A" value={questionForm.option_a} onChange={val => setQuestionForm({...questionForm, option_a: val})} />
+                                                    <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">
+                                                        <ImageIcon className="w-3 h-3" /> {optionAImage ? optionAImage.name : editingQuestion?.option_a_image ? 'Has existing image' : 'No image'}
+                                                        <label className="ml-2 px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded cursor-pointer transition-colors border border-slate-200">
+                                                            {optionAImage || editingQuestion?.option_a_image ? 'Change' : 'Upload Image'}
+                                                            <input type="file" className="hidden" accept="image/*" onChange={e => setOptionAImage(e.target.files?.[0] || null)} />
+                                                        </label>
+                                                        {(optionAImage || editingQuestion?.option_a_image) && <button onClick={() => setOptionAImage(null)} className="text-red-500 hover:underline ml-2">Clear</button>}
+                                                    </div>
+                                                </div>
+                                                
+                                                <div className="space-y-2">
+                                                    <RichTextEditor label="Option B" value={questionForm.option_b} onChange={val => setQuestionForm({...questionForm, option_b: val})} />
+                                                    <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">
+                                                        <ImageIcon className="w-3 h-3" /> {optionBImage ? optionBImage.name : editingQuestion?.option_b_image ? 'Has existing image' : 'No image'}
+                                                        <label className="ml-2 px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded cursor-pointer transition-colors border border-slate-200">
+                                                            {optionBImage || editingQuestion?.option_b_image ? 'Change' : 'Upload Image'}
+                                                            <input type="file" className="hidden" accept="image/*" onChange={e => setOptionBImage(e.target.files?.[0] || null)} />
+                                                        </label>
+                                                        {(optionBImage || editingQuestion?.option_b_image) && <button onClick={() => setOptionBImage(null)} className="text-red-500 hover:underline ml-2">Clear</button>}
+                                                    </div>
+                                                </div>
+
+                                                <div className="space-y-2">
+                                                    <RichTextEditor label="Option C" value={questionForm.option_c} onChange={val => setQuestionForm({...questionForm, option_c: val})} />
+                                                    <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">
+                                                        <ImageIcon className="w-3 h-3" /> {optionCImage ? optionCImage.name : editingQuestion?.option_c_image ? 'Has existing image' : 'No image'}
+                                                        <label className="ml-2 px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded cursor-pointer transition-colors border border-slate-200">
+                                                            {optionCImage || editingQuestion?.option_c_image ? 'Change' : 'Upload Image'}
+                                                            <input type="file" className="hidden" accept="image/*" onChange={e => setOptionCImage(e.target.files?.[0] || null)} />
+                                                        </label>
+                                                        {(optionCImage || editingQuestion?.option_c_image) && <button onClick={() => setOptionCImage(null)} className="text-red-500 hover:underline ml-2">Clear</button>}
+                                                    </div>
+                                                </div>
+
+                                                <div className="space-y-2">
+                                                    <RichTextEditor label="Option D" value={questionForm.option_d} onChange={val => setQuestionForm({...questionForm, option_d: val})} />
+                                                    <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">
+                                                        <ImageIcon className="w-3 h-3" /> {optionDImage ? optionDImage.name : editingQuestion?.option_d_image ? 'Has existing image' : 'No image'}
+                                                        <label className="ml-2 px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded cursor-pointer transition-colors border border-slate-200">
+                                                            {optionDImage || editingQuestion?.option_d_image ? 'Change' : 'Upload Image'}
+                                                            <input type="file" className="hidden" accept="image/*" onChange={e => setOptionDImage(e.target.files?.[0] || null)} />
+                                                        </label>
+                                                        {(optionDImage || editingQuestion?.option_d_image) && <button onClick={() => setOptionDImage(null)} className="text-red-500 hover:underline ml-2">Clear</button>}
+                                                    </div>
+                                                </div>
                                             </div>
                                             <Field label="Question Image">
                                                 <div className="flex items-center gap-3">
@@ -743,7 +798,13 @@ export default function AdminPage() {
                                             )}
                                         </div>
                                         <div className="flex justify-end gap-2 pt-4 border-t border-slate-100 items-center">
-                                            <button className={BTN_GHOST} onClick={() => setEditingQuestion(null)}><X className="w-4 h-4" /> Cancel</button>
+                                            <button className={BTN_GHOST} onClick={() => {
+                                                setEditingQuestion(null);
+                                                setOptionAImage(null);
+                                                setOptionBImage(null);
+                                                setOptionCImage(null);
+                                                setOptionDImage(null);
+                                            }}><X className="w-4 h-4" /> Cancel</button>
                                             <div className="flex items-center gap-3">
                                                 {isOverBudget && <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest bg-red-50 px-2 py-1 rounded">Score Budget Exceeded ({predictedSum}/{budget})</span>}
                                                 <button className={BTN_PRIMARY} onClick={handleSaveQuestion} disabled={saving || isOverBudget}>{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save Question</button>

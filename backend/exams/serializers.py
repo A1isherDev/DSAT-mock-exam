@@ -4,7 +4,8 @@ from .models import Question, PracticeTest, Module, TestAttempt, MockExam
 class QuestionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Question
-        fields = ['id', 'question_type', 'question_text', 'question_prompt', 'question_image', 'is_math_input']
+        fields = ['id', 'question_type', 'question_text', 'question_prompt', 'question_image', 'is_math_input',
+                  'option_a_image', 'option_b_image', 'option_c_image', 'option_d_image']
         
     def to_representation(self, instance):
         representation = super().to_representation(instance)
@@ -96,7 +97,8 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
         model = Question
         fields = ['id', 'question_type', 'question_text', 'question_prompt', 'question_image',
                   'is_math_input', 'correct_answer', 'score', 'explanation', 'order',
-                  'option_a', 'option_b', 'option_c', 'option_d']
+                  'option_a', 'option_b', 'option_c', 'option_d',
+                  'option_a_image', 'option_b_image', 'option_c_image', 'option_d_image']
 
 
 class AdminModuleSerializer(serializers.ModelSerializer):

@@ -110,10 +110,20 @@ const QuestionReviewModal = ({ question, showCorrectAnswers, onClose, onNext, on
                                                 <div className={`w-7 h-7 rounded-lg border-2 flex items-center justify-center font-bold text-xs shrink-0 mr-4 ${showCorrectAnswers && isCorrect ? 'bg-emerald-500 border-emerald-500 text-white' : isStudent && showCorrectAnswers ? 'bg-red-500 border-red-500 text-white' : isStudent ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-300 text-slate-500'}`}>
                                                     {key}
                                                 </div>
-                                                <div 
-                                                    className="font-[Georgia] text-sm mathjax-process w-full"
-                                                    dangerouslySetInnerHTML={{ __html: (val as string).replace(/\n/g, '<br/>') }}
-                                                />
+                                                <div className="font-[Georgia] text-sm mathjax-process w-full">
+                                                    {typeof val === 'object' && val?.image ? (
+                                                        <div className="py-1">
+                                                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                            <img 
+                                                                src={getImageUrl(val.image)} 
+                                                                alt={`Option ${key}`} 
+                                                                className="max-w-full h-auto max-h-[150px] object-contain rounded-lg border border-slate-100 bg-white" 
+                                                            />
+                                                        </div>
+                                                    ) : (
+                                                        <div dangerouslySetInnerHTML={{ __html: (typeof val === 'object' ? val.text : (val as string))?.replace(/\n/g, '<br/>') }} />
+                                                    )}
+                                                </div>
                                                 {icon}
                                             </div>
                                         );

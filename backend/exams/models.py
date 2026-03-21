@@ -21,9 +21,13 @@ class Question(TimestampedModel):
     question_prompt = models.TextField(blank=True, help_text="Secondary text displayed above answer choices.")
     question_image = models.ImageField(upload_to='question_images/', null=True, blank=True)
     option_a = models.CharField(max_length=255, blank=True)
+    option_a_image = models.ImageField(upload_to='option_images/', null=True, blank=True)
     option_b = models.CharField(max_length=255, blank=True)
+    option_b_image = models.ImageField(upload_to='option_images/', null=True, blank=True)
     option_c = models.CharField(max_length=255, blank=True)
+    option_c_image = models.ImageField(upload_to='option_images/', null=True, blank=True)
     option_d = models.CharField(max_length=255, blank=True)
+    option_d_image = models.ImageField(upload_to='option_images/', null=True, blank=True)
     correct_answers = models.CharField(max_length=255, help_text="For math input, separate multiple correct answers with a comma. e.g. '2/3, 0.666, 0.667'")
     is_math_input = models.BooleanField(default=False)
     score = models.IntegerField(default=10, help_text="Score weight for this question")
@@ -40,10 +44,14 @@ class Question(TimestampedModel):
 
     def get_options(self):
         options = {}
-        if self.option_a: options['A'] = self.option_a
-        if self.option_b: options['B'] = self.option_b
-        if self.option_c: options['C'] = self.option_c
-        if self.option_d: options['D'] = self.option_d
+        if self.option_a or self.option_a_image:
+            options['A'] = {'text': self.option_a, 'image': self.option_a_image.url if self.option_a_image else None}
+        if self.option_b or self.option_b_image:
+            options['B'] = {'text': self.option_b, 'image': self.option_b_image.url if self.option_b_image else None}
+        if self.option_c or self.option_c_image:
+            options['C'] = {'text': self.option_c, 'image': self.option_c_image.url if self.option_c_image else None}
+        if self.option_d or self.option_d_image:
+            options['D'] = {'text': self.option_d, 'image': self.option_d_image.url if self.option_d_image else None}
         return options if options else None
 
     def check_answer(self, student_answer):
