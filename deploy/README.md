@@ -1,4 +1,4 @@
-# 🚀 Deployment Guide — SAT Fergana Mock Exam
+# 🚀 Deployment Guide — MasterSAT Mock Exam
 
 ## Prerequisites
 

@@ -198,11 +198,11 @@ REST_FRAMEWORK = {
 # ─── Django Admin Theme ───────────────────────────────────────────────────────
 
 JAZZMIN_SETTINGS = {
-    "site_title": "SAT Admin",
-    "site_header": "SAT Practice Portal",
-    "site_brand": "SAT Fergana",
-    "welcome_sign": "Welcome to the SAT Practice Admin",
-    "copyright": "SAT Fergana Ltd",
+    "site_title": "MasterSAT Admin",
+    "site_header": "MasterSAT Portal",
+    "site_brand": "MasterSAT",
+    "welcome_sign": "Welcome to the MasterSAT Admin",
+    "copyright": "MasterSAT Center",
     "user_avatar": None,
     "show_ui_builder": False,
     "changeform_format": "single",
