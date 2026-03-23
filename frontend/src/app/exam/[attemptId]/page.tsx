@@ -789,13 +789,16 @@ export default function ExamPlayerPage() {
             {/* Removed zoom: 1.5 to prevent layout breaking/scrolling, scaling fonts via Tailwind instead */}
             <div className={`min-h-screen bg-white flex flex-col font-sans text-slate-900 overflow-hidden relative ${highlighterActive ? 'annotate-mode' : ''}`}>
                 <header className="flex items-start justify-between px-6 py-2 bg-white relative z-10 w-full shadow-sm" style={{ zoom: 1.15 }}>
-                    <div className="flex-1">
-                        <h1 className="text-sm font-bold text-slate-900 tracking-tight flex items-center gap-1">
-                            Section {attempt.practice_test_details.subject === 'READING_WRITING' ? '1' : '2'}, Module {attempt.current_module_details?.module_order || 1}: {attempt.practice_test_details.subject === 'READING_WRITING' ? 'Reading and Writing' : 'Math'}
-                        </h1>
-                        <button className="text-[11px] font-bold text-slate-700 flex items-center mt-1 border-b border-transparent hover:border-slate-800 pb-0.5">
-                            Directions <ChevronDown className="w-3 h-3 ml-1 stroke-[3px]" />
-                        </button>
+                    <div className="flex-1 flex items-center gap-4">
+                        <img src="/images/logo.png" alt="Master SAT" className="w-9 h-9 object-contain" />
+                        <div>
+                            <h1 className="text-sm font-bold text-slate-900 tracking-tight flex items-center gap-1">
+                                Section {attempt.practice_test_details.subject === 'READING_WRITING' ? '1' : '2'}, Module {attempt.current_module_details?.module_order || 1}: {attempt.practice_test_details.subject === 'READING_WRITING' ? 'Reading and Writing' : 'Math'}
+                            </h1>
+                            <button className="text-[11px] font-bold text-slate-700 flex items-center mt-1 border-b border-transparent hover:border-slate-800 pb-0.5">
+                                Directions <ChevronDown className="w-3 h-3 ml-1 stroke-[3px]" />
+                            </button>
+                        </div>
                     </div>
 
                     <div className="flex-1 flex flex-col items-center">

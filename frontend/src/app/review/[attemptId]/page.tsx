@@ -250,7 +250,10 @@ export default function ReviewPage() {
                         <button onClick={() => router.push('/')} className="mr-6 p-2 rounded-xl hover:bg-slate-50 transition-all border border-slate-200 shadow-sm">
                             <ArrowLeft className="w-4 h-4 text-slate-600" />
                         </button>
-                        <h1 className="text-xl font-bold tracking-tight text-slate-900 border-l border-slate-200 pl-6 ml-1">Performance Review</h1>
+                        <div className="flex items-center gap-3 border-l border-slate-200 pl-6 ml-1">
+                            <img src="/images/logo.png" alt="Master SAT" className="w-8 h-8 object-contain" />
+                            <h1 className="text-xl font-extrabold tracking-tight text-slate-900 uppercase">Master SAT</h1>
+                        </div>
                     </div>
                     <div>
                         <button
