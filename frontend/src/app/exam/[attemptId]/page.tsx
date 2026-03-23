@@ -248,6 +248,7 @@ const RightPane = memo(({
                                         </div>
                                         <div className={`ml-4 text-left font-[Georgia] text-[15px] text-slate-800 w-full ${isEliminated ? 'line-through decoration-slate-400' : ''}`}>
                                             <div
+                                                key={`option-inner-${key}-${isEliminated}`}
                                                 id={`option-content-${key}`}
                                                 className={`w-full mathjax-process ${highlighterActive ? 'cursor-text' : ''}`}
                                                 onMouseUp={(e) => highlighterActive && handleShowPopover(`option-${key}`, e)}
@@ -397,9 +398,12 @@ export default function ExamPlayerPage() {
             
             // MathJax 3
             if ((window as any).MathJax && (window as any).MathJax.typesetPromise) {
-                (window as any).MathJax.typesetPromise([container]).catch((err: any) => {
-                    // console.debug("MathJax process error (likely interrupted):", err);
-                });
+                try {
+                    // (window as any).MathJax.typesetClear([container]); 
+                    (window as any).MathJax.typesetPromise([container]).catch((err: any) => {
+                        // console.debug("MathJax process error (likely interrupted):", err);
+                    });
+                } catch (e) {}
             }
         };
 
