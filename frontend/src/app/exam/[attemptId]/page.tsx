@@ -57,7 +57,7 @@ const QuestionPane = memo(({ currentQuestion, zoomLevel, highlighterActive, pass
                 )}
                 <div
                     id="passage-text-container"
-                    className="leading-relaxed font-[Georgia] font-medium"
+                    className="leading-relaxed font-[Georgia] font-medium mathjax-process"
                     style={{ fontSize: `${16 * zoomLevel * 1.2}px` }}
                     dangerouslySetInnerHTML={{ __html: passageHtml || currentQuestion.question_text?.replace(/\n/g, '<br/>') || 'Question text goes here...' }}
                 />
@@ -406,7 +406,7 @@ export default function ExamPlayerPage() {
         // Execute multiple times to ensure rendering happens after React DOM updates
         // and after external scripts (KaTeX/MathJax) are fully loaded.
         tryRender();
-        const timers = [100, 300, 800, 2000].map(ms => setTimeout(tryRender, ms));
+        const timers = [50, 200, 500, 1000, 2500].map(ms => setTimeout(tryRender, ms));
         return () => timers.forEach(t => clearTimeout(t));
     }, []);
 
@@ -424,6 +424,8 @@ export default function ExamPlayerPage() {
         answers[currentQuestion?.id],
         zoomLevel,
         highlighterActive,
+        flagged,
+        eliminatedOptions,
         passageHighlights[currentQuestion?.id],
         questionHighlights[currentQuestion?.id],
         questionPromptHighlights[currentQuestion?.id],

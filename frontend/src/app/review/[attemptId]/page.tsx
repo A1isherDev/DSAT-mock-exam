@@ -151,7 +151,10 @@ const QuestionReviewModal = ({ question, showCorrectAnswers, onClose, onNext, on
                         {showCorrectAnswers && question.explanation && (
                             <div className="bg-blue-50/30 p-6 rounded-2xl border border-blue-100">
                                 <h4 className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-3">Explanation</h4>
-                                <p className="text-slate-700 font-[Georgia] leading-relaxed text-sm mathjax-process">{question.explanation}</p>
+                                <div 
+                                    className="text-slate-700 font-[Georgia] leading-relaxed text-sm mathjax-process"
+                                    dangerouslySetInnerHTML={{ __html: question.explanation.replace(/\n/g, '<br/>') }}
+                                />
                             </div>
                         )}
                     </div>
@@ -213,8 +216,8 @@ export default function ReviewPage() {
             
             // KaTeX
             if ((window as any).renderMathInElement && (review || selectedQuestion)) {
-                // Wait a tick for the modal/content to mount
-                setTimeout(() => {
+                // Wait multiple ticks for the modal/content to mount
+                const tryKaTeX = () => {
                     (window as any).renderMathInElement(container, {
                         delimiters: [
                             {left: '$$', right: '$$', display: true},
@@ -223,7 +226,9 @@ export default function ReviewPage() {
                         ],
                         throwOnError: false
                     });
-                }, 50);
+                };
+                tryKaTeX();
+                [50, 200, 500, 1000].forEach(ms => setTimeout(tryKaTeX, ms));
             }
             
             // MathJax 3
@@ -231,7 +236,7 @@ export default function ReviewPage() {
                 (window as any).MathJax.typesetPromise([container]);
             }
         }
-    }, [review, selectedQuestion]);
+    }, [review, selectedQuestion, showCorrectAnswers]);
 
     if (loading || !review) {
         return <div className="min-h-screen flex items-center justify-center bg-slate-50"><div className="animate-spin text-blue-600 w-8 h-8"><BarChart3 className="w-full h-full" /></div></div>;
