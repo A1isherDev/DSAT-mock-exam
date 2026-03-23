@@ -436,7 +436,8 @@ export default function ExamPlayerPage() {
         optionHighlights[currentQuestion?.id],
         showCalculator,
         showReferenceSheet,
-        showNavigation
+        showNavigation,
+        isEliminationMode
     ]);
 
     // Fullscreen behavior listeners
