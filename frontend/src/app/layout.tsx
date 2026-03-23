@@ -15,6 +15,10 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "MasterSAT",
   description: "MasterSAT - Advanced SAT Preparation Platform",
+  icons: {
+    icon: "/logo.png",
+    apple: "/logo-full.png",
+  },
 };
 
 import Script from "next/script";

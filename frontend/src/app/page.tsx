@@ -188,8 +188,7 @@ export default function DashboardPage() {
         <header className="bg-white border-b border-slate-200 px-8 py-5 flex justify-between items-center shadow-sm sticky top-0 z-50">
           <div className="flex items-center gap-3">
             <img src="/images/logo.png" alt="Master SAT" className="w-10 h-10 object-contain" />
-            <h1 className="text-xl font-extrabold tracking-tight text-slate-900">Master</h1>
-            <h1 className="text-xl font-extrabold tracking-tight text-slate-900">SAT</h1>
+            <h1 className="text-xl font-extrabold tracking-tight text-slate-900">MasterSAT</h1>
           </div>
           {isLoggedIn ? (
             <button onClick={handleLogout} className="flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-red-600 transition-colors uppercase tracking-wider px-4 py-2 rounded-lg border border-slate-200 hover:bg-slate-50">

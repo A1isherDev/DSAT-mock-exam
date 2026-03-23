@@ -48,9 +48,7 @@ export default function RegisterPage() {
         <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-6">
             <div className="w-full max-w-[440px]">
                 <div className="flex flex-col items-center mb-10">
-                    <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-blue-200 mb-6 transition-transform hover:scale-105 duration-300">
-                        <BookOpen className="w-10 h-10" />
-                    </div>
+                    <img src="/images/logo.png" alt="Master SAT" className="w-16 h-16 object-contain mb-6 drop-shadow-sm" />
                     <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Create Account</h1>
                     <p className="mt-3 text-slate-500 font-medium text-center">Join MasterSAT Program</p>
                 </div>
