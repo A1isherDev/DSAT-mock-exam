@@ -17,7 +17,7 @@ export const metadata: Metadata = {
   description: "MasterSAT - Advanced SAT Preparation Platform",
   icons: {
     icon: "/logo.png",
-    apple: "/logo-full.png",
+    apple: "/logo.png",
   },
 };
 
