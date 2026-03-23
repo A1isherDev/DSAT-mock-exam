@@ -251,7 +251,7 @@ export default function ReviewPage() {
                             <ArrowLeft className="w-4 h-4 text-slate-600" />
                         </button>
                         <div className="flex items-center gap-3 border-l border-slate-200 pl-6 ml-1">
-                            <img src="/images/logo.png" alt="Master SAT" className="w-8 h-8 object-contain" />
+                            <img src="/images/logo-full.png" alt="Master SAT" className="w-8 h-8 object-contain" />
                             <h1 className="text-xl font-extrabold tracking-tight text-slate-900 uppercase">Master SAT</h1>
                         </div>
                     </div>

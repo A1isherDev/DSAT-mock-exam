@@ -790,7 +790,7 @@ export default function ExamPlayerPage() {
             <div className={`min-h-screen bg-white flex flex-col font-sans text-slate-900 overflow-hidden relative ${highlighterActive ? 'annotate-mode' : ''}`}>
                 <header className="flex items-start justify-between px-6 py-2 bg-white relative z-10 w-full shadow-sm" style={{ zoom: 1.15 }}>
                     <div className="flex-1 flex items-center gap-4">
-                        <img src="/images/logo.png" alt="Master SAT" className="w-9 h-9 object-contain" />
+                        <img src="/images/logo-with-text.png" alt="Master SAT" className="w-9 h-9 object-contain" />
                         <div>
                             <h1 className="text-sm font-bold text-slate-900 tracking-tight flex items-center gap-1">
                                 Section {attempt.practice_test_details.subject === 'READING_WRITING' ? '1' : '2'}, Module {attempt.current_module_details?.module_order || 1}: {attempt.practice_test_details.subject === 'READING_WRITING' ? 'Reading and Writing' : 'Math'}
