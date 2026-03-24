@@ -3,16 +3,16 @@
 # setup_postgres.sh — Install and secure PostgreSQL on Hetzner
 # Usage:
 #   sudo bash deploy/setup_postgres.sh \
-#     --db-name lms_mastersat_db \
-#     --db-user lms_mastersat_user \
+#     --db-name mastersat_db \
+#     --db-user mastersat_app \
 #     --db-password 'strong-password' \
-#     --allow-ip YOUR_LOCAL_PUBLIC_IP
+#     --allow-ip YOUR_CURRENT_PUBLIC_IP
 # ============================================================
 
 set -euo pipefail
 
-DB_NAME=""
-DB_USER=""
+DB_NAME="mastersat_db"
+DB_USER="mastersat_app"
 DB_PASSWORD=""
 ALLOW_IP=""
 DB_PORT="5432"
@@ -38,16 +38,22 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "$DB_NAME" || -z "$DB_USER" || -z "$DB_PASSWORD" || -z "$ALLOW_IP" ]]; then
+if [[ -z "$DB_PASSWORD" || -z "$ALLOW_IP" ]]; then
   echo "Missing required args."
   echo "Example:"
-  echo "  sudo bash deploy/setup_postgres.sh --db-name lms_mastersat_db --db-user lms_mastersat_user --db-password 'strong-password' --allow-ip 1.2.3.4"
+  echo "  sudo bash deploy/setup_postgres.sh --db-password 'strong-password' --allow-ip 1.2.3.4"
+  echo "Optional: --db-name mastersat_db --db-user mastersat_app --db-port 5432"
   exit 1
 fi
 
 if [[ $EUID -ne 0 ]]; then
   echo "Run as root (sudo)."
   exit 1
+fi
+
+if [[ "$DB_USER" == "postgres" ]]; then
+  echo "Warning: using 'postgres' as app user is not recommended."
+  echo "Use a dedicated app role (default is mastersat_app)."
 fi
 
 echo "==> Installing PostgreSQL..."
@@ -116,8 +122,17 @@ echo "==> Opening firewall only for ${ALLOW_IP} on ${DB_PORT}..."
 ufw allow from "${ALLOW_IP}" to any port "${DB_PORT}" proto tcp
 ufw status | rg "Status:|5432|22|80|443"
 
+SERVER_IP="$(hostname -I | awk '{print $1}')"
+if [[ -z "$SERVER_IP" ]]; then
+  SERVER_IP="127.0.0.1"
+fi
+
 echo ""
 echo "PostgreSQL setup complete."
 echo "DB: ${DB_NAME}"
 echo "User: ${DB_USER}"
 echo "Allowed remote IP: ${ALLOW_IP}/32"
+echo ""
+echo "Add this to backend/.env:"
+echo "DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@${SERVER_IP}:${DB_PORT}/${DB_NAME}"
+echo "DB_SSL=False"
