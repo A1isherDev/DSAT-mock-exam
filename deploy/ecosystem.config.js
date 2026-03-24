@@ -8,8 +8,8 @@ module.exports = {
       // ── Next.js Frontend ──────────────────────────────────
       name: 'sat-frontend',
       cwd: '/var/www/satapp/frontend',
-      script: '.next/standalone/server.js',
-      args: '',
+      script: 'npm',
+      args: 'run start',
       instances: 1,
       autorestart: true,
       watch: false,
