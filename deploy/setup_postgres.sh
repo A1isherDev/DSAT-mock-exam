@@ -85,7 +85,7 @@ END
 \$\$;
 SQL
 
-if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" | rg -q "1"; then
+if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" | grep -q "1"; then
   sudo -u postgres createdb "$DB_NAME" -O "$DB_USER"
 fi
 
@@ -97,7 +97,7 @@ GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};
 SQL
 
 echo "==> Configuring postgresql.conf listen_addresses..."
-if rg -q "^[# ]*listen_addresses\\s*=" "$POSTGRESQL_CONF"; then
+if grep -Eq "^[# ]*listen_addresses[[:space:]]*=" "$POSTGRESQL_CONF"; then
   sed -i "s|^[# ]*listen_addresses\\s*=.*|listen_addresses = '${LISTEN_ADDRESSES}'|" "$POSTGRESQL_CONF"
 else
   echo "listen_addresses = '${LISTEN_ADDRESSES}'" >> "$POSTGRESQL_CONF"
@@ -107,20 +107,20 @@ echo "==> Configuring pg_hba.conf rules..."
 APP_LOCAL_RULE="host    ${DB_NAME}    ${DB_USER}    127.0.0.1/32    scram-sha-256"
 REMOTE_RULE="host    ${DB_NAME}    ${DB_USER}    ${ALLOW_IP}/32    scram-sha-256"
 
-if ! rg -q "^${APP_LOCAL_RULE// /\\s+}$" "$PG_HBA_CONF"; then
+if ! grep -Fqx "$APP_LOCAL_RULE" "$PG_HBA_CONF"; then
   echo "$APP_LOCAL_RULE" >> "$PG_HBA_CONF"
 fi
-if ! rg -q "^${REMOTE_RULE// /\\s+}$" "$PG_HBA_CONF"; then
+if ! grep -Fqx "$REMOTE_RULE" "$PG_HBA_CONF"; then
   echo "$REMOTE_RULE" >> "$PG_HBA_CONF"
 fi
 
 echo "==> Restarting PostgreSQL..."
 systemctl restart postgresql
-systemctl --no-pager status postgresql | rg "Active:|loaded"
+systemctl --no-pager status postgresql | grep -E "Active:|loaded"
 
 echo "==> Opening firewall only for ${ALLOW_IP} on ${DB_PORT}..."
 ufw allow from "${ALLOW_IP}" to any port "${DB_PORT}" proto tcp
-ufw status | rg "Status:|5432|22|80|443"
+ufw status | grep -E "Status:|5432|22|80|443"
 
 SERVER_IP="$(hostname -I | awk '{print $1}')"
 if [[ -z "$SERVER_IP" ]]; then

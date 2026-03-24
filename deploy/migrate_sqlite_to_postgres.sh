@@ -43,7 +43,7 @@ if [[ ! -f "$BACKEND_DIR/.env" ]]; then
   exit 1
 fi
 
-if ! rg -q "^DATABASE_URL=postgres(ql)?://" "$BACKEND_DIR/.env"; then
+if ! grep -Eq "^DATABASE_URL=postgres(ql)?://" "$BACKEND_DIR/.env"; then
   echo "DATABASE_URL is missing or not PostgreSQL in $BACKEND_DIR/.env"
   exit 1
 fi
@@ -114,7 +114,7 @@ echo "==> Comparing row counts (differences may indicate issues)..."
 diff -u "$BACKUPS_DIR/counts.sqlite.$TS.txt" "$BACKUPS_DIR/counts.postgres.$TS.txt" || true
 
 echo "==> Post-migration smoke checks..."
-"$PYTHON_BIN" "$MANAGE_PY" showmigrations | rg "\\[ \\]" && {
+"$PYTHON_BIN" "$MANAGE_PY" showmigrations | grep -q "\\[ \\]" && {
   echo "Warning: There are unapplied migrations."
 } || true
 
