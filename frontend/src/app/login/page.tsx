@@ -1,10 +1,9 @@
 "use client";
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { authApi } from '@/lib/api';
 import { useRouter } from 'next/navigation';
-import { AlertCircle, Loader2 } from 'lucide-react';
+import { AlertCircle, Loader2, LogIn } from 'lucide-react';
 import Link from 'next/link';
-import { useEffect, useRef } from 'react';
 
 declare global {
     interface Window {
@@ -82,18 +81,16 @@ export default function LoginPage() {
     }, []);
 
     return (
-        <div className="min-h-screen flex flex-col items-center justify-center bg-blue-700 p-6">
-            <div className="w-full max-w-[440px]">
-                {/* Logo Section */}
-                <div className="flex flex-col items-center mb-10">
-                    <img src="/images/logo.png" alt="MasterSAT" className="w-20 h-20 object-contain mb-6 drop-shadow-md" />
-                    <h1 className="text-3xl font-extrabold text-white tracking-tight">MasterSAT</h1>
-                    <p className="mt-3 text-blue-100 font-medium text-center">Secure examination portal for the <br />MasterSAT Program</p>
+        <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-700 to-indigo-700 flex items-center justify-center p-6">
+            <div className="w-full max-w-md">
+                <div className="text-center mb-7">
+                    <img src="/images/logo.png" alt="MasterSAT" className="mx-auto w-20 h-20 object-contain drop-shadow-lg" />
+                    <h1 className="mt-4 text-3xl font-black text-white tracking-tight">MasterSAT</h1>
+                    <p className="text-blue-100 mt-2 font-medium">Sign in to continue your preparation</p>
                 </div>
 
-                {/* Card */}
-                <div className="bg-white rounded-[32px] shadow-xl shadow-slate-200/50 border border-slate-200 p-10">
-                    <form className="space-y-6" onSubmit={handleSubmit}>
+                <div className="bg-white/95 backdrop-blur rounded-3xl border border-white/40 shadow-2xl p-8">
+                    <form className="space-y-5" onSubmit={handleSubmit}>
                         {error && (
                             <div className="flex items-start gap-3 text-red-600 text-sm font-medium bg-red-50 p-4 rounded-xl border border-red-100 animate-in fade-in slide-in-from-top-2 duration-200">
                                 <AlertCircle className="w-5 h-5 shrink-0" />
@@ -101,16 +98,16 @@ export default function LoginPage() {
                             </div>
                         )}
 
-                        <div className="space-y-5">
+                        <div className="space-y-4">
                             <div>
-                                <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 ml-1" htmlFor="email-address">
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 ml-1" htmlFor="email-address">
                                     Email or Username
                                 </label>
                                 <input
                                     id="email-address"
                                     type="text"
                                     required
-                                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:bg-white focus:border-blue-400 transition-all sm:text-sm"
+                                    className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:bg-white focus:border-blue-400 transition-all sm:text-sm"
                                     placeholder="name@example.com or username"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
@@ -118,14 +115,14 @@ export default function LoginPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 ml-1" htmlFor="password">
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 ml-1" htmlFor="password">
                                     Password
                                 </label>
                                 <input
                                     id="password"
                                     type="password"
                                     required
-                                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:bg-white focus:border-blue-400 transition-all sm:text-sm"
+                                    className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:bg-white focus:border-blue-400 transition-all sm:text-sm"
                                     placeholder="••••••••"
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
@@ -133,7 +130,7 @@ export default function LoginPage() {
                                 />
                             </div>
                             <div className="flex items-center justify-between">
-                                <label className="inline-flex items-center gap-2 text-sm text-slate-600 font-medium">
+                                <label className="inline-flex items-center gap-2 text-sm text-slate-600 font-semibold">
                                     <input
                                         type="checkbox"
                                         checked={rememberMe}
@@ -145,17 +142,18 @@ export default function LoginPage() {
                             </div>
                         </div>
 
-                        <div>
+                        <div className="pt-1">
                             <button
                                 type="submit"
                                 disabled={loading}
-                                className="w-full flex items-center justify-center py-4 px-6 bg-blue-600 text-white text-sm font-bold rounded-2xl hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-100 transition-all active:scale-[0.98] shadow-lg shadow-blue-200 disabled:opacity-70 disabled:cursor-not-allowed group"
+                                className="w-full flex items-center justify-center py-3.5 px-6 bg-blue-600 text-white text-sm font-bold rounded-xl hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-100 transition-all active:scale-[0.98] shadow-lg shadow-blue-200 disabled:opacity-70 disabled:cursor-not-allowed group"
                             >
                                 {loading ? (
                                     <Loader2 className="w-5 h-5 animate-spin" />
                                 ) : (
                                     <>
                                         Sign In to Portal
+                                        <LogIn className="w-4 h-4 ml-2 opacity-70" />
                                     </>
                                 )}
                             </button>
@@ -198,21 +196,14 @@ export default function LoginPage() {
                             </div>
                         )}
                     </form>
+                    <div className="mt-5 text-center">
+                        <span className="text-sm text-slate-500 font-medium">Don't have an account? </span>
+                        <Link href="/register" className="text-sm font-bold text-blue-600 hover:text-blue-800 transition-colors">
+                            Register Now
+                        </Link>
+                    </div>
                 </div>
-
-                <div className="mt-6 text-center">
-                    <span className="text-sm text-slate-500 font-medium">Don't have an account? </span>
-                    <Link href="/register" className="text-sm font-bold text-blue-600 hover:text-blue-800 transition-colors">
-                        Register Now
-                    </Link>
-                </div>
-
-                <div className="mt-10 text-center">
-                    <p className="text-xs font-medium text-slate-400">
-                        Unauthorized access is prohibited. <br />
-                        © {new Date().getFullYear()} MasterSAT Center
-                    </p>
-                </div>
+                <p className="mt-6 text-center text-xs text-blue-100 font-medium">© {new Date().getFullYear()} MasterSAT Center</p>
             </div>
         </div>
     );

@@ -112,7 +112,7 @@ const RichTextEditor = ({ value, onChange, label, placeholder = "" }: { value: s
         { label: 'Bold', icon: <BoldIcon className="w-3.5 h-3.5" />, syntax: '<b></b>' },
         { label: 'Italic', icon: <ItalicIcon className="w-3.5 h-3.5" />, syntax: '<i></i>' },
         { label: 'Underline', icon: <UnderlineIcon className="w-3.5 h-3.5" />, syntax: '<u></u>' },
-        { label: 'Bullets', icon: <span className="text-xs font-bold">•</span>, syntax: '<ul><li></li></ul>' },
+        { label: 'Bullets', icon: <span className="text-xs font-bold">•</span>, syntax: '<ul class="big-dot-list"><li></li></ul>' },
         { label: 'Formula', icon: <Sigma className="w-3.5 h-3.5" />, syntax: '\\(  \\)' },
         { label: 'Sqrt', icon: <span className="text-xs font-bold font-serif">√</span>, syntax: '\\sqrt{ }' },
         { label: 'Frac', icon: <span className="text-xs font-bold">½</span>, syntax: '\\frac{ }{ }' },

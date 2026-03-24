@@ -21,7 +21,6 @@ class IsAdminUser(BasePermission):
         is_auth = request.user and request.user.is_authenticated
         is_admin_role = getattr(request.user, 'role', None) == 'ADMIN'
         is_staff = getattr(request.user, 'is_staff', False)
-        print(f"DEBUG: User={request.user}, Auth={is_auth}, Role={is_admin_role}, Staff={is_staff}")
         return bool(is_auth and (is_admin_role or is_staff))
 
 
@@ -267,7 +266,7 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
 # ── Admin CRUD Viewsets ───────────────────────────────────────────────────────
 
 class AdminMockExamViewSet(viewsets.ModelViewSet):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAdminUser]
     serializer_class = AdminMockExamSerializer
     queryset = MockExam.objects.all().prefetch_related('tests__modules')
 
@@ -314,13 +313,13 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
 
 
 class AdminPracticeTestViewSet(viewsets.ModelViewSet):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAdminUser]
     serializer_class = AdminPracticeTestSerializer
     queryset = PracticeTest.objects.all().prefetch_related('modules')
 
 
 class AdminModuleViewSet(viewsets.ModelViewSet):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAdminUser]
     serializer_class = AdminModuleSerializer
 
     def get_queryset(self):
@@ -340,7 +339,7 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.db import models as db_models
 
 class AdminQuestionViewSet(viewsets.ModelViewSet):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAdminUser]
     serializer_class = AdminQuestionSerializer
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 

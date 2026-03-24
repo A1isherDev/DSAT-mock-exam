@@ -11,9 +11,12 @@ export default function AuthGuard({ children, isOptional = false, adminOnly = fa
     useEffect(() => {
         const token = Cookies.get('access_token');
         const isAdmin = Cookies.get('is_admin') === 'true';
+        const isFrozen = Cookies.get('is_frozen') === 'true';
 
         if (!token && !isOptional) {
             router.push('/login');
+        } else if (isFrozen && !isAdmin && !isOptional) {
+            router.push('/frozen');
         } else if (adminOnly && !isAdmin && !isOptional) {
             router.push('/'); // Redirect non-admins to home
         } else {

@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { examsApi } from '@/lib/api';
 import AuthGuard from '@/components/AuthGuard';
@@ -192,6 +192,18 @@ export default function ReviewPage() {
     const [selectedQuestion, setSelectedQuestion] = useState<any>(null);
     const [showCorrectAnswers, setShowCorrectAnswers] = useState(true);
     const [showCelebration, setShowCelebration] = useState(false);
+    const confetti = useMemo(
+        () =>
+            Array.from({ length: 100 }).map((_, i) => ({
+                id: i,
+                left: Math.random() * 100,
+                delay: Math.random() * 1.2,
+                duration: 2.6 + Math.random() * 1.8,
+                color: ['#2563eb', '#22c55e', '#eab308', '#ef4444', '#a855f7'][i % 5],
+                size: 6 + Math.round(Math.random() * 6),
+            })),
+        []
+    );
 
     const searchParams = useSearchParams();
     const moduleId = searchParams.get('module_id');
@@ -290,16 +302,17 @@ export default function ReviewPage() {
                 </header>
                 {showCelebration && (
                     <div className="pointer-events-none fixed inset-0 z-[120] overflow-hidden">
-                        {Array.from({ length: 120 }).map((_, i) => (
+                        {confetti.map((p) => (
                             <span
-                                key={i}
-                                className="absolute w-2 h-2 rounded-full animate-bounce"
+                                key={p.id}
+                                className="absolute rounded-sm"
                                 style={{
-                                    left: `${Math.random() * 100}%`,
-                                    top: `${Math.random() * 20}%`,
-                                    backgroundColor: ['#2563eb', '#22c55e', '#eab308', '#ef4444'][i % 4],
-                                    animationDuration: `${0.8 + Math.random() * 1.8}s`,
-                                    animationDelay: `${Math.random() * 0.7}s`,
+                                    left: `${p.left}%`,
+                                    top: `-8%`,
+                                    width: `${p.size}px`,
+                                    height: `${p.size * 0.55}px`,
+                                    backgroundColor: p.color,
+                                    animation: `confetti-fall ${p.duration}s linear ${p.delay}s forwards`,
                                 }}
                             />
                         ))}

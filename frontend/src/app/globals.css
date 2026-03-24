@@ -56,3 +56,26 @@ body {
   );
   background-size: 80px 100%;
 }
+
+.big-dot-list {
+  list-style-type: disc;
+  margin-left: 1.25rem;
+}
+
+.big-dot-list li::marker {
+  font-size: 1.35em;
+}
+
+@keyframes confetti-fall {
+  0% {
+    transform: translate3d(0, -10vh, 0) rotate(0deg);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(0, 110vh, 0) rotate(540deg);
+    opacity: 0.95;
+  }
+}

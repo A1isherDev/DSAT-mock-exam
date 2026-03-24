@@ -7,6 +7,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import User
 from .serializers import UserSerializer, MyTokenObtainPairSerializer
+from django.conf import settings
 import re
 
 class ThrottledTokenObtainPairView(TokenObtainPairView):
@@ -57,8 +58,9 @@ class GoogleAuthView(APIView):
         if not credential:
             return Response({"detail": "Missing Google credential."}, status=status.HTTP_400_BAD_REQUEST)
 
+        audience = settings.GOOGLE_CLIENT_ID or None
         try:
-            payload = id_token.verify_oauth2_token(credential, google_requests.Request())
+            payload = id_token.verify_oauth2_token(credential, google_requests.Request(), audience=audience)
         except Exception:
             return Response({"detail": "Invalid Google token."}, status=status.HTTP_400_BAD_REQUEST)
 

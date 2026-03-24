@@ -1,10 +1,9 @@
 "use client";
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { authApi } from '@/lib/api';
 import { useRouter } from 'next/navigation';
-import { AlertCircle, Loader2 } from 'lucide-react';
+import { AlertCircle, Loader2, UserPlus } from 'lucide-react';
 import Link from 'next/link';
-import { useEffect, useRef } from 'react';
 
 declare global {
     interface Window {
@@ -84,16 +83,16 @@ export default function RegisterPage() {
     }, [router]);
 
     return (
-        <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-6">
-            <div className="w-full max-w-[440px]">
+        <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-700 to-indigo-700 flex items-center justify-center p-6">
+            <div className="w-full max-w-md">
                 <div className="flex flex-col items-center mb-10">
-                    <img src="/images/logo.png" alt="Master SAT" className="w-16 h-16 object-contain mb-6 drop-shadow-sm" />
-                    <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Create Account</h1>
-                    <p className="mt-3 text-slate-500 font-medium text-center">Join MasterSAT Program</p>
+                    <img src="/images/logo.png" alt="Master SAT" className="w-20 h-20 object-contain mb-6 drop-shadow-lg" />
+                    <h1 className="text-3xl font-extrabold text-white tracking-tight">Create Account</h1>
+                    <p className="mt-3 text-blue-100 font-medium text-center">Join MasterSAT Program</p>
                 </div>
 
-                <div className="bg-white rounded-[32px] shadow-xl shadow-slate-200/50 border border-slate-200 p-10">
-                    <form className="space-y-6" onSubmit={handleSubmit}>
+                <div className="bg-white/95 backdrop-blur rounded-3xl border border-white/40 shadow-2xl p-8">
+                    <form className="space-y-5" onSubmit={handleSubmit}>
                         {error && (
                             <div className="flex items-start gap-3 text-red-600 text-sm font-medium bg-red-50 p-4 rounded-xl border border-red-100 animate-in fade-in slide-in-from-top-2 duration-200">
                                 <AlertCircle className="w-5 h-5 shrink-0" />
@@ -101,7 +100,7 @@ export default function RegisterPage() {
                             </div>
                         )}
 
-                        <div className="space-y-5">
+                        <div className="space-y-4">
                             <div className="flex gap-4">
                                 <div className="w-1/2">
                                     <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 ml-1" htmlFor="firstName">
@@ -111,7 +110,7 @@ export default function RegisterPage() {
                                         id="firstName"
                                         type="text"
                                         required
-                                        className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:bg-white focus:border-blue-400 transition-all sm:text-sm"
+                                        className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:bg-white focus:border-blue-400 transition-all sm:text-sm"
                                         placeholder="John"
                                         value={firstName}
                                         onChange={(e) => setFirstName(e.target.value)}
@@ -126,7 +125,7 @@ export default function RegisterPage() {
                                         id="lastName"
                                         type="text"
                                         required
-                                        className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:bg-white focus:border-blue-400 transition-all sm:text-sm"
+                                        className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:bg-white focus:border-blue-400 transition-all sm:text-sm"
                                         placeholder="Doe"
                                         value={lastName}
                                         onChange={(e) => setLastName(e.target.value)}
@@ -142,7 +141,7 @@ export default function RegisterPage() {
                                     id="username"
                                     type="text"
                                     required
-                                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:bg-white focus:border-blue-400 transition-all sm:text-sm"
+                                    className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:bg-white focus:border-blue-400 transition-all sm:text-sm"
                                     placeholder="johndoe123"
                                     value={username}
                                     onChange={(e) => setUsername(e.target.value)}
@@ -157,7 +156,7 @@ export default function RegisterPage() {
                                     id="email-address"
                                     type="email"
                                     required
-                                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:bg-white focus:border-blue-400 transition-all sm:text-sm"
+                                    className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:bg-white focus:border-blue-400 transition-all sm:text-sm"
                                     placeholder="name@example.com"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
@@ -172,7 +171,7 @@ export default function RegisterPage() {
                                     id="password"
                                     type="password"
                                     required
-                                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:bg-white focus:border-blue-400 transition-all sm:text-sm"
+                                    className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:bg-white focus:border-blue-400 transition-all sm:text-sm"
                                     placeholder="••••••••"
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
@@ -185,13 +184,14 @@ export default function RegisterPage() {
                             <button
                                 type="submit"
                                 disabled={loading}
-                                className="w-full flex items-center justify-center py-4 px-6 bg-blue-600 text-white text-sm font-bold rounded-2xl hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-100 transition-all active:scale-[0.98] shadow-lg shadow-blue-200 disabled:opacity-70 disabled:cursor-not-allowed group"
+                                className="w-full flex items-center justify-center py-3.5 px-6 bg-blue-600 text-white text-sm font-bold rounded-xl hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-100 transition-all active:scale-[0.98] shadow-lg shadow-blue-200 disabled:opacity-70 disabled:cursor-not-allowed group"
                             >
                                 {loading ? (
                                     <Loader2 className="w-5 h-5 animate-spin" />
                                 ) : (
                                     <>
                                         Register Now
+                                        <UserPlus className="w-4 h-4 ml-2 opacity-70" />
                                     </>
                                 )}
                             </button>
@@ -206,7 +206,7 @@ export default function RegisterPage() {
                         </div>
                     </form>
                     
-                    <div className="mt-6 text-center">
+                    <div className="mt-5 text-center">
                         <span className="text-sm text-slate-500 font-medium">Already have an account? </span>
                         <Link href="/login" className="text-sm font-bold text-blue-600 hover:text-blue-800">
                             Sign In
@@ -214,12 +214,8 @@ export default function RegisterPage() {
                     </div>
                 </div>
 
-                <div className="mt-10 text-center">
-                    <p className="text-xs font-medium text-slate-400">
-                        © {new Date().getFullYear()} MasterSAT Center
-                    </p>
-                </div>
             </div>
+            <p className="mt-6 text-center text-xs text-blue-100 font-medium">© {new Date().getFullYear()} MasterSAT Center</p>
         </div>
     );
 }
