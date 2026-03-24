@@ -44,9 +44,15 @@ Fill in:
 SECRET_KEY=<generate with: python3 -c "import secrets; print(secrets.token_hex(50))">
 DEBUG=False
 ALLOWED_HOSTS=yourdomain.com,www.yourdomain.com
-# SQLite (db.sqlite3) is used automatically; no DATABASE_URL needed.
+DATABASE_URL=postgres://USER:PASSWORD@127.0.0.1:5432/DBNAME
+DB_SSL=False
+GOOGLE_CLIENT_ID=....apps.googleusercontent.com
 CORS_ALLOWED_ORIGINS=https://yourdomain.com
 ```
+
+Production uses **PostgreSQL** when `DEBUG=False` (`DATABASE_URL` is required). Local dev can omit `DATABASE_URL` to use SQLite.
+
+User profile photos are stored under `backend/media/profiles/`; `deploy.sh` creates this path. Nginx must serve `/media/` (see `deploy/nginx.conf`).
 
 ### Frontend
 ```bash

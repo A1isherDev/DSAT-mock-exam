@@ -1,6 +1,6 @@
 "use client";
-import React, { useState, useEffect, memo, useCallback } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import React, { useState, useEffect, memo, useCallback, Suspense } from 'react';
+import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { examsApi } from '@/lib/api';
 import AuthGuard from '@/components/AuthGuard';
 import { Bookmark, ChevronDown, Highlighter, ZoomIn, Calculator, ChevronUp, X, Eye, EyeOff, MinusCircle, Info, Eye as EyeIcon, Play, Pause, ChevronLeft, ChevronRight, AlertCircle, BookOpen, Trash2, MoreVertical, Save } from 'lucide-react';
@@ -297,9 +297,11 @@ const RightPane = memo(({
 
 RightPane.displayName = 'RightPane';
 
-export default function ExamPlayerPage() {
+function ExamPlayerInner() {
     const { attemptId } = useParams();
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const midtermMode = searchParams.get('midterm') === '1';
     const [attempt, setAttempt] = useState<any>(null);
     const [loading, setLoading] = useState(true);
 
@@ -372,6 +374,13 @@ export default function ExamPlayerPage() {
         };
         fetchAttempt();
     }, [attemptId, router]);
+
+    useEffect(() => {
+        if (midtermMode) {
+            setShowCalculator(false);
+            setShowReferenceSheet(false);
+        }
+    }, [midtermMode]);
 
     // Robust Math Rendering Logic
     const renderMath = useCallback(() => {
@@ -894,7 +903,7 @@ export default function ExamPlayerPage() {
                             <span className="text-[9px] font-bold uppercase tracking-wider">Annotate</span>
                         </button>
 
-                        {attempt.practice_test_details.subject === 'MATH' && (
+                        {!midtermMode && attempt.practice_test_details.subject === 'MATH' && (
                             <>
                                 <button onClick={() => {
                                     if (!showCalculator) {
@@ -1142,7 +1151,7 @@ export default function ExamPlayerPage() {
                 )}
 
                 {/* Draggable Calculator Modal */}
-                {showCalculator && (
+                {showCalculator && !midtermMode && (
                     <div
                         style={{ position: 'fixed', left: `${calculatorPos.x}px`, top: `${calculatorPos.y}px`, width: `${calcSize.w}px`, height: `${calcSize.h}px`, zIndex: 60, minWidth: '350px', minHeight: '400px', resize: 'both', overflow: 'hidden' }}
                         className="bg-white rounded-2xl shadow-2xl flex flex-col border border-slate-300 pb-3 pr-3"
@@ -1179,7 +1188,7 @@ export default function ExamPlayerPage() {
                 )}
 
                 {/* Reference Sheet Modal */}
-                {showReferenceSheet && (
+                {showReferenceSheet && !midtermMode && (
                     <div
                         style={{ position: 'fixed', left: `${referencePos.x}px`, top: `${referencePos.y}px`, width: '800px', zIndex: 60 }}
                         className="bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col border border-slate-300"
@@ -1311,5 +1320,19 @@ export default function ExamPlayerPage() {
                 .annotate-mode *::selection { background-color: #3b82f640; }
             `}</style>
         </AuthGuard>
+    );
+}
+
+export default function ExamPlayerPage() {
+    return (
+        <Suspense
+            fallback={
+                <div className="min-h-screen flex items-center justify-center bg-white">
+                    <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                </div>
+            }
+        >
+            <ExamPlayerInner />
+        </Suspense>
     );
 }

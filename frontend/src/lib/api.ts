@@ -35,6 +35,17 @@ api.interceptors.response.use(
     }
 );
 
+export const usersApi = {
+    getMe: async () => {
+        const r = await api.get('/users/me/');
+        return r.data;
+    },
+    patchMe: async (data: FormData | Record<string, unknown>) => {
+        const r = await api.patch('/users/me/', data);
+        return r.data;
+    },
+};
+
 export const authApi = {
     register: async (firstName: string, lastName: string, username: string, email: string, password: string) => {
         const response = await api.post('/users/register/', { 

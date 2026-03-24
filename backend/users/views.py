@@ -4,9 +4,11 @@ from rest_framework.permissions import IsAuthenticated, BasePermission
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.views import APIView
+from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import User
-from .serializers import UserSerializer, MyTokenObtainPairSerializer
+from .serializers import UserSerializer, UserMeSerializer, MyTokenObtainPairSerializer
+from .permissions import IsAuthenticatedAndNotFrozen
 from django.conf import settings
 import re
 
@@ -39,6 +41,15 @@ class UserDeleteView(generics.DestroyAPIView):
 class UserRegistrationView(generics.CreateAPIView):
     serializer_class = UserSerializer
     permission_classes = [] # Allow any
+
+
+class UserMeView(generics.RetrieveUpdateAPIView):
+    serializer_class = UserMeSerializer
+    permission_classes = [IsAuthenticatedAndNotFrozen]
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
+
+    def get_object(self):
+        return self.request.user
 
 
 class GoogleAuthView(APIView):

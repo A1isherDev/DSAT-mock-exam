@@ -11,7 +11,18 @@ class CustomUserCreationForm(UserCreationForm):
 class CustomUserChangeForm(UserChangeForm):
     class Meta:
         model = User
-        fields = ('email', 'role', 'is_staff', 'is_superuser')
+        fields = (
+            'email',
+            'username',
+            'first_name',
+            'last_name',
+            'profile_image',
+            'sat_exam_date',
+            'target_score',
+            'role',
+            'is_staff',
+            'is_superuser',
+        )
 
 class CustomUserAdmin(UserAdmin):
     add_form = CustomUserCreationForm
@@ -21,8 +32,8 @@ class CustomUserAdmin(UserAdmin):
     ordering = ['email']
     # Username is removed from custom User model
     fieldsets = (
-        (None, {'fields': ('email', 'password')}),
-        ('Personal info', {'fields': ('first_name', 'last_name')}),
+        (None, {'fields': ('email', 'username', 'password')}),
+        ('Personal info', {'fields': ('first_name', 'last_name', 'profile_image', 'sat_exam_date', 'target_score')}),
         ('Permissions', {'fields': ('role', 'is_active', 'is_frozen', 'is_staff', 'is_superuser', 'groups', 'user_permissions')}),
         ('Important dates', {'fields': ('last_login', 'date_joined')}),
     )

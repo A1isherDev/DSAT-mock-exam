@@ -28,6 +28,9 @@ class User(AbstractUser):
     email = models.EmailField(unique=True, db_index=True)
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='STUDENT', db_index=True)
     is_frozen = models.BooleanField(default=False, db_index=True)
+    profile_image = models.ImageField(upload_to='profiles/', null=True, blank=True)
+    sat_exam_date = models.DateField(null=True, blank=True, help_text='Planned SAT exam date')
+    target_score = models.PositiveIntegerField(null=True, blank=True, help_text='Target total SAT score (400–1600)')
     
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = []

@@ -97,6 +97,9 @@ echo "-> Running Django checks..."
 echo "-> Applying database migrations..."
 "$VENV_DIR/bin/python" "$BACKEND_DIR/manage.py" migrate --no-input
 
+echo "-> Ensuring media directories (profile uploads, etc.)..."
+mkdir -p "$BACKEND_DIR/media/profiles"
+
 echo "-> Collecting static files..."
 "$VENV_DIR/bin/python" "$BACKEND_DIR/manage.py" collectstatic --no-input
 
