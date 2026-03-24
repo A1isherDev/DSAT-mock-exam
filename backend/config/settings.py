@@ -82,6 +82,9 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 DATABASE_URL = os.getenv('DATABASE_URL', '')
 
+if not DEBUG and not DATABASE_URL:
+    raise ValueError("DATABASE_URL must be set in production")
+
 if DATABASE_URL:
     import dj_database_url
     DATABASES = {
