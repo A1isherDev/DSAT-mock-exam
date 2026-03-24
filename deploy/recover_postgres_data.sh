@@ -68,7 +68,7 @@ fi
 echo "Using dump file: $DUMP_FILE"
 python3 -m json.tool "$DUMP_FILE" > /dev/null
 
-APP_ROW_COUNT="$("$PYTHON_BIN" "$MANAGE_PY" shell -c "
+APP_ROW_COUNT_RAW="$("$PYTHON_BIN" "$MANAGE_PY" shell -c "
 from django.apps import apps
 total = 0
 for m in apps.get_models():
@@ -76,6 +76,12 @@ for m in apps.get_models():
         total += m.objects.count()
 print(total)
 ")"
+APP_ROW_COUNT="$(printf '%s\n' "$APP_ROW_COUNT_RAW" | grep -E '^[0-9]+$' | tail -n 1)"
+if [[ -z "$APP_ROW_COUNT" ]]; then
+  echo "Could not parse app row count. Raw output:"
+  printf '%s\n' "$APP_ROW_COUNT_RAW"
+  exit 1
+fi
 
 echo "Current PostgreSQL app row count (users+exams): $APP_ROW_COUNT"
 
