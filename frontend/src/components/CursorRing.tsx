@@ -1,17 +1,31 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
+
+function isCursorRingDisabled(pathname: string | null): boolean {
+  if (!pathname) return false;
+  return pathname.startsWith("/admin") || pathname.startsWith("/exam");
+}
 
 /**
- * Small blue ring that follows the pointer (visible on light UI backgrounds).
+ * Small blue ring that follows the pointer (light UI). Disabled on exam and admin.
  */
 export default function CursorRing() {
+  const pathname = usePathname();
+  const disabled = isCursorRingDisabled(pathname);
+
   const [pos, setPos] = useState({ x: -100, y: -100 });
   const [visible, setVisible] = useState(false);
   const raf = useRef<number | null>(null);
   const pending = useRef({ x: 0, y: 0 });
 
   useEffect(() => {
+    if (disabled) {
+      setVisible(false);
+      return;
+    }
+
     const onMove = (e: MouseEvent) => {
       pending.current = { x: e.clientX, y: e.clientY };
       if (raf.current == null) {
@@ -30,9 +44,9 @@ export default function CursorRing() {
       document.documentElement.removeEventListener("mouseleave", onLeave);
       if (raf.current != null) cancelAnimationFrame(raf.current);
     };
-  }, []);
+  }, [disabled]);
 
-  if (!visible) return null;
+  if (disabled || !visible) return null;
 
   return (
     <div
