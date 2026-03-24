@@ -16,6 +16,7 @@ Pillow==12.1.1
 
 # Config
 python-dotenv==1.2.2
+google-auth==2.40.3
 
 # Production server
 gunicorn==23.0.0

@@ -39,6 +39,7 @@ export default function RootLayout({
         {children}
         <Script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" strategy="afterInteractive" />
         <Script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" strategy="afterInteractive" />
+        <Script src="https://accounts.google.com/gsi/client" strategy="afterInteractive" />
         <Script id="mathjax-config" strategy="afterInteractive">
           {`
             window.MathJax = {

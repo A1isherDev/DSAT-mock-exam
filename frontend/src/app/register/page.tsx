@@ -2,8 +2,15 @@
 import React, { useState } from 'react';
 import { authApi } from '@/lib/api';
 import { useRouter } from 'next/navigation';
-import { BookOpen, AlertCircle, Loader2 } from 'lucide-react';
+import { AlertCircle, Loader2 } from 'lucide-react';
 import Link from 'next/link';
+import { useEffect, useRef } from 'react';
+
+declare global {
+    interface Window {
+        google?: any;
+    }
+}
 
 export default function RegisterPage() {
     const [firstName, setFirstName] = useState('');
@@ -13,12 +20,18 @@ export default function RegisterPage() {
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+    const googleButtonRef = useRef<HTMLDivElement>(null);
     const router = useRouter();
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
         setError('');
+        if (firstName.trim().length < 3 || lastName.trim().length < 3 || username.trim().length < 3) {
+            setError('First name, last name, and username must be at least 3 characters.');
+            setLoading(false);
+            return;
+        }
         try {
             await authApi.register(firstName, lastName, username, email, password);
             // Auto login after registration
@@ -43,6 +56,32 @@ export default function RegisterPage() {
             setLoading(false);
         }
     };
+
+    useEffect(() => {
+        if (!window.google || !googleButtonRef.current) return;
+        const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+        if (!clientId) return;
+        window.google.accounts.id.initialize({
+            client_id: clientId,
+            callback: async (response: any) => {
+                if (!response?.credential) return;
+                try {
+                    await authApi.googleAuth(response.credential, undefined, true);
+                    router.push('/');
+                } catch (err: any) {
+                    setError(err?.response?.data?.detail || 'Google sign up failed.');
+                }
+            },
+        });
+        googleButtonRef.current.innerHTML = "";
+        window.google.accounts.id.renderButton(googleButtonRef.current, {
+            theme: "outline",
+            size: "large",
+            shape: "pill",
+            width: 360,
+            text: "signup_with",
+        });
+    }, [router]);
 
     return (
         <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-6">
@@ -153,10 +192,17 @@ export default function RegisterPage() {
                                 ) : (
                                     <>
                                         Register Now
-                                        <BookOpen className="w-4 h-4 ml-2 opacity-30 group-hover:opacity-100 transition-opacity" />
                                     </>
                                 )}
                             </button>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <div className="h-px bg-slate-200 flex-1" />
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">or</span>
+                            <div className="h-px bg-slate-200 flex-1" />
+                        </div>
+                        <div className="flex justify-center">
+                            <div ref={googleButtonRef} />
                         </div>
                     </form>
                     

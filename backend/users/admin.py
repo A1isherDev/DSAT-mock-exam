@@ -17,19 +17,19 @@ class CustomUserAdmin(UserAdmin):
     add_form = CustomUserCreationForm
     form = CustomUserChangeForm
     model = User
-    list_display = ['email', 'role', 'is_staff', 'is_active']
+    list_display = ['email', 'role', 'is_staff', 'is_active', 'is_frozen']
     ordering = ['email']
     # Username is removed from custom User model
     fieldsets = (
         (None, {'fields': ('email', 'password')}),
         ('Personal info', {'fields': ('first_name', 'last_name')}),
-        ('Permissions', {'fields': ('role', 'is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions')}),
+        ('Permissions', {'fields': ('role', 'is_active', 'is_frozen', 'is_staff', 'is_superuser', 'groups', 'user_permissions')}),
         ('Important dates', {'fields': ('last_login', 'date_joined')}),
     )
     add_fieldsets = (
         (None, {
             'classes': ('wide',),
-            'fields': ('email', 'role', 'password1', 'password2', 'is_staff', 'is_superuser')}
+            'fields': ('email', 'role', 'password1', 'password2', 'is_frozen', 'is_staff', 'is_superuser')}
         ),
     )
     search_fields = ('email',)

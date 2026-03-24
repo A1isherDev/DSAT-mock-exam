@@ -19,6 +19,11 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
     (response) => response,
     (error) => {
+        if (error.response?.status === 403 && error.response?.data?.detail) {
+            if (typeof window !== 'undefined') {
+                alert(error.response.data.detail);
+            }
+        }
         if (error.response?.status === 401) {
             Cookies.remove('access_token');
             Cookies.remove('refresh_token');
@@ -41,21 +46,40 @@ export const authApi = {
         });
         return response.data;
     },
-    login: async (email: string, password: string) => {
+    login: async (email: string, password: string, rememberMe = true) => {
         const response = await api.post('/auth/login/', { email, password });
         const cookieOptions = {
             secure: IS_PROD,
             sameSite: 'strict' as const,
-            expires: 7 // 7 days
+            expires: rememberMe ? 7 : undefined
         };
         Cookies.set('access_token', response.data.access, cookieOptions);
         Cookies.set('refresh_token', response.data.refresh, cookieOptions);
         Cookies.set('is_admin', response.data.is_admin ? 'true' : 'false', cookieOptions);
+        Cookies.set('is_frozen', response.data.is_frozen ? 'true' : 'false', cookieOptions);
+        Cookies.set('role', response.data.role || 'STUDENT', cookieOptions);
+        return response.data;
+    },
+    googleAuth: async (credential: string, profile?: { first_name?: string; last_name?: string; username?: string }, rememberMe = true) => {
+        const response = await api.post('/users/google/', { credential, ...(profile || {}) });
+        const cookieOptions = {
+            secure: IS_PROD,
+            sameSite: 'strict' as const,
+            expires: rememberMe ? 7 : undefined
+        };
+        Cookies.set('access_token', response.data.access, cookieOptions);
+        Cookies.set('refresh_token', response.data.refresh, cookieOptions);
+        Cookies.set('is_admin', response.data.is_admin ? 'true' : 'false', cookieOptions);
+        Cookies.set('is_frozen', response.data.is_frozen ? 'true' : 'false', cookieOptions);
+        Cookies.set('role', response.data.role || 'STUDENT', cookieOptions);
         return response.data;
     },
     logout: () => {
         Cookies.remove('access_token');
         Cookies.remove('refresh_token');
+        Cookies.remove('is_admin');
+        Cookies.remove('is_frozen');
+        Cookies.remove('role');
         window.location.href = '/login';
     }
 };

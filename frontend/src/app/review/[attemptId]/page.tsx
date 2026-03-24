@@ -191,6 +191,7 @@ export default function ReviewPage() {
     const [loading, setLoading] = useState(true);
     const [selectedQuestion, setSelectedQuestion] = useState<any>(null);
     const [showCorrectAnswers, setShowCorrectAnswers] = useState(true);
+    const [showCelebration, setShowCelebration] = useState(false);
 
     const searchParams = useSearchParams();
     const moduleId = searchParams.get('module_id');
@@ -207,6 +208,17 @@ export default function ReviewPage() {
         };
         fetchReview();
     }, [attemptId, moduleId]);
+
+    useEffect(() => {
+        if (!attemptId) return;
+        const key = `celebration_seen_attempt_${attemptId}`;
+        if (!localStorage.getItem(key)) {
+            setShowCelebration(true);
+            localStorage.setItem(key, '1');
+            const timer = setTimeout(() => setShowCelebration(false), 5000);
+            return () => clearTimeout(timer);
+        }
+    }, [attemptId]);
 
     // Math Rendering Trigger
     useEffect(() => {
@@ -256,15 +268,43 @@ export default function ReviewPage() {
                         </div>
                     </div>
                     <div>
-                        <button
-                            onClick={() => setShowCorrectAnswers(!showCorrectAnswers)}
-                            className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all border shadow-sm font-bold text-xs uppercase tracking-wider ${showCorrectAnswers ? 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200' : 'bg-slate-900 text-white border-slate-800 shadow-md hover:bg-slate-800'}`}
-                        >
-                            {showCorrectAnswers ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                            {showCorrectAnswers ? 'Hide Answers' : 'Show Answers'}
-                        </button>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => setShowCorrectAnswers(!showCorrectAnswers)}
+                                className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all border shadow-sm font-bold text-xs uppercase tracking-wider ${showCorrectAnswers ? 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200' : 'bg-slate-900 text-white border-slate-800 shadow-md hover:bg-slate-800'}`}
+                            >
+                                {showCorrectAnswers ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                {showCorrectAnswers ? 'Hide Answers' : 'Show Answers'}
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setShowCelebration(true);
+                                    setTimeout(() => setShowCelebration(false), 5000);
+                                }}
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl transition-all border shadow-sm font-bold text-xs uppercase tracking-wider bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-200"
+                            >
+                                Celebration
+                            </button>
+                        </div>
                     </div>
                 </header>
+                {showCelebration && (
+                    <div className="pointer-events-none fixed inset-0 z-[120] overflow-hidden">
+                        {Array.from({ length: 120 }).map((_, i) => (
+                            <span
+                                key={i}
+                                className="absolute w-2 h-2 rounded-full animate-bounce"
+                                style={{
+                                    left: `${Math.random() * 100}%`,
+                                    top: `${Math.random() * 20}%`,
+                                    backgroundColor: ['#2563eb', '#22c55e', '#eab308', '#ef4444'][i % 4],
+                                    animationDuration: `${0.8 + Math.random() * 1.8}s`,
+                                    animationDelay: `${Math.random() * 0.7}s`,
+                                }}
+                            />
+                        ))}
+                    </div>
+                )}
 
                 <main className="max-w-6xl mx-auto px-8 py-10">
                     {/* Hero Summary */}

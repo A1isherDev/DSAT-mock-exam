@@ -112,6 +112,7 @@ const RichTextEditor = ({ value, onChange, label, placeholder = "" }: { value: s
         { label: 'Bold', icon: <BoldIcon className="w-3.5 h-3.5" />, syntax: '<b></b>' },
         { label: 'Italic', icon: <ItalicIcon className="w-3.5 h-3.5" />, syntax: '<i></i>' },
         { label: 'Underline', icon: <UnderlineIcon className="w-3.5 h-3.5" />, syntax: '<u></u>' },
+        { label: 'Bullets', icon: <span className="text-xs font-bold">•</span>, syntax: '<ul><li></li></ul>' },
         { label: 'Formula', icon: <Sigma className="w-3.5 h-3.5" />, syntax: '\\(  \\)' },
         { label: 'Sqrt', icon: <span className="text-xs font-bold font-serif">√</span>, syntax: '\\sqrt{ }' },
         { label: 'Frac', icon: <span className="text-xs font-bold">½</span>, syntax: '\\frac{ }{ }' },
@@ -208,7 +209,7 @@ export default function AdminPage() {
     const [selectedModuleId, setSelectedModuleId] = useState<number | null>(null);
 
     // Forms
-    const [userForm, setUserForm] = useState({ first_name: '', last_name: '', username: '', email: '', password: '', is_admin: false, role: 'STUDENT' });
+    const [userForm, setUserForm] = useState({ first_name: '', last_name: '', username: '', email: '', password: '', is_admin: false, role: 'STUDENT', is_active: true, is_frozen: false });
     const [mockForm, setMockForm] = useState({ title: '', practice_date: '', is_active: true });
     const [questionForm, setQuestionForm] = useState({ 
         question_text: '', question_prompt: '', 
@@ -308,7 +309,7 @@ export default function AdminPage() {
             else { await adminApi.createUser(userForm); }
             await fetchUsers();
             setEditingUser(null);
-            setUserForm({ first_name: '', last_name: '', username: '', email: '', password: '', is_admin: false, role: 'STUDENT' });
+            setUserForm({ first_name: '', last_name: '', username: '', email: '', password: '', is_admin: false, role: 'STUDENT', is_active: true, is_frozen: false });
             showToast('User saved ✓');
         } finally { setSaving(false); }
     };
@@ -955,7 +956,7 @@ export default function AdminPage() {
                             <div className="space-y-6 max-w-4xl">
                                 <div className="flex items-center justify-between">
                                     <h2 className="text-xl font-bold text-slate-900">User Management</h2>
-                                    <button className={BTN_PRIMARY} onClick={() => { setEditingUser({}); setUserForm({ first_name: '', last_name: '', username: '', email: '', password: '', is_admin: false, role: 'STUDENT' }); }}>
+                                    <button className={BTN_PRIMARY} onClick={() => { setEditingUser({}); setUserForm({ first_name: '', last_name: '', username: '', email: '', password: '', is_admin: false, role: 'STUDENT', is_active: true, is_frozen: false }); }}>
                                         <Plus className="w-4 h-4" /> New User
                                     </button>
                                 </div>
@@ -991,6 +992,16 @@ export default function AdminPage() {
                                             />
                                             <label htmlFor="adm" className="text-sm font-bold text-slate-600">Admin Privileges (Mirror Role)</label>
                                         </div>
+                                        <div className="flex items-center gap-6 mt-2">
+                                            <label className="flex items-center gap-2 text-sm font-bold text-slate-600">
+                                                <input type="checkbox" checked={!!userForm.is_active} onChange={e => setUserForm({ ...userForm, is_active: e.target.checked })} />
+                                                Active
+                                            </label>
+                                            <label className="flex items-center gap-2 text-sm font-bold text-slate-600">
+                                                <input type="checkbox" checked={!!userForm.is_frozen} onChange={e => setUserForm({ ...userForm, is_frozen: e.target.checked })} />
+                                                Frozen
+                                            </label>
+                                        </div>
                                         <div className="col-span-2 flex justify-end gap-2">
                                             <button className={BTN_GHOST} onClick={() => setEditingUser(null)}><X className="w-4 h-4" /> Cancel</button>
                                             <button className={BTN_PRIMARY} onClick={handleSaveUser} disabled={saving}>{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save User</button>
@@ -1002,10 +1013,10 @@ export default function AdminPage() {
                                         <div key={user.id} className="p-4 border-b last:border-0 flex items-center justify-between hover:bg-slate-50">
                                             <div className="flex items-center gap-4">
                                                 <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center font-bold text-slate-500">{user.first_name?.[0]}{user.last_name?.[0]}</div>
-                                                <div><p className="font-bold text-sm text-slate-900">{user.first_name} {user.last_name} {user.is_admin && <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded ml-1">ADMIN</span>}</p><p className="text-[11px] text-slate-400">{user.email} · @{user.username}</p></div>
+                                                <div><p className="font-bold text-sm text-slate-900">{user.first_name} {user.last_name} {user.is_admin && <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded ml-1">ADMIN</span>} {user.is_frozen && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded ml-1">FROZEN</span>} {!user.is_active && <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded ml-1">INACTIVE</span>}</p><p className="text-[11px] text-slate-400">{user.email} · @{user.username}</p></div>
                                             </div>
                                             <div className="flex items-center gap-2">
-                                                <button className={BTN_GHOST} onClick={() => { setEditingUser(user); setUserForm({ first_name: user.first_name, last_name: user.last_name, username: user.username, email: user.email, password: '', is_admin: !!user.is_admin, role: user.role || 'STUDENT' }); }}><Pencil className="w-3.5 h-3.5" /></button>
+                                                <button className={BTN_GHOST} onClick={() => { setEditingUser(user); setUserForm({ first_name: user.first_name, last_name: user.last_name, username: user.username, email: user.email, password: '', is_admin: !!user.is_admin, role: user.role || 'STUDENT', is_active: user.is_active !== false, is_frozen: !!user.is_frozen }); }}><Pencil className="w-3.5 h-3.5" /></button>
                                                 <button className={BTN_DANGER} onClick={() => handleDeleteUser(user.id)}><Trash2 className="w-3.5 h-3.5" /></button>
                                             </div>
                                         </div>

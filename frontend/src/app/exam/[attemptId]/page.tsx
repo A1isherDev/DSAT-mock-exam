@@ -342,6 +342,8 @@ export default function ExamPlayerPage() {
     const [isRefDragging, setIsRefDragging] = useState(false);
     const [refDragOffset, setRefDragOffset] = useState({ x: 0, y: 0 });
     const [isNavigating, setIsNavigating] = useState(false);
+    const [showFiveMinuteWarning, setShowFiveMinuteWarning] = useState(false);
+    const [warningShownForModule, setWarningShownForModule] = useState<number | null>(null);
 
     const { current_module_details } = attempt || {};
     const questions = current_module_details?.questions || [];
@@ -691,6 +693,17 @@ export default function ExamPlayerPage() {
         return () => clearInterval(timer);
     }, [timeLeft, isPaused, handleSubmitModule]);
 
+    useEffect(() => {
+        const moduleId = attempt?.current_module_details?.id;
+        if (!moduleId) return;
+        if (timeLeft <= 300 && timeLeft > 0 && warningShownForModule !== moduleId) {
+            setShowFiveMinuteWarning(true);
+            setWarningShownForModule(moduleId);
+            const t = setTimeout(() => setShowFiveMinuteWarning(false), 5000);
+            return () => clearTimeout(t);
+        }
+    }, [timeLeft, attempt?.current_module_details?.id, warningShownForModule]);
+
     const formatTime = (seconds: number) => {
         const mins = Math.floor(seconds / 60);
         const secs = seconds % 60;
@@ -821,6 +834,11 @@ export default function ExamPlayerPage() {
                                         Hide
                                     </button>
                                 </div>
+                                {showFiveMinuteWarning && (
+                                    <div className="mt-1 text-[10px] font-bold text-red-600 bg-red-50 border border-red-200 rounded-full px-3 py-1">
+                                        Warning: Only 5 minutes left.
+                                    </div>
+                                )}
                             </div>
                         ) : (
                             <div className="flex flex-col items-center">

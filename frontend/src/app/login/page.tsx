@@ -2,13 +2,26 @@
 import React, { useState } from 'react';
 import { authApi } from '@/lib/api';
 import { useRouter } from 'next/navigation';
-import { BookOpen, AlertCircle, Loader2 } from 'lucide-react';
+import { AlertCircle, Loader2 } from 'lucide-react';
+import Link from 'next/link';
+import { useEffect, useRef } from 'react';
+
+declare global {
+    interface Window {
+        google?: any;
+    }
+}
 
 export default function LoginPage() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+    const [rememberMe, setRememberMe] = useState(true);
+    const [googleCredential, setGoogleCredential] = useState('');
+    const [googleMissing, setGoogleMissing] = useState<string[]>([]);
+    const [googleProfile, setGoogleProfile] = useState({ first_name: '', last_name: '', username: '' });
+    const googleButtonRef = useRef<HTMLDivElement>(null);
     const router = useRouter();
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -16,7 +29,7 @@ export default function LoginPage() {
         setLoading(true);
         setError('');
         try {
-            await authApi.login(email, password);
+            await authApi.login(email, password, rememberMe);
             router.push('/');
         } catch {
             setError('The email or password you entered is incorrect. Please try again.');
@@ -25,16 +38,57 @@ export default function LoginPage() {
         }
     };
 
+    const handleGoogleCredential = async (credential: string, profile?: { first_name?: string; last_name?: string; username?: string }) => {
+        setLoading(true);
+        setError('');
+        try {
+            await authApi.googleAuth(credential, profile, rememberMe);
+            router.push('/');
+        } catch (err: any) {
+            const missing = err?.response?.data?.missing_fields;
+            if (Array.isArray(missing) && missing.length) {
+                setGoogleCredential(credential);
+                setGoogleMissing(missing);
+                setError('Please complete missing profile fields to continue.');
+            } else {
+                setError(err?.response?.data?.detail || 'Google sign in failed.');
+            }
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (!window.google || !googleButtonRef.current) return;
+        const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+        if (!clientId) return;
+
+        window.google.accounts.id.initialize({
+            client_id: clientId,
+            callback: (response: any) => {
+                if (response?.credential) {
+                    handleGoogleCredential(response.credential);
+                }
+            },
+        });
+        googleButtonRef.current.innerHTML = "";
+        window.google.accounts.id.renderButton(googleButtonRef.current, {
+            theme: "outline",
+            size: "large",
+            shape: "pill",
+            width: 360,
+            text: "continue_with",
+        });
+    }, []);
+
     return (
-        <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-6">
+        <div className="min-h-screen flex flex-col items-center justify-center bg-blue-700 p-6">
             <div className="w-full max-w-[440px]">
                 {/* Logo Section */}
                 <div className="flex flex-col items-center mb-10">
-                    <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-blue-200 mb-6 transition-transform hover:scale-105 duration-300">
-                        <BookOpen className="w-10 h-10" />
-                    </div>
-                    <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">MasterSAT</h1>
-                    <p className="mt-3 text-slate-500 font-medium text-center">Secure examination portal for the <br />MasterSAT Program</p>
+                    <img src="/images/logo.png" alt="MasterSAT" className="w-20 h-20 object-contain mb-6 drop-shadow-md" />
+                    <h1 className="text-3xl font-extrabold text-white tracking-tight">MasterSAT</h1>
+                    <p className="mt-3 text-blue-100 font-medium text-center">Secure examination portal for the <br />MasterSAT Program</p>
                 </div>
 
                 {/* Card */}
@@ -78,6 +132,17 @@ export default function LoginPage() {
                                     disabled={loading}
                                 />
                             </div>
+                            <div className="flex items-center justify-between">
+                                <label className="inline-flex items-center gap-2 text-sm text-slate-600 font-medium">
+                                    <input
+                                        type="checkbox"
+                                        checked={rememberMe}
+                                        onChange={(e) => setRememberMe(e.target.checked)}
+                                        className="rounded border-slate-300 text-blue-600"
+                                    />
+                                    Remember me for 1 week
+                                </label>
+                            </div>
                         </div>
 
                         <div>
@@ -91,19 +156,55 @@ export default function LoginPage() {
                                 ) : (
                                     <>
                                         Sign In to Portal
-                                        <BookOpen className="w-4 h-4 ml-2 opacity-30 group-hover:opacity-100 transition-opacity" />
                                     </>
                                 )}
                             </button>
                         </div>
+                        <div className="flex items-center gap-3">
+                            <div className="h-px bg-slate-200 flex-1" />
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">or</span>
+                            <div className="h-px bg-slate-200 flex-1" />
+                        </div>
+                        <div className="flex justify-center">
+                            <div ref={googleButtonRef} />
+                        </div>
+                        {googleMissing.length > 0 && (
+                            <div className="space-y-3 pt-2">
+                                {googleMissing.includes('first_name') && (
+                                    <input
+                                        type="text"
+                                        placeholder="First name (min 3)"
+                                        className="w-full px-4 py-3 border border-slate-200 rounded-xl"
+                                        value={googleProfile.first_name}
+                                        onChange={(e) => setGoogleProfile(prev => ({ ...prev, first_name: e.target.value }))}
+                                    />
+                                )}
+                                {googleMissing.includes('last_name') && (
+                                    <input
+                                        type="text"
+                                        placeholder="Last name (min 3)"
+                                        className="w-full px-4 py-3 border border-slate-200 rounded-xl"
+                                        value={googleProfile.last_name}
+                                        onChange={(e) => setGoogleProfile(prev => ({ ...prev, last_name: e.target.value }))}
+                                    />
+                                )}
+                                <button
+                                    type="button"
+                                    onClick={() => handleGoogleCredential(googleCredential, googleProfile)}
+                                    className="w-full py-3 rounded-xl bg-slate-900 text-white font-bold"
+                                >
+                                    Continue with Google profile
+                                </button>
+                            </div>
+                        )}
                     </form>
                 </div>
 
                 <div className="mt-6 text-center">
                     <span className="text-sm text-slate-500 font-medium">Don't have an account? </span>
-                    <a href="/register" className="text-sm font-bold text-blue-600 hover:text-blue-800 transition-colors">
+                    <Link href="/register" className="text-sm font-bold text-blue-600 hover:text-blue-800 transition-colors">
                         Register Now
-                    </a>
+                    </Link>
                 </div>
 
                 <div className="mt-10 text-center">

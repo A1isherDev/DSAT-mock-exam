@@ -8,11 +8,15 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
         token = super().get_token(user)
         # Add custom claims
         token['is_admin'] = user.is_admin
+        token['role'] = user.role
+        token['is_frozen'] = user.is_frozen
         return token
 
     def validate(self, attrs):
         data = super().validate(attrs)
         data['is_admin'] = self.user.is_admin
+        data['role'] = self.user.role
+        data['is_frozen'] = self.user.is_frozen
         return data
 
 class UserSerializer(serializers.ModelSerializer):
@@ -22,6 +26,18 @@ class UserSerializer(serializers.ModelSerializer):
     def validate_username(self, value):
         if value == '':
             return None
+        if value is not None and len(value.strip()) < 3:
+            raise serializers.ValidationError("Username must be at least 3 characters.")
+        return value
+
+    def validate_first_name(self, value):
+        if value is not None and value.strip() and len(value.strip()) < 3:
+            raise serializers.ValidationError("First name must be at least 3 characters.")
+        return value
+
+    def validate_last_name(self, value):
+        if value is not None and value.strip() and len(value.strip()) < 3:
+            raise serializers.ValidationError("Last name must be at least 3 characters.")
         return value
 
     def validate_email(self, value):
@@ -36,7 +52,7 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'email', 'username', 'first_name', 'last_name', 'role', 'is_admin', 'is_active', 'date_joined', 'password']
+        fields = ['id', 'email', 'username', 'first_name', 'last_name', 'role', 'is_admin', 'is_active', 'is_frozen', 'date_joined', 'password']
         read_only_fields = ['date_joined']
 
     def create(self, validated_data):
