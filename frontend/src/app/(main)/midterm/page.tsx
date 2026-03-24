@@ -5,7 +5,7 @@ export default function MidtermPage() {
     <MockExamsList
       eyebrow="Midterm"
       title="Midterm"
-      description="Bu rejimda imtihon davomida Desmos kalkulyatori va reference sheet ko‘rinmaydi — real midterm muhitiga yaqin."
+      description="In this mode, the Desmos calculator and reference sheet are hidden during the exam—closer to a typical midterm environment."
       mockQuerySuffix="?midterm=1"
     />
   );

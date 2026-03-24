@@ -5,7 +5,7 @@ export default function PracticeTestsPage() {
     <MockExamsList
       eyebrow="Practice"
       title="Practice Tests"
-      description="SAT modullari bo‘yicha mashq qiling, jarayon va tahlilni kuzating."
+      description="Practice SAT modules, track your progress, and review your performance."
     />
   );
 }

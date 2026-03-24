@@ -52,7 +52,7 @@ export default function ProfilePage() {
         const me = await usersApi.getMe();
         if (!cancelled) setForm(mapMeToForm(me));
       } catch {
-        if (!cancelled) setMessage("Maʼlumotlarni yuklab boʻlmadi.");
+        if (!cancelled) setMessage("Could not load your profile.");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -92,7 +92,7 @@ export default function ProfilePage() {
       setForm(mapMeToForm(latest));
       setFile(null);
       setClearPhoto(false);
-      setMessage("Saqlandi.");
+      setMessage("Saved.");
     } catch (err: any) {
       const d = err?.response?.data;
       const text =
@@ -100,7 +100,7 @@ export default function ProfilePage() {
           ? Object.entries(d)
               .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") : v}`)
               .join(" ")
-          : "Saqlashda xatolik.";
+          : "Could not save changes.";
       setMessage(text);
     } finally {
       setSaving(false);
@@ -117,8 +117,8 @@ export default function ProfilePage() {
 
   return (
     <div className="max-w-xl mx-auto px-8 py-12">
-      <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight mb-2">Profil</h1>
-      <p className="text-slate-500 text-sm mb-8">Shaxsiy maʼlumotlar va rasm.</p>
+      <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight mb-2">Profile</h1>
+      <p className="text-slate-500 text-sm mb-8">Your account details and photo.</p>
 
       <form onSubmit={handleSubmit} className="space-y-6 bg-white border border-slate-200 rounded-2xl p-8 shadow-sm">
         <div className="flex flex-col items-center gap-3">
@@ -131,7 +131,7 @@ export default function ProfilePage() {
             )}
           </div>
           <label className="text-sm font-semibold text-blue-600 cursor-pointer hover:underline">
-            Rasm tanlash
+            Choose photo
             <input
               type="file"
               accept="image/*"
@@ -153,7 +153,7 @@ export default function ProfilePage() {
                   if (e.target.checked) setFile(null);
                 }}
               />
-              Rasmni olib tashlash
+              Remove photo
             </label>
           )}
         </div>
@@ -169,7 +169,7 @@ export default function ProfilePage() {
           />
         </div>
         <div>
-          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Ism</label>
+          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">First name</label>
           <input
             className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm"
             value={form.first_name}
@@ -177,7 +177,7 @@ export default function ProfilePage() {
           />
         </div>
         <div>
-          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Familiya</label>
+          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Last name</label>
           <input
             className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm"
             value={form.last_name}
@@ -195,7 +195,7 @@ export default function ProfilePage() {
           />
         </div>
         <div>
-          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">SAT imtihon sanasi</label>
+          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">SAT exam date</label>
           <input
             type="date"
             className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm"
@@ -204,7 +204,7 @@ export default function ProfilePage() {
           />
         </div>
         <div>
-          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Maqsad ball (400–1600)</label>
+          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Target score (400–1600)</label>
           <input
             type="number"
             min={400}
@@ -212,7 +212,7 @@ export default function ProfilePage() {
             className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm"
             value={form.target_score}
             onChange={(e) => setForm({ ...form, target_score: e.target.value })}
-            placeholder="Masalan: 1400"
+            placeholder="e.g. 1400"
           />
         </div>
 
@@ -223,7 +223,7 @@ export default function ProfilePage() {
           disabled={saving}
           className="w-full py-3 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 disabled:opacity-60 transition-colors"
         >
-          {saving ? "Saqlanmoqda…" : "Saqlash"}
+          {saving ? "Saving…" : "Save"}
         </button>
       </form>
     </div>

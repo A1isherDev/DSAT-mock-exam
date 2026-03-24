@@ -23,7 +23,7 @@ const nav = [
   { href: "/mock-exam", label: "Mock Exam", icon: ClipboardList },
   { href: "/midterm", label: "Midterm (no Desmos / Reference)", icon: FileWarning },
   { href: "/classes", label: "Classes", icon: Users },
-  { href: "/profile", label: "Profil", icon: UserCircle },
+  { href: "/profile", label: "Profile", icon: UserCircle },
 ];
 
 export default function StudentShell({ children }: { children: React.ReactNode }) {
@@ -45,7 +45,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
             <span className="font-extrabold text-slate-900 tracking-tight">MasterSAT</span>
           </div>
           <div className="px-4 pt-5 pb-2">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Bo&apos;limlar</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Sections</p>
           </div>
           <nav className="flex-1 px-3 pb-4 space-y-0.5 overflow-y-auto">
             {nav.map(({ href, label, icon: Icon }) => {
@@ -77,7 +77,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
                 className="flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-red-600 transition-colors uppercase tracking-wider px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50"
               >
                 <LogOut className="w-4 h-4" />
-                Chiqish
+                Sign out
               </button>
             ) : (
               <button
@@ -86,7 +86,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
                 className="flex items-center gap-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 transition-all uppercase tracking-wider px-4 py-2 rounded-lg shadow-md"
               >
                 <LogIn className="w-4 h-4" />
-                Kirish
+                Sign in
               </button>
             )}
           </header>

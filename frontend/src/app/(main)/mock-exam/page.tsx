@@ -5,7 +5,7 @@ export default function MockExamPage() {
     <MockExamsList
       eyebrow="Mock"
       title="Mock Exam"
-      description="To‘liq mock imtihonlar ro‘yxati. Har bir imtihonni tanlab, bo‘limlardan boshlang."
+      description="Full mock exams. Pick an exam and start each section when you are ready."
     />
   );
 }

@@ -50,7 +50,7 @@ export default function DashboardPage() {
   const formatDate = (d: string | null) => {
     if (!d) return "—";
     try {
-      return new Date(d).toLocaleDateString("uz-UZ", {
+      return new Date(d).toLocaleDateString("en-US", {
         day: "numeric",
         month: "long",
         year: "numeric",
@@ -71,20 +71,20 @@ export default function DashboardPage() {
     <div className="max-w-5xl mx-auto px-8 py-12">
       <div className="mb-10">
         <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-2">Dashboard</p>
-        <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Xush kelibsiz</h1>
+        <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Welcome</h1>
         <p className="text-slate-500 mt-2 max-w-xl">
-          Imtihon sanasi, maqsadli ball va oxirgi mock natijangizni shu yerdan kuzatishingiz mumkin.
+          Track your exam date, target score, and your latest mock exam result here.
         </p>
       </div>
 
       {!hasToken ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-          <p className="text-slate-600 font-medium mb-4">Shaxsiy ma&apos;lumotlarni ko&apos;rish uchun tizimga kiring.</p>
+          <p className="text-slate-600 font-medium mb-4">Sign in to view your personal dashboard data.</p>
           <Link
             href="/login"
             className="inline-flex items-center justify-center rounded-xl bg-blue-600 text-white font-bold px-6 py-3 text-sm hover:bg-blue-700 transition-colors"
           >
-            Kirish
+            Sign in
           </Link>
         </div>
       ) : loading ? (
@@ -101,9 +101,8 @@ export default function DashboardPage() {
             <p className="text-2xl font-black text-slate-900">{formatDate(me?.sat_exam_date ?? null)}</p>
             <p className="text-xs text-slate-400 mt-2">
               <Link href="/profile" className="text-blue-600 font-semibold hover:underline">
-                Profilda
-              </Link>{" "}
-              o&apos;rnatiladi
+                Set in Profile
+              </Link>
             </p>
           </div>
 
@@ -115,7 +114,7 @@ export default function DashboardPage() {
             <p className="text-2xl font-black text-slate-900">
               {me?.target_score != null ? me.target_score : "—"}
             </p>
-            <p className="text-xs text-slate-400 mt-2">400–1600 oralig&apos;ida</p>
+            <p className="text-xs text-slate-400 mt-2">Valid range: 400–1600</p>
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:col-span-1">
@@ -139,7 +138,7 @@ export default function DashboardPage() {
                 </p>
               </>
             ) : (
-              <p className="text-slate-500 text-sm font-medium">Hali yakunlangan mock yo&apos;q</p>
+              <p className="text-slate-500 text-sm font-medium">No completed mock exam yet</p>
             )}
           </div>
         </div>

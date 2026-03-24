@@ -182,12 +182,12 @@ function MockExamDetailInner() {
               onClick={() => router.push(backHref)}
               className="flex items-center gap-2 text-slate-500 hover:text-slate-900 font-bold transition-colors"
             >
-              <ArrowLeft className="w-5 h-5" /> Orqaga
+              <ArrowLeft className="w-5 h-5" /> Back
             </button>
             <div className="text-right">
               <h1 className="text-xl font-black text-slate-900 tracking-tight">{mockExam?.title}</h1>
               <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">
-                {midterm ? "Midterm rejimi" : "Active MasterSAT Session"}
+                {midterm ? "Midterm mode" : "Active MasterSAT Session"}
               </p>
             </div>
           </div>
@@ -198,7 +198,7 @@ function MockExamDetailInner() {
             <h2 className="text-4xl font-black text-slate-900 mb-4 tracking-tight">Available Sections</h2>
             <p className="text-slate-500 font-medium text-lg max-w-2xl">
               {midterm
-                ? "Midterm: kalkulyator va reference sheet o‘chirilgan."
+                ? "Midterm mode: calculator and reference sheet are disabled."
                 : "Complete both sections to receive your full predicted score. You can pause and resume each section independently."}
             </p>
           </div>
