@@ -125,7 +125,12 @@ class Module(TimestampedModel):
         ordering = ['practice_test', 'module_order']
 
     def __str__(self):
-        return f"{self.practice_test.title} - Mod {self.module_order}"
+        exam_title = (
+            self.practice_test.mock_exam.title
+            if self.practice_test and self.practice_test.mock_exam
+            else "Unassigned"
+        )
+        return f"{exam_title} - {self.practice_test.get_subject_display()} - Mod {self.module_order}"
 
 class TestAttempt(TimestampedModel):
     practice_test = models.ForeignKey(PracticeTest, on_delete=models.CASCADE, related_name='attempts')
