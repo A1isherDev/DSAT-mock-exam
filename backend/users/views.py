@@ -7,8 +7,6 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import User
 from .serializers import UserSerializer, MyTokenObtainPairSerializer
-from google.oauth2 import id_token
-from google.auth.transport import requests as google_requests
 import re
 
 class ThrottledTokenObtainPairView(TokenObtainPairView):
@@ -46,6 +44,15 @@ class GoogleAuthView(APIView):
     permission_classes = []
 
     def post(self, request):
+        try:
+            from google.oauth2 import id_token
+            from google.auth.transport import requests as google_requests
+        except Exception:
+            return Response(
+                {"detail": "Google auth dependencies are not installed on server."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
         credential = request.data.get("credential")
         if not credential:
             return Response({"detail": "Missing Google credential."}, status=status.HTTP_400_BAD_REQUEST)
