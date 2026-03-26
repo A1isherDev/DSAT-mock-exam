@@ -81,15 +81,15 @@ export default function LoginPage() {
     }, []);
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-700 to-indigo-700 dark:from-slate-950 dark:via-blue-950 dark:to-slate-900 flex items-center justify-center p-6 transition-colors duration-500">
+        <div className="min-h-screen app-bg flex items-center justify-center p-6 transition-colors duration-500">
             <div className="w-full max-w-md">
                 <div className="text-center mb-7">
                     <img src="/images/logo.png" alt="MasterSAT" className="mx-auto w-20 h-20 object-contain drop-shadow-xl" />
-                    <h1 className="mt-4 text-3xl font-black text-white tracking-tight drop-shadow-md">MasterSAT</h1>
-                    <p className="text-blue-100 dark:text-blue-200/80 mt-2 font-medium">Sign in to continue your preparation</p>
+                    <h1 className="mt-4 text-3xl font-black text-slate-900 tracking-tight">MasterSAT</h1>
+                    <p className="text-slate-500 mt-2 font-medium">Sign in to continue your preparation</p>
                 </div>
 
-                <div className="bg-white/95 dark:bg-slate-900/80 backdrop-blur-xl rounded-3xl border border-white/40 dark:border-slate-800/60 shadow-2xl p-8 transition-colors duration-300">
+                <div className="panel p-8 transition-colors duration-300">
                     <form className="space-y-5" onSubmit={handleSubmit}>
                         {error && (
                             <div className="flex items-start gap-3 text-red-600 dark:text-red-400 text-sm font-medium bg-red-50 dark:bg-red-900/20 p-4 rounded-xl border border-red-100 dark:border-red-900/50 animate-in fade-in slide-in-from-top-2 duration-200">
@@ -107,7 +107,7 @@ export default function LoginPage() {
                                     id="email-address"
                                     type="text"
                                     required
-                                    className="w-full px-4 py-3.5 bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-white font-medium placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/30 focus:bg-white dark:focus:bg-slate-900 focus:border-blue-400 dark:focus:border-blue-600 transition-all sm:text-sm"
+                                    className="input-modern font-medium sm:text-sm"
                                     placeholder="name@example.com or username"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
@@ -122,7 +122,7 @@ export default function LoginPage() {
                                     id="password"
                                     type="password"
                                     required
-                                    className="w-full px-4 py-3.5 bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-white font-medium placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/30 focus:bg-white dark:focus:bg-slate-900 focus:border-blue-400 dark:focus:border-blue-600 transition-all sm:text-sm"
+                                    className="input-modern font-medium sm:text-sm"
                                     placeholder="••••••••"
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
@@ -146,7 +146,7 @@ export default function LoginPage() {
                             <button
                                 type="submit"
                                 disabled={loading}
-                                className="w-full flex items-center justify-center py-3.5 px-6 bg-blue-600 dark:bg-blue-500 text-white text-sm font-bold rounded-xl hover:bg-blue-700 dark:hover:bg-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/50 transition-all active:scale-[0.98] shadow-lg shadow-blue-200 dark:shadow-blue-900/20 disabled:opacity-70 disabled:cursor-not-allowed group"
+                                className="w-full btn-primary disabled:opacity-70 disabled:cursor-not-allowed group"
                             >
                                 {loading ? (
                                     <Loader2 className="w-5 h-5 animate-spin" />
@@ -203,7 +203,7 @@ export default function LoginPage() {
                         </Link>
                     </div>
                 </div>
-                <p className="mt-6 text-center text-xs text-blue-100/80 dark:text-blue-200/50 font-medium">© {new Date().getFullYear()} MasterSAT Center</p>
+                <p className="mt-6 text-center text-xs text-slate-400 font-medium">© {new Date().getFullYear()} MasterSAT Center</p>
             </div>
         </div>
     );

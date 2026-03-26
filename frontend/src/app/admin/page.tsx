@@ -184,9 +184,9 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     );
 }
 
-const INPUT = "w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all";
-const BTN_PRIMARY = "flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-lg shadow transition-all";
-const BTN_GHOST = "flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 px-3 py-2 rounded-lg hover:bg-slate-100 transition-all";
+const INPUT = "input-modern";
+const BTN_PRIMARY = "btn-primary text-xs";
+const BTN_GHOST = "btn-secondary text-xs !px-3 !py-2";
 const BTN_DANGER = "flex items-center gap-1 text-[11px] font-bold text-red-500 hover:text-red-700 px-2 py-1.5 rounded-lg hover:bg-red-50 transition-all";
 
 export default function AdminPage() {
@@ -518,14 +518,14 @@ export default function AdminPage() {
 
     return (
         <AuthGuard adminOnly={true}>
-            <div className="min-h-screen bg-[#f8f9fb] flex flex-col">
+            <div className="min-h-screen app-bg flex flex-col">
                 {toast && (
                     <div className="fixed top-4 right-4 z-[999] bg-emerald-600 text-white text-sm font-bold px-5 py-3 rounded-xl shadow-xl animate-in slide-in-from-right-4">
                         {toast}
                     </div>
                 )}
 
-                <header className="bg-slate-900 px-8 py-4 flex items-center justify-between sticky top-0 z-50">
+                <header className="bg-slate-900/95 backdrop-blur-xl px-8 py-4 flex items-center justify-between sticky top-0 z-50 border-b border-slate-800">
                     <div className="flex items-center gap-3">
                         <div className="w-9 h-9 bg-indigo-500 rounded-xl flex items-center justify-center shadow-lg">
                             <ShieldCheck className="w-5 h-5 text-white" />
@@ -538,12 +538,12 @@ export default function AdminPage() {
                 </header>
 
                 <div className="flex flex-1 overflow-hidden">
-                    <aside className="w-52 bg-white border-r border-slate-200 flex flex-col py-4 gap-1 px-2 shrink-0">
+                    <aside className="w-56 bg-white/85 backdrop-blur-xl border-r border-slate-200/90 flex flex-col py-4 gap-1 px-2 shrink-0">
                         {navItems.map(item => (
                             <button
                                 key={item.key}
                                 onClick={() => setActiveTab(item.key)}
-                                className={`w-full text-left flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-bold transition-all ${activeTab === item.key ? 'bg-indigo-50 text-indigo-700 border border-indigo-100' : 'text-slate-600 hover:bg-slate-50'}`}
+                                className={`w-full text-left flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === item.key ? 'bg-indigo-50 text-indigo-700 border border-indigo-100 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}
                             >
                                 {item.icon} {item.label}
                             </button>

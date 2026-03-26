@@ -116,11 +116,14 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="max-w-xl mx-auto px-8 py-12">
-      <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight mb-2">Profile</h1>
-      <p className="text-slate-500 text-sm mb-8">Your account details and photo.</p>
+    <div className="max-w-2xl mx-auto px-8 py-12">
+      <div className="panel p-8 mb-6">
+        <p className="eyebrow mb-2">Profile</p>
+        <h1 className="title-xl mb-2">Account settings</h1>
+        <p className="text-slate-500 text-sm">Your personal details, SAT goals, and profile photo.</p>
+      </div>
 
-      <form onSubmit={handleSubmit} className="space-y-6 bg-white border border-slate-200 rounded-2xl p-8 shadow-sm">
+      <form onSubmit={handleSubmit} className="space-y-6 panel p-8">
         <div className="flex flex-col items-center gap-3">
           <div className="w-28 h-28 rounded-full overflow-hidden border-2 border-slate-200 bg-slate-50 flex items-center justify-center">
             {previewUrl ? (
@@ -161,7 +164,7 @@ export default function ProfilePage() {
         <div>
           <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Username</label>
           <input
-            className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm"
+            className="input-modern"
             value={form.username}
             onChange={(e) => setForm({ ...form, username: e.target.value })}
             required
@@ -171,7 +174,7 @@ export default function ProfilePage() {
         <div>
           <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">First name</label>
           <input
-            className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm"
+            className="input-modern"
             value={form.first_name}
             onChange={(e) => setForm({ ...form, first_name: e.target.value })}
           />
@@ -179,7 +182,7 @@ export default function ProfilePage() {
         <div>
           <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Last name</label>
           <input
-            className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm"
+            className="input-modern"
             value={form.last_name}
             onChange={(e) => setForm({ ...form, last_name: e.target.value })}
           />
@@ -188,7 +191,7 @@ export default function ProfilePage() {
           <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Email</label>
           <input
             type="email"
-            className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm"
+            className="input-modern"
             value={form.email}
             onChange={(e) => setForm({ ...form, email: e.target.value })}
             required
@@ -198,7 +201,7 @@ export default function ProfilePage() {
           <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">SAT exam date</label>
           <input
             type="date"
-            className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm"
+            className="input-modern"
             value={form.sat_exam_date}
             onChange={(e) => setForm({ ...form, sat_exam_date: e.target.value })}
           />
@@ -209,7 +212,7 @@ export default function ProfilePage() {
             type="number"
             min={400}
             max={1600}
-            className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm"
+            className="input-modern"
             value={form.target_score}
             onChange={(e) => setForm({ ...form, target_score: e.target.value })}
             placeholder="e.g. 1400"
@@ -221,7 +224,7 @@ export default function ProfilePage() {
         <button
           type="submit"
           disabled={saving}
-          className="w-full py-3 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 disabled:opacity-60 transition-colors"
+          className="w-full btn-primary disabled:opacity-60"
         >
           {saving ? "Saving…" : "Save"}
         </button>

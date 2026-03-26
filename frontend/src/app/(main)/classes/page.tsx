@@ -158,9 +158,9 @@ export default function ClassesPage() {
   return (
     <div className="max-w-6xl mx-auto px-6 py-10 lg:px-8 lg:py-12">
       <div className="flex items-start justify-between gap-6 mb-10">
-        <div>
-          <p className="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-2">Groups</p>
-          <h1 className="text-3xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-500 dark:from-white dark:to-slate-400 tracking-tight">Your groups</h1>
+        <div className="panel p-7 flex-1">
+          <p className="eyebrow mb-2">Groups</p>
+          <h1 className="title-xl">Your groups</h1>
           <p className="text-slate-500 dark:text-slate-400 mt-2 max-w-2xl">
             Join with a group code. Inside each group you’ll find announcements, homework, submissions, and grades.
           </p>
@@ -168,7 +168,7 @@ export default function ClassesPage() {
         <button
           type="button"
           onClick={fetchClasses}
-          className="shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-800/60 bg-white/70 dark:bg-slate-900/40 backdrop-blur-xl text-slate-700 dark:text-slate-300 font-bold text-sm hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all shadow-sm"
+          className="shrink-0 btn-secondary"
         >
           <RefreshCcw className="w-4 h-4" />
           Refresh
@@ -180,11 +180,11 @@ export default function ClassesPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2">
           {loading ? (
-            <div className="bg-white/70 dark:bg-slate-900/40 backdrop-blur-xl border border-slate-200 dark:border-slate-800/60 rounded-3xl p-10 flex justify-center card-shadow">
+            <div className="panel p-10 flex justify-center">
               <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
             </div>
           ) : classes.length === 0 ? (
-            <div className="bg-white/70 dark:bg-slate-900/40 backdrop-blur-xl border border-slate-200 dark:border-slate-800/60 rounded-3xl p-10 card-shadow">
+            <div className="panel p-10">
               <p className="text-slate-700 dark:text-slate-300 font-bold">No groups yet.</p>
               <p className="text-slate-500 dark:text-slate-400 mt-1 text-sm">Use a group code to join, or ask a teacher to create one for you.</p>
             </div>
@@ -195,7 +195,7 @@ export default function ClassesPage() {
                   key={c.id}
                   type="button"
                   onClick={() => router.push(`/classes/${c.id}`)}
-                  className="text-left bg-white/70 dark:bg-slate-900/40 backdrop-blur-xl border border-slate-200 dark:border-slate-800/60 rounded-3xl p-6 card-shadow hover:shadow-xl hover:-translate-y-1 hover:border-blue-300 dark:hover:border-blue-800 transition-all duration-300 group"
+                  className="text-left panel p-6 hover:shadow-xl hover:-translate-y-1 hover:border-blue-300 dark:hover:border-blue-800 transition-all duration-300 group"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
@@ -235,7 +235,7 @@ export default function ClassesPage() {
         </div>
 
         <div className="space-y-6">
-          <div className="bg-white/70 dark:bg-slate-900/40 backdrop-blur-xl border border-slate-200 dark:border-slate-800/60 rounded-3xl p-6 shadow-sm card-shadow">
+          <div className="panel p-6">
             <div className="flex items-center gap-2 mb-3">
               <KeyRound className="w-4 h-4 text-slate-500 dark:text-slate-400" />
               <p className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">Join a group</p>
@@ -244,13 +244,13 @@ export default function ClassesPage() {
               value={joinCode}
               onChange={(e) => setJoinCode(e.target.value)}
               placeholder="Group code"
-              className="w-full border border-slate-200 dark:border-slate-700/60 bg-white dark:bg-slate-950/50 text-slate-900 dark:text-white rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+              className="input-modern font-semibold"
             />
             <button
               type="button"
               onClick={handleJoin}
               disabled={!joinCode.trim()}
-              className="w-full mt-3 py-3 rounded-xl bg-slate-900 dark:bg-slate-800 text-white font-bold text-sm hover:bg-slate-800 dark:hover:bg-slate-700 disabled:opacity-50 transition-colors shadow-md hover:shadow-lg"
+              className="w-full mt-3 btn-primary disabled:opacity-50"
             >
               Join
             </button>
