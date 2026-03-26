@@ -221,6 +221,11 @@ export default function AdminPage() {
     const [optionBImage, setOptionBImage] = useState<File | null>(null);
     const [optionCImage, setOptionCImage] = useState<File | null>(null);
     const [optionDImage, setOptionDImage] = useState<File | null>(null);
+    const [clearQuestionImage, setClearQuestionImage] = useState(false);
+    const [clearOptionAImage, setClearOptionAImage] = useState(false);
+    const [clearOptionBImage, setClearOptionBImage] = useState(false);
+    const [clearOptionCImage, setClearOptionCImage] = useState(false);
+    const [clearOptionDImage, setClearOptionDImage] = useState(false);
     const [assignments, setAssignments] = useState<Record<number, number[]>>({});
     const [userSearch, setUserSearch] = useState('');
 
@@ -395,10 +400,15 @@ export default function AdminPage() {
             if (questionImage) {
                 formData.append('question_image', questionImage);
             }
+            if (clearQuestionImage) formData.append('clear_question_image', 'true');
             if (optionAImage) formData.append('option_a_image', optionAImage);
             if (optionBImage) formData.append('option_b_image', optionBImage);
             if (optionCImage) formData.append('option_c_image', optionCImage);
             if (optionDImage) formData.append('option_d_image', optionDImage);
+            if (clearOptionAImage) formData.append('clear_option_a_image', 'true');
+            if (clearOptionBImage) formData.append('clear_option_b_image', 'true');
+            if (clearOptionCImage) formData.append('clear_option_c_image', 'true');
+            if (clearOptionDImage) formData.append('clear_option_d_image', 'true');
 
             if (editingQuestion?.id) { 
                 await adminApi.updateQuestion(selectedPracticeTestId, selectedModuleId, editingQuestion.id, formData, true); 
@@ -418,6 +428,11 @@ export default function AdminPage() {
             setOptionBImage(null);
             setOptionCImage(null);
             setOptionDImage(null);
+            setClearQuestionImage(false);
+            setClearOptionAImage(false);
+            setClearOptionBImage(false);
+            setClearOptionCImage(false);
+            setClearOptionDImage(false);
             showToast('Question saved ✓');
         } catch (e: any) { alert('Error: ' + (e?.response?.status === 404 ? '404 - Endpoint not found or IDs mismatch' : (e?.message || 'Invalid'))); }
         finally { setSaving(false); }
@@ -678,6 +693,11 @@ export default function AdminPage() {
                                             setOptionBImage(null);
                                             setOptionCImage(null);
                                             setOptionDImage(null);
+                                            setClearQuestionImage(false);
+                                            setClearOptionAImage(false);
+                                            setClearOptionBImage(false);
+                                            setClearOptionCImage(false);
+                                            setClearOptionDImage(false);
                                         }}>
                                             <Plus className="w-4 h-4" /> Add Question
                                         </button>
@@ -727,10 +747,11 @@ export default function AdminPage() {
                                                             <input type="file" className="hidden" accept="image/*" onChange={e => {
                                                                 const file = e.target.files?.[0] || null;
                                                                 setOptionAImage(file);
+                                                                if (file) setClearOptionAImage(false);
                                                                 if (file) setQuestionForm({...questionForm, option_a: ''});
                                                             }} />
                                                         </label>
-                                                        {(optionAImage || editingQuestion?.option_a_image) && <button onClick={() => { setOptionAImage(null); }} className="text-red-500 hover:underline">Clear</button>}
+                                                        {(optionAImage || editingQuestion?.option_a_image) && <button onClick={() => { setOptionAImage(null); if (editingQuestion?.option_a_image) setClearOptionAImage(true); }} className="text-red-500 hover:underline">Clear</button>}
                                                         {(optionAImage || editingQuestion?.option_a_image) && (
                                                             <div className="w-8 h-8 rounded border border-slate-200 overflow-hidden bg-slate-50 ml-auto mr-4">
                                                                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -752,10 +773,11 @@ export default function AdminPage() {
                                                             <input type="file" className="hidden" accept="image/*" onChange={e => {
                                                                 const file = e.target.files?.[0] || null;
                                                                 setOptionBImage(file);
+                                                                if (file) setClearOptionBImage(false);
                                                                 if (file) setQuestionForm({...questionForm, option_b: ''});
                                                             }} />
                                                         </label>
-                                                        {(optionBImage || editingQuestion?.option_b_image) && <button onClick={() => { setOptionBImage(null); }} className="text-red-500 hover:underline">Clear</button>}
+                                                        {(optionBImage || editingQuestion?.option_b_image) && <button onClick={() => { setOptionBImage(null); if (editingQuestion?.option_b_image) setClearOptionBImage(true); }} className="text-red-500 hover:underline">Clear</button>}
                                                         {(optionBImage || editingQuestion?.option_b_image) && (
                                                             <div className="w-8 h-8 rounded border border-slate-200 overflow-hidden bg-slate-50 ml-auto mr-4">
                                                                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -777,10 +799,11 @@ export default function AdminPage() {
                                                             <input type="file" className="hidden" accept="image/*" onChange={e => {
                                                                 const file = e.target.files?.[0] || null;
                                                                 setOptionCImage(file);
+                                                                if (file) setClearOptionCImage(false);
                                                                 if (file) setQuestionForm({...questionForm, option_c: ''});
                                                             }} />
                                                         </label>
-                                                        {(optionCImage || editingQuestion?.option_c_image) && <button onClick={() => { setOptionCImage(null); }} className="text-red-500 hover:underline">Clear</button>}
+                                                        {(optionCImage || editingQuestion?.option_c_image) && <button onClick={() => { setOptionCImage(null); if (editingQuestion?.option_c_image) setClearOptionCImage(true); }} className="text-red-500 hover:underline">Clear</button>}
                                                         {(optionCImage || editingQuestion?.option_c_image) && (
                                                             <div className="w-8 h-8 rounded border border-slate-200 overflow-hidden bg-slate-50 ml-auto mr-4">
                                                                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -802,10 +825,11 @@ export default function AdminPage() {
                                                             <input type="file" className="hidden" accept="image/*" onChange={e => {
                                                                 const file = e.target.files?.[0] || null;
                                                                 setOptionDImage(file);
+                                                                if (file) setClearOptionDImage(false);
                                                                 if (file) setQuestionForm({...questionForm, option_d: ''});
                                                             }} />
                                                         </label>
-                                                        {(optionDImage || editingQuestion?.option_d_image) && <button onClick={() => { setOptionDImage(null); }} className="text-red-500 hover:underline">Clear</button>}
+                                                        {(optionDImage || editingQuestion?.option_d_image) && <button onClick={() => { setOptionDImage(null); if (editingQuestion?.option_d_image) setClearOptionDImage(true); }} className="text-red-500 hover:underline">Clear</button>}
                                                         {(optionDImage || editingQuestion?.option_d_image) && (
                                                             <div className="w-8 h-8 rounded border border-slate-200 overflow-hidden bg-slate-50 ml-auto mr-4">
                                                                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -819,10 +843,19 @@ export default function AdminPage() {
                                                 <div className="flex items-center gap-3">
                                                     <label className="flex-1 border-2 border-dashed border-slate-200 rounded-lg p-2 flex items-center justify-center gap-2 cursor-pointer hover:bg-slate-50 transition-colors">
                                                         <Upload className="w-4 h-4 text-slate-400" />
-                                                        <span className="text-xs text-slate-500 font-bold">{questionImage ? questionImage.name : 'Choose File'}</span>
-                                                        <input type="file" className="hidden" accept="image/*" onChange={e => setQuestionImage(e.target.files?.[0] || null)} />
+                                                        <span className="text-xs text-slate-500 font-bold">{questionImage ? questionImage.name : (editingQuestion?.question_image ? 'Has existing image' : 'Choose File')}</span>
+                                                        <input type="file" className="hidden" accept="image/*" onChange={e => { const f = e.target.files?.[0] || null; setQuestionImage(f); if (f) setClearQuestionImage(false); }} />
                                                     </label>
-                                                    {questionImage && <button onClick={() => setQuestionImage(null)} className="text-red-500 hover:bg-red-50 p-2 rounded-lg"><X className="w-4 h-4" /></button>}
+                                                    {(questionImage || editingQuestion?.question_image) && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => { setQuestionImage(null); if (editingQuestion?.question_image) setClearQuestionImage(true); }}
+                                                            className="text-red-500 hover:bg-red-50 p-2 rounded-lg"
+                                                            title="Remove image"
+                                                        >
+                                                            <X className="w-4 h-4" />
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </Field>
                                             {practiceTests.find(t => t.id === selectedPracticeTestId)?.subject === 'READING_WRITING' && (
@@ -909,6 +942,11 @@ export default function AdminPage() {
                                                         setOptionBImage(null);
                                                         setOptionCImage(null);
                                                         setOptionDImage(null);
+                                                        setClearQuestionImage(false);
+                                                        setClearOptionAImage(false);
+                                                        setClearOptionBImage(false);
+                                                        setClearOptionCImage(false);
+                                                        setClearOptionDImage(false);
                                                     }}><Pencil className="w-3.5 h-3.5" /></button>
                                                     <button className={BTN_DANGER} onClick={() => handleDeleteQuestion(q.id)}><Trash2 className="w-3.5 h-3.5" /></button>
                                                 </div>

@@ -84,13 +84,55 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
     option_b = serializers.CharField(required=False, allow_blank=True)
     option_c = serializers.CharField(required=False, allow_blank=True)
     option_d = serializers.CharField(required=False, allow_blank=True)
+    clear_question_image = serializers.BooleanField(write_only=True, required=False)
+    clear_option_a_image = serializers.BooleanField(write_only=True, required=False)
+    clear_option_b_image = serializers.BooleanField(write_only=True, required=False)
+    clear_option_c_image = serializers.BooleanField(write_only=True, required=False)
+    clear_option_d_image = serializers.BooleanField(write_only=True, required=False)
 
     class Meta:
         model = Question
         fields = ['id', 'question_type', 'question_text', 'question_prompt', 'question_image',
                   'is_math_input', 'correct_answer', 'score', 'explanation', 'order',
                   'option_a', 'option_b', 'option_c', 'option_d',
-                  'option_a_image', 'option_b_image', 'option_c_image', 'option_d_image']
+                  'option_a_image', 'option_b_image', 'option_c_image', 'option_d_image',
+                  'clear_question_image', 'clear_option_a_image', 'clear_option_b_image',
+                  'clear_option_c_image', 'clear_option_d_image']
+
+    def update(self, instance, validated_data):
+        clear_question_image = validated_data.pop('clear_question_image', False)
+        clear_option_a_image = validated_data.pop('clear_option_a_image', False)
+        clear_option_b_image = validated_data.pop('clear_option_b_image', False)
+        clear_option_c_image = validated_data.pop('clear_option_c_image', False)
+        clear_option_d_image = validated_data.pop('clear_option_d_image', False)
+
+        # Only clear when requested AND no replacement file was uploaded.
+        if clear_question_image and 'question_image' not in validated_data:
+            if instance.question_image:
+                instance.question_image.delete(save=False)
+            instance.question_image = None
+
+        if clear_option_a_image and 'option_a_image' not in validated_data:
+            if instance.option_a_image:
+                instance.option_a_image.delete(save=False)
+            instance.option_a_image = None
+
+        if clear_option_b_image and 'option_b_image' not in validated_data:
+            if instance.option_b_image:
+                instance.option_b_image.delete(save=False)
+            instance.option_b_image = None
+
+        if clear_option_c_image and 'option_c_image' not in validated_data:
+            if instance.option_c_image:
+                instance.option_c_image.delete(save=False)
+            instance.option_c_image = None
+
+        if clear_option_d_image and 'option_d_image' not in validated_data:
+            if instance.option_d_image:
+                instance.option_d_image.delete(save=False)
+            instance.option_d_image = None
+
+        return super().update(instance, validated_data)
 
 
 class AdminModuleSerializer(serializers.ModelSerializer):
