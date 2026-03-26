@@ -139,7 +139,7 @@ export const examsApi = {
 
 export const classesApi = {
     list: async () => { const r = await api.get('/classes/'); return r.data; },
-    create: async (data: { name: string; subject?: string; lesson_schedule?: string; max_students?: number; section?: string; description?: string; is_active?: boolean }) => {
+    create: async (data: { name: string; subject: 'ENGLISH' | 'MATH'; lesson_days: 'ODD' | 'EVEN'; lesson_time?: string; lesson_hours?: number; start_date?: string; room_number?: string; telegram_chat_url?: string; max_students?: number; is_active?: boolean }) => {
         const r = await api.post('/classes/', data);
         return r.data;
     },

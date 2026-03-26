@@ -5,8 +5,8 @@ from .models import Classroom, ClassroomMembership, ClassPost, Assignment, Submi
 
 @admin.register(Classroom)
 class ClassroomAdmin(admin.ModelAdmin):
-    list_display = ("id", "name", "section", "join_code", "is_active", "created_at")
-    search_fields = ("name", "section", "join_code")
+    list_display = ("id", "name", "subject", "lesson_days", "lesson_time", "room_number", "join_code", "is_active", "created_at")
+    search_fields = ("name", "subject", "lesson_time", "room_number", "join_code")
     list_filter = ("is_active", "created_at")
 
 

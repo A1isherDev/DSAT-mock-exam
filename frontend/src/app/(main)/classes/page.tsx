@@ -16,7 +16,17 @@ export default function ClassesPage() {
 
   const [joinCode, setJoinCode] = useState("");
   const [creating, setCreating] = useState(false);
-  const [newClass, setNewClass] = useState({ name: "", subject: "", lesson_schedule: "", max_students: "", section: "", description: "" });
+  const [newClass, setNewClass] = useState({
+    name: "",
+    subject: "ENGLISH",
+    lesson_days: "ODD",
+    lesson_time: "",
+    lesson_hours: "2",
+    start_date: "",
+    room_number: "",
+    telegram_chat_url: "",
+    max_students: "",
+  });
 
   const fetchClasses = async () => {
     setError(null);
@@ -54,13 +64,26 @@ export default function ClassesPage() {
     try {
       const c = await classesApi.create({
         name: newClass.name.trim(),
-        subject: newClass.subject.trim(),
-        lesson_schedule: newClass.lesson_schedule.trim(),
+        subject: newClass.subject as any,
+        lesson_days: newClass.lesson_days as any,
+        lesson_time: newClass.lesson_time.trim(),
+        lesson_hours: newClass.lesson_hours ? Number(newClass.lesson_hours) : 2,
+        start_date: newClass.start_date || undefined,
+        room_number: newClass.room_number.trim(),
+        telegram_chat_url: newClass.telegram_chat_url.trim(),
         max_students: newClass.max_students ? Number(newClass.max_students) : undefined,
-        section: newClass.section.trim(),
-        description: newClass.description.trim(),
       });
-      setNewClass({ name: "", subject: "", lesson_schedule: "", max_students: "", section: "", description: "" });
+      setNewClass({
+        name: "",
+        subject: "ENGLISH",
+        lesson_days: "ODD",
+        lesson_time: "",
+        lesson_hours: "2",
+        start_date: "",
+        room_number: "",
+        telegram_chat_url: "",
+        max_students: "",
+      });
       await fetchClasses();
       if (c?.id) router.push(`/classes/${c.id}`);
     } catch (e: any) {
@@ -116,7 +139,9 @@ export default function ClassesPage() {
                     <div className="min-w-0">
                       <p className="text-lg font-extrabold text-slate-900 truncate">{c.name}</p>
                       <p className="text-sm text-slate-500 truncate">
-                        {(c.subject ? `${c.subject}` : "—")}{c.lesson_schedule ? ` · ${c.lesson_schedule}` : ""}
+                        {(c.subject ? `${c.subject}` : "—")}
+                        {c.lesson_days ? ` · ${c.lesson_days}` : ""}
+                        {c.lesson_time ? ` · ${c.lesson_time}` : ""}
                       </p>
                     </div>
                     <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center shrink-0 border border-blue-100">
@@ -172,16 +197,56 @@ export default function ClassesPage() {
                   placeholder="Group name"
                   className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold"
                 />
+                <div className="grid grid-cols-2 gap-2">
+                  <select
+                    value={newClass.subject}
+                    onChange={(e) => setNewClass((p) => ({ ...p, subject: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold bg-white"
+                  >
+                    <option value="ENGLISH">English</option>
+                    <option value="MATH">Math</option>
+                  </select>
+                  <select
+                    value={newClass.lesson_days}
+                    onChange={(e) => setNewClass((p) => ({ ...p, lesson_days: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold bg-white"
+                  >
+                    <option value="ODD">Odd days</option>
+                    <option value="EVEN">Even days</option>
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    value={newClass.lesson_time}
+                    onChange={(e) => setNewClass((p) => ({ ...p, lesson_time: e.target.value }))}
+                    placeholder="Lesson time (e.g. 18:00)"
+                    className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold"
+                  />
+                  <input
+                    value={newClass.lesson_hours}
+                    onChange={(e) => setNewClass((p) => ({ ...p, lesson_hours: e.target.value }))}
+                    placeholder="Lesson hours (e.g. 2)"
+                    className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="date"
+                    value={newClass.start_date}
+                    onChange={(e) => setNewClass((p) => ({ ...p, start_date: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold"
+                  />
+                  <input
+                    value={newClass.room_number}
+                    onChange={(e) => setNewClass((p) => ({ ...p, room_number: e.target.value }))}
+                    placeholder="Room number (optional)"
+                    className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold"
+                  />
+                </div>
                 <input
-                  value={newClass.subject}
-                  onChange={(e) => setNewClass((p) => ({ ...p, subject: e.target.value }))}
-                  placeholder="Subject (e.g. English)"
-                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold"
-                />
-                <input
-                  value={newClass.lesson_schedule}
-                  onChange={(e) => setNewClass((p) => ({ ...p, lesson_schedule: e.target.value }))}
-                  placeholder="Lesson days/time (e.g. Mon/Wed/Fri 18:00)"
+                  value={newClass.telegram_chat_url}
+                  onChange={(e) => setNewClass((p) => ({ ...p, telegram_chat_url: e.target.value }))}
+                  placeholder="Telegram chat link (optional)"
                   className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold"
                 />
                 <input
@@ -189,18 +254,6 @@ export default function ClassesPage() {
                   onChange={(e) => setNewClass((p) => ({ ...p, max_students: e.target.value }))}
                   placeholder="Number of students (optional)"
                   className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold"
-                />
-                <input
-                  value={newClass.section}
-                  onChange={(e) => setNewClass((p) => ({ ...p, section: e.target.value }))}
-                  placeholder="Section (optional)"
-                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold"
-                />
-                <textarea
-                  value={newClass.description}
-                  onChange={(e) => setNewClass((p) => ({ ...p, description: e.target.value }))}
-                  placeholder="Description (optional)"
-                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium min-h-[90px]"
                 />
               </div>
               <button

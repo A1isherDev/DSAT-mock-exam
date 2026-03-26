@@ -130,7 +130,9 @@ export default function ClassDetailPage() {
           <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">{klass?.name || "Group"}</h1>
           <p className="text-slate-500 mt-2">
             {(klass?.subject ? klass.subject : "")}
-            {klass?.lesson_schedule ? ` · ${klass.lesson_schedule}` : ""}
+            {klass?.lesson_days ? ` · ${klass.lesson_days}` : ""}
+            {klass?.lesson_time ? ` · ${klass.lesson_time}` : ""}
+            {klass?.lesson_hours ? ` · ${klass.lesson_hours}h` : ""}
           </p>
         </div>
         <button
@@ -181,6 +183,20 @@ export default function ClassDetailPage() {
                 <p className="text-xs font-black text-slate-500 uppercase tracking-widest">Class code</p>
               </div>
               <div className="font-mono text-lg font-black text-slate-900 tracking-wider">{klass?.join_code || "—"}</div>
+              {(klass?.room_number || klass?.start_date || klass?.telegram_chat_url) && (
+                <div className="mt-4 text-sm text-slate-600 space-y-1">
+                  {klass?.room_number ? <p><span className="font-bold">Room:</span> {klass.room_number}</p> : null}
+                  {klass?.start_date ? <p><span className="font-bold">Start:</span> {klass.start_date}</p> : null}
+                  {klass?.telegram_chat_url ? (
+                    <p>
+                      <span className="font-bold">Telegram:</span>{" "}
+                      <a className="text-blue-700 font-semibold hover:underline" href={klass.telegram_chat_url} target="_blank" rel="noreferrer">
+                        Open chat
+                      </a>
+                    </p>
+                  ) : null}
+                </div>
+              )}
               {isAdmin && (
                 <button
                   type="button"

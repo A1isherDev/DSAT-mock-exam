@@ -16,16 +16,29 @@ def _generate_join_code(length: int = 7) -> str:
 
 
 class Classroom(models.Model):
+    SUBJECT_ENGLISH = "ENGLISH"
+    SUBJECT_MATH = "MATH"
+    SUBJECT_CHOICES = [
+        (SUBJECT_ENGLISH, "English"),
+        (SUBJECT_MATH, "Math"),
+    ]
+
+    DAYS_ODD = "ODD"
+    DAYS_EVEN = "EVEN"
+    DAYS_CHOICES = [
+        (DAYS_ODD, "Odd days"),
+        (DAYS_EVEN, "Even days"),
+    ]
+
     name = models.CharField(max_length=120, db_index=True)
-    subject = models.CharField(max_length=80, blank=True, db_index=True)
-    section = models.CharField(max_length=60, blank=True)
-    lesson_schedule = models.CharField(
-        max_length=120,
-        blank=True,
-        help_text="Lesson days and time, e.g. Mon/Wed/Fri 18:00",
-    )
+    subject = models.CharField(max_length=20, choices=SUBJECT_CHOICES, db_index=True)
+    lesson_days = models.CharField(max_length=10, choices=DAYS_CHOICES, db_index=True)
+    lesson_time = models.CharField(max_length=40, help_text="Example: 18:00", blank=True)
+    lesson_hours = models.PositiveIntegerField(default=2, help_text="Lesson duration in hours")
+    start_date = models.DateField(null=True, blank=True)
+    room_number = models.CharField(max_length=30, blank=True)
+    telegram_chat_url = models.URLField(blank=True)
     max_students = models.PositiveIntegerField(null=True, blank=True)
-    description = models.TextField(blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="created_classes"
     )
