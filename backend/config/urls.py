@@ -15,4 +15,5 @@ urlpatterns = [
     path('api/auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/users/', include('users.urls')),
     path('api/exams/', include('exams.urls')),
+    path('api/classes/', include('classes.urls')),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

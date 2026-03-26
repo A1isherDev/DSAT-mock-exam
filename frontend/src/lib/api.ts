@@ -137,6 +137,61 @@ export const examsApi = {
     }
 };
 
+export const classesApi = {
+    list: async () => { const r = await api.get('/classes/'); return r.data; },
+    create: async (data: { name: string; section?: string; description?: string; is_active?: boolean }) => {
+        const r = await api.post('/classes/', data);
+        return r.data;
+    },
+    join: async (join_code: string) => {
+        const r = await api.post('/classes/join/', { join_code });
+        return r.data;
+    },
+    regenerateCode: async (classId: number) => {
+        const r = await api.post(`/classes/${classId}/regenerate_code/`);
+        return r.data;
+    },
+    people: async (classId: number) => {
+        const r = await api.get(`/classes/${classId}/people/`);
+        return r.data;
+    },
+    // Stream
+    listPosts: async (classId: number) => {
+        const r = await api.get(`/classes/${classId}/posts/`);
+        return r.data;
+    },
+    createPost: async (classId: number, data: { content: string }) => {
+        const r = await api.post(`/classes/${classId}/posts/`, data);
+        return r.data;
+    },
+    // Assignments
+    listAssignments: async (classId: number) => {
+        const r = await api.get(`/classes/${classId}/assignments/`);
+        return r.data;
+    },
+    createAssignment: async (classId: number, data: any) => {
+        const r = await api.post(`/classes/${classId}/assignments/`, data);
+        return r.data;
+    },
+    submitAssignment: async (classId: number, assignmentId: number, payload: { student_comment?: string; attempt_id?: number; submit?: boolean }) => {
+        const r = await api.post(`/classes/${classId}/assignments/${assignmentId}/submit/`, payload);
+        return r.data;
+    },
+    getMySubmission: async (classId: number, assignmentId: number) => {
+        const r = await api.get(`/classes/${classId}/assignments/${assignmentId}/my-submission/`);
+        return r.data;
+    },
+    // Admin grading
+    listSubmissions: async (classId: number, assignmentId: number) => {
+        const r = await api.get(`/classes/${classId}/assignments/${assignmentId}/submissions/`);
+        return r.data;
+    },
+    gradeSubmission: async (submissionId: number, payload: { score?: string | number | null; feedback?: string }) => {
+        const r = await api.post(`/classes/submissions/${submissionId}/grade/`, payload);
+        return r.data;
+    },
+};
+
 export const adminApi = {
     // Users
     getUsers: async () => { const r = await api.get('/users/'); return r.data; },
