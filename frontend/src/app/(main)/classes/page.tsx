@@ -158,9 +158,9 @@ export default function ClassesPage() {
   return (
     <div className="max-w-6xl mx-auto px-6 py-10 lg:px-8 lg:py-12">
       <div className="flex items-start justify-between gap-6 mb-10">
-        <div className="panel p-7 flex-1">
+        <div className="hero-shell p-7 flex-1">
           <p className="eyebrow mb-2">Groups</p>
-          <h1 className="title-xl">Your groups</h1>
+          <h1 className="title-xl">Your learning spaces</h1>
           <p className="text-slate-500 dark:text-slate-400 mt-2 max-w-2xl">
             Join with a group code. Inside each group you’ll find announcements, homework, submissions, and grades.
           </p>
@@ -195,7 +195,7 @@ export default function ClassesPage() {
                   key={c.id}
                   type="button"
                   onClick={() => router.push(`/classes/${c.id}`)}
-                  className="text-left panel p-6 hover:shadow-xl hover:-translate-y-1 hover:border-blue-300 dark:hover:border-blue-800 transition-all duration-300 group"
+                  className="text-left metric-tile p-6 group"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
@@ -206,7 +206,7 @@ export default function ClassesPage() {
                         {c.lesson_time ? ` · ${c.lesson_time}` : ""}
                       </p>
                     </div>
-                    <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform duration-300">
+                    <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform duration-300">
                       <Users className="w-5 h-5" />
                     </div>
                   </div>

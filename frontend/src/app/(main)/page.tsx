@@ -69,12 +69,14 @@ export default function DashboardPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-10 lg:px-8 lg:py-12">
-      <div className="mb-10 panel p-8">
-        <p className="eyebrow mb-2">Dashboard</p>
-        <h1 className="title-xl">Welcome back</h1>
-        <p className="text-slate-500 dark:text-slate-400 mt-2 max-w-xl">
-          Track your exam date, target score, and your latest mock exam result here.
-        </p>
+      <div className="mb-10 hero-shell p-8 md:p-10">
+        <div className="relative z-10">
+          <span className="neo-chip mb-3">Personal command center</span>
+          <h1 className="title-xl">Welcome back</h1>
+          <p className="text-slate-600 mt-2 max-w-xl">
+            Track your exam date, target score, and your latest mock exam result in one focused view.
+          </p>
+        </div>
       </div>
 
       {!hasToken ? (
@@ -93,7 +95,7 @@ export default function DashboardPage() {
         </div>
       ) : (
         <div className="grid gap-6 sm:grid-cols-3">
-          <div className="panel p-6 lg:p-7 transition-all duration-300 hover:border-blue-300 dark:hover:border-blue-800 hover:shadow-xl hover:-translate-y-1 group">
+          <div className="metric-tile p-6 lg:p-7 group">
             <div className="flex items-center gap-3 mb-4 text-slate-500 dark:text-slate-400">
               <div className="p-2.5 bg-blue-50 dark:bg-blue-500/10 rounded-xl group-hover:scale-110 transition-transform duration-300">
                 <Calendar className="w-5 h-5 text-blue-600 dark:text-blue-400" />
@@ -108,7 +110,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="panel p-6 lg:p-7 transition-all duration-300 hover:border-emerald-300 dark:hover:border-emerald-800/60 hover:shadow-xl hover:-translate-y-1 group">
+          <div className="metric-tile p-6 lg:p-7 group">
             <div className="flex items-center gap-3 mb-4 text-slate-500 dark:text-slate-400">
               <div className="p-2.5 bg-emerald-50 dark:bg-emerald-500/10 rounded-xl group-hover:scale-110 transition-transform duration-300">
                 <Target className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
@@ -123,7 +125,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="panel p-6 lg:p-7 transition-all duration-300 hover:border-amber-300 dark:hover:border-amber-800/60 hover:shadow-xl hover:-translate-y-1 group sm:col-span-1">
+          <div className="metric-tile p-6 lg:p-7 group sm:col-span-1">
             <div className="flex items-center gap-3 mb-4 text-slate-500 dark:text-slate-400">
               <div className="p-2.5 bg-amber-50 dark:bg-amber-500/10 rounded-xl group-hover:scale-110 transition-transform duration-300">
                 <Trophy className="w-5 h-5 text-amber-500 dark:text-amber-400" />

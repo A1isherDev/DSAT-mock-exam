@@ -42,10 +42,10 @@ export default function TeacherDashboardPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-8 py-12">
-      <div className="mb-8 panel p-8">
+      <div className="mb-8 hero-shell p-8">
         <p className="eyebrow mb-2">Dashboard</p>
-        <h1 className="title-xl">Teacher dashboard</h1>
-        <p className="text-slate-500 mt-2">Group overview, announcements, and quick access to lessons.</p>
+        <h1 className="title-xl">Teacher command desk</h1>
+        <p className="text-slate-600 mt-2">Group overview, announcements, and quick access to lessons.</p>
       </div>
 
       {error && <div className="mb-6 p-4 rounded-2xl border border-red-200 bg-red-50 text-red-700 font-semibold text-sm">{error}</div>}
@@ -57,7 +57,7 @@ export default function TeacherDashboardPage() {
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-4">
-            <div className="panel p-6">
+            <div className="metric-tile p-6">
               <div className="flex items-center gap-2 mb-4">
                 <Users className="w-4 h-4 text-slate-500" />
                 <p className="text-xs font-black text-slate-500 uppercase tracking-widest">Groups overview</p>
@@ -81,7 +81,7 @@ export default function TeacherDashboardPage() {
               )}
             </div>
 
-            <div className="panel p-6">
+            <div className="metric-tile p-6">
               <div className="flex items-center gap-2 mb-4">
                 <ClipboardList className="w-4 h-4 text-slate-500" />
                 <p className="text-xs font-black text-slate-500 uppercase tracking-widest">Quick access</p>
@@ -93,7 +93,7 @@ export default function TeacherDashboardPage() {
             </div>
           </div>
 
-          <div className="panel p-6">
+          <div className="metric-tile p-6">
             <div className="flex items-center gap-2 mb-4">
               <Megaphone className="w-4 h-4 text-slate-500" />
               <p className="text-xs font-black text-slate-500 uppercase tracking-widest">Announcements</p>

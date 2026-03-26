@@ -91,6 +91,59 @@ body {
   @apply text-[10px] font-black uppercase tracking-[0.18em] text-blue-600;
 }
 
+.hero-shell {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1.25rem;
+  background:
+    linear-gradient(120deg, rgba(255, 255, 255, 0.9), rgba(248, 250, 255, 0.75)),
+    radial-gradient(700px 320px at 85% -10%, rgba(37, 99, 235, 0.16), transparent 60%),
+    radial-gradient(500px 260px at -10% 110%, rgba(14, 165, 233, 0.12), transparent 60%);
+  border: 1px solid rgba(191, 219, 254, 0.55);
+}
+
+.hero-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(rgba(148, 163, 184, 0.09) 1px, transparent 1px), linear-gradient(90deg, rgba(148, 163, 184, 0.09) 1px, transparent 1px);
+  background-size: 36px 36px;
+  mask-image: radial-gradient(ellipse at center, black 45%, transparent 85%);
+}
+
+.metric-tile {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1rem;
+  border: 1px solid #dbe7ff;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 18px 36px rgba(37, 99, 235, 0.08);
+  transition: transform 220ms ease, box-shadow 220ms ease, border-color 220ms ease;
+}
+
+.metric-tile:hover {
+  transform: translateY(-2px);
+  border-color: #bfdbfe;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 22px 40px rgba(37, 99, 235, 0.12);
+}
+
+.metric-tile::after {
+  content: "";
+  position: absolute;
+  top: -28px;
+  right: -20px;
+  width: 120px;
+  height: 120px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.2), transparent 70%);
+  pointer-events: none;
+}
+
+.neo-chip {
+  @apply inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50/90 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-blue-700;
+}
+
 .persistent-highlight {
   background-color: #fef08a;
   color: #000000;

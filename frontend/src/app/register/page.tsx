@@ -91,7 +91,7 @@ export default function RegisterPage() {
                     <p className="mt-2 text-slate-500 font-medium text-center">Join MasterSAT Program</p>
                 </div>
 
-                <div className="panel p-8 transition-colors duration-300">
+                <div className="hero-shell p-8 transition-colors duration-300">
                     <form className="space-y-5" onSubmit={handleSubmit}>
                         {error && (
                             <div className="flex items-start gap-3 text-red-600 dark:text-red-400 text-sm font-medium bg-red-50 dark:bg-red-900/20 p-4 rounded-xl border border-red-100 dark:border-red-900/50 animate-in fade-in slide-in-from-top-2 duration-200">

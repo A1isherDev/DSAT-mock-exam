@@ -89,7 +89,7 @@ export default function LoginPage() {
                     <p className="text-slate-500 mt-2 font-medium">Sign in to continue your preparation</p>
                 </div>
 
-                <div className="panel p-8 transition-colors duration-300">
+                <div className="hero-shell p-8 transition-colors duration-300">
                     <form className="space-y-5" onSubmit={handleSubmit}>
                         {error && (
                             <div className="flex items-start gap-3 text-red-600 dark:text-red-400 text-sm font-medium bg-red-50 dark:bg-red-900/20 p-4 rounded-xl border border-red-100 dark:border-red-900/50 animate-in fade-in slide-in-from-top-2 duration-200">
