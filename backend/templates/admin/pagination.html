@@ -1,0 +1,15 @@
+{% load i18n admin_list %}
+
+{# 
+  Override Jazzmin pagination (Django 6 compatibility).
+  Use Django's built-in paginator_number tag instead.
+#}
+
+{% if pagination_required %}
+  <div class="paginator">
+    {% for i in page_range %}
+      {% paginator_number cl i %}
+    {% endfor %}
+  </div>
+{% endif %}
+
