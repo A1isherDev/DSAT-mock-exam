@@ -183,16 +183,13 @@ export default function ClassDetailPage() {
                 <p className="text-xs font-black text-slate-500 uppercase tracking-widest">Class code</p>
               </div>
               <div className="font-mono text-lg font-black text-slate-900 tracking-wider">{klass?.join_code || "—"}</div>
-              {(klass?.room_number || klass?.start_date || klass?.telegram_chat_url) && (
+              {(klass?.room_number || klass?.start_date || klass?.telegram_chat_id) && (
                 <div className="mt-4 text-sm text-slate-600 space-y-1">
                   {klass?.room_number ? <p><span className="font-bold">Room:</span> {klass.room_number}</p> : null}
                   {klass?.start_date ? <p><span className="font-bold">Start:</span> {klass.start_date}</p> : null}
-                  {klass?.telegram_chat_url ? (
+                  {klass?.telegram_chat_id ? (
                     <p>
-                      <span className="font-bold">Telegram:</span>{" "}
-                      <a className="text-blue-700 font-semibold hover:underline" href={klass.telegram_chat_url} target="_blank" rel="noreferrer">
-                        Open chat
-                      </a>
+                      <span className="font-bold">Telegram Chat ID:</span> {klass.telegram_chat_id}
                     </p>
                   ) : null}
                 </div>

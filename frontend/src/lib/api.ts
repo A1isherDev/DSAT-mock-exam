@@ -139,8 +139,12 @@ export const examsApi = {
 
 export const classesApi = {
     list: async () => { const r = await api.get('/classes/'); return r.data; },
-    create: async (data: { name: string; subject: 'ENGLISH' | 'MATH'; lesson_days: 'ODD' | 'EVEN'; lesson_time?: string; lesson_hours?: number; start_date?: string; room_number?: string; telegram_chat_url?: string; max_students?: number; is_active?: boolean }) => {
+    create: async (data: { name: string; subject: 'ENGLISH' | 'MATH'; lesson_days: 'ODD' | 'EVEN'; lesson_time?: string; lesson_hours?: number; start_date?: string; room_number?: string; telegram_chat_id?: string; teacher?: number; max_students?: number; is_active?: boolean }) => {
         const r = await api.post('/classes/', data);
+        return r.data;
+    },
+    update: async (classId: number, data: Record<string, unknown>) => {
+        const r = await api.patch(`/classes/${classId}/`, data);
         return r.data;
     },
     join: async (join_code: string) => {
@@ -170,11 +174,11 @@ export const classesApi = {
         return r.data;
     },
     createAssignment: async (classId: number, data: any, isFormData = false) => {
-        const r = await api.post(`/classes/${classId}/assignments/`, data, isFormData ? { headers: { 'Content-Type': 'multipart/form-data' } } : {});
+        const r = await api.post(`/classes/${classId}/assignments/`, data, isFormData ? {} : {});
         return r.data;
     },
     submitAssignment: async (classId: number, assignmentId: number, payload: any, isFormData = true) => {
-        const r = await api.post(`/classes/${classId}/assignments/${assignmentId}/submit/`, payload, isFormData ? { headers: { 'Content-Type': 'multipart/form-data' } } : {});
+        const r = await api.post(`/classes/${classId}/assignments/${assignmentId}/submit/`, payload, isFormData ? {} : {});
         return r.data;
     },
     getMySubmission: async (classId: number, assignmentId: number) => {

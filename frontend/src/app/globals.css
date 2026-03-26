@@ -1,5 +1,16 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+}
+
 :root {
   --background: #f8fafc;
   --foreground: #0f172a;
@@ -9,10 +20,19 @@
   --primary-hover: #1d4ed8;
 }
 
+.dark {
+  --background: #020617; /* Slate 950 */
+  --foreground: #f8fafc;
+  --card: #0f172a; /* Slate 900 */
+  --border: #1e293b; /* Slate 800 */
+  --primary: #3b82f6; /* Blue 500 */
+  --primary-hover: #60a5fa; /* Blue 400 */
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: 'Georgia', serif;
+  font-family: 'Inter', 'Georgia', serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -32,12 +52,38 @@ body {
 /* Custom Utilities for Professional Look */
 .glass {
   background: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.dark .glass {
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Smooth sleek scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary);
 }
 
 .card-shadow {
-  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  box-shadow: 0 4px 20px -2px rgb(0 0 0 / 0.05), 0 0 3px rgb(0 0 0 / 0.02);
+}
+
+.dark .card-shadow {
+  box-shadow: 0 4px 20px -2px rgb(0 0 0 / 0.3), 0 0 3px rgb(0 0 0 / 0.2);
 }
 
 .bluebook-dash {
@@ -55,6 +101,21 @@ body {
       transparent 95%
   );
   background-size: 80px 100%;
+}
+
+.dark .bluebook-dash {
+  background-image: linear-gradient(to right, 
+      #475569 20%, transparent 20%, 
+      transparent 25%, 
+      #eab308 25%, #eab308 45%, 
+      transparent 45%, 
+      transparent 50%, 
+      #3b82f6 50%, #3b82f6 70%, 
+      transparent 70%, 
+      transparent 75%, 
+      #94a3b8 75%, #94a3b8 95%, 
+      transparent 95%
+  );
 }
 
 .big-dot-list {

@@ -37,8 +37,15 @@ class Classroom(models.Model):
     lesson_hours = models.PositiveIntegerField(default=2, help_text="Lesson duration in hours")
     start_date = models.DateField(null=True, blank=True)
     room_number = models.CharField(max_length=30, blank=True)
-    telegram_chat_url = models.URLField(blank=True)
+    telegram_chat_id = models.CharField(max_length=100, blank=True)
     max_students = models.PositiveIntegerField(null=True, blank=True)
+    teacher = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="teaching_classes",
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="created_classes"
     )

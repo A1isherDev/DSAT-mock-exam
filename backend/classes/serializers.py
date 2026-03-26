@@ -1,4 +1,6 @@
 from rest_framework import serializers
+from urllib.parse import urlparse
+from django.core.validators import URLValidator
 
 from .models import (
     Classroom,
@@ -13,6 +15,7 @@ from .models import (
 class ClassroomSerializer(serializers.ModelSerializer):
     members_count = serializers.IntegerField(read_only=True)
     my_role = serializers.SerializerMethodField(read_only=True)
+    teacher_details = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Classroom
@@ -25,8 +28,10 @@ class ClassroomSerializer(serializers.ModelSerializer):
             "lesson_hours",
             "start_date",
             "room_number",
-            "telegram_chat_url",
+            "telegram_chat_id",
             "max_students",
+            "teacher",
+            "teacher_details",
             "join_code",
             "is_active",
             "created_at",
@@ -43,8 +48,27 @@ class ClassroomSerializer(serializers.ModelSerializer):
         mem = obj.memberships.filter(user=user).only("role").first()
         return mem.role if mem else None
 
+    def get_teacher_details(self, obj):
+        t = obj.teacher
+        if not t:
+            return None
+        return {
+            "id": t.id,
+            "email": t.email,
+            "username": getattr(t, "username", None),
+            "first_name": t.first_name,
+            "last_name": t.last_name,
+        }
+
 
 class ClassroomCreateSerializer(serializers.ModelSerializer):
+    def validate_teacher(self, value):
+        if value is None:
+            return value
+        if not getattr(value, "is_admin", False):
+            raise serializers.ValidationError("Teacher must be an admin user.")
+        return value
+
     class Meta:
         model = Classroom
         fields = [
@@ -56,8 +80,9 @@ class ClassroomCreateSerializer(serializers.ModelSerializer):
             "lesson_hours",
             "start_date",
             "room_number",
-            "telegram_chat_url",
+            "telegram_chat_id",
             "max_students",
+            "teacher",
             "is_active",
             "join_code",
             "created_at",
@@ -107,6 +132,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
     created_by = serializers.SerializerMethodField()
     submissions_count = serializers.IntegerField(read_only=True)
     attachment_file_url = serializers.SerializerMethodField(read_only=True)
+    external_url = serializers.CharField(required=False, allow_blank=True)
 
     class Meta:
         model = Assignment
@@ -145,6 +171,19 @@ class AssignmentSerializer(serializers.ModelSerializer):
         if request:
             return request.build_absolute_uri(url)
         return url
+
+    def validate_external_url(self, value):
+        """
+        Accept plain domains like `example.com/file.pdf` by normalizing to https.
+        """
+        value = (value or "").strip()
+        if not value:
+            return ""
+        parsed = urlparse(value)
+        normalized = value if parsed.scheme else f"https://{value}"
+        # Reuse DRF URL validator via URLField
+        URLValidator()(normalized)
+        return normalized
 
 
 class SubmissionSerializer(serializers.ModelSerializer):

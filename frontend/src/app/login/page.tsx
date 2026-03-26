@@ -81,18 +81,18 @@ export default function LoginPage() {
     }, []);
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-700 to-indigo-700 flex items-center justify-center p-6">
+        <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-700 to-indigo-700 dark:from-slate-950 dark:via-blue-950 dark:to-slate-900 flex items-center justify-center p-6 transition-colors duration-500">
             <div className="w-full max-w-md">
                 <div className="text-center mb-7">
-                    <img src="/images/logo.png" alt="MasterSAT" className="mx-auto w-20 h-20 object-contain drop-shadow-lg" />
-                    <h1 className="mt-4 text-3xl font-black text-white tracking-tight">MasterSAT</h1>
-                    <p className="text-blue-100 mt-2 font-medium">Sign in to continue your preparation</p>
+                    <img src="/images/logo.png" alt="MasterSAT" className="mx-auto w-20 h-20 object-contain drop-shadow-xl" />
+                    <h1 className="mt-4 text-3xl font-black text-white tracking-tight drop-shadow-md">MasterSAT</h1>
+                    <p className="text-blue-100 dark:text-blue-200/80 mt-2 font-medium">Sign in to continue your preparation</p>
                 </div>
 
-                <div className="bg-white/95 backdrop-blur rounded-3xl border border-white/40 shadow-2xl p-8">
+                <div className="bg-white/95 dark:bg-slate-900/80 backdrop-blur-xl rounded-3xl border border-white/40 dark:border-slate-800/60 shadow-2xl p-8 transition-colors duration-300">
                     <form className="space-y-5" onSubmit={handleSubmit}>
                         {error && (
-                            <div className="flex items-start gap-3 text-red-600 text-sm font-medium bg-red-50 p-4 rounded-xl border border-red-100 animate-in fade-in slide-in-from-top-2 duration-200">
+                            <div className="flex items-start gap-3 text-red-600 dark:text-red-400 text-sm font-medium bg-red-50 dark:bg-red-900/20 p-4 rounded-xl border border-red-100 dark:border-red-900/50 animate-in fade-in slide-in-from-top-2 duration-200">
                                 <AlertCircle className="w-5 h-5 shrink-0" />
                                 <span>{error}</span>
                             </div>
@@ -100,14 +100,14 @@ export default function LoginPage() {
 
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 ml-1" htmlFor="email-address">
+                                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 ml-1" htmlFor="email-address">
                                     Email or Username
                                 </label>
                                 <input
                                     id="email-address"
                                     type="text"
                                     required
-                                    className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:bg-white focus:border-blue-400 transition-all sm:text-sm"
+                                    className="w-full px-4 py-3.5 bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-white font-medium placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/30 focus:bg-white dark:focus:bg-slate-900 focus:border-blue-400 dark:focus:border-blue-600 transition-all sm:text-sm"
                                     placeholder="name@example.com or username"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
@@ -115,14 +115,14 @@ export default function LoginPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 ml-1" htmlFor="password">
+                                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 ml-1" htmlFor="password">
                                     Password
                                 </label>
                                 <input
                                     id="password"
                                     type="password"
                                     required
-                                    className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:bg-white focus:border-blue-400 transition-all sm:text-sm"
+                                    className="w-full px-4 py-3.5 bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-white font-medium placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/30 focus:bg-white dark:focus:bg-slate-900 focus:border-blue-400 dark:focus:border-blue-600 transition-all sm:text-sm"
                                     placeholder="••••••••"
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
@@ -130,12 +130,12 @@ export default function LoginPage() {
                                 />
                             </div>
                             <div className="flex items-center justify-between">
-                                <label className="inline-flex items-center gap-2 text-sm text-slate-600 font-semibold">
+                                <label className="inline-flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 font-semibold cursor-pointer">
                                     <input
                                         type="checkbox"
                                         checked={rememberMe}
                                         onChange={(e) => setRememberMe(e.target.checked)}
-                                        className="rounded border-slate-300 text-blue-600"
+                                        className="rounded border-slate-300 dark:border-slate-700 text-blue-600 dark:text-blue-500 focus:ring-blue-500 bg-white dark:bg-slate-900"
                                     />
                                     Remember me for 1 week
                                 </label>
@@ -146,25 +146,25 @@ export default function LoginPage() {
                             <button
                                 type="submit"
                                 disabled={loading}
-                                className="w-full flex items-center justify-center py-3.5 px-6 bg-blue-600 text-white text-sm font-bold rounded-xl hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-100 transition-all active:scale-[0.98] shadow-lg shadow-blue-200 disabled:opacity-70 disabled:cursor-not-allowed group"
+                                className="w-full flex items-center justify-center py-3.5 px-6 bg-blue-600 dark:bg-blue-500 text-white text-sm font-bold rounded-xl hover:bg-blue-700 dark:hover:bg-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/50 transition-all active:scale-[0.98] shadow-lg shadow-blue-200 dark:shadow-blue-900/20 disabled:opacity-70 disabled:cursor-not-allowed group"
                             >
                                 {loading ? (
                                     <Loader2 className="w-5 h-5 animate-spin" />
                                 ) : (
                                     <>
                                         Sign In to Portal
-                                        <LogIn className="w-4 h-4 ml-2 opacity-70" />
+                                        <LogIn className="w-4 h-4 ml-2 opacity-70 group-hover:opacity-100 transition-opacity" />
                                     </>
                                 )}
                             </button>
                         </div>
                         <div className="flex items-center gap-3">
-                            <div className="h-px bg-slate-200 flex-1" />
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">or</span>
-                            <div className="h-px bg-slate-200 flex-1" />
+                            <div className="h-px bg-slate-200 dark:bg-slate-800 flex-1" />
+                            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">or</span>
+                            <div className="h-px bg-slate-200 dark:bg-slate-800 flex-1" />
                         </div>
-                        <div className="flex justify-center">
-                            <div ref={googleButtonRef} />
+                        <div className="flex justify-center bg-white dark:bg-white rounded-full mx-auto w-fit p-1">
+                            <div ref={googleButtonRef} className="dark:mix-blend-normal" />
                         </div>
                         {googleMissing.length > 0 && (
                             <div className="space-y-3 pt-2">
@@ -172,7 +172,7 @@ export default function LoginPage() {
                                     <input
                                         type="text"
                                         placeholder="First name (min 3)"
-                                        className="w-full px-4 py-3 border border-slate-200 rounded-xl"
+                                        className="w-full px-4 py-3 border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50 text-slate-900 dark:text-white rounded-xl focus:outline-none focus:border-blue-500 transition-colors"
                                         value={googleProfile.first_name}
                                         onChange={(e) => setGoogleProfile(prev => ({ ...prev, first_name: e.target.value }))}
                                     />
@@ -181,7 +181,7 @@ export default function LoginPage() {
                                     <input
                                         type="text"
                                         placeholder="Last name (min 3)"
-                                        className="w-full px-4 py-3 border border-slate-200 rounded-xl"
+                                        className="w-full px-4 py-3 border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50 text-slate-900 dark:text-white rounded-xl focus:outline-none focus:border-blue-500 transition-colors"
                                         value={googleProfile.last_name}
                                         onChange={(e) => setGoogleProfile(prev => ({ ...prev, last_name: e.target.value }))}
                                     />
@@ -189,7 +189,7 @@ export default function LoginPage() {
                                 <button
                                     type="button"
                                     onClick={() => handleGoogleCredential(googleCredential, googleProfile)}
-                                    className="w-full py-3 rounded-xl bg-slate-900 text-white font-bold"
+                                    className="w-full py-3 rounded-xl bg-slate-900 dark:bg-slate-800 text-white font-bold hover:bg-slate-800 dark:hover:bg-slate-700 transition-colors"
                                 >
                                     Continue with Google profile
                                 </button>
@@ -197,13 +197,13 @@ export default function LoginPage() {
                         )}
                     </form>
                     <div className="mt-5 text-center">
-                        <span className="text-sm text-slate-500 font-medium">Don't have an account? </span>
-                        <Link href="/register" className="text-sm font-bold text-blue-600 hover:text-blue-800 transition-colors">
+                        <span className="text-sm text-slate-500 dark:text-slate-400 font-medium">Don't have an account? </span>
+                        <Link href="/register" className="text-sm font-bold text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors">
                             Register Now
                         </Link>
                     </div>
                 </div>
-                <p className="mt-6 text-center text-xs text-blue-100 font-medium">© {new Date().getFullYear()} MasterSAT Center</p>
+                <p className="mt-6 text-center text-xs text-blue-100/80 dark:text-blue-200/50 font-medium">© {new Date().getFullYear()} MasterSAT Center</p>
             </div>
         </div>
     );

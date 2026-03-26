@@ -68,21 +68,21 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto px-8 py-12">
+    <div className="max-w-5xl mx-auto px-6 py-10 lg:px-8 lg:py-12">
       <div className="mb-10">
-        <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-2">Dashboard</p>
-        <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Welcome</h1>
-        <p className="text-slate-500 mt-2 max-w-xl">
+        <p className="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-2">Dashboard</p>
+        <h1 className="text-3xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-500 dark:from-white dark:to-slate-400 tracking-tight">Welcome</h1>
+        <p className="text-slate-500 dark:text-slate-400 mt-2 max-w-xl">
           Track your exam date, target score, and your latest mock exam result here.
         </p>
       </div>
 
       {!hasToken ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-          <p className="text-slate-600 font-medium mb-4">Sign in to view your personal dashboard data.</p>
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800/60 bg-white/70 dark:bg-slate-900/40 backdrop-blur-xl p-10 text-center card-shadow transition-all duration-300">
+          <p className="text-slate-600 dark:text-slate-300 font-medium mb-6">Sign in to view your personal dashboard data.</p>
           <Link
             href="/login"
-            className="inline-flex items-center justify-center rounded-xl bg-blue-600 text-white font-bold px-6 py-3 text-sm hover:bg-blue-700 transition-colors"
+            className="inline-flex items-center justify-center rounded-xl bg-blue-600 dark:bg-blue-500 text-white font-bold px-8 py-3.5 text-sm hover:bg-blue-700 dark:hover:bg-blue-600 transition-all shadow-lg hover:shadow-blue-500/25 hover:-translate-y-0.5"
           >
             Sign in
           </Link>
@@ -93,52 +93,62 @@ export default function DashboardPage() {
         </div>
       ) : (
         <div className="grid gap-6 sm:grid-cols-3">
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="flex items-center gap-3 mb-3 text-slate-500">
-              <Calendar className="w-5 h-5 text-blue-600" />
+          <div className="rounded-3xl border border-slate-200 dark:border-slate-800/60 bg-white/70 dark:bg-slate-900/40 backdrop-blur-xl p-6 lg:p-7 card-shadow transition-all duration-300 hover:border-blue-300 dark:hover:border-blue-800 hover:shadow-xl hover:-translate-y-1 group">
+            <div className="flex items-center gap-3 mb-4 text-slate-500 dark:text-slate-400">
+              <div className="p-2.5 bg-blue-50 dark:bg-blue-500/10 rounded-xl group-hover:scale-110 transition-transform duration-300">
+                <Calendar className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+              </div>
               <span className="text-xs font-bold uppercase tracking-wider">Exam date</span>
             </div>
-            <p className="text-2xl font-black text-slate-900">{formatDate(me?.sat_exam_date ?? null)}</p>
-            <p className="text-xs text-slate-400 mt-2">
-              <Link href="/profile" className="text-blue-600 font-semibold hover:underline">
-                Set in Profile
+            <p className="text-2xl lg:text-3xl font-black text-slate-900 dark:text-white mb-4">{formatDate(me?.sat_exam_date ?? null)}</p>
+            <div className="pt-4 border-t border-slate-100 dark:border-slate-800/60">
+              <Link href="/profile" className="text-xs text-blue-600 dark:text-blue-400 font-bold hover:underline flex items-center gap-1 group/link">
+                Set in Profile <span className="transition-transform group-hover/link:translate-x-1 inline-block">→</span>
               </Link>
-            </p>
+            </div>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="flex items-center gap-3 mb-3 text-slate-500">
-              <Target className="w-5 h-5 text-emerald-600" />
+          <div className="rounded-3xl border border-slate-200 dark:border-slate-800/60 bg-white/70 dark:bg-slate-900/40 backdrop-blur-xl p-6 lg:p-7 card-shadow transition-all duration-300 hover:border-emerald-300 dark:hover:border-emerald-800/60 hover:shadow-xl hover:-translate-y-1 group">
+            <div className="flex items-center gap-3 mb-4 text-slate-500 dark:text-slate-400">
+              <div className="p-2.5 bg-emerald-50 dark:bg-emerald-500/10 rounded-xl group-hover:scale-110 transition-transform duration-300">
+                <Target className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+              </div>
               <span className="text-xs font-bold uppercase tracking-wider">Target score</span>
             </div>
-            <p className="text-2xl font-black text-slate-900">
+            <p className="text-2xl lg:text-3xl font-black text-slate-900 dark:text-white mb-4">
               {me?.target_score != null ? me.target_score : "—"}
             </p>
-            <p className="text-xs text-slate-400 mt-2">Valid range: 400–1600</p>
+            <div className="pt-4 border-t border-slate-100 dark:border-slate-800/60">
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold tracking-wide">Valid range: 400–1600</p>
+            </div>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:col-span-1">
-            <div className="flex items-center gap-3 mb-3 text-slate-500">
-              <Trophy className="w-5 h-5 text-amber-500" />
-              <span className="text-xs font-bold uppercase tracking-wider">Last result (Mock)</span>
+          <div className="rounded-3xl border border-slate-200 dark:border-slate-800/60 bg-white/70 dark:bg-slate-900/40 backdrop-blur-xl p-6 lg:p-7 card-shadow transition-all duration-300 hover:border-amber-300 dark:hover:border-amber-800/60 hover:shadow-xl hover:-translate-y-1 group sm:col-span-1">
+            <div className="flex items-center gap-3 mb-4 text-slate-500 dark:text-slate-400">
+              <div className="p-2.5 bg-amber-50 dark:bg-amber-500/10 rounded-xl group-hover:scale-110 transition-transform duration-300">
+                <Trophy className="w-5 h-5 text-amber-500 dark:text-amber-400" />
+              </div>
+              <span className="text-xs font-bold uppercase tracking-wider">Last result</span>
             </div>
             {me?.last_mock_result ? (
               <>
-                <p className="text-2xl font-black text-slate-900">
+                <p className="text-2xl lg:text-3xl font-black text-slate-900 dark:text-white">
                   {me.last_mock_result.score != null ? me.last_mock_result.score : "—"}
                 </p>
-                <p className="text-sm text-slate-600 mt-1 font-medium line-clamp-2">
+                <p className="text-sm text-slate-600 dark:text-slate-300 mt-2 font-semibold line-clamp-1">
                   {me.last_mock_result.mock_exam_title || "Mock exam"}
                 </p>
-                <p className="text-xs text-slate-400 mt-1">
-                  {subjectLabel(me.last_mock_result.practice_test_subject)}
-                  {me.last_mock_result.completed_at
-                    ? ` · ${formatDate(me.last_mock_result.completed_at)}`
-                    : ""}
-                </p>
+                <div className="pt-4 mt-4 border-t border-slate-100 dark:border-slate-800/60">
+                  <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold tracking-wide">
+                    {subjectLabel(me.last_mock_result.practice_test_subject)}
+                    {me.last_mock_result.completed_at
+                      ? ` · ${formatDate(me.last_mock_result.completed_at)}`
+                      : ""}
+                  </p>
+                </div>
               </>
             ) : (
-              <p className="text-slate-500 text-sm font-medium">No completed mock exam yet</p>
+              <p className="text-slate-500 dark:text-slate-400 text-sm font-semibold mt-4">No completed mock exam yet</p>
             )}
           </div>
         </div>

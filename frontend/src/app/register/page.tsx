@@ -83,18 +83,18 @@ export default function RegisterPage() {
     }, [router]);
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-700 to-indigo-700 flex items-center justify-center p-6">
+        <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-700 to-indigo-700 dark:from-slate-950 dark:via-blue-950 dark:to-slate-900 flex items-center justify-center p-6 transition-colors duration-500">
             <div className="w-full max-w-md">
-                <div className="flex flex-col items-center mb-10">
-                    <img src="/images/logo.png" alt="Master SAT" className="w-20 h-20 object-contain mb-6 drop-shadow-lg" />
-                    <h1 className="text-3xl font-extrabold text-white tracking-tight">Create Account</h1>
-                    <p className="mt-3 text-blue-100 font-medium text-center">Join MasterSAT Program</p>
+                <div className="flex flex-col items-center mb-8">
+                    <img src="/images/logo.png" alt="Master SAT" className="w-20 h-20 object-contain mb-4 drop-shadow-xl" />
+                    <h1 className="text-3xl font-extrabold text-white tracking-tight drop-shadow-md">Create Account</h1>
+                    <p className="mt-2 text-blue-100 dark:text-blue-200/80 font-medium text-center">Join MasterSAT Program</p>
                 </div>
 
-                <div className="bg-white/95 backdrop-blur rounded-3xl border border-white/40 shadow-2xl p-8">
+                <div className="bg-white/95 dark:bg-slate-900/80 backdrop-blur-xl rounded-3xl border border-white/40 dark:border-slate-800/60 shadow-2xl p-8 transition-colors duration-300">
                     <form className="space-y-5" onSubmit={handleSubmit}>
                         {error && (
-                            <div className="flex items-start gap-3 text-red-600 text-sm font-medium bg-red-50 p-4 rounded-xl border border-red-100 animate-in fade-in slide-in-from-top-2 duration-200">
+                            <div className="flex items-start gap-3 text-red-600 dark:text-red-400 text-sm font-medium bg-red-50 dark:bg-red-900/20 p-4 rounded-xl border border-red-100 dark:border-red-900/50 animate-in fade-in slide-in-from-top-2 duration-200">
                                 <AlertCircle className="w-5 h-5 shrink-0" />
                                 <span>{error}</span>
                             </div>
@@ -103,14 +103,14 @@ export default function RegisterPage() {
                         <div className="space-y-4">
                             <div className="flex gap-4">
                                 <div className="w-1/2">
-                                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 ml-1" htmlFor="firstName">
+                                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 ml-1" htmlFor="firstName">
                                         First Name
                                     </label>
                                     <input
                                         id="firstName"
                                         type="text"
                                         required
-                                        className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:bg-white focus:border-blue-400 transition-all sm:text-sm"
+                                        className="w-full px-4 py-3.5 bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-white font-medium placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/30 focus:bg-white dark:focus:bg-slate-900 focus:border-blue-400 dark:focus:border-blue-600 transition-all sm:text-sm"
                                         placeholder="John"
                                         value={firstName}
                                         onChange={(e) => setFirstName(e.target.value)}
@@ -118,14 +118,14 @@ export default function RegisterPage() {
                                     />
                                 </div>
                                 <div className="w-1/2">
-                                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 ml-1" htmlFor="lastName">
+                                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 ml-1" htmlFor="lastName">
                                         Last Name
                                     </label>
                                     <input
                                         id="lastName"
                                         type="text"
                                         required
-                                        className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:bg-white focus:border-blue-400 transition-all sm:text-sm"
+                                        className="w-full px-4 py-3.5 bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-white font-medium placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/30 focus:bg-white dark:focus:bg-slate-900 focus:border-blue-400 dark:focus:border-blue-600 transition-all sm:text-sm"
                                         placeholder="Doe"
                                         value={lastName}
                                         onChange={(e) => setLastName(e.target.value)}
@@ -134,14 +134,14 @@ export default function RegisterPage() {
                                 </div>
                             </div>
                             <div>
-                                <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 ml-1" htmlFor="username">
+                                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 ml-1" htmlFor="username">
                                     Username
                                 </label>
                                 <input
                                     id="username"
                                     type="text"
                                     required
-                                    className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:bg-white focus:border-blue-400 transition-all sm:text-sm"
+                                    className="w-full px-4 py-3.5 bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-white font-medium placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/30 focus:bg-white dark:focus:bg-slate-900 focus:border-blue-400 dark:focus:border-blue-600 transition-all sm:text-sm"
                                     placeholder="johndoe123"
                                     value={username}
                                     onChange={(e) => setUsername(e.target.value)}
@@ -149,14 +149,14 @@ export default function RegisterPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 ml-1" htmlFor="email-address">
+                                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 ml-1" htmlFor="email-address">
                                     Email Address
                                 </label>
                                 <input
                                     id="email-address"
                                     type="email"
                                     required
-                                    className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:bg-white focus:border-blue-400 transition-all sm:text-sm"
+                                    className="w-full px-4 py-3.5 bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-white font-medium placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/30 focus:bg-white dark:focus:bg-slate-900 focus:border-blue-400 dark:focus:border-blue-600 transition-all sm:text-sm"
                                     placeholder="name@example.com"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
@@ -164,14 +164,14 @@ export default function RegisterPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 ml-1" htmlFor="password">
+                                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 ml-1" htmlFor="password">
                                     Password
                                 </label>
                                 <input
                                     id="password"
                                     type="password"
                                     required
-                                    className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:bg-white focus:border-blue-400 transition-all sm:text-sm"
+                                    className="w-full px-4 py-3.5 bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-white font-medium placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/30 focus:bg-white dark:focus:bg-slate-900 focus:border-blue-400 dark:focus:border-blue-600 transition-all sm:text-sm"
                                     placeholder="••••••••"
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
@@ -180,42 +180,42 @@ export default function RegisterPage() {
                             </div>
                         </div>
 
-                        <div>
+                        <div className="pt-2">
                             <button
                                 type="submit"
                                 disabled={loading}
-                                className="w-full flex items-center justify-center py-3.5 px-6 bg-blue-600 text-white text-sm font-bold rounded-xl hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-100 transition-all active:scale-[0.98] shadow-lg shadow-blue-200 disabled:opacity-70 disabled:cursor-not-allowed group"
+                                className="w-full flex items-center justify-center py-3.5 px-6 bg-blue-600 dark:bg-blue-500 text-white text-sm font-bold rounded-xl hover:bg-blue-700 dark:hover:bg-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/50 transition-all active:scale-[0.98] shadow-lg shadow-blue-200 dark:shadow-blue-900/20 disabled:opacity-70 disabled:cursor-not-allowed group"
                             >
                                 {loading ? (
                                     <Loader2 className="w-5 h-5 animate-spin" />
                                 ) : (
                                     <>
                                         Register Now
-                                        <UserPlus className="w-4 h-4 ml-2 opacity-70" />
+                                        <UserPlus className="w-4 h-4 ml-2 opacity-70 group-hover:opacity-100 transition-opacity" />
                                     </>
                                 )}
                             </button>
                         </div>
                         <div className="flex items-center gap-3">
-                            <div className="h-px bg-slate-200 flex-1" />
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">or</span>
-                            <div className="h-px bg-slate-200 flex-1" />
+                            <div className="h-px bg-slate-200 dark:bg-slate-800 flex-1" />
+                            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">or</span>
+                            <div className="h-px bg-slate-200 dark:bg-slate-800 flex-1" />
                         </div>
-                        <div className="flex justify-center">
-                            <div ref={googleButtonRef} />
+                        <div className="flex justify-center bg-white dark:bg-white rounded-full mx-auto w-fit p-1">
+                            <div ref={googleButtonRef} className="dark:mix-blend-normal" />
                         </div>
                     </form>
                     
                     <div className="mt-5 text-center">
-                        <span className="text-sm text-slate-500 font-medium">Already have an account? </span>
-                        <Link href="/login" className="text-sm font-bold text-blue-600 hover:text-blue-800">
+                        <span className="text-sm text-slate-500 dark:text-slate-400 font-medium">Already have an account? </span>
+                        <Link href="/login" className="text-sm font-bold text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors">
                             Sign In
                         </Link>
                     </div>
                 </div>
 
             </div>
-            <p className="mt-6 text-center text-xs text-blue-100 font-medium">© {new Date().getFullYear()} MasterSAT Center</p>
+            <p className="absolute bottom-6 text-center text-xs text-blue-100/80 dark:text-blue-200/50 font-medium">© {new Date().getFullYear()} MasterSAT Center</p>
         </div>
     );
 }

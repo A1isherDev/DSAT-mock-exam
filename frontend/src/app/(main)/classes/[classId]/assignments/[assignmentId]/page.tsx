@@ -82,7 +82,8 @@ export default function AssignmentDetailPage() {
     }
     // practice test/module attachments can be handled later; for now, students can use the normal mock list.
     if (assignment.external_url) {
-      window.open(assignment.external_url, "_blank", "noopener,noreferrer");
+      const url = /^https?:\/\//i.test(assignment.external_url) ? assignment.external_url : `https://${assignment.external_url}`;
+      window.open(url, "_blank", "noopener,noreferrer");
       return;
     }
     if (assignment.attachment_file_url) {

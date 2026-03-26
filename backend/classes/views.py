@@ -60,12 +60,38 @@ class ClassroomViewSet(ModelViewSet):
             return Response({"detail": "Only admins can create classes."}, status=status.HTTP_403_FORBIDDEN)
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        classroom = serializer.save(created_by=request.user)
+        teacher = serializer.validated_data.get("teacher") or request.user
+        classroom = serializer.save(created_by=request.user, teacher=teacher)
         ClassroomMembership.objects.get_or_create(
             classroom=classroom, user=request.user, defaults={"role": "ADMIN"}
         )
+        ClassroomMembership.objects.get_or_create(
+            classroom=classroom, user=teacher, defaults={"role": "ADMIN"}
+        )
         out = ClassroomSerializer(classroom, context={"request": request}).data
         return Response(out, status=status.HTTP_201_CREATED)
+
+    def partial_update(self, request, *args, **kwargs):
+        classroom = self.get_object()
+        if not classroom.memberships.filter(user=request.user, role="ADMIN").exists():
+            return Response({"detail": "Only class admins can edit groups."}, status=status.HTTP_403_FORBIDDEN)
+        response = super().partial_update(request, *args, **kwargs)
+        instance = self.get_object()
+        teacher = instance.teacher
+        if teacher:
+            ClassroomMembership.objects.get_or_create(
+                classroom=instance, user=teacher, defaults={"role": "ADMIN"}
+            )
+        return response
+
+    def update(self, request, *args, **kwargs):
+        return self.partial_update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        classroom = self.get_object()
+        if not classroom.memberships.filter(user=request.user, role="ADMIN").exists():
+            return Response({"detail": "Only class admins can delete groups."}, status=status.HTTP_403_FORBIDDEN)
+        return super().destroy(request, *args, **kwargs)
 
     @action(detail=True, methods=["post"], permission_classes=[IsAuthenticatedAndNotFrozen])
     def regenerate_code(self, request, pk=None):

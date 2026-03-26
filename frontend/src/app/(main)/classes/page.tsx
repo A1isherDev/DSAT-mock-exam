@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Cookies from "js-cookie";
-import { classesApi } from "@/lib/api";
+import { classesApi, adminApi } from "@/lib/api";
 import { Plus, Users, ArrowRight, KeyRound, RefreshCcw } from "lucide-react";
 
 export default function ClassesPage() {
@@ -16,6 +16,8 @@ export default function ClassesPage() {
 
   const [joinCode, setJoinCode] = useState("");
   const [creating, setCreating] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [teachers, setTeachers] = useState<any[]>([]);
   const [newClass, setNewClass] = useState({
     name: "",
     subject: "ENGLISH",
@@ -25,6 +27,19 @@ export default function ClassesPage() {
     start_date: "",
     room_number: "",
     telegram_chat_url: "",
+    teacher: "",
+    max_students: "",
+  });
+  const [editClass, setEditClass] = useState({
+    name: "",
+    subject: "ENGLISH",
+    lesson_days: "ODD",
+    lesson_time: "",
+    lesson_hours: "2",
+    start_date: "",
+    room_number: "",
+    telegram_chat_id: "",
+    teacher: "",
     max_students: "",
   });
 
@@ -43,6 +58,12 @@ export default function ClassesPage() {
 
   useEffect(() => {
     fetchClasses();
+    if (isAdmin) {
+      adminApi.getUsers().then((u) => {
+        const list = (Array.isArray(u) ? u : []).filter((x: any) => x.role === "ADMIN" || x.is_admin);
+        setTeachers(list);
+      }).catch(() => {});
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -70,7 +91,8 @@ export default function ClassesPage() {
         lesson_hours: newClass.lesson_hours ? Number(newClass.lesson_hours) : 2,
         start_date: newClass.start_date || undefined,
         room_number: newClass.room_number.trim(),
-        telegram_chat_url: newClass.telegram_chat_url.trim(),
+        telegram_chat_id: newClass.telegram_chat_url.trim(),
+        teacher: newClass.teacher ? Number(newClass.teacher) : undefined,
         max_students: newClass.max_students ? Number(newClass.max_students) : undefined,
       });
       setNewClass({
@@ -82,6 +104,7 @@ export default function ClassesPage() {
         start_date: "",
         room_number: "",
         telegram_chat_url: "",
+        teacher: "",
         max_students: "",
       });
       await fetchClasses();
@@ -93,38 +116,77 @@ export default function ClassesPage() {
     }
   };
 
+  const beginEdit = (c: any) => {
+    setEditingId(c.id);
+    setEditClass({
+      name: c.name || "",
+      subject: c.subject || "ENGLISH",
+      lesson_days: c.lesson_days || "ODD",
+      lesson_time: c.lesson_time || "",
+      lesson_hours: c.lesson_hours != null ? String(c.lesson_hours) : "2",
+      start_date: c.start_date || "",
+      room_number: c.room_number || "",
+      telegram_chat_id: c.telegram_chat_id || "",
+      teacher: c.teacher ? String(c.teacher) : "",
+      max_students: c.max_students != null ? String(c.max_students) : "",
+    });
+  };
+
+  const saveEdit = async () => {
+    if (!editingId) return;
+    setError(null);
+    try {
+      await classesApi.update(editingId, {
+        name: editClass.name.trim(),
+        subject: editClass.subject,
+        lesson_days: editClass.lesson_days,
+        lesson_time: editClass.lesson_time.trim(),
+        lesson_hours: editClass.lesson_hours ? Number(editClass.lesson_hours) : 2,
+        start_date: editClass.start_date || null,
+        room_number: editClass.room_number.trim(),
+        telegram_chat_id: editClass.telegram_chat_id.trim(),
+        teacher: editClass.teacher ? Number(editClass.teacher) : null,
+        max_students: editClass.max_students ? Number(editClass.max_students) : null,
+      });
+      await fetchClasses();
+      setEditingId(null);
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || "Could not update group.");
+    }
+  };
+
   return (
-    <div className="max-w-6xl mx-auto px-8 py-12">
+    <div className="max-w-6xl mx-auto px-6 py-10 lg:px-8 lg:py-12">
       <div className="flex items-start justify-between gap-6 mb-10">
         <div>
-          <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-2">Groups</p>
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Your groups</h1>
-          <p className="text-slate-500 mt-2 max-w-2xl">
+          <p className="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-2">Groups</p>
+          <h1 className="text-3xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-500 dark:from-white dark:to-slate-400 tracking-tight">Your groups</h1>
+          <p className="text-slate-500 dark:text-slate-400 mt-2 max-w-2xl">
             Join with a group code. Inside each group you’ll find announcements, homework, submissions, and grades.
           </p>
         </div>
         <button
           type="button"
           onClick={fetchClasses}
-          className="shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 font-bold text-sm hover:bg-slate-50"
+          className="shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-800/60 bg-white/70 dark:bg-slate-900/40 backdrop-blur-xl text-slate-700 dark:text-slate-300 font-bold text-sm hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all shadow-sm"
         >
           <RefreshCcw className="w-4 h-4" />
           Refresh
         </button>
       </div>
 
-      {error && <div className="mb-6 p-4 rounded-2xl border border-red-200 bg-red-50 text-red-700 font-semibold text-sm">{error}</div>}
+      {error && <div className="mb-6 p-4 rounded-3xl border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 font-semibold text-sm">{error}</div>}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2">
           {loading ? (
-            <div className="bg-white border border-slate-200 rounded-2xl p-10 flex justify-center">
+            <div className="bg-white/70 dark:bg-slate-900/40 backdrop-blur-xl border border-slate-200 dark:border-slate-800/60 rounded-3xl p-10 flex justify-center card-shadow">
               <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
             </div>
           ) : classes.length === 0 ? (
-            <div className="bg-white border border-slate-200 rounded-2xl p-10">
-              <p className="text-slate-700 font-bold">No groups yet.</p>
-              <p className="text-slate-500 mt-1 text-sm">Use a group code to join, or ask a teacher to create one for you.</p>
+            <div className="bg-white/70 dark:bg-slate-900/40 backdrop-blur-xl border border-slate-200 dark:border-slate-800/60 rounded-3xl p-10 card-shadow">
+              <p className="text-slate-700 dark:text-slate-300 font-bold">No groups yet.</p>
+              <p className="text-slate-500 dark:text-slate-400 mt-1 text-sm">Use a group code to join, or ask a teacher to create one for you.</p>
             </div>
           ) : (
             <div className="grid sm:grid-cols-2 gap-6">
@@ -133,28 +195,38 @@ export default function ClassesPage() {
                   key={c.id}
                   type="button"
                   onClick={() => router.push(`/classes/${c.id}`)}
-                  className="text-left bg-white border border-slate-200 rounded-2xl p-6 hover:shadow-xl hover:-translate-y-0.5 transition-all"
+                  className="text-left bg-white/70 dark:bg-slate-900/40 backdrop-blur-xl border border-slate-200 dark:border-slate-800/60 rounded-3xl p-6 card-shadow hover:shadow-xl hover:-translate-y-1 hover:border-blue-300 dark:hover:border-blue-800 transition-all duration-300 group"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
-                      <p className="text-lg font-extrabold text-slate-900 truncate">{c.name}</p>
-                      <p className="text-sm text-slate-500 truncate">
+                      <p className="text-lg font-extrabold text-slate-900 dark:text-white truncate">{c.name}</p>
+                      <p className="text-sm text-slate-500 dark:text-slate-400 truncate mt-1">
                         {(c.subject ? `${c.subject}` : "—")}
                         {c.lesson_days ? ` · ${c.lesson_days}` : ""}
                         {c.lesson_time ? ` · ${c.lesson_time}` : ""}
                       </p>
                     </div>
-                    <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center shrink-0 border border-blue-100">
+                    <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform duration-300">
                       <Users className="w-5 h-5" />
                     </div>
                   </div>
-                  <div className="mt-5 flex items-center justify-between text-xs text-slate-500 font-bold uppercase tracking-widest">
+                  <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest">
                     <span>
                       {(c.members_count ?? 0)} students{c.max_students ? ` / ${c.max_students}` : ""}
                     </span>
-                    <span className="inline-flex items-center gap-1 text-blue-700">
-                      Open <ArrowRight className="w-4 h-4" />
-                    </span>
+                    <div className="inline-flex items-center gap-3">
+                      {isAdmin && (
+                        <span
+                          onClick={(e) => { e.stopPropagation(); beginEdit(c); }}
+                          className="text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                        >
+                          Edit
+                        </span>
+                      )}
+                      <span className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 group-hover:translate-x-1 transition-transform">
+                        Open <ArrowRight className="w-4 h-4" />
+                      </span>
+                    </div>
                   </div>
                 </button>
               ))}
@@ -163,45 +235,45 @@ export default function ClassesPage() {
         </div>
 
         <div className="space-y-6">
-          <div className="bg-white border border-slate-200 rounded-2xl p-6">
+          <div className="bg-white/70 dark:bg-slate-900/40 backdrop-blur-xl border border-slate-200 dark:border-slate-800/60 rounded-3xl p-6 shadow-sm card-shadow">
             <div className="flex items-center gap-2 mb-3">
-              <KeyRound className="w-4 h-4 text-slate-500" />
-              <p className="text-xs font-black text-slate-500 uppercase tracking-widest">Join a group</p>
+              <KeyRound className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+              <p className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">Join a group</p>
             </div>
             <input
               value={joinCode}
               onChange={(e) => setJoinCode(e.target.value)}
               placeholder="Group code"
-              className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold"
+              className="w-full border border-slate-200 dark:border-slate-700/60 bg-white dark:bg-slate-950/50 text-slate-900 dark:text-white rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
             />
             <button
               type="button"
               onClick={handleJoin}
               disabled={!joinCode.trim()}
-              className="w-full mt-3 py-3 rounded-xl bg-slate-900 text-white font-bold text-sm hover:bg-slate-800 disabled:opacity-60"
+              className="w-full mt-3 py-3 rounded-xl bg-slate-900 dark:bg-slate-800 text-white font-bold text-sm hover:bg-slate-800 dark:hover:bg-slate-700 disabled:opacity-50 transition-colors shadow-md hover:shadow-lg"
             >
               Join
             </button>
           </div>
 
           {isAdmin && (
-            <div className="bg-white border border-slate-200 rounded-2xl p-6">
-              <div className="flex items-center gap-2 mb-3">
-                <Plus className="w-4 h-4 text-blue-600" />
-                <p className="text-xs font-black text-slate-500 uppercase tracking-widest">Create group (teacher)</p>
+            <div className="bg-white/70 dark:bg-slate-900/40 backdrop-blur-xl border border-slate-200 dark:border-slate-800/60 rounded-3xl p-6 shadow-sm mt-6 card-shadow">
+              <div className="flex items-center gap-2 mb-4">
+                <Plus className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                <p className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">Create group (teacher)</p>
               </div>
               <div className="space-y-3">
                 <input
                   value={newClass.name}
                   onChange={(e) => setNewClass((p) => ({ ...p, name: e.target.value }))}
                   placeholder="Group name"
-                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold"
+                  className="w-full border border-slate-200 dark:border-slate-700/60 bg-white dark:bg-slate-950/50 text-slate-900 dark:text-white rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                 />
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-3">
                   <select
                     value={newClass.subject}
                     onChange={(e) => setNewClass((p) => ({ ...p, subject: e.target.value }))}
-                    className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold bg-white"
+                    className="w-full border border-slate-200 dark:border-slate-700/60 bg-white dark:bg-slate-950/50 text-slate-900 dark:text-white rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none"
                   >
                     <option value="ENGLISH">English</option>
                     <option value="MATH">Math</option>
@@ -209,64 +281,112 @@ export default function ClassesPage() {
                   <select
                     value={newClass.lesson_days}
                     onChange={(e) => setNewClass((p) => ({ ...p, lesson_days: e.target.value }))}
-                    className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold bg-white"
+                    className="w-full border border-slate-200 dark:border-slate-700/60 bg-white dark:bg-slate-950/50 text-slate-900 dark:text-white rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none"
                   >
                     <option value="ODD">Odd days</option>
                     <option value="EVEN">Even days</option>
                   </select>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-3">
                   <input
                     value={newClass.lesson_time}
                     onChange={(e) => setNewClass((p) => ({ ...p, lesson_time: e.target.value }))}
                     placeholder="Lesson time (e.g. 18:00)"
-                    className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold"
+                    className="w-full border border-slate-200 dark:border-slate-700/60 bg-white dark:bg-slate-950/50 text-slate-900 dark:text-white rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                   />
                   <input
                     value={newClass.lesson_hours}
                     onChange={(e) => setNewClass((p) => ({ ...p, lesson_hours: e.target.value }))}
                     placeholder="Lesson hours (e.g. 2)"
-                    className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold"
+                    className="w-full border border-slate-200 dark:border-slate-700/60 bg-white dark:bg-slate-950/50 text-slate-900 dark:text-white rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-3">
                   <input
                     type="date"
                     value={newClass.start_date}
                     onChange={(e) => setNewClass((p) => ({ ...p, start_date: e.target.value }))}
-                    className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold"
+                    className="w-full border border-slate-200 dark:border-slate-700/60 bg-white dark:bg-slate-950/50 text-slate-900 dark:text-white rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all color-scheme-light dark:color-scheme-dark"
                   />
                   <input
                     value={newClass.room_number}
                     onChange={(e) => setNewClass((p) => ({ ...p, room_number: e.target.value }))}
-                    placeholder="Room number (optional)"
-                    className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold"
+                    placeholder="Room number (opt)"
+                    className="w-full border border-slate-200 dark:border-slate-700/60 bg-white dark:bg-slate-950/50 text-slate-900 dark:text-white rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                   />
                 </div>
                 <input
                   value={newClass.telegram_chat_url}
                   onChange={(e) => setNewClass((p) => ({ ...p, telegram_chat_url: e.target.value }))}
-                  placeholder="Telegram chat link (optional)"
-                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold"
+                  placeholder="Telegram Chat ID (optional)"
+                  className="w-full border border-slate-200 dark:border-slate-700/60 bg-white dark:bg-slate-950/50 text-slate-900 dark:text-white rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                 />
+                <select
+                  value={newClass.teacher}
+                  onChange={(e) => setNewClass((p) => ({ ...p, teacher: e.target.value }))}
+                  className="w-full border border-slate-200 dark:border-slate-700/60 bg-white dark:bg-slate-950/50 text-slate-900 dark:text-white rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none"
+                >
+                  <option value="">Teacher (default: you)</option>
+                  {teachers.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.first_name || t.email} {t.last_name || ""}
+                    </option>
+                  ))}
+                </select>
                 <input
                   value={newClass.max_students}
                   onChange={(e) => setNewClass((p) => ({ ...p, max_students: e.target.value }))}
                   placeholder="Number of students (optional)"
-                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold"
+                  className="w-full border border-slate-200 dark:border-slate-700/60 bg-white dark:bg-slate-950/50 text-slate-900 dark:text-white rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                 />
               </div>
               <button
                 type="button"
                 onClick={handleCreate}
                 disabled={!newClass.name.trim() || creating}
-                className="w-full mt-3 py-3 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 disabled:opacity-60"
+                className="w-full mt-4 py-3 rounded-xl bg-blue-600 dark:bg-blue-500 text-white font-bold text-sm hover:bg-blue-700 dark:hover:bg-blue-600 disabled:opacity-50 transition-colors shadow-md hover:shadow-lg"
               >
                 {creating ? "Creating..." : "Create"}
               </button>
-              <p className="text-[11px] text-slate-400 mt-3">
+              <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-3 text-center">
                 Students can join using the group code generated automatically.
               </p>
+            </div>
+          )}
+
+          {isAdmin && editingId && (
+            <div className="bg-white border border-slate-200 rounded-2xl p-6">
+              <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">Edit group</p>
+              <div className="space-y-3">
+                <input value={editClass.name} onChange={(e) => setEditClass((p) => ({ ...p, name: e.target.value }))} placeholder="Name Group" className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold" />
+                <div className="grid grid-cols-2 gap-2">
+                  <select value={editClass.subject} onChange={(e) => setEditClass((p) => ({ ...p, subject: e.target.value }))} className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold bg-white">
+                    <option value="ENGLISH">Course Type: English</option>
+                    <option value="MATH">Course Type: Math</option>
+                  </select>
+                  <input value={editClass.room_number} onChange={(e) => setEditClass((p) => ({ ...p, room_number: e.target.value }))} placeholder="Room Number" className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold" />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input type="date" value={editClass.start_date} onChange={(e) => setEditClass((p) => ({ ...p, start_date: e.target.value }))} className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold" />
+                  <select value={editClass.teacher} onChange={(e) => setEditClass((p) => ({ ...p, teacher: e.target.value }))} className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold bg-white">
+                    <option value="">Teacher</option>
+                    {teachers.map((t) => <option key={t.id} value={t.id}>{t.first_name || t.email} {t.last_name || ""}</option>)}
+                  </select>
+                </div>
+                <input value={editClass.telegram_chat_id} onChange={(e) => setEditClass((p) => ({ ...p, telegram_chat_id: e.target.value }))} placeholder="Telegram Chat ID" className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold" />
+                <div className="grid grid-cols-3 gap-2">
+                  <select value={editClass.lesson_days} onChange={(e) => setEditClass((p) => ({ ...p, lesson_days: e.target.value }))} className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold bg-white">
+                    <option value="ODD">Dars kunlari: Odd</option>
+                    <option value="EVEN">Dars kunlari: Even</option>
+                  </select>
+                  <input value={editClass.lesson_time} onChange={(e) => setEditClass((p) => ({ ...p, lesson_time: e.target.value }))} placeholder="Soati (e.g. 18:00)" className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold" />
+                  <input value={editClass.lesson_hours} onChange={(e) => setEditClass((p) => ({ ...p, lesson_hours: e.target.value }))} placeholder="Hours" className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold" />
+                </div>
+              </div>
+              <div className="mt-3 flex gap-2">
+                <button type="button" onClick={saveEdit} className="flex-1 py-3 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700">Save Edit</button>
+                <button type="button" onClick={() => setEditingId(null)} className="px-4 py-3 rounded-xl border border-slate-200 bg-white text-slate-700 font-bold text-sm hover:bg-slate-50">Cancel</button>
+              </div>
             </div>
           )}
         </div>
