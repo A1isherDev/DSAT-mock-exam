@@ -17,7 +17,14 @@ def _generate_join_code(length: int = 7) -> str:
 
 class Classroom(models.Model):
     name = models.CharField(max_length=120, db_index=True)
+    subject = models.CharField(max_length=80, blank=True, db_index=True)
     section = models.CharField(max_length=60, blank=True)
+    lesson_schedule = models.CharField(
+        max_length=120,
+        blank=True,
+        help_text="Lesson days and time, e.g. Mon/Wed/Fri 18:00",
+    )
+    max_students = models.PositiveIntegerField(null=True, blank=True)
     description = models.TextField(blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="created_classes"
@@ -111,6 +118,7 @@ class Assignment(models.Model):
         Module, on_delete=models.SET_NULL, null=True, blank=True, related_name="class_assignments"
     )
     external_url = models.URLField(blank=True)
+    attachment_file = models.FileField(upload_to="homework_files/", null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -135,7 +143,8 @@ class Submission(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="assignment_submissions"
     )
     status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=STATUS_DRAFT, db_index=True)
-    student_comment = models.TextField(blank=True)
+    text_response = models.TextField(blank=True)
+    upload_file = models.FileField(upload_to="homework_submissions/", null=True, blank=True)
 
     # Optional link to an attempt in the existing exam system
     attempt = models.ForeignKey(

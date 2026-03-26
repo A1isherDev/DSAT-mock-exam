@@ -18,7 +18,8 @@ export default function AssignmentDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [assignment, setAssignment] = useState<any>(null);
   const [mySubmission, setMySubmission] = useState<any>(null);
-  const [comment, setComment] = useState("");
+  const [responseText, setResponseText] = useState("");
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [attemptId, setAttemptId] = useState<string>("");
   const [saving, setSaving] = useState(false);
 
@@ -34,7 +35,7 @@ export default function AssignmentDetailPage() {
       setAssignment(found || { id: aid });
       const mine = await classesApi.getMySubmission(cid, aid);
       setMySubmission(mine);
-      setComment(mine?.student_comment || "");
+      setResponseText(mine?.text_response || "");
       setAttemptId(mine?.attempt ? String(mine.attempt) : "");
 
       if (isAdmin) {
@@ -58,9 +59,12 @@ export default function AssignmentDetailPage() {
     setSaving(true);
     setError(null);
     try {
-      const payload: any = { student_comment: comment, submit: finalSubmit };
-      if (attemptId.trim()) payload.attempt_id = Number(attemptId.trim());
-      const res = await classesApi.submitAssignment(cid, aid, payload);
+      const fd = new FormData();
+      fd.append("text_response", responseText);
+      fd.append("submit", finalSubmit ? "true" : "false");
+      if (attemptId.trim()) fd.append("attempt_id", String(Number(attemptId.trim())));
+      if (uploadFile) fd.append("upload_file", uploadFile);
+      const res = await classesApi.submitAssignment(cid, aid, fd as any);
       setMySubmission(res);
     } catch (e: any) {
       setError(e?.response?.data?.detail || "Could not submit.");
@@ -79,6 +83,10 @@ export default function AssignmentDetailPage() {
     // practice test/module attachments can be handled later; for now, students can use the normal mock list.
     if (assignment.external_url) {
       window.open(assignment.external_url, "_blank", "noopener,noreferrer");
+      return;
+    }
+    if (assignment.attachment_file_url) {
+      window.open(assignment.attachment_file_url, "_blank", "noopener,noreferrer");
       return;
     }
   };
@@ -111,7 +119,7 @@ export default function AssignmentDetailPage() {
               <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">{assignment?.title || "Assignment"}</h1>
               {assignment?.instructions ? <p className="text-slate-600 mt-3 whitespace-pre-wrap">{assignment.instructions}</p> : null}
               <div className="mt-5 flex flex-wrap gap-2">
-                {(assignment?.mock_exam || assignment?.external_url) && (
+                {(assignment?.mock_exam || assignment?.external_url || assignment?.attachment_file_url) && (
                   <button
                     type="button"
                     onClick={openAttachment}
@@ -139,14 +147,26 @@ export default function AssignmentDetailPage() {
                     <p className="text-[11px] text-slate-400 mt-1">If you completed an exam attempt, paste its ID.</p>
                   </div>
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-1">Comment</label>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-1">Response</label>
                     <textarea
-                      value={comment}
-                      onChange={(e) => setComment(e.target.value)}
-                      placeholder="Optional note to your teacher"
+                      value={responseText}
+                      onChange={(e) => setResponseText(e.target.value)}
+                      placeholder="Optional response text"
                       className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm min-h-[90px]"
                     />
                   </div>
+                </div>
+                <div className="mt-3">
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-1">Upload file (optional)</label>
+                  <input type="file" onChange={(e) => setUploadFile(e.target.files?.[0] || null)} className="w-full text-sm" />
+                  {mySubmission?.upload_file_url && (
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      Existing file:{" "}
+                      <a className="text-blue-700 font-semibold hover:underline" href={mySubmission.upload_file_url} target="_blank" rel="noreferrer">
+                        Open
+                      </a>
+                    </p>
+                  )}
                 </div>
 
                 <div className="mt-4 flex flex-wrap gap-2">

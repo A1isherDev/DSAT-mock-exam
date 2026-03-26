@@ -7,6 +7,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
 from exams.models import TestAttempt
 from users.permissions import IsAuthenticatedAndNotFrozen
@@ -92,6 +93,12 @@ class JoinClassView(APIView):
         classroom = Classroom.objects.filter(join_code=code, is_active=True).first()
         if not classroom:
             return Response({"detail": "Invalid class code."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if classroom.max_students is not None:
+            current_students = classroom.memberships.filter(role="STUDENT").count()
+            already_member = classroom.memberships.filter(user=request.user).exists()
+            if not already_member and current_students >= classroom.max_students:
+                return Response({"detail": "This group is full."}, status=status.HTTP_400_BAD_REQUEST)
         mem, created = ClassroomMembership.objects.get_or_create(
             classroom=classroom, user=request.user, defaults={"role": "STUDENT"}
         )
@@ -127,6 +134,7 @@ class ClassPostViewSet(ModelViewSet):
 class AssignmentViewSet(ModelViewSet):
     permission_classes = [IsAuthenticatedAndNotFrozen]
     serializer_class = AssignmentSerializer
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get_classroom(self):
         return get_object_or_404(Classroom, pk=self.kwargs["classroom_pk"])
@@ -154,12 +162,21 @@ class AssignmentViewSet(ModelViewSet):
         if not classroom.memberships.filter(user=request.user).exists():
             return Response({"detail": "Not a member."}, status=status.HTTP_403_FORBIDDEN)
         assignment = get_object_or_404(Assignment, pk=pk, classroom=classroom)
+        # Editing submission is allowed only before deadline.
+        if assignment.due_at and timezone.now() > assignment.due_at:
+            existing = Submission.objects.filter(assignment=assignment, student=request.user).first()
+            if existing and existing.status == Submission.STATUS_SUBMITTED:
+                return Response({"detail": "Deadline passed. Submission can no longer be edited."}, status=status.HTTP_400_BAD_REQUEST)
         serializer = SubmitSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
         sub, _ = Submission.objects.get_or_create(assignment=assignment, student=request.user)
-        sub.student_comment = data.get("student_comment", sub.student_comment)
+        if "text_response" in data:
+            sub.text_response = data.get("text_response") or ""
+        if data.get("upload_file") is not None:
+            # If upload_file is provided, update it. (Clearing can be added later.)
+            sub.upload_file = data.get("upload_file")
 
         attempt_id = data.get("attempt_id")
         if attempt_id:

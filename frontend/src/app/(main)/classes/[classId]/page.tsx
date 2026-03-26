@@ -45,6 +45,7 @@ export default function ClassDetailPage() {
     practice_test: "",
     module: "",
   });
+  const [asgFile, setAsgFile] = useState<File | null>(null);
 
   const [people, setPeople] = useState<any[]>([]);
 
@@ -91,18 +92,19 @@ export default function ClassDetailPage() {
   const handleCreateAssignment = async () => {
     setError(null);
     try {
-      const payload: any = {
-        title: newAsg.title,
-        instructions: newAsg.instructions,
-        external_url: newAsg.external_url,
-      };
-      if (newAsg.due_at) payload.due_at = newAsg.due_at;
-      if (newAsg.mock_exam) payload.mock_exam = Number(newAsg.mock_exam);
-      if (newAsg.practice_test) payload.practice_test = Number(newAsg.practice_test);
-      if (newAsg.module) payload.module = Number(newAsg.module);
+      const fd = new FormData();
+      fd.append("title", newAsg.title);
+      fd.append("instructions", newAsg.instructions);
+      if (newAsg.due_at) fd.append("due_at", newAsg.due_at);
+      if (newAsg.external_url) fd.append("external_url", newAsg.external_url);
+      if (newAsg.mock_exam) fd.append("mock_exam", String(Number(newAsg.mock_exam)));
+      if (newAsg.practice_test) fd.append("practice_test", String(Number(newAsg.practice_test)));
+      if (newAsg.module) fd.append("module", String(Number(newAsg.module)));
+      if (asgFile) fd.append("attachment_file", asgFile);
 
-      await classesApi.createAssignment(id, payload);
+      await classesApi.createAssignment(id, fd, true);
       setNewAsg({ title: "", instructions: "", due_at: "", external_url: "", mock_exam: "", practice_test: "", module: "" });
+      setAsgFile(null);
       const a = await classesApi.listAssignments(id);
       setAssignments(Array.isArray(a) ? a : []);
       setTab("classwork");
@@ -125,8 +127,11 @@ export default function ClassDetailPage() {
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
           <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-2">Class</p>
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">{klass?.name || "Class"}</h1>
-          <p className="text-slate-500 mt-2">{klass?.section || ""}</p>
+          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">{klass?.name || "Group"}</h1>
+          <p className="text-slate-500 mt-2">
+            {(klass?.subject ? klass.subject : "")}
+            {klass?.lesson_schedule ? ` · ${klass.lesson_schedule}` : ""}
+          </p>
         </div>
         <button
           type="button"
@@ -288,8 +293,10 @@ export default function ClassDetailPage() {
                     className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm"
                   />
                 </div>
+                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-widest">File (optional)</label>
+                <input type="file" onChange={(e) => setAsgFile(e.target.files?.[0] || null)} className="w-full text-sm" />
                 <p className="text-[11px] text-slate-400">
-                  MVP attachments use existing IDs. We can replace these with pickers next.
+                  Attach a file or a link, plus optional test IDs (MVP).
                 </p>
               </div>
               <button

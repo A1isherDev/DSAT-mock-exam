@@ -16,7 +16,7 @@ export default function ClassesPage() {
 
   const [joinCode, setJoinCode] = useState("");
   const [creating, setCreating] = useState(false);
-  const [newClass, setNewClass] = useState({ name: "", section: "", description: "" });
+  const [newClass, setNewClass] = useState({ name: "", subject: "", lesson_schedule: "", max_students: "", section: "", description: "" });
 
   const fetchClasses = async () => {
     setError(null);
@@ -54,10 +54,13 @@ export default function ClassesPage() {
     try {
       const c = await classesApi.create({
         name: newClass.name.trim(),
+        subject: newClass.subject.trim(),
+        lesson_schedule: newClass.lesson_schedule.trim(),
+        max_students: newClass.max_students ? Number(newClass.max_students) : undefined,
         section: newClass.section.trim(),
         description: newClass.description.trim(),
       });
-      setNewClass({ name: "", section: "", description: "" });
+      setNewClass({ name: "", subject: "", lesson_schedule: "", max_students: "", section: "", description: "" });
       await fetchClasses();
       if (c?.id) router.push(`/classes/${c.id}`);
     } catch (e: any) {
@@ -71,10 +74,10 @@ export default function ClassesPage() {
     <div className="max-w-6xl mx-auto px-8 py-12">
       <div className="flex items-start justify-between gap-6 mb-10">
         <div>
-          <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-2">Classes</p>
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Your classes</h1>
+          <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-2">Groups</p>
+          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Your groups</h1>
           <p className="text-slate-500 mt-2 max-w-2xl">
-            Join with a class code. Inside each class you’ll find announcements, assignments, submissions, and grades.
+            Join with a group code. Inside each group you’ll find announcements, homework, submissions, and grades.
           </p>
         </div>
         <button
@@ -97,8 +100,8 @@ export default function ClassesPage() {
             </div>
           ) : classes.length === 0 ? (
             <div className="bg-white border border-slate-200 rounded-2xl p-10">
-              <p className="text-slate-700 font-bold">No classes yet.</p>
-              <p className="text-slate-500 mt-1 text-sm">Use a class code to join, or ask an admin to create one for you.</p>
+              <p className="text-slate-700 font-bold">No groups yet.</p>
+              <p className="text-slate-500 mt-1 text-sm">Use a group code to join, or ask a teacher to create one for you.</p>
             </div>
           ) : (
             <div className="grid sm:grid-cols-2 gap-6">
@@ -112,14 +115,18 @@ export default function ClassesPage() {
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
                       <p className="text-lg font-extrabold text-slate-900 truncate">{c.name}</p>
-                      <p className="text-sm text-slate-500 truncate">{c.section || "—"}</p>
+                      <p className="text-sm text-slate-500 truncate">
+                        {(c.subject ? `${c.subject}` : "—")}{c.lesson_schedule ? ` · ${c.lesson_schedule}` : ""}
+                      </p>
                     </div>
                     <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center shrink-0 border border-blue-100">
                       <Users className="w-5 h-5" />
                     </div>
                   </div>
                   <div className="mt-5 flex items-center justify-between text-xs text-slate-500 font-bold uppercase tracking-widest">
-                    <span>{(c.members_count ?? 0)} members</span>
+                    <span>
+                      {(c.members_count ?? 0)} students{c.max_students ? ` / ${c.max_students}` : ""}
+                    </span>
                     <span className="inline-flex items-center gap-1 text-blue-700">
                       Open <ArrowRight className="w-4 h-4" />
                     </span>
@@ -134,12 +141,12 @@ export default function ClassesPage() {
           <div className="bg-white border border-slate-200 rounded-2xl p-6">
             <div className="flex items-center gap-2 mb-3">
               <KeyRound className="w-4 h-4 text-slate-500" />
-              <p className="text-xs font-black text-slate-500 uppercase tracking-widest">Join a class</p>
+              <p className="text-xs font-black text-slate-500 uppercase tracking-widest">Join a group</p>
             </div>
             <input
               value={joinCode}
               onChange={(e) => setJoinCode(e.target.value)}
-              placeholder="Class code"
+              placeholder="Group code"
               className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold"
             />
             <button
@@ -156,13 +163,31 @@ export default function ClassesPage() {
             <div className="bg-white border border-slate-200 rounded-2xl p-6">
               <div className="flex items-center gap-2 mb-3">
                 <Plus className="w-4 h-4 text-blue-600" />
-                <p className="text-xs font-black text-slate-500 uppercase tracking-widest">Create class (admin)</p>
+                <p className="text-xs font-black text-slate-500 uppercase tracking-widest">Create group (teacher)</p>
               </div>
               <div className="space-y-3">
                 <input
                   value={newClass.name}
                   onChange={(e) => setNewClass((p) => ({ ...p, name: e.target.value }))}
-                  placeholder="Class name"
+                  placeholder="Group name"
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold"
+                />
+                <input
+                  value={newClass.subject}
+                  onChange={(e) => setNewClass((p) => ({ ...p, subject: e.target.value }))}
+                  placeholder="Subject (e.g. English)"
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold"
+                />
+                <input
+                  value={newClass.lesson_schedule}
+                  onChange={(e) => setNewClass((p) => ({ ...p, lesson_schedule: e.target.value }))}
+                  placeholder="Lesson days/time (e.g. Mon/Wed/Fri 18:00)"
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold"
+                />
+                <input
+                  value={newClass.max_students}
+                  onChange={(e) => setNewClass((p) => ({ ...p, max_students: e.target.value }))}
+                  placeholder="Number of students (optional)"
                   className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold"
                 />
                 <input
@@ -187,7 +212,7 @@ export default function ClassesPage() {
                 {creating ? "Creating..." : "Create"}
               </button>
               <p className="text-[11px] text-slate-400 mt-3">
-                Students can join using the class code generated automatically.
+                Students can join using the group code generated automatically.
               </p>
             </div>
           )}
