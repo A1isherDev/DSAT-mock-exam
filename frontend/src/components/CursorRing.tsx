@@ -34,7 +34,13 @@ export default function CursorRing() {
           setPos({ x: pending.current.x, y: pending.current.y });
         });
       }
-      setVisible(true);
+      const edgePad = 20;
+      const isNearEdge =
+        e.clientX < edgePad ||
+        e.clientY < edgePad ||
+        e.clientX > window.innerWidth - edgePad ||
+        e.clientY > window.innerHeight - edgePad;
+      setVisible(!isNearEdge);
     };
     const onLeave = () => setVisible(false);
     window.addEventListener("mousemove", onMove, { passive: true });

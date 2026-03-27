@@ -377,7 +377,7 @@ export default function ProfilePage() {
   return (
     <div className="max-w-7xl mx-auto px-6 py-10 lg:px-10 lg:py-12">
       {/* Cover */}
-      <div className="hero-shell relative p-8 md:p-10 min-h-[280px]">
+      <div className="hero-shell relative overflow-visible p-8 md:p-10 min-h-[280px] pb-10">
         <div className="flex items-start justify-between gap-6">
           <div className="max-w-2xl">
             <p className="eyebrow mb-2">Profile</p>
