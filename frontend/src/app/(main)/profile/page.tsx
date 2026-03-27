@@ -207,14 +207,14 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-10 lg:px-8 lg:py-12">
+    <div className="max-w-7xl mx-auto px-6 py-10 lg:px-10 lg:py-12">
       {/* Cover */}
-      <div className="hero-shell relative p-8 md:p-10">
+      <div className="hero-shell relative p-8 md:p-10 min-h-[280px]">
         <div className="flex items-start justify-between gap-6">
           <div className="max-w-2xl">
             <p className="eyebrow mb-2">Profile</p>
-            <h1 className="title-xl">Futuristic profile dashboard</h1>
-            <p className="text-slate-600 mt-2 max-w-xl">
+            <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-slate-900">Futuristic profile dashboard</h1>
+            <p className="text-slate-600 mt-3 max-w-2xl text-base">
               Your goals, readiness, and identity — presented like a modern SaaS command center.
             </p>
           </div>
@@ -250,33 +250,33 @@ export default function ProfilePage() {
         </div>
 
         {/* Avatar overlapping cover */}
-        <div className="absolute -bottom-10 left-8 sm:left-10">
+        <div className="absolute -bottom-14 left-8 sm:left-10">
           <div className="relative">
-            <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-white/70 bg-white/20 shadow-[0_18px_48px_rgba(37,99,235,0.25)]">
+            <div className="w-28 h-28 rounded-full overflow-hidden border-[3px] border-white/80 bg-white/20 shadow-[0_18px_48px_rgba(37,99,235,0.25)]">
               {me.profile_image_url ? (
                 /* eslint-disable-next-line @next/next/no-img-element */
                 <img src={me.profile_image_url} alt={`${me.first_name} ${me.last_name}`} className="w-full h-full object-cover" />
               ) : (
                 <div className="w-full h-full flex items-center justify-center bg-white/10">
-                  <UserCircle className="w-14 h-14 text-slate-300" />
+                  <UserCircle className="w-16 h-16 text-slate-300" />
                 </div>
               )}
             </div>
-            <div className="absolute -bottom-1 -right-1 w-9 h-9 rounded-full glass flex items-center justify-center border border-blue-100/60 shadow-sm">
+            <div className="absolute -bottom-1 -right-1 w-10 h-10 rounded-full glass flex items-center justify-center border border-blue-100/60 shadow-sm">
               <Sparkles className="w-4 h-4 text-blue-600" />
             </div>
           </div>
         </div>
 
         {/* User info */}
-        <div className="pt-12 sm:pt-14">
+        <div className="pt-16 sm:pt-18 pl-0 sm:pl-36">
           <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
             <div>
               <div className="flex items-center gap-3">
-                <div className="text-xl font-extrabold text-slate-900">{me.first_name} {me.last_name}</div>
+                <div className="text-2xl font-extrabold text-slate-900">{me.first_name} {me.last_name}</div>
                 <div className="neo-chip">Student</div>
               </div>
-              <div className="text-slate-500 mt-1 text-sm">@{me.username}</div>
+              <div className="text-slate-500 mt-1 text-base">@{me.username}</div>
             </div>
             <Link href="/classes" className="btn-secondary inline-flex items-center justify-center">
               <Trophy className="w-4 h-4" />
@@ -287,7 +287,7 @@ export default function ProfilePage() {
       </div>
 
       {/* Cards */}
-      <div className="mt-16 grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="mt-20 grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="metric-tile p-6">
           <div className="flex items-start justify-between gap-3">
             <div>
