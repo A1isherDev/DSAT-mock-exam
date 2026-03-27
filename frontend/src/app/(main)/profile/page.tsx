@@ -377,7 +377,7 @@ export default function ProfilePage() {
   return (
     <div className="max-w-7xl mx-auto px-6 py-10 lg:px-10 lg:py-12">
       {/* Cover */}
-      <div className="hero-shell relative overflow-visible p-8 md:p-10 min-h-[280px] pb-10">
+      <div className="hero-shell relative p-8 md:p-10 min-h-[280px]">
         <div className="flex items-start justify-between gap-6">
           <div className="max-w-2xl">
             <p className="eyebrow mb-2">Profile</p>
@@ -417,8 +417,8 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* Avatar overlapping cover */}
-        <div className="absolute -bottom-14 left-8 sm:left-10">
+        {/* Avatar inside cover */}
+        <div className="absolute bottom-6 left-8 sm:left-10">
           <div className="relative">
             <div className="w-28 h-28 rounded-full overflow-hidden border-[3px] border-white/80 bg-white/20 shadow-[0_18px_48px_rgba(37,99,235,0.25)]">
               {me.profile_image_url ? (
