@@ -434,7 +434,17 @@ export default function AdminPage() {
             setClearOptionCImage(false);
             setClearOptionDImage(false);
             showToast('Question saved ✓');
-        } catch (e: any) { alert('Error: ' + (e?.response?.status === 404 ? '404 - Endpoint not found or IDs mismatch' : (e?.message || 'Invalid'))); }
+        } catch (e: any) {
+            const details = e?.response?.data;
+            const detailText = typeof details?.detail === 'string'
+                ? details.detail
+                : (typeof details === 'string'
+                    ? details
+                    : (details ? JSON.stringify(details) : null));
+            alert('Error: ' + (e?.response?.status === 404
+                ? '404 - Endpoint not found or IDs mismatch'
+                : (detailText || e?.message || 'Invalid')));
+        }
         finally { setSaving(false); }
     };
     const handleReorderQuestion = async (id: number, action: 'up' | 'down') => {

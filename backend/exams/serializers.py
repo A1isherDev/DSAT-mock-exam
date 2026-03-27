@@ -99,6 +99,15 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
                   'clear_question_image', 'clear_option_a_image', 'clear_option_b_image',
                   'clear_option_c_image', 'clear_option_d_image']
 
+    def create(self, validated_data):
+        # Clear flags are serializer-only controls and must not be passed to model create().
+        validated_data.pop('clear_question_image', None)
+        validated_data.pop('clear_option_a_image', None)
+        validated_data.pop('clear_option_b_image', None)
+        validated_data.pop('clear_option_c_image', None)
+        validated_data.pop('clear_option_d_image', None)
+        return super().create(validated_data)
+
     def update(self, instance, validated_data):
         clear_question_image = validated_data.pop('clear_question_image', False)
         clear_option_a_image = validated_data.pop('clear_option_a_image', False)
