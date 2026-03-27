@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { classesApi, usersApi } from "@/lib/api";
+import { classesApi, examsApi, usersApi } from "@/lib/api";
 import {
   BookOpen,
   CalendarClock,
   Copy,
+  FileText,
   Loader2,
   Pencil,
   School,
@@ -26,6 +27,12 @@ type MeForm = {
   sat_exam_date: string;
   target_score: string;
   profile_image_url: string | null;
+  last_mock_result?: {
+    score: number | null;
+    mock_exam_title: string | null;
+    practice_test_subject: string | null;
+    completed_at: string | null;
+  } | null;
 };
 
 type Classroom = {
@@ -58,6 +65,17 @@ type ClassPerson = {
   };
 };
 
+type Attempt = {
+  id: number;
+  submitted_at?: string | null;
+  is_completed?: boolean;
+  score?: number | null;
+  practice_test_details?: {
+    subject?: string;
+    title?: string;
+  };
+};
+
 function mapMeToForm(me: any): MeForm {
   return {
     username: me.username || "",
@@ -67,6 +85,7 @@ function mapMeToForm(me: any): MeForm {
     sat_exam_date: me.sat_exam_date || "",
     target_score: me.target_score != null ? String(me.target_score) : "",
     profile_image_url: me.profile_image_url || null,
+    last_mock_result: me.last_mock_result || null,
   };
 }
 
@@ -85,6 +104,10 @@ export default function ProfilePage() {
   const [selectedClassId, setSelectedClassId] = useState<number | null>(null);
   const [selectedClassPeople, setSelectedClassPeople] = useState<ClassPerson[]>([]);
   const [peopleLoading, setPeopleLoading] = useState(false);
+  const [lastPracticeResult, setLastPracticeResult] = useState<Attempt | null>(null);
+  const [lastMockResult, setLastMockResult] = useState<MeForm["last_mock_result"]>(null);
+  const [homeworkProgress, setHomeworkProgress] = useState({ total: 0, submitted: 0, pending: 0, overdue: 0 });
+  const [analyticsLoading, setAnalyticsLoading] = useState(true);
 
   useEffect(() => {
     if (!file) {
@@ -102,7 +125,9 @@ export default function ProfilePage() {
       try {
         const [meData, classData] = await Promise.all([usersApi.getMe(), classesApi.list()]);
         if (!cancelled) {
-          setMe(mapMeToForm(meData));
+          const meMapped = mapMeToForm(meData);
+          setMe(meMapped);
+          setLastMockResult(meMapped.last_mock_result || null);
           const c = Array.isArray(classData) ? (classData as Classroom[]) : [];
           setClasses(c);
           if (c.length > 0) setSelectedClassId(c[0].id);
@@ -116,6 +141,68 @@ export default function ProfilePage() {
         }
       }
     })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setAnalyticsLoading(true);
+      try {
+        const attemptsRaw = await examsApi.getAttempts();
+        const attempts = (Array.isArray(attemptsRaw) ? attemptsRaw : []) as Attempt[];
+        const completed = attempts
+          .filter((a) => a.is_completed)
+          .sort((a, b) => {
+            const da = a.submitted_at ? new Date(a.submitted_at).getTime() : 0;
+            const db = b.submitted_at ? new Date(b.submitted_at).getTime() : 0;
+            return db - da;
+          });
+        if (!cancelled) setLastPracticeResult(completed[0] || null);
+
+        const myClassesRaw = await classesApi.list();
+        const myClasses = Array.isArray(myClassesRaw) ? myClassesRaw : [];
+        let total = 0;
+        let submitted = 0;
+        let pending = 0;
+        let overdue = 0;
+        const now = Date.now();
+
+        for (const c of myClasses) {
+          const assignments = await classesApi.listAssignments(c.id);
+          const asgList = Array.isArray(assignments) ? assignments : [];
+          for (const asg of asgList) {
+            total += 1;
+            let sub: any = null;
+            try {
+              sub = await classesApi.getMySubmission(c.id, asg.id);
+            } catch {
+              sub = null;
+            }
+            const isSubmitted = !!sub && sub.status === "SUBMITTED";
+            if (isSubmitted) {
+              submitted += 1;
+              continue;
+            }
+            const dueAt = asg?.due_at ? new Date(asg.due_at).getTime() : null;
+            if (dueAt && dueAt < now) overdue += 1;
+            else pending += 1;
+          }
+        }
+
+        if (!cancelled) setHomeworkProgress({ total, submitted, pending, overdue });
+      } catch {
+        if (!cancelled) {
+          setLastPracticeResult(null);
+          setHomeworkProgress({ total: 0, submitted: 0, pending: 0, overdue: 0 });
+        }
+      } finally {
+        if (!cancelled) setAnalyticsLoading(false);
+      }
+    })();
+
     return () => {
       cancelled = true;
     };
@@ -240,6 +327,9 @@ export default function ProfilePage() {
     if (s === "READING_WRITING") return "Reading & Writing";
     return s.charAt(0) + s.slice(1).toLowerCase();
   };
+  const homeworkCompletion = homeworkProgress.total > 0
+    ? Math.round((homeworkProgress.submitted / homeworkProgress.total) * 100)
+    : 0;
 
   const handleOpenEdit = () => {
     setDraft(me);
@@ -365,7 +455,7 @@ export default function ProfilePage() {
       </div>
 
       {/* Cards */}
-      <div className="mt-20 grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="mt-16 grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="metric-tile p-6">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -446,6 +536,78 @@ export default function ProfilePage() {
             {me.sat_exam_date
               ? `Next milestone: ${formatDate(me.sat_exam_date)}`
               : "Set your exam date to get a live countdown."}
+          </p>
+        </div>
+      </div>
+
+      {/* Results + homework progress */}
+      <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="metric-tile p-6">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-black uppercase tracking-widest text-slate-500">Last practice test</p>
+              <p className="text-3xl font-extrabold text-slate-900 mt-2">
+                {lastPracticeResult?.score != null ? lastPracticeResult.score : "—"}
+              </p>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
+              <BookOpen className="w-5 h-5 text-blue-600" />
+            </div>
+          </div>
+          <p className="mt-3 text-xs text-slate-600">
+            {lastPracticeResult
+              ? `${formatSubject(lastPracticeResult.practice_test_details?.subject)} · ${lastPracticeResult.submitted_at ? formatDate(lastPracticeResult.submitted_at) : "Completed"}`
+              : analyticsLoading
+              ? "Loading latest attempt..."
+              : "No completed practice test yet."}
+          </p>
+        </div>
+
+        <div className="metric-tile p-6">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-black uppercase tracking-widest text-slate-500">Last mock result</p>
+              <p className="text-3xl font-extrabold text-slate-900 mt-2">
+                {lastMockResult?.score != null ? lastMockResult.score : "—"}
+              </p>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
+              <Trophy className="w-5 h-5 text-blue-600" />
+            </div>
+          </div>
+          <p className="mt-3 text-xs text-slate-600">
+            {lastMockResult
+              ? `${lastMockResult.mock_exam_title || "Mock exam"} · ${lastMockResult.completed_at ? formatDate(lastMockResult.completed_at) : "Completed"}`
+              : analyticsLoading
+              ? "Loading mock performance..."
+              : "No completed mock exam yet."}
+          </p>
+        </div>
+
+        <div className="metric-tile p-6">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-black uppercase tracking-widest text-slate-500">Homework progress</p>
+              <p className="text-3xl font-extrabold text-slate-900 mt-2">
+                {analyticsLoading ? "..." : `${homeworkCompletion}%`}
+              </p>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
+              <FileText className="w-5 h-5 text-blue-600" />
+            </div>
+          </div>
+          <div className="mt-4">
+            <div className="h-2 rounded-full bg-slate-100 overflow-hidden border border-slate-200">
+              <div
+                className="h-full bg-blue-600 rounded-full transition-[width] duration-500"
+                style={{ width: `${homeworkCompletion}%` }}
+              />
+            </div>
+          </div>
+          <p className="mt-3 text-xs text-slate-600">
+            {analyticsLoading
+              ? "Calculating homework status..."
+              : `${homeworkProgress.submitted}/${homeworkProgress.total} submitted · ${homeworkProgress.pending} pending · ${homeworkProgress.overdue} overdue`}
           </p>
         </div>
       </div>
