@@ -1,10 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Cookies from "js-cookie";
 import { classesApi, adminApi } from "@/lib/api";
-import { Plus, Users, ArrowRight, KeyRound, RefreshCcw } from "lucide-react";
+import { Plus, Users, ArrowRight, KeyRound, RefreshCcw, X } from "lucide-react";
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">{label}</label>
+      {children}
+    </div>
+  );
+}
 
 export default function ClassesPage() {
   const router = useRouter();
@@ -300,42 +309,135 @@ export default function ClassesPage() {
       {isAdmin && createOpen && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm" onClick={() => setCreateOpen(false)} aria-hidden="true" />
-          <div className="relative w-full max-w-3xl rounded-3xl border border-slate-200 bg-white p-6 md:p-8 shadow-2xl">
-            <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">Create group</p>
-            <div className="space-y-3">
-              <input value={newClass.name} onChange={(e) => setNewClass((p) => ({ ...p, name: e.target.value }))} placeholder="Group name" className="input-modern" />
-              <div className="grid grid-cols-2 gap-3">
-                <select value={newClass.subject} onChange={(e) => setNewClass((p) => ({ ...p, subject: e.target.value }))} className="input-modern appearance-none">
-                  <option value="ENGLISH">English</option>
-                  <option value="MATH">Math</option>
-                </select>
-                <select value={newClass.lesson_days} onChange={(e) => setNewClass((p) => ({ ...p, lesson_days: e.target.value }))} className="input-modern appearance-none">
-                  <option value="ODD">Odd days</option>
-                  <option value="EVEN">Even days</option>
-                </select>
+          <div className="relative w-full max-w-2xl" role="dialog" aria-modal="true" aria-labelledby="create-group-title">
+            <div className="hero-shell p-6 md:p-8">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p id="create-group-title" className="eyebrow mb-2">Create group</p>
+                  <h2 className="text-xl md:text-2xl font-extrabold text-slate-900">New group</h2>
+                  <p className="text-slate-600 text-sm mt-2">
+                    Add a group for your students. Optional fields can be set later.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCreateOpen(false)}
+                  className="btn-secondary inline-flex items-center justify-center !px-3 !py-2"
+                  aria-label="Close modal"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <input value={newClass.lesson_time} onChange={(e) => setNewClass((p) => ({ ...p, lesson_time: e.target.value }))} placeholder="Lesson time (e.g. 18:00)" className="input-modern" />
-                <input value={newClass.lesson_hours} onChange={(e) => setNewClass((p) => ({ ...p, lesson_hours: e.target.value }))} placeholder="Lesson hours (e.g. 2)" className="input-modern" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <input type="date" value={newClass.start_date} onChange={(e) => setNewClass((p) => ({ ...p, start_date: e.target.value }))} className="input-modern" />
-                <input value={newClass.room_number} onChange={(e) => setNewClass((p) => ({ ...p, room_number: e.target.value }))} placeholder="Room number (opt)" className="input-modern" />
-              </div>
-              <input value={newClass.telegram_chat_url} onChange={(e) => setNewClass((p) => ({ ...p, telegram_chat_url: e.target.value }))} placeholder="Telegram Chat ID (optional)" className="input-modern" />
-              <select value={newClass.teacher} onChange={(e) => setNewClass((p) => ({ ...p, teacher: e.target.value }))} className="input-modern appearance-none">
-                <option value="">Teacher (default: you)</option>
-                {teachers.map((t) => (
-                  <option key={t.id} value={t.id}>{t.first_name || t.email} {t.last_name || ""}</option>
-                ))}
-              </select>
-              <input value={newClass.max_students} onChange={(e) => setNewClass((p) => ({ ...p, max_students: e.target.value }))} placeholder="Number of students (optional)" className="input-modern" />
-            </div>
-            <div className="mt-4 flex gap-2">
-              <button type="button" onClick={handleCreate} disabled={!newClass.name.trim() || creating} className="flex-1 btn-primary disabled:opacity-50">
-                {creating ? "Creating..." : "Create"}
-              </button>
-              <button type="button" onClick={() => setCreateOpen(false)} className="btn-secondary">Cancel</button>
+
+              <form
+                className="mt-6 space-y-4"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void handleCreate();
+                }}
+              >
+                <Field label="Group name">
+                  <input
+                    value={newClass.name}
+                    onChange={(e) => setNewClass((p) => ({ ...p, name: e.target.value }))}
+                    className="input-modern w-full"
+                    required
+                  />
+                </Field>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Field label="Subject">
+                    <select
+                      value={newClass.subject}
+                      onChange={(e) => setNewClass((p) => ({ ...p, subject: e.target.value }))}
+                      className="input-modern w-full appearance-none"
+                    >
+                      <option value="ENGLISH">English</option>
+                      <option value="MATH">Math</option>
+                    </select>
+                  </Field>
+                  <Field label="Lesson days">
+                    <select
+                      value={newClass.lesson_days}
+                      onChange={(e) => setNewClass((p) => ({ ...p, lesson_days: e.target.value }))}
+                      className="input-modern w-full appearance-none"
+                    >
+                      <option value="ODD">Odd days</option>
+                      <option value="EVEN">Even days</option>
+                    </select>
+                  </Field>
+                  <Field label="Lesson time">
+                    <input
+                      value={newClass.lesson_time}
+                      onChange={(e) => setNewClass((p) => ({ ...p, lesson_time: e.target.value }))}
+                      placeholder="e.g. 18:00"
+                      className="input-modern w-full"
+                    />
+                  </Field>
+                  <Field label="Lesson hours">
+                    <input
+                      value={newClass.lesson_hours}
+                      onChange={(e) => setNewClass((p) => ({ ...p, lesson_hours: e.target.value }))}
+                      placeholder="e.g. 2"
+                      className="input-modern w-full"
+                    />
+                  </Field>
+                  <Field label="Start date">
+                    <input
+                      type="date"
+                      value={newClass.start_date}
+                      onChange={(e) => setNewClass((p) => ({ ...p, start_date: e.target.value }))}
+                      className="input-modern w-full"
+                    />
+                  </Field>
+                  <Field label="Room number">
+                    <input
+                      value={newClass.room_number}
+                      onChange={(e) => setNewClass((p) => ({ ...p, room_number: e.target.value }))}
+                      placeholder="Optional"
+                      className="input-modern w-full"
+                    />
+                  </Field>
+                </div>
+                <Field label="Telegram chat ID">
+                  <input
+                    value={newClass.telegram_chat_url}
+                    onChange={(e) => setNewClass((p) => ({ ...p, telegram_chat_url: e.target.value }))}
+                    placeholder="Optional"
+                    className="input-modern w-full"
+                  />
+                </Field>
+                <Field label="Teacher">
+                  <select
+                    value={newClass.teacher}
+                    onChange={(e) => setNewClass((p) => ({ ...p, teacher: e.target.value }))}
+                    className="input-modern w-full appearance-none"
+                  >
+                    <option value="">Default (you)</option>
+                    {teachers.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.first_name || t.email} {t.last_name || ""}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Max students">
+                  <input
+                    value={newClass.max_students}
+                    onChange={(e) => setNewClass((p) => ({ ...p, max_students: e.target.value }))}
+                    placeholder="Optional"
+                    className="input-modern w-full"
+                    inputMode="numeric"
+                  />
+                </Field>
+                <div className="flex flex-wrap gap-3 pt-2">
+                  <button type="submit" disabled={!newClass.name.trim() || creating} className="flex-1 btn-primary disabled:opacity-50 min-h-[44px]">
+                    {creating ? "Creating…" : "Create group"}
+                  </button>
+                  <button type="button" onClick={() => setCreateOpen(false)} className="btn-secondary min-h-[44px] px-6">
+                    Cancel
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         </div>
@@ -344,37 +446,124 @@ export default function ClassesPage() {
       {isAdmin && editingId && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm" onClick={() => setEditingId(null)} aria-hidden="true" />
-          <div className="relative w-full max-w-3xl rounded-3xl border border-slate-200 bg-white p-6 md:p-8 shadow-2xl">
-            <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">Edit group</p>
-            <div className="space-y-3">
-              <input value={editClass.name} onChange={(e) => setEditClass((p) => ({ ...p, name: e.target.value }))} placeholder="Name Group" className="input-modern" />
-              <div className="grid grid-cols-2 gap-2">
-                <select value={editClass.subject} onChange={(e) => setEditClass((p) => ({ ...p, subject: e.target.value }))} className="input-modern appearance-none">
-                  <option value="ENGLISH">Course Type: English</option>
-                  <option value="MATH">Course Type: Math</option>
-                </select>
-                <input value={editClass.room_number} onChange={(e) => setEditClass((p) => ({ ...p, room_number: e.target.value }))} placeholder="Room Number" className="input-modern" />
+          <div className="relative w-full max-w-2xl" role="dialog" aria-modal="true" aria-labelledby="edit-group-title">
+            <div className="hero-shell p-6 md:p-8">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p id="edit-group-title" className="eyebrow mb-2">Edit group</p>
+                  <h2 className="text-xl md:text-2xl font-extrabold text-slate-900">Update group details</h2>
+                  <p className="text-slate-600 text-sm mt-2">Changes apply as soon as you save.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingId(null)}
+                  className="btn-secondary inline-flex items-center justify-center !px-3 !py-2"
+                  aria-label="Close modal"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <input type="date" value={editClass.start_date} onChange={(e) => setEditClass((p) => ({ ...p, start_date: e.target.value }))} className="input-modern" />
-                <select value={editClass.teacher} onChange={(e) => setEditClass((p) => ({ ...p, teacher: e.target.value }))} className="input-modern appearance-none">
-                  <option value="">Teacher</option>
-                  {teachers.map((t) => <option key={t.id} value={t.id}>{t.first_name || t.email} {t.last_name || ""}</option>)}
-                </select>
-              </div>
-              <input value={editClass.telegram_chat_id} onChange={(e) => setEditClass((p) => ({ ...p, telegram_chat_id: e.target.value }))} placeholder="Telegram Chat ID" className="input-modern" />
-              <div className="grid grid-cols-3 gap-2">
-                <select value={editClass.lesson_days} onChange={(e) => setEditClass((p) => ({ ...p, lesson_days: e.target.value }))} className="input-modern appearance-none">
-                  <option value="ODD">Dars kunlari: Odd</option>
-                  <option value="EVEN">Dars kunlari: Even</option>
-                </select>
-                <input value={editClass.lesson_time} onChange={(e) => setEditClass((p) => ({ ...p, lesson_time: e.target.value }))} placeholder="Soati (e.g. 18:00)" className="input-modern" />
-                <input value={editClass.lesson_hours} onChange={(e) => setEditClass((p) => ({ ...p, lesson_hours: e.target.value }))} placeholder="Hours" className="input-modern" />
-              </div>
-            </div>
-            <div className="mt-4 flex gap-2">
-              <button type="button" onClick={saveEdit} className="flex-1 btn-primary">Save Edit</button>
-              <button type="button" onClick={() => setEditingId(null)} className="btn-secondary">Cancel</button>
+
+              <form
+                className="mt-6 space-y-4"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void saveEdit();
+                }}
+              >
+                <Field label="Group name">
+                  <input
+                    value={editClass.name}
+                    onChange={(e) => setEditClass((p) => ({ ...p, name: e.target.value }))}
+                    className="input-modern w-full"
+                    required
+                  />
+                </Field>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Field label="Subject">
+                    <select
+                      value={editClass.subject}
+                      onChange={(e) => setEditClass((p) => ({ ...p, subject: e.target.value }))}
+                      className="input-modern w-full appearance-none"
+                    >
+                      <option value="ENGLISH">English</option>
+                      <option value="MATH">Math</option>
+                    </select>
+                  </Field>
+                  <Field label="Room number">
+                    <input
+                      value={editClass.room_number}
+                      onChange={(e) => setEditClass((p) => ({ ...p, room_number: e.target.value }))}
+                      className="input-modern w-full"
+                    />
+                  </Field>
+                  <Field label="Start date">
+                    <input
+                      type="date"
+                      value={editClass.start_date}
+                      onChange={(e) => setEditClass((p) => ({ ...p, start_date: e.target.value }))}
+                      className="input-modern w-full"
+                    />
+                  </Field>
+                  <Field label="Teacher">
+                    <select
+                      value={editClass.teacher}
+                      onChange={(e) => setEditClass((p) => ({ ...p, teacher: e.target.value }))}
+                      className="input-modern w-full appearance-none"
+                    >
+                      <option value="">Not assigned</option>
+                      {teachers.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.first_name || t.email} {t.last_name || ""}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
+                <Field label="Telegram chat ID">
+                  <input
+                    value={editClass.telegram_chat_id}
+                    onChange={(e) => setEditClass((p) => ({ ...p, telegram_chat_id: e.target.value }))}
+                    className="input-modern w-full"
+                  />
+                </Field>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <Field label="Lesson days">
+                    <select
+                      value={editClass.lesson_days}
+                      onChange={(e) => setEditClass((p) => ({ ...p, lesson_days: e.target.value }))}
+                      className="input-modern w-full appearance-none"
+                    >
+                      <option value="ODD">Odd days</option>
+                      <option value="EVEN">Even days</option>
+                    </select>
+                  </Field>
+                  <Field label="Lesson time">
+                    <input
+                      value={editClass.lesson_time}
+                      onChange={(e) => setEditClass((p) => ({ ...p, lesson_time: e.target.value }))}
+                      placeholder="e.g. 18:00"
+                      className="input-modern w-full"
+                    />
+                  </Field>
+                  <Field label="Lesson hours">
+                    <input
+                      value={editClass.lesson_hours}
+                      onChange={(e) => setEditClass((p) => ({ ...p, lesson_hours: e.target.value }))}
+                      placeholder="e.g. 2"
+                      className="input-modern w-full"
+                    />
+                  </Field>
+                </div>
+                <div className="flex flex-wrap gap-3 pt-2">
+                  <button type="submit" className="flex-1 btn-primary min-h-[44px]">
+                    Save changes
+                  </button>
+                  <button type="button" onClick={() => setEditingId(null)} className="btn-secondary min-h-[44px] px-6">
+                    Cancel
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         </div>
