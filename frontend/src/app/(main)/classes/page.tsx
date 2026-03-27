@@ -34,14 +34,27 @@ function teacherIdFromClass(c: {
 }
 
 function parseApiError(e: unknown, fallback: string): string {
-  const d = (e as { response?: { data?: Record<string, unknown> } })?.response?.data;
-  if (!d) return fallback;
+  const raw = (e as { response?: { data?: unknown } })?.response?.data;
+  if (raw == null || raw === "") return fallback;
+  // Axios may return a plain string body (e.g. proxy/nginx errors). Object.entries(string)
+  // would iterate characters as "0: R 1: e …" and render as nonsense in the UI.
+  if (typeof raw === "string") return raw.trim() || fallback;
+  if (Array.isArray(raw)) {
+    return raw.map((x) => (typeof x === "string" ? x : JSON.stringify(x))).join(" ");
+  }
+  if (typeof raw !== "object") return String(raw);
+  const d = raw as Record<string, unknown>;
   if (typeof d.detail === "string") return d.detail;
-  if (Array.isArray(d.detail)) return d.detail.join(" ");
+  if (Array.isArray(d.detail)) {
+    return d.detail.map((x) => (typeof x === "string" ? x : JSON.stringify(x))).join(" ");
+  }
+  if (d.detail != null && typeof d.detail === "object") {
+    return JSON.stringify(d.detail);
+  }
   const parts: string[] = [];
   for (const [k, v] of Object.entries(d)) {
     if (k === "detail") continue;
-    if (Array.isArray(v)) parts.push(`${k}: ${v.join(" ")}`);
+    if (Array.isArray(v)) parts.push(`${k}: ${v.map((x) => (typeof x === "string" ? x : JSON.stringify(x))).join(" ")}`);
     else if (typeof v === "string") parts.push(`${k}: ${v}`);
     else if (v !== null && typeof v === "object") parts.push(`${k}: ${JSON.stringify(v)}`);
   }
