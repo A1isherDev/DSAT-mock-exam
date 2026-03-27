@@ -2,15 +2,18 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usersApi } from "@/lib/api";
+import { classesApi, usersApi } from "@/lib/api";
 import {
+  BookOpen,
   CalendarClock,
   Copy,
   Loader2,
   Pencil,
+  School,
   Sparkles,
   Target,
   Trophy,
+  Users,
   X,
   UserCircle,
 } from "lucide-react";
@@ -23,6 +26,36 @@ type MeForm = {
   sat_exam_date: string;
   target_score: string;
   profile_image_url: string | null;
+};
+
+type Classroom = {
+  id: number;
+  name: string;
+  subject?: string;
+  lesson_days?: string;
+  lesson_time?: string;
+  lesson_hours?: number;
+  start_date?: string;
+  room_number?: string;
+  teacher_details?: {
+    first_name?: string;
+    last_name?: string;
+    username?: string;
+  } | null;
+  members_count?: number;
+  my_role?: string | null;
+};
+
+type ClassPerson = {
+  id: number;
+  role: string;
+  user: {
+    id: number;
+    username?: string;
+    first_name?: string;
+    last_name?: string;
+    profile_image_url?: string | null;
+  };
 };
 
 function mapMeToForm(me: any): MeForm {
@@ -47,6 +80,11 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  const [classes, setClasses] = useState<Classroom[]>([]);
+  const [classesLoading, setClassesLoading] = useState(true);
+  const [selectedClassId, setSelectedClassId] = useState<number | null>(null);
+  const [selectedClassPeople, setSelectedClassPeople] = useState<ClassPerson[]>([]);
+  const [peopleLoading, setPeopleLoading] = useState(false);
 
   useEffect(() => {
     if (!file) {
@@ -62,18 +100,48 @@ export default function ProfilePage() {
     let cancelled = false;
     (async () => {
       try {
-        const me = await usersApi.getMe();
-        if (!cancelled) setMe(mapMeToForm(me));
+        const [meData, classData] = await Promise.all([usersApi.getMe(), classesApi.list()]);
+        if (!cancelled) {
+          setMe(mapMeToForm(meData));
+          const c = Array.isArray(classData) ? (classData as Classroom[]) : [];
+          setClasses(c);
+          if (c.length > 0) setSelectedClassId(c[0].id);
+        }
       } catch {
         if (!cancelled) setMessage("Could not load your profile.");
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          setClassesLoading(false);
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!selectedClassId) {
+      setSelectedClassPeople([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setPeopleLoading(true);
+      try {
+        const people = await classesApi.people(selectedClassId);
+        if (!cancelled) setSelectedClassPeople(Array.isArray(people) ? people : []);
+      } catch {
+        if (!cancelled) setSelectedClassPeople([]);
+      } finally {
+        if (!cancelled) setPeopleLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedClassId]);
 
   const previewUrl = objectUrl || (!clearPhoto ? draft?.profile_image_url : null);
 
@@ -162,6 +230,16 @@ export default function ProfilePage() {
   const completion = me ? profileCompletion(me) : 0;
   const targetScore = me?.target_score ? Math.max(0, Math.min(1600, parseInt(me.target_score, 10))) : null;
   const nextDays = me?.sat_exam_date ? daysUntil(me.sat_exam_date) : null;
+  const enrolledClasses = classes.filter((c) => c.my_role === "STUDENT" || c.my_role === "ADMIN");
+  const totalPeers = enrolledClasses.reduce((acc, c) => acc + Math.max(0, (c.members_count || 0) - 1), 0);
+  const selectedClass = enrolledClasses.find((c) => c.id === selectedClassId) || null;
+  const selectedStudents = selectedClassPeople.filter((p) => p.role === "STUDENT");
+
+  const formatSubject = (s?: string) => {
+    if (!s) return "General";
+    if (s === "READING_WRITING") return "Reading & Writing";
+    return s.charAt(0) + s.slice(1).toLowerCase();
+  };
 
   const handleOpenEdit = () => {
     setDraft(me);
@@ -369,6 +447,120 @@ export default function ProfilePage() {
               ? `Next milestone: ${formatDate(me.sat_exam_date)}`
               : "Set your exam date to get a live countdown."}
           </p>
+        </div>
+      </div>
+
+      {/* Classes + students information */}
+      <div className="mt-6 grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <div className="metric-tile p-6 xl:col-span-2">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-black uppercase tracking-widest text-slate-500">Enrolled classes</p>
+              <h3 className="text-xl font-extrabold text-slate-900 mt-1">Your class ecosystem</h3>
+            </div>
+            <div className="neo-chip">
+              <School className="w-3.5 h-3.5" />
+              {enrolledClasses.length} classes
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="panel-soft p-4">
+              <p className="text-[11px] uppercase tracking-widest font-black text-slate-500">Total classes</p>
+              <p className="text-2xl font-extrabold text-slate-900 mt-2">{enrolledClasses.length}</p>
+            </div>
+            <div className="panel-soft p-4">
+              <p className="text-[11px] uppercase tracking-widest font-black text-slate-500">Students around you</p>
+              <p className="text-2xl font-extrabold text-slate-900 mt-2">{totalPeers}</p>
+            </div>
+            <div className="panel-soft p-4">
+              <p className="text-[11px] uppercase tracking-widest font-black text-slate-500">Active view</p>
+              <p className="text-sm font-bold text-slate-900 mt-2 line-clamp-2">{selectedClass?.name || "Select class"}</p>
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+            {classesLoading ? (
+              <div className="panel-soft p-6 col-span-full flex items-center justify-center">
+                <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+              </div>
+            ) : enrolledClasses.length === 0 ? (
+              <div className="panel-soft p-6 col-span-full">
+                <p className="font-bold text-slate-800">No classes yet</p>
+                <p className="text-sm text-slate-500 mt-1">Join a class to see students and learning activity here.</p>
+              </div>
+            ) : (
+              enrolledClasses.map((c) => (
+                <button
+                  type="button"
+                  key={c.id}
+                  onClick={() => setSelectedClassId(c.id)}
+                  className={`text-left panel-soft p-4 transition-all hover:-translate-y-0.5 hover:shadow-md ${
+                    selectedClassId === c.id ? "ring-2 ring-blue-400 border-blue-200" : ""
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-extrabold text-slate-900">{c.name}</p>
+                      <p className="text-xs text-slate-500 mt-1">{formatSubject(c.subject)} · {c.lesson_days || "—"} {c.lesson_time || ""}</p>
+                    </div>
+                    <BookOpen className="w-4 h-4 text-blue-600" />
+                  </div>
+                  <div className="mt-3 pt-3 border-t border-slate-200/70 text-xs text-slate-600 font-semibold space-y-1">
+                    <p>Teacher: {c.teacher_details?.first_name || c.teacher_details?.username || "—"} {c.teacher_details?.last_name || ""}</p>
+                    <p>Room: {c.room_number || "—"} · Students: {c.members_count || 0}</p>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="metric-tile p-6">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-black uppercase tracking-widest text-slate-500">Students information</p>
+              <h3 className="text-lg font-extrabold text-slate-900 mt-1">Classmates</h3>
+            </div>
+            <Users className="w-4 h-4 text-blue-600" />
+          </div>
+
+          <div className="mt-3 panel-soft p-3">
+            <p className="text-sm font-bold text-slate-900 line-clamp-2">{selectedClass?.name || "No class selected"}</p>
+            <p className="text-xs text-slate-500 mt-1">
+              {selectedClass?.start_date ? `Started ${formatDate(selectedClass.start_date)}` : "No start date"}
+            </p>
+          </div>
+
+          <div className="mt-4 space-y-2 max-h-[320px] overflow-auto pr-1">
+            {peopleLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+              </div>
+            ) : selectedStudents.length === 0 ? (
+              <p className="text-sm text-slate-500 py-4">No student data available for this class yet.</p>
+            ) : (
+              selectedStudents.slice(0, 12).map((p) => (
+                <div key={p.id} className="panel-soft p-2.5 flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-700 flex items-center justify-center font-bold text-xs">
+                    {(p.user.first_name?.[0] || p.user.username?.[0] || "?").toUpperCase()}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-900 truncate">
+                      {p.user.first_name || ""} {p.user.last_name || ""}
+                    </p>
+                    <p className="text-xs text-slate-500 truncate">@{p.user.username || "user"}</p>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {selectedStudents.length > 12 && (
+            <p className="text-xs text-slate-500 mt-3">
+              +{selectedStudents.length - 12} more students
+            </p>
+          )}
         </div>
       </div>
 
