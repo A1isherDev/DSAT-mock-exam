@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Cookies from "js-cookie";
 import { classesApi, adminApi } from "@/lib/api";
@@ -13,6 +13,39 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       {children}
     </div>
   );
+}
+
+function isoDateToInput(value: string | null | undefined): string {
+  if (!value) return "";
+  const s = String(value);
+  return s.length >= 10 ? s.slice(0, 10) : s;
+}
+
+function teacherIdFromClass(c: {
+  teacher?: unknown;
+  teacher_details?: { id?: number } | null;
+}): string {
+  const raw = c?.teacher ?? c?.teacher_details?.id;
+  if (raw == null || raw === "") return "";
+  if (typeof raw === "object" && raw !== null && "id" in raw) {
+    return String((raw as { id: number }).id);
+  }
+  return String(raw);
+}
+
+function parseApiError(e: unknown, fallback: string): string {
+  const d = (e as { response?: { data?: Record<string, unknown> } })?.response?.data;
+  if (!d) return fallback;
+  if (typeof d.detail === "string") return d.detail;
+  if (Array.isArray(d.detail)) return d.detail.join(" ");
+  const parts: string[] = [];
+  for (const [k, v] of Object.entries(d)) {
+    if (k === "detail") continue;
+    if (Array.isArray(v)) parts.push(`${k}: ${v.join(" ")}`);
+    else if (typeof v === "string") parts.push(`${k}: ${v}`);
+    else if (v !== null && typeof v === "object") parts.push(`${k}: ${JSON.stringify(v)}`);
+  }
+  return parts.length ? parts.join(" ") : fallback;
 }
 
 export default function ClassesPage() {
@@ -120,8 +153,8 @@ export default function ClassesPage() {
       setCreateOpen(false);
       await fetchClasses();
       if (c?.id) router.push(`/classes/${c.id}`);
-    } catch (e: any) {
-      setError(e?.response?.data?.detail || "Could not create class.");
+    } catch (e: unknown) {
+      setError(parseApiError(e, "Could not create class."));
     } finally {
       setCreating(false);
     }
@@ -135,10 +168,10 @@ export default function ClassesPage() {
       lesson_days: c.lesson_days || "ODD",
       lesson_time: c.lesson_time || "",
       lesson_hours: c.lesson_hours != null ? String(c.lesson_hours) : "2",
-      start_date: c.start_date || "",
+      start_date: isoDateToInput(c.start_date),
       room_number: c.room_number || "",
       telegram_chat_id: c.telegram_chat_id || "",
-      teacher: c.teacher ? String(c.teacher) : "",
+      teacher: teacherIdFromClass(c),
       max_students: c.max_students != null ? String(c.max_students) : "",
     });
   };
@@ -161,10 +194,29 @@ export default function ClassesPage() {
       });
       await fetchClasses();
       setEditingId(null);
-    } catch (e: any) {
-      setError(e?.response?.data?.detail || "Could not update group.");
+    } catch (e: unknown) {
+      setError(parseApiError(e, "Could not update group."));
     }
   };
+
+  const editingClass = editingId ? classes.find((c) => c.id === editingId) : null;
+  const editTeacherOptions = useMemo(() => {
+    if (!editingClass) return teachers;
+    const tid = teacherIdFromClass(editingClass);
+    const td = editingClass.teacher_details;
+    if (!tid || !td || teachers.some((t) => String(t.id) === String(tid))) {
+      return teachers;
+    }
+    return [
+      ...teachers,
+      {
+        id: td.id,
+        email: td.email,
+        first_name: td.first_name,
+        last_name: td.last_name,
+      },
+    ];
+  }, [editingClass, teachers]);
 
   useEffect(() => {
     if (!createOpen && !editingId) return;
@@ -512,7 +564,7 @@ export default function ClassesPage() {
                       className="input-modern w-full appearance-none"
                     >
                       <option value="">Not assigned</option>
-                      {teachers.map((t) => (
+                      {editTeacherOptions.map((t) => (
                         <option key={t.id} value={t.id}>
                           {t.first_name || t.email} {t.last_name || ""}
                         </option>

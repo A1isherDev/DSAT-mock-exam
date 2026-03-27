@@ -65,9 +65,15 @@ class ClassroomCreateSerializer(serializers.ModelSerializer):
     def validate_teacher(self, value):
         if value is None:
             return value
-        if not getattr(value, "is_admin", False):
-            raise serializers.ValidationError("Teacher must be an admin user.")
-        return value
+        if getattr(value, "is_frozen", False):
+            raise serializers.ValidationError("Teacher cannot be a frozen account.")
+        if value.is_admin:
+            return value
+        # Allow keeping the current teacher on update so demoted users do not block all edits.
+        instance = getattr(self, "instance", None)
+        if instance is not None and instance.teacher_id == value.pk:
+            return value
+        raise serializers.ValidationError("Teacher must be an admin user.")
 
     class Meta:
         model = Classroom

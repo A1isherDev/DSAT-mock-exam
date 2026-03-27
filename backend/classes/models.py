@@ -59,7 +59,7 @@ class Classroom(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self) -> str:
-        return f"{self.name}{' — ' + self.section if self.section else ''}"
+        return self.name
 
     def ensure_join_code(self) -> None:
         if self.join_code:
