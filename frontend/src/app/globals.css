@@ -35,6 +35,8 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Inter, "SF Pro Text", "SF Pro Display", system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  font-size: 17px;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -57,7 +59,7 @@ body {
 }
 
 .panel {
-  border-radius: 1rem;
+  border-radius: 1.125rem;
   background: rgba(255, 255, 255, 0.86);
   border: 1px solid rgba(226, 232, 240, 0.9);
   box-shadow:
@@ -76,23 +78,23 @@ body {
 }
 
 .panel-soft {
-  @apply rounded-xl bg-white/80 border border-slate-200/70 shadow-sm;
+  @apply rounded-2xl bg-white/80 border border-slate-200/70 shadow-sm;
 }
 
 .btn-primary {
-  @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 active:scale-[0.98] transition-all shadow-[0_8px_20px_rgba(37,99,235,0.22)];
+  @apply inline-flex items-center justify-center gap-2.5 rounded-2xl px-5 py-3 text-base font-bold text-white bg-blue-600 hover:bg-blue-700 active:scale-[0.98] transition-all shadow-[0_10px_26px_rgba(37,99,235,0.24)];
 }
 
 .btn-secondary {
-  @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition-colors;
+  @apply inline-flex items-center justify-center gap-2.5 rounded-2xl px-5 py-3 text-base font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition-colors;
 }
 
 .input-modern {
-  @apply w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-all focus:border-blue-400 focus:ring-4 focus:ring-blue-100;
+  @apply w-full rounded-2xl border border-slate-200 bg-white px-5 py-3 text-base text-slate-900 placeholder:text-slate-400 outline-none transition-all focus:border-blue-400 focus:ring-4 focus:ring-blue-100;
 }
 
 .title-xl {
-  @apply text-3xl md:text-4xl font-extrabold tracking-tight text-slate-900;
+  @apply text-4xl md:text-5xl font-extrabold tracking-tight text-slate-900;
 }
 
 .eyebrow {
@@ -102,7 +104,7 @@ body {
 .hero-shell {
   position: relative;
   overflow: hidden;
-  border-radius: 1.25rem;
+  border-radius: 1.5rem;
   background:
     linear-gradient(120deg, rgba(255, 255, 255, 0.9), rgba(248, 250, 255, 0.75)),
     radial-gradient(700px 320px at 85% -10%, rgba(37, 99, 235, 0.16), transparent 60%),
@@ -136,10 +138,10 @@ body {
 .metric-tile {
   position: relative;
   overflow: hidden;
-  border-radius: 1rem;
+  border-radius: 1.125rem;
   border: 1px solid #dbe7ff;
   background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 18px 36px rgba(37, 99, 235, 0.08);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 22px 42px rgba(37, 99, 235, 0.10);
   transition: transform 220ms ease, box-shadow 220ms ease, border-color 220ms ease;
 }
 
@@ -180,7 +182,7 @@ body {
 }
 
 .neo-chip {
-  @apply inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50/90 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-blue-700;
+  @apply inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50/90 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-blue-700;
 }
 
 .persistent-highlight {
