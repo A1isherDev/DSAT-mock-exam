@@ -71,21 +71,28 @@ class ClassroomViewSet(ModelViewSet):
         out = ClassroomSerializer(classroom, context={"request": request}).data
         return Response(out, status=status.HTTP_201_CREATED)
 
-    def partial_update(self, request, *args, **kwargs):
-        classroom = self.get_object()
-        if not classroom.memberships.filter(user=request.user, role="ADMIN").exists():
+    def _ensure_class_admin(self, classroom):
+        if not classroom.memberships.filter(user=self.request.user, role="ADMIN").exists():
             return Response({"detail": "Only class admins can edit groups."}, status=status.HTTP_403_FORBIDDEN)
-        response = super().partial_update(request, *args, **kwargs)
-        instance = self.get_object()
+        return None
+
+    def _sync_teacher_membership(self, instance):
         teacher = instance.teacher
         if teacher:
             ClassroomMembership.objects.get_or_create(
                 classroom=instance, user=teacher, defaults={"role": "ADMIN"}
             )
-        return response
 
+    # PATCH calls partial_update → UpdateModelMixin.update(partial=True). Override update only
+    # (do not delegate update → partial_update or recursion occurs).
     def update(self, request, *args, **kwargs):
-        return self.partial_update(request, *args, **kwargs)
+        classroom = self.get_object()
+        denied = self._ensure_class_admin(classroom)
+        if denied is not None:
+            return denied
+        response = super().update(request, *args, **kwargs)
+        self._sync_teacher_membership(self.get_object())
+        return response
 
     def destroy(self, request, *args, **kwargs):
         classroom = self.get_object()
