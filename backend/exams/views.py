@@ -152,11 +152,12 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
             .select_related("mock_exam", "pastpaper_pack")
             .prefetch_related("modules")
         )
-        # Students (typically only submit_test): only pastpapers assigned to them; pack siblings expanded below.
-        # Staff / super admins keep the full library in permission scope so /practice-tests is usable without self-assign.
+        # /practice-tests: only rows on assigned_users (plus same-pack siblings below). No unassigned library cards.
+        # Staff/super admins browse or edit the full catalog via /exams/admin/*; assign themselves to preview as a student.
         assigned_qs = base.filter(assigned_users=user).distinct()
         if acc_const.WILDCARD in perms or acc_const.PERM_VIEW_ALL_TESTS in perms:
-            return base
+            qs = assigned_qs
+            return self._expand_pastpaper_pack_siblings(base, qs, user, staff_scoped=False)
         if {
             acc_const.PERM_VIEW_ENGLISH_TESTS,
             acc_const.PERM_VIEW_MATH_TESTS,
@@ -165,7 +166,7 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
             acc_const.PERM_DELETE_TEST,
             acc_const.PERM_ASSIGN_TEST_ACCESS,
         } & perms:
-            qs = filter_practice_tests_for_user(user, base)
+            qs = filter_practice_tests_for_user(user, assigned_qs)
             return self._expand_pastpaper_pack_siblings(base, qs, user, staff_scoped=True)
         qs = assigned_qs
         return self._expand_pastpaper_pack_siblings(base, qs, user, staff_scoped=False)
