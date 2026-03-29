@@ -4,8 +4,8 @@ export default function PracticeTestsPage() {
   return (
     <PracticeTestsList
       eyebrow="Practice"
-      title="Practice tests"
-      description="Form packs and sectional tests in the Digital SAT card layout. Same mock pack may show once per form (grouped); standalone drills have their own card. Full continuous mock (break, no pause) uses the separate Mock Exam portal entry only."
+      title="Pastpaper practice tests"
+      description="Official past papers and sectional drills. Open a card to work modules at your own pace. Timed full SAT flows with break stay under Mock exam."
     />
   );
 }

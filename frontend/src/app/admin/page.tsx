@@ -273,6 +273,7 @@ export default function AdminPage() {
     const [editingPastpaper, setEditingPastpaper] = useState<any>(null);
     const [pastpaperForm, setPastpaperForm] = useState({
         title: '',
+        practice_date: '',
         subject: 'READING_WRITING' as 'READING_WRITING' | 'MATH',
         label: '',
         form_type: 'INTERNATIONAL',
@@ -455,6 +456,7 @@ export default function AdminPage() {
         try {
             const payload = {
                 title: pastpaperForm.title.trim(),
+                practice_date: pastpaperForm.practice_date || null,
                 subject: pastpaperForm.subject,
                 label: pastpaperForm.label.trim(),
                 form_type: pastpaperForm.form_type,
@@ -466,7 +468,7 @@ export default function AdminPage() {
             }
             await fetchStandaloneTests();
             setEditingPastpaper(null);
-            setPastpaperForm({ title: '', subject: 'READING_WRITING', label: '', form_type: 'INTERNATIONAL' });
+            setPastpaperForm({ title: '', practice_date: '', subject: 'READING_WRITING', label: '', form_type: 'INTERNATIONAL' });
             showToast('Pastpaper practice test saved ✓');
         } finally {
             setSaving(false);
@@ -749,7 +751,7 @@ export default function AdminPage() {
                                             </button>
                                         )}
                                         {(canCreateTestForSubject('READING_WRITING') || canCreateTestForSubject('MATH')) && (
-                                            <button className={BTN_PRIMARY} onClick={() => { setEditingPastpaper({}); setPastpaperForm({ title: '', subject: 'READING_WRITING', label: '', form_type: 'INTERNATIONAL' }); }}>
+                                            <button className={BTN_PRIMARY} onClick={() => { setEditingPastpaper({}); setPastpaperForm({ title: '', practice_date: '', subject: 'READING_WRITING', label: '', form_type: 'INTERNATIONAL' }); }}>
                                                 <Plus className="w-4 h-4" /> New pastpaper test
                                             </button>
                                         )}
@@ -758,6 +760,7 @@ export default function AdminPage() {
                                 {editingPastpaper !== null && (
                                     <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm grid grid-cols-2 gap-4">
                                         <Field label="Title (pastpaper name)"><input className={INPUT} value={pastpaperForm.title} onChange={e => setPastpaperForm({ ...pastpaperForm, title: e.target.value })} placeholder="e.g. December 2025 Form C — English" /></Field>
+                                        <Field label="Exam date (shown to students)"><input type="date" className={INPUT} value={pastpaperForm.practice_date} onChange={e => setPastpaperForm({ ...pastpaperForm, practice_date: e.target.value })} /></Field>
                                         <Field label="Section">
                                             <select className={INPUT} value={pastpaperForm.subject} onChange={e => setPastpaperForm({ ...pastpaperForm, subject: e.target.value as 'READING_WRITING' | 'MATH' })}>
                                                 <option value="READING_WRITING">Reading &amp; Writing</option>
@@ -791,7 +794,7 @@ export default function AdminPage() {
                                                 <div className="flex items-center gap-2 shrink-0">
                                                     <button type="button" className={BTN_GHOST} onClick={() => { setActiveTab('questions'); setSelectedPracticeTestId(t.id); setSelectedMockId(null); }}>Questions</button>
                                                     {can('edit_test') && canEditQuestionsForSubject(t.subject) && (
-                                                        <button type="button" className={BTN_GHOST} onClick={() => { setEditingPastpaper(t); setPastpaperForm({ title: t.title || '', subject: t.subject, label: t.label || '', form_type: t.form_type || 'INTERNATIONAL' }); }}><Pencil className="w-3.5 h-3.5" /> Edit</button>
+                                                        <button type="button" className={BTN_GHOST} onClick={() => { setEditingPastpaper(t); setPastpaperForm({ title: t.title || '', practice_date: t.practice_date || '', subject: t.subject, label: t.label || '', form_type: t.form_type || 'INTERNATIONAL' }); }}><Pencil className="w-3.5 h-3.5" /> Edit</button>
                                                     )}
                                                     {canDeletePracticeTestFromMock(t.subject) && (
                                                         <button type="button" className={BTN_DANGER} onClick={() => void handleDeletePastpaper(t.id)}><Trash2 className="w-3.5 h-3.5" /> Delete</button>

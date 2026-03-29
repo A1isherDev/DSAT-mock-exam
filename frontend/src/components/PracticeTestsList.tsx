@@ -135,7 +135,7 @@ export default function PracticeTestsList({
         return blob.includes(q);
       }
       const t = c.test;
-      const blob = `${singleDisplayTitle(t)} ${t.label || ""} ${t.mock_exam?.title || ""}`.toLowerCase();
+      const blob = `${singleDisplayTitle(t)} ${t.label || ""} ${t.mock_exam?.title || ""} ${t.practice_date || ""}`.toLowerCase();
       return blob.includes(q);
     });
   }, [cards, searchQuery]);
@@ -187,7 +187,7 @@ export default function PracticeTestsList({
                   <div className="flex items-center justify-between mb-6">
                     <div className="flex flex-col gap-1">
                       <span className="text-[10px] font-black uppercase tracking-[0.2em] text-violet-600">
-                        Digital SAT practice
+                        Pastpaper practice
                       </span>
                       <span className="text-xs font-bold text-slate-400">{formatLineDate(c.mock.practice_date)}</span>
                     </div>
@@ -249,9 +249,9 @@ export default function PracticeTestsList({
                 <div className="flex items-center justify-between mb-6">
                   <div className="flex flex-col gap-1">
                     <span className="text-[10px] font-black uppercase tracking-[0.2em] text-violet-600">
-                      Digital SAT practice
+                      Pastpaper practice
                     </span>
-                    <span className="text-xs font-bold text-slate-400">{formatLineDate(t.created_at)}</span>
+                    <span className="text-xs font-bold text-slate-400">{formatLineDate(t.practice_date || t.created_at)}</span>
                   </div>
                   <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950 flex items-center justify-center text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-all duration-500 shadow-sm">
                     <FileText className="w-6 h-6" />
@@ -261,7 +261,7 @@ export default function PracticeTestsList({
                   {singleDisplayTitle(t)}
                 </h3>
                 <p className="text-[10px] font-black text-emerald-700/80 dark:text-emerald-500/90 uppercase tracking-widest mb-2">
-                  Standalone
+                  Pastpaper
                 </p>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-4">
                   {t.form_type === "US" ? "US Form" : "International"} · {modules.length} modules · {totalMin} min

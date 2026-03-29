@@ -61,7 +61,17 @@ class PracticeTestSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PracticeTest
-        fields = ["id", "title", "subject", "label", "form_type", "modules", "created_at", "mock_exam"]
+        fields = [
+            "id",
+            "title",
+            "practice_date",
+            "subject",
+            "label",
+            "form_type",
+            "modules",
+            "created_at",
+            "mock_exam",
+        ]
         read_only_fields = ["created_at"]
 
 class MockExamSerializer(serializers.ModelSerializer):
@@ -213,6 +223,7 @@ class AdminPracticeTestSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "title",
+            "practice_date",
             "subject",
             "label",
             "form_type",

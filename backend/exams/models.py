@@ -169,6 +169,12 @@ class PracticeTest(TimestampedModel):
         db_index=True,
         help_text="Pastpaper / practice test name (shown in admin and student lists).",
     )
+    practice_date = models.DateField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Optional official/exam date shown on student practice cards.",
+    )
     label = models.CharField(max_length=10, blank=True, help_text="e.g., A, B, C, D")
     form_type = models.CharField(max_length=20, choices=FORM_TYPES, default='INTERNATIONAL', db_index=True)
     assigned_users = models.ManyToManyField(User, related_name='assigned_tests', blank=True)

@@ -192,7 +192,7 @@ export default function MockExamsList({
                 <div className="flex items-center justify-between mb-6">
                   <div className="flex flex-col gap-1">
                     <span className="text-[10px] font-black uppercase tracking-[0.2em] text-violet-600">
-                      {group.kind === "MIDTERM" ? "Midterm" : "Digital SAT mock"}
+                      {group.kind === "MIDTERM" ? "Midterm" : "Timed SAT mock"}
                     </span>
                     <span className="text-xs font-bold text-slate-400">{formatDate(group.practice_date)}</span>
                   </div>
@@ -222,7 +222,7 @@ export default function MockExamsList({
                   }}
                   className="group/btn w-full flex items-center justify-center gap-3 font-black py-4 px-6 rounded-2xl transition-all text-sm uppercase tracking-widest bg-slate-900 text-white hover:bg-indigo-600 shadow-xl shadow-slate-200 hover:shadow-indigo-200 active:scale-[0.98]"
                 >
-                  Enter mock exam
+                  Enter timed mock
                   <ArrowRight className="w-5 h-5 group-hover/btn:translate-x-1 transition-transform" />
                 </button>
               </div>

@@ -22,8 +22,8 @@ import AuthGuard from "@/components/AuthGuard";
 
 const nav = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/practice-tests", label: "Practice Tests", icon: BookOpenCheck },
-  { href: "/mock-exam", label: "Mock Exam", icon: ClipboardList },
+  { href: "/practice-tests", label: "Pastpaper tests", icon: BookOpenCheck },
+  { href: "/mock-exam", label: "Timed mock", icon: ClipboardList },
   { href: "/midterm", label: "Midterm (no Desmos / Reference)", icon: FileWarning },
   { href: "/classes", label: "Classes", icon: Users },
   { href: "/profile", label: "Profile", icon: UserCircle },
