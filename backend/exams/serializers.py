@@ -24,22 +24,16 @@ class ModuleListSerializer(serializers.ModelSerializer):
         model = Module
         fields = ['id', 'module_order', 'time_limit_minutes']
 
-class PracticeTestMockExamBriefSerializer(serializers.ModelSerializer):
-    """Shows that this practice row belongs to a mock exam (same PracticeTest model)."""
-
-    class Meta:
-        model = MockExam
-        fields = ["id", "title", "kind"]
-
-
 class PracticeTestSerializer(serializers.ModelSerializer):
+    """Standalone practice tests only (API filters out mock-linked rows)."""
+
     modules = ModuleListSerializer(many=True, read_only=True)
     subject = serializers.CharField()
-    mock_exam = PracticeTestMockExamBriefSerializer(read_only=True)
 
     class Meta:
         model = PracticeTest
-        fields = ["id", "subject", "label", "form_type", "modules", "mock_exam"]
+        fields = ["id", "subject", "label", "form_type", "modules", "created_at"]
+        read_only_fields = ["created_at"]
 
 class MockExamSerializer(serializers.ModelSerializer):
     tests = PracticeTestSerializer(many=True, read_only=True)

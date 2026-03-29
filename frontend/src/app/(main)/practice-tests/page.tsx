@@ -5,7 +5,7 @@ export default function PracticeTestsPage() {
     <PracticeTestsList
       eyebrow="Practice"
       title="Practice tests"
-      description="All sectional tests are listed here—standalone drills and each Reading &amp; Writing / Math section from assigned mocks (they are not “full” on their own). Use Mock Exam for the one full SAT-style run with break and no pause."
+      description="Standalone sectional tests and form drills only. Full SAT-style mocks (break, no pause) are listed separately under Mock Exam—they are not duplicated here."
     />
   );
 }

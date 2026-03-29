@@ -5,7 +5,7 @@ export default function MockExamPage() {
     <MockExamsList
       eyebrow="Mock"
       title="Mock Exam"
-      description="Each card is one full mock exam (complete SAT-style run). Individual sections are listed under Practice Tests; start the full timed sequence here."
+      description="Official full mocks only (Reading &amp; Writing → break → Math, no pause). Sectional drills stay under Practice Tests."
       examKindFilter="MOCK_SAT"
     />
   );

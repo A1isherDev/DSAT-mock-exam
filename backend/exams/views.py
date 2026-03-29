@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from django.db.models import Prefetch, Q
+from django.db.models import Prefetch
 
 from access import constants as acc_const
 from access.permissions import RequiresSubmitTest
@@ -44,7 +44,7 @@ from .serializers import (
 
 
 class MockExamViewSet(viewsets.ReadOnlyModelViewSet):
-    """Full mock exams (containers). Sectional attempts use Practice Tests; start full SAT flow from here."""
+    """Full mock / midterm containers (MockExam). Internal R&W/Math rows are not listed under Practice Tests API."""
     permission_classes = [IsAuthenticated]
     serializer_class = MockExamSerializer
 
@@ -64,10 +64,14 @@ class MockExamViewSet(viewsets.ReadOnlyModelViewSet):
         } & perms:
             return filter_mock_exams_for_user(user, base).prefetch_related("tests__modules")
 
-        assigned_tests = PracticeTest.objects.filter(assigned_users=user)
         return (
-            MockExam.objects.filter(is_active=True, tests__assigned_users=user)
-            .prefetch_related(Prefetch("tests", queryset=assigned_tests.prefetch_related("modules")))
+            MockExam.objects.filter(is_active=True, assigned_users=user)
+            .prefetch_related(
+                Prefetch(
+                    "tests",
+                    queryset=PracticeTest.objects.all().prefetch_related("modules"),
+                )
+            )
             .distinct()
         )
 
@@ -79,10 +83,15 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         user = self.request.user
         perms = get_effective_permission_codenames(user)
-        # Sectional tests (not the "full" mock): standalone + each R&W/Math row under a mock.
-        base = PracticeTest.objects.all().select_related("mock_exam").prefetch_related("modules")
+        # Standalone practice tests only (mock sections use MockExam + internal PracticeTest rows).
+        standalone = (
+            PracticeTest.objects.all()
+            .select_related("mock_exam")
+            .prefetch_related("modules")
+            .filter(mock_exam__isnull=True)
+        )
         if acc_const.WILDCARD in perms or acc_const.PERM_VIEW_ALL_TESTS in perms:
-            return base
+            return standalone
         if {
             acc_const.PERM_VIEW_ENGLISH_TESTS,
             acc_const.PERM_VIEW_MATH_TESTS,
@@ -91,14 +100,8 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
             acc_const.PERM_DELETE_TEST,
             acc_const.PERM_ASSIGN_TEST_ACCESS,
         } & perms:
-            return filter_practice_tests_for_user(user, base)
-        return (
-            PracticeTest.objects.filter(assigned_users=user)
-            .filter(Q(mock_exam__isnull=True) | Q(mock_exam__is_active=True))
-            .select_related("mock_exam")
-            .prefetch_related("modules")
-            .distinct()
-        )
+            return filter_practice_tests_for_user(user, standalone)
+        return standalone.filter(assigned_users=user).distinct()
 
     @action(detail=False, methods=["post"], permission_classes=[IsAuthenticated, BulkAssignAccess])
     def bulk_assign(self, request):
@@ -127,10 +130,16 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
 
         add_tests = PracticeTest.objects.filter(**add_filters)
         added_count = 0
+        mock_ids_touched = set()
         for pt in add_tests:
             if authorize(request.user, acc_const.PERM_ASSIGN_TEST_ACCESS, subject=pt.subject):
                 pt.assigned_users.add(*users)
                 added_count += 1
+                if pt.mock_exam_id:
+                    mock_ids_touched.add(pt.mock_exam_id)
+
+        for me in MockExam.objects.filter(pk__in=mock_ids_touched):
+            me.assigned_users.add(*users)
 
         removed_count = 0
         if to_remove_subjects:
@@ -371,10 +380,10 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
         User = get_user_model()
         users = list(User.objects.filter(id__in=request.data.get('user_ids', [])))
         
-        # Default single exam assign: assign to all tests in that exam
+        exam.assigned_users.set(users)
         for test in exam.tests.all():
             test.assigned_users.set(users)
-            
+
         return Response({'status': 'assigned', 'users_count': len(users)})
 
     @action(detail=True, methods=['post'])

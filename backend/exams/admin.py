@@ -54,10 +54,11 @@ class MockExamAdmin(admin.ModelAdmin):
     list_display = ("title", "kind", "practice_date", "is_active")
     list_filter = ("is_active", "kind", "practice_date")
     search_fields = ("title",)
+    filter_horizontal = ("assigned_users",)
     inlines = [PracticeTestInline]
     list_per_page = 50
     fieldsets = (
-        (None, {"fields": ("title", "practice_date", "is_active", "kind")}),
+        (None, {"fields": ("title", "practice_date", "is_active", "kind", "assigned_users")}),
         (
             "Midterm options (when kind = Midterm)",
             {"fields": ("midterm_subject", "midterm_module_count", "midterm_module1_minutes", "midterm_module2_minutes")},

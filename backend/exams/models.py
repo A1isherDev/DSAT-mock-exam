@@ -95,6 +95,13 @@ class MockExam(TimestampedModel):
     midterm_module_count = models.PositiveSmallIntegerField(default=2)
     midterm_module1_minutes = models.PositiveIntegerField(default=60)
     midterm_module2_minutes = models.PositiveIntegerField(default=60)
+    # Who may open this mock in the app (full SAT / midterm flow). Separate from PracticeTest rows below.
+    assigned_users = models.ManyToManyField(
+        User,
+        related_name="assigned_mock_exams",
+        blank=True,
+        help_text="Students/teachers who see this mock on the Mock Exam page.",
+    )
 
     class Meta:
         db_table = "mock_exams"
@@ -112,7 +119,14 @@ class PracticeTest(TimestampedModel):
         ('INTERNATIONAL', 'International Form'),
         ('US', 'US Form'),
     ]
-    mock_exam = models.ForeignKey(MockExam, on_delete=models.CASCADE, related_name='tests', null=True, blank=True)
+    mock_exam = models.ForeignKey(
+        MockExam,
+        on_delete=models.CASCADE,
+        related_name="tests",
+        null=True,
+        blank=True,
+        help_text="If set, this row is an internal section (R&W/Math) for that mock only—not a standalone practice test.",
+    )
     subject = models.CharField(max_length=20, choices=SUBJECT_CHOICES, db_index=True)
     label = models.CharField(max_length=10, blank=True, help_text="e.g., A, B, C, D")
     form_type = models.CharField(max_length=20, choices=FORM_TYPES, default='INTERNATIONAL', db_index=True)
