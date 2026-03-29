@@ -20,20 +20,68 @@ def _role_id(user) -> Optional[int]:
     return getattr(user, "system_role_id", None)
 
 
+def _frozen_permissions_for_role_code(role_code: str) -> FrozenSet[str]:
+    """DB-backed permissions for a role code; used when user has no system_role_id."""
+    Role = apps.get_model("access", "Role")
+    RolePermission = apps.get_model("access", "RolePermission")
+    try:
+        role = Role.objects.get(code=role_code)
+    except Role.DoesNotExist:
+        return frozenset({constants.PERM_SUBMIT_TEST})
+    granted = set(
+        RolePermission.objects.filter(role_id=role.pk).values_list(
+            "permission__codename", flat=True
+        )
+    )
+    if constants.WILDCARD in granted:
+        return frozenset({constants.WILDCARD})
+    return frozenset(granted)
+
+
+# Matches access.migrations.0002_seed_rbac ADMIN row if RolePermission rows are missing.
+_ADMIN_FALLBACK: FrozenSet[str] = frozenset(
+    {
+        constants.PERM_MANAGE_USERS,
+        constants.PERM_CREATE_TEST,
+        constants.PERM_EDIT_TEST,
+        constants.PERM_DELETE_TEST,
+        constants.PERM_VIEW_ALL_TESTS,
+        constants.PERM_ASSIGN_TEST_ACCESS,
+        constants.PERM_MANAGE_CLASSROOMS,
+    }
+)
+
+
 def get_effective_permission_codenames(user) -> FrozenSet[str]:
     """
     Union role permissions + user grants − user denies.
-    SUPER_ADMIN role carries the '*' wildcard (full access).
+    Django superusers and SUPER_ADMIN always resolve to full LMS access ('*').
+    Staff without system_role_id get ADMIN-equivalent permissions from the DB.
     """
     if not user or not getattr(user, "is_authenticated", False):
         return frozenset()
 
+    if getattr(user, "is_superuser", False):
+        return frozenset({constants.WILDCARD})
+
     RolePermission = apps.get_model("access", "RolePermission")
     UserPermission = apps.get_model("access", "UserPermission")
-    Permission = apps.get_model("access", "Permission")
 
     rid = _role_id(user)
     if not rid:
+        if getattr(user, "is_staff", False):
+            granted_staff = set(_frozen_permissions_for_role_code(constants.ROLE_ADMIN))
+            overrides_staff = UserPermission.objects.filter(user_id=user.pk).select_related(
+                "permission"
+            )
+            for ov in overrides_staff:
+                if ov.granted:
+                    granted_staff.add(ov.permission.codename)
+                else:
+                    granted_staff.discard(ov.permission.codename)
+            if constants.WILDCARD in granted_staff:
+                return frozenset({constants.WILDCARD})
+            return frozenset(granted_staff)
         return frozenset({constants.PERM_SUBMIT_TEST})
 
     granted: set[str] = set(
@@ -42,12 +90,21 @@ def get_effective_permission_codenames(user) -> FrozenSet[str]:
         )
     )
 
+    rc = _role_code(user)
+    if not granted and rc == constants.ROLE_SUPER_ADMIN:
+        granted.add(constants.WILDCARD)
+    elif not granted and rc == constants.ROLE_ADMIN:
+        granted.update(_ADMIN_FALLBACK)
+
     overrides = UserPermission.objects.filter(user_id=user.pk).select_related("permission")
     for ov in overrides:
         if ov.granted:
             granted.add(ov.permission.codename)
         else:
             granted.discard(ov.permission.codename)
+
+    if rc == constants.ROLE_SUPER_ADMIN:
+        return frozenset({constants.WILDCARD})
 
     if constants.WILDCARD in granted:
         return frozenset({constants.WILDCARD})
@@ -120,10 +177,19 @@ def filter_practice_tests_for_user(user, queryset):
         return queryset
 
     q = Q(pk__in=[])
-    if constants.PERM_VIEW_ENGLISH_TESTS in perms:
+    has_eng = constants.PERM_VIEW_ENGLISH_TESTS in perms
+    has_math = constants.PERM_VIEW_MATH_TESTS in perms
+    if has_eng:
         q |= Q(subject=constants.SUBJECT_ENGLISH_PLATFORM)
-    if constants.PERM_VIEW_MATH_TESTS in perms:
+    if has_math:
         q |= Q(subject=constants.SUBJECT_MATH_PLATFORM)
+    # TEST_ADMIN (create only) and similar: authoring without subject scopes sees both subjects.
+    if (constants.PERM_CREATE_TEST in perms or constants.PERM_EDIT_TEST in perms) and (
+        not has_eng and not has_math
+    ):
+        q |= Q(subject=constants.SUBJECT_ENGLISH_PLATFORM) | Q(
+            subject=constants.SUBJECT_MATH_PLATFORM
+        )
     return queryset.filter(q)
 
 

@@ -159,7 +159,7 @@ class PracticeTest(TimestampedModel):
         related_name="tests",
         null=True,
         blank=True,
-        help_text="If set, this row is an internal section (R&W/Math) for that mock only—not a standalone practice test.",
+        help_text="If set, this row is a mock exam section only (not shown on the Practice Tests list).",
     )
     subject = models.CharField(max_length=20, choices=SUBJECT_CHOICES, db_index=True)
     label = models.CharField(max_length=10, blank=True, help_text="e.g., A, B, C, D")

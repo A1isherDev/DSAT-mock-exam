@@ -16,9 +16,25 @@ export function getPermissionList(): string[] {
   }
 }
 
+/** Mirrors backend access.migrations.0002_seed_rbac ADMIN permissions when JWT cookie is stale. */
+const ADMIN_ROLE_CODENAMES = new Set([
+  "manage_users",
+  "create_test",
+  "edit_test",
+  "delete_test",
+  "view_all_tests",
+  "assign_test_access",
+  "manage_classrooms",
+]);
+
 export function can(codename: string): boolean {
   const p = getPermissionList();
-  return p.includes("*") || p.includes(codename);
+  if (p.includes("*") || p.includes(codename)) return true;
+  if (typeof window === "undefined") return false;
+  const r = Cookies.get("role");
+  if (r === "SUPER_ADMIN") return true;
+  if (r === "ADMIN" && ADMIN_ROLE_CODENAMES.has(codename)) return true;
+  return false;
 }
 
 /** Mock exam shell create/update/delete — backend requires wildcard or view_all_tests. */

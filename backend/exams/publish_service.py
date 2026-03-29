@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 def mock_exam_publish_ready(exam: "MockExam") -> Tuple[bool, str]:
     """
-    Full SAT mock: exactly R&W + Math, each with 2 modules, every module has ≥1 question.
+    Full SAT mock: at least one section; each section needs ≥1 module with ≥1 question.
     Midterm: one section, 1–2 modules per settings, each with ≥1 question.
     """
 
@@ -31,18 +31,17 @@ def mock_exam_publish_ready(exam: "MockExam") -> Tuple[bool, str]:
                 return False, f"Module {m.module_order} must have at least one question."
         return True, ""
 
-    # MOCK_SAT
-    if len(tests) != 2:
-        return False, "Full mock must have exactly two sections: Reading & Writing and Math."
-    subs = {t.subject for t in tests}
-    if subs != {"READING_WRITING", "MATH"}:
-        return False, "Full mock must include exactly one Reading & Writing and one Math section."
+    # MOCK_SAT — partial mocks allowed (single section or one module per section).
+    if len(tests) < 1:
+        return False, "Add at least one section test (Reading & Writing and/or Math)."
 
     for pt in tests:
+        if pt.subject not in ("READING_WRITING", "MATH"):
+            return False, "Each section must be Reading & Writing or Math."
         mods = list(pt.modules.all().order_by("module_order"))
-        if len(mods) < 2:
-            return False, f"{pt.get_subject_display()} needs 2 modules (SAT-style)."
-        for m in mods[:2]:
+        if len(mods) < 1:
+            return False, f"{pt.get_subject_display()} needs at least one module."
+        for m in mods:
             if m.questions.count() < 1:
                 return False, f"{pt.get_subject_display()} module {m.module_order} needs at least one question."
     return True, ""

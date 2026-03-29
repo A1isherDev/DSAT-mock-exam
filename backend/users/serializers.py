@@ -84,7 +84,6 @@ class UserMeSerializer(serializers.ModelSerializer):
 
         att = (
             TestAttempt.objects.filter(student=obj, is_completed=True)
-            .filter(practice_test__mock_exam__isnull=False)
             .select_related("practice_test__mock_exam")
             .order_by("-submitted_at", "-id")
             .first()

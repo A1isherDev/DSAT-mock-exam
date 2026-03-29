@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from django.db.models import Prefetch, Q
+from django.db.models import Prefetch
 
 from access import constants as acc_const
 from access.permissions import RequiresSubmitTest
@@ -119,15 +119,11 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         user = self.request.user
         perms = get_effective_permission_codenames(user)
-        # Standalone + sections only for published mocks (draft mock content stays admin-only).
+        # Practice Tests API: standalone rows only (mock sections are reached via mock-exams flow).
         base = (
-            PracticeTest.objects.all()
+            PracticeTest.objects.filter(mock_exam__isnull=True)
             .select_related("mock_exam")
             .prefetch_related("modules")
-            .filter(
-                Q(mock_exam__isnull=True)
-                | (Q(mock_exam__isnull=False) & Q(mock_exam__is_published=True) & Q(mock_exam__is_active=True))
-            )
         )
         if acc_const.WILDCARD in perms or acc_const.PERM_VIEW_ALL_TESTS in perms:
             return base
@@ -398,21 +394,7 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
                 Module.objects.create(practice_test=pt, module_order=2, time_limit_minutes=m2)
             return
 
-        subs = set(exam.tests.values_list("subject", flat=True))
-        if "READING_WRITING" not in subs:
-            PracticeTest.objects.create(
-                mock_exam=exam,
-                subject="READING_WRITING",
-                form_type="INTERNATIONAL",
-            )
-        if "MATH" not in subs:
-            PracticeTest.objects.create(
-                mock_exam=exam,
-                subject="MATH",
-                form_type="INTERNATIONAL",
-            )
-        for pt in exam.tests.filter(subject__in=["READING_WRITING", "MATH"]):
-            ensure_full_mock_practice_test_modules(pt)
+        # Full SAT mock: admin adds R&W / Math sections via add_test (no forced two-section shell).
 
     @action(detail=True, methods=['post'])
     def assign_users(self, request, pk=None):
