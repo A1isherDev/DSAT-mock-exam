@@ -1,14 +1,32 @@
 from rest_framework import viewsets, status, generics
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated, AllowAny, BasePermission
+from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.db.models import Prefetch
+
+from access import constants as acc_const
+from access.permissions import RequiresSubmitTest
+from access.policies import (
+    BulkAssignAccess,
+    MockExamAdminAccess,
+    ModuleNestedAdminAccess,
+    PracticeTestAdminAccess,
+    QuestionNestedAdminAccess,
+)
+from access.services import (
+    authorize,
+    filter_mock_exams_for_user,
+    filter_practice_tests_for_user,
+    get_effective_permission_codenames,
+)
+
 from .models import PracticeTest, TestAttempt, Module, Question, AuditLog, MockExam
 from .serializers import (
     MockExamSerializer,
-    PracticeTestSerializer, 
-    TestAttemptSerializer, 
+    PracticeTestSerializer,
+    TestAttemptSerializer,
     ModuleSerializer,
     AdminMockExamSerializer,
     AdminPracticeTestSerializer,
@@ -16,104 +34,123 @@ from .serializers import (
     AdminQuestionSerializer,
 )
 
-class IsAdminUser(BasePermission):
-    def has_permission(self, request, view):
-        is_auth = request.user and request.user.is_authenticated
-        is_admin_role = getattr(request.user, 'role', None) == 'ADMIN'
-        is_staff = getattr(request.user, 'is_staff', False)
-        return bool(is_auth and (is_admin_role or is_staff))
-
 
 class MockExamViewSet(viewsets.ReadOnlyModelViewSet):
     """Student-facing endpoint to list their assigned mock exams."""
     permission_classes = [IsAuthenticated]
     serializer_class = MockExamSerializer
-    
+
     def get_queryset(self):
         user = self.request.user
-        if getattr(user, 'is_admin', False):
-            return MockExam.objects.filter(is_active=True).prefetch_related('tests__modules')
-        
-        # Filter mock exams that have at least one test assigned to the user
-        # Also ensure that when serialized, only assigned tests are included
-        from django.db.models import Prefetch
+        perms = get_effective_permission_codenames(user)
+        base = MockExam.objects.filter(is_active=True)
+        if acc_const.WILDCARD in perms or acc_const.PERM_VIEW_ALL_TESTS in perms:
+            return base.prefetch_related("tests__modules")
+        if {
+            acc_const.PERM_VIEW_ENGLISH_TESTS,
+            acc_const.PERM_VIEW_MATH_TESTS,
+            acc_const.PERM_CREATE_TEST,
+            acc_const.PERM_EDIT_TEST,
+            acc_const.PERM_DELETE_TEST,
+            acc_const.PERM_ASSIGN_TEST_ACCESS,
+        } & perms:
+            return filter_mock_exams_for_user(user, base).prefetch_related("tests__modules")
+
         assigned_tests = PracticeTest.objects.filter(assigned_users=user)
-        return MockExam.objects.filter(is_active=True, tests__assigned_users=user).prefetch_related(
-            Prefetch('tests', queryset=assigned_tests.prefetch_related('modules'))
-        ).distinct()
+        return (
+            MockExam.objects.filter(is_active=True, tests__assigned_users=user)
+            .prefetch_related(Prefetch("tests", queryset=assigned_tests.prefetch_related("modules")))
+            .distinct()
+        )
 
 
 class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated]
     serializer_class = PracticeTestSerializer
-    
+
     def get_queryset(self):
         user = self.request.user
-        if getattr(user, 'is_admin', False):
-            return PracticeTest.objects.all().prefetch_related('modules')
-        # Return tests assigned directly to the user
-        return PracticeTest.objects.filter(assigned_users=user, mock_exam__is_active=True).prefetch_related('modules')
+        perms = get_effective_permission_codenames(user)
+        base = PracticeTest.objects.all().prefetch_related("modules")
+        if acc_const.WILDCARD in perms or acc_const.PERM_VIEW_ALL_TESTS in perms:
+            return base
+        if {
+            acc_const.PERM_VIEW_ENGLISH_TESTS,
+            acc_const.PERM_VIEW_MATH_TESTS,
+            acc_const.PERM_CREATE_TEST,
+            acc_const.PERM_EDIT_TEST,
+            acc_const.PERM_DELETE_TEST,
+            acc_const.PERM_ASSIGN_TEST_ACCESS,
+        } & perms:
+            return filter_practice_tests_for_user(user, base)
+        return PracticeTest.objects.filter(assigned_users=user, mock_exam__is_active=True).prefetch_related(
+            "modules"
+        )
 
-    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
+    @action(detail=False, methods=["post"], permission_classes=[IsAuthenticated, BulkAssignAccess])
     def bulk_assign(self, request):
-        if not getattr(request.user, 'is_admin', False):
-            return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
-        
-        exam_ids = request.data.get('exam_ids', [])
-        user_ids = request.data.get('user_ids', [])
-        assignment_type = request.data.get('assignment_type', 'FULL') # 'FULL', 'MATH', 'ENGLISH'
-        form_type = request.data.get('form_type') # Optional: 'INTERNATIONAL', 'US'
-        
+        exam_ids = request.data.get("exam_ids", [])
+        user_ids = request.data.get("user_ids", [])
+        assignment_type = request.data.get("assignment_type", "FULL")
+        form_type = request.data.get("form_type")
+
         from django.contrib.auth import get_user_model
+
         User = get_user_model()
         users = list(User.objects.filter(id__in=user_ids))
-        
-        # Mapping from assignment_type to PracticeTest subjects
+
         subject_map = {
-            'MATH': (['MATH'], ['READING_WRITING']),
-            'ENGLISH': (['READING_WRITING'], ['MATH']),
-            'FULL': (['MATH', 'READING_WRITING'], [])
+            "MATH": (["MATH"], ["READING_WRITING"]),
+            "ENGLISH": (["READING_WRITING"], ["MATH"]),
+            "FULL": (["MATH", "READING_WRITING"], []),
         }
-        to_add_subjects, to_remove_subjects = subject_map.get(assignment_type, (['MATH', 'READING_WRITING'], []))
-        
-        # 1. Handle Additions
-        add_filters = {'mock_exam_id__in': exam_ids, 'subject__in': to_add_subjects}
+        to_add_subjects, to_remove_subjects = subject_map.get(
+            assignment_type, (["MATH", "READING_WRITING"], [])
+        )
+
+        add_filters = {"mock_exam_id__in": exam_ids, "subject__in": to_add_subjects}
         if form_type:
-            add_filters['form_type'] = form_type
-            
+            add_filters["form_type"] = form_type
+
         add_tests = PracticeTest.objects.filter(**add_filters)
+        added_count = 0
         for pt in add_tests:
-            pt.assigned_users.add(*users)
-            
-        # 2. Handle Removals (Exclusive assignment)
+            if authorize(request.user, acc_const.PERM_ASSIGN_TEST_ACCESS, subject=pt.subject):
+                pt.assigned_users.add(*users)
+                added_count += 1
+
+        removed_count = 0
         if to_remove_subjects:
-            remove_filters = {'mock_exam_id__in': exam_ids, 'subject__in': to_remove_subjects}
+            remove_filters = {"mock_exam_id__in": exam_ids, "subject__in": to_remove_subjects}
             if form_type:
-                remove_filters['form_type'] = form_type
-                
+                remove_filters["form_type"] = form_type
             remove_tests = PracticeTest.objects.filter(**remove_filters)
             for pt in remove_tests:
-                pt.assigned_users.remove(*users)
-                
-        return Response({
-            'status': 'bulk_assigned', 
-            'exams_count': len(exam_ids),
-            'tests_added': add_tests.count(),
-            'tests_removed': len(to_remove_subjects) * len(exam_ids) if to_remove_subjects else 0,
-            'users_count': len(users),
-            'type': assignment_type
-        })
+                if authorize(request.user, acc_const.PERM_ASSIGN_TEST_ACCESS, subject=pt.subject):
+                    pt.assigned_users.remove(*users)
+                    removed_count += 1
+
+        return Response(
+            {
+                "status": "bulk_assigned",
+                "exams_count": len(exam_ids),
+                "tests_added": added_count,
+                "tests_removed": removed_count,
+                "users_count": len(users),
+                "type": assignment_type,
+            }
+        )
 
 class TestAttemptViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RequiresSubmitTest]
     serializer_class = TestAttemptSerializer
-    throttle_scope = 'burst'
-    
+    throttle_scope = "burst"
+
     def get_queryset(self):
         return TestAttempt.objects.filter(student=self.request.user)
 
     def create(self, request, *args, **kwargs):
-        test_id = request.data.get('practice_test')
+        test_id = request.data.get("practice_test")
         test = get_object_or_404(PracticeTest, id=test_id)
         
         # Get or create attempt (only reuse INCOMPLETE attempts)
@@ -266,9 +303,51 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
 # ── Admin CRUD Viewsets ───────────────────────────────────────────────────────
 
 class AdminMockExamViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAuthenticated, MockExamAdminAccess]
     serializer_class = AdminMockExamSerializer
-    queryset = MockExam.objects.all().prefetch_related('tests__modules')
+
+    def get_queryset(self):
+        return filter_mock_exams_for_user(
+            self.request.user, MockExam.objects.all().prefetch_related("tests__modules")
+        )
+
+    def perform_create(self, serializer):
+        exam = serializer.save()
+        self._provision_exam_after_create(exam)
+
+    def _provision_exam_after_create(self, exam: MockExam):
+        """Auto-create practice tests: full mock → RW + Math; midterm → one test + custom modules."""
+        if exam.kind == MockExam.KIND_MIDTERM:
+            if exam.tests.exists():
+                return
+            cnt = min(2, max(1, exam.midterm_module_count or 1))
+            m1 = max(1, exam.midterm_module1_minutes or 60)
+            m2 = max(1, exam.midterm_module2_minutes or 60)
+            subj = exam.midterm_subject or "READING_WRITING"
+            pt = PracticeTest.objects.create(
+                mock_exam=exam,
+                subject=subj,
+                form_type="INTERNATIONAL",
+                skip_default_modules=True,
+            )
+            Module.objects.create(practice_test=pt, module_order=1, time_limit_minutes=m1)
+            if cnt >= 2:
+                Module.objects.create(practice_test=pt, module_order=2, time_limit_minutes=m2)
+            return
+
+        subs = set(exam.tests.values_list("subject", flat=True))
+        if "READING_WRITING" not in subs:
+            PracticeTest.objects.create(
+                mock_exam=exam,
+                subject="READING_WRITING",
+                form_type="INTERNATIONAL",
+            )
+        if "MATH" not in subs:
+            PracticeTest.objects.create(
+                mock_exam=exam,
+                subject="MATH",
+                form_type="INTERNATIONAL",
+            )
 
     @action(detail=True, methods=['post'])
     def assign_users(self, request, pk=None):
@@ -287,6 +366,13 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
     def add_test(self, request, pk=None):
         """Create a new PracticeTest (with auto-generated modules) under this MockExam."""
         exam = self.get_object()
+        if exam.kind == MockExam.KIND_MIDTERM:
+            return Response(
+                {
+                    "error": "Midterm exams have a single section with custom modules; add questions under that test."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         subject = request.data.get('subject')
         label = request.data.get('label', '')
         form_type = request.data.get('form_type', 'INTERNATIONAL')
@@ -313,13 +399,17 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
 
 
 class AdminPracticeTestViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAuthenticated, PracticeTestAdminAccess]
     serializer_class = AdminPracticeTestSerializer
-    queryset = PracticeTest.objects.all().prefetch_related('modules')
+
+    def get_queryset(self):
+        return filter_practice_tests_for_user(
+            self.request.user, PracticeTest.objects.all().prefetch_related("modules")
+        )
 
 
 class AdminModuleViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAuthenticated, ModuleNestedAdminAccess]
     serializer_class = AdminModuleSerializer
 
     def get_queryset(self):
@@ -339,7 +429,7 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.db import models as db_models
 
 class AdminQuestionViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAuthenticated, QuestionNestedAdminAccess]
     serializer_class = AdminQuestionSerializer
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 

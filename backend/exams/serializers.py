@@ -34,10 +34,21 @@ class PracticeTestSerializer(serializers.ModelSerializer):
 
 class MockExamSerializer(serializers.ModelSerializer):
     tests = PracticeTestSerializer(many=True, read_only=True)
-    
+
     class Meta:
         model = MockExam
-        fields = ['id', 'title', 'practice_date', 'is_active', 'tests']
+        fields = [
+            "id",
+            "title",
+            "practice_date",
+            "is_active",
+            "kind",
+            "midterm_subject",
+            "midterm_module_count",
+            "midterm_module1_minutes",
+            "midterm_module2_minutes",
+            "tests",
+        ]
 
 from users.serializers import UserSerializer
 
@@ -58,12 +69,14 @@ class TestAttemptSerializer(serializers.ModelSerializer):
         pt = obj.practice_test
         mock = pt.mock_exam
         return {
-            'id': pt.id,
-            'subject': pt.subject,
-            'title': mock.title if mock else '',
-            'practice_date': mock.practice_date.isoformat() if mock and mock.practice_date else None,
-            'is_active': mock.is_active if mock else True,
-            'modules': ModuleListSerializer(pt.modules.all(), many=True).data,
+            "id": pt.id,
+            "subject": pt.subject,
+            "title": mock.title if mock else "",
+            "practice_date": mock.practice_date.isoformat() if mock and mock.practice_date else None,
+            "is_active": mock.is_active if mock else True,
+            "mock_exam_id": mock.id if mock else None,
+            "mock_kind": mock.kind if mock else None,
+            "modules": ModuleListSerializer(pt.modules.all(), many=True).data,
         }
     
     class Meta:
@@ -168,4 +181,28 @@ class AdminMockExamSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = MockExam
-        fields = ['id', 'title', 'practice_date', 'is_active', 'tests']
+        fields = [
+            "id",
+            "title",
+            "practice_date",
+            "is_active",
+            "kind",
+            "midterm_subject",
+            "midterm_module_count",
+            "midterm_module1_minutes",
+            "midterm_module2_minutes",
+            "tests",
+        ]
+
+    def validate(self, attrs):
+        kind = attrs.get("kind", getattr(self.instance, "kind", MockExam.KIND_MOCK_SAT))
+        if kind == MockExam.KIND_MIDTERM:
+            mc = attrs.get(
+                "midterm_module_count",
+                getattr(self.instance, "midterm_module_count", 2) if self.instance else 2,
+            )
+            if mc not in (1, 2):
+                raise serializers.ValidationError(
+                    {"midterm_module_count": "Must be 1 or 2."}
+                )
+        return attrs

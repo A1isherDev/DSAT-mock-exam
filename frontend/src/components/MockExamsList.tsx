@@ -1,17 +1,21 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { examsApi } from "@/lib/api";
 import { FileText, Search, X, ArrowRight } from "lucide-react";
 import Cookies from "js-cookie";
 
+type ExamKindFilter = "ALL" | "MOCK_SAT" | "MIDTERM";
+
 type MockExamsListProps = {
   eyebrow?: string;
   title: string;
   description?: string;
-  /** Appended to “Enter mock” links, e.g. `?midterm=1` */
+  /** Appended to “Enter mock” links, e.g. `?midterm=1` for midterm-style player */
   mockQuerySuffix?: string;
+  /** Limit rows by backend `MockExam.kind` */
+  examKindFilter?: ExamKindFilter;
 };
 
 export default function MockExamsList({
@@ -19,6 +23,7 @@ export default function MockExamsList({
   title,
   description,
   mockQuerySuffix = "",
+  examKindFilter = "ALL",
 }: MockExamsListProps) {
   const [mockExams, setMockExams] = useState<any[]>([]);
   const [attempts, setAttempts] = useState<any[]>([]);
@@ -63,7 +68,14 @@ export default function MockExamsList({
     return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
   };
 
-  const groupedExams = mockExams;
+  const groupedExams = useMemo(() => {
+    if (examKindFilter === "ALL") return mockExams;
+    return (mockExams || []).filter((g: any) => {
+      if (examKindFilter === "MOCK_SAT") return g.kind !== "MIDTERM";
+      if (examKindFilter === "MIDTERM") return g.kind === "MIDTERM";
+      return true;
+    });
+  }, [mockExams, examKindFilter]);
 
   return (
     <div className="max-w-7xl mx-auto px-8 py-12">
@@ -171,7 +183,7 @@ export default function MockExamsList({
                   <div className="flex items-center justify-between mb-6">
                     <div className="flex flex-col gap-1">
                       <span className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-500">
-                        Digital SAT Mock
+                        {group.kind === "MIDTERM" ? "Midterm" : "Digital SAT Mock"}
                       </span>
                       <span className="text-xs font-bold text-slate-400">{formatDate(group.practice_date)}</span>
                     </div>

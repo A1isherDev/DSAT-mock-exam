@@ -301,7 +301,8 @@ function ExamPlayerInner() {
     const { attemptId } = useParams();
     const router = useRouter();
     const searchParams = useSearchParams();
-    const midtermMode = searchParams.get('midterm') === '1';
+    const mockFlow = searchParams.get('mockFlow') === '1';
+    const [midtermMode, setMidtermMode] = useState(() => searchParams.get('midterm') === '1');
     const [attempt, setAttempt] = useState<any>(null);
     const [loading, setLoading] = useState(true);
 
@@ -376,11 +377,25 @@ function ExamPlayerInner() {
     }, [attemptId, router]);
 
     useEffect(() => {
+        if (searchParams.get('midterm') === '1') setMidtermMode(true);
+    }, [searchParams]);
+
+    useEffect(() => {
+        if (attempt?.practice_test_details?.mock_kind === 'MIDTERM') {
+            setMidtermMode(true);
+        }
+    }, [attempt?.practice_test_details?.mock_kind]);
+
+    useEffect(() => {
         if (midtermMode) {
             setShowCalculator(false);
             setShowReferenceSheet(false);
         }
     }, [midtermMode]);
+
+    useEffect(() => {
+        if (mockFlow) setIsPaused(false);
+    }, [mockFlow]);
 
     // Robust Math Rendering Logic
     const renderMath = useCallback(() => {
@@ -653,9 +668,23 @@ function ExamPlayerInner() {
         setLoading(true);
         try {
             await examsApi.submitModule(attempt.id, answers, flagged);
-            // Fetch updated attempt logic
             const updatedAttempt = await examsApi.getAttemptStatus(Number(attemptId));
             if (updatedAttempt.is_completed) {
+                const meid = searchParams.get('mockExamId');
+                const subj = updatedAttempt.practice_test_details?.subject;
+                if (mockFlow && meid && subj === 'READING_WRITING') {
+                    router.push(`/mock/${meid}/break?rwAttempt=${attemptId}`);
+                    return;
+                }
+                if (mockFlow && meid && subj === 'MATH') {
+                    const rw = searchParams.get('rwAttempt');
+                    const qs =
+                        rw && rw.length > 0
+                            ? `?rwAttempt=${encodeURIComponent(rw)}&mathAttempt=${attemptId}`
+                            : `?mathAttempt=${attemptId}`;
+                    router.push(`/mock/${meid}/results${qs}`);
+                    return;
+                }
                 router.push(`/review/${attemptId}`);
             } else {
                 setAttempt(updatedAttempt);
@@ -671,7 +700,7 @@ function ExamPlayerInner() {
             console.error(err);
             setLoading(false);
         }
-    }, [attempt, attemptId, answers, flagged, router]);
+    }, [attempt, attemptId, answers, flagged, router, mockFlow, searchParams]);
 
     useEffect(() => {
         if (attempt?.current_module_details && attempt?.current_module_start_time) {
@@ -688,7 +717,7 @@ function ExamPlayerInner() {
     }, [attempt]);
 
     useEffect(() => {
-        if (timeLeft <= 0 || isPaused) return;
+        if (timeLeft <= 0 || (isPaused && !mockFlow)) return;
         const timer = setInterval(() => {
             setTimeLeft(prev => {
                 if (prev <= 1) {
@@ -700,7 +729,7 @@ function ExamPlayerInner() {
             });
         }, 1000);
         return () => clearInterval(timer);
-    }, [timeLeft, isPaused, handleSubmitModule]);
+    }, [timeLeft, isPaused, mockFlow, handleSubmitModule]);
 
     useEffect(() => {
         const moduleId = attempt?.current_module_details?.id;
@@ -830,12 +859,14 @@ function ExamPlayerInner() {
                                     {formatTime(timeLeft)}
                                 </span>
                                 <div className="flex items-center gap-2 mt-0.5">
+                                    {!mockFlow && (
                                     <button
                                         onClick={() => setIsPaused(!isPaused)}
                                         className="text-[10px] font-bold text-slate-600 border border-slate-300 rounded-full px-3 py-0.5 hover:bg-slate-50 transition-colors flex items-center gap-1"
                                     >
                                         {isPaused ? <><Play className="w-2.5 h-2.5 inline" /> Resume</> : <><Pause className="w-2.5 h-2.5 inline" /> Pause</>}
                                     </button>
+                                    )}
                                     <button
                                         onClick={() => setShowTimer(false)}
                                         className="text-[10px] font-bold text-slate-600 border border-slate-300 rounded-full px-3 py-0.5 hover:bg-slate-50 transition-colors"

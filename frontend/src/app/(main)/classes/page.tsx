@@ -116,7 +116,7 @@ export default function ClassesPage() {
     fetchClasses();
     if (isAdmin) {
       adminApi.getUsers().then((u) => {
-        const list = (Array.isArray(u) ? u : []).filter((x: any) => x.role === "ADMIN" || x.is_admin);
+        const list = (Array.isArray(u) ? u : []).filter((x: any) => x.class_teacher_eligible);
         setTeachers(list);
       }).catch(() => {});
     }

@@ -63,17 +63,20 @@ class ClassroomSerializer(serializers.ModelSerializer):
 
 class ClassroomCreateSerializer(serializers.ModelSerializer):
     def validate_teacher(self, value):
+        from access import constants as acc_const
+        from access.services import authorize
+
         if value is None:
             return value
         if getattr(value, "is_frozen", False):
             raise serializers.ValidationError("Teacher cannot be a frozen account.")
-        if value.is_admin:
+        if authorize(value, acc_const.PERM_MANAGE_USERS):
             return value
         # Allow keeping the current teacher on update so demoted users do not block all edits.
         instance = getattr(self, "instance", None)
         if instance is not None and instance.teacher_id == value.pk:
             return value
-        raise serializers.ValidationError("Teacher must be an admin user.")
+        raise serializers.ValidationError("Teacher must have user-management permission.")
 
     class Meta:
         model = Classroom

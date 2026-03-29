@@ -1,12 +1,15 @@
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework import generics
-from rest_framework.permissions import IsAuthenticated, BasePermission
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import User
+from access.permissions import HasManageUsers
+from access.services import get_effective_permission_codenames
+
 from .serializers import UserSerializer, UserMeSerializer, MyTokenObtainPairSerializer
 from .permissions import IsAuthenticatedAndNotFrozen
 from django.conf import settings
@@ -16,26 +19,22 @@ class ThrottledTokenObtainPairView(TokenObtainPairView):
     serializer_class = MyTokenObtainPairSerializer
     throttle_scope = 'sustained'
 
-class IsAdminUser(BasePermission):
-    def has_permission(self, request, view):
-        return bool(request.user and request.user.is_authenticated and getattr(request.user, 'is_admin', False))
-
 class UserListView(generics.ListAPIView):
     serializer_class = UserSerializer
-    permission_classes = [IsAdminUser]
-    queryset = User.objects.all().order_by('-date_joined')
+    permission_classes = [HasManageUsers]
+    queryset = User.objects.select_related("system_role").all().order_by("-date_joined")
 
 class UserCreateView(generics.CreateAPIView):
     serializer_class = UserSerializer
-    permission_classes = [IsAdminUser]
+    permission_classes = [HasManageUsers]
 
 class UserUpdateView(generics.UpdateAPIView):
     serializer_class = UserSerializer
-    permission_classes = [IsAdminUser]
+    permission_classes = [HasManageUsers]
     queryset = User.objects.all()
 
 class UserDeleteView(generics.DestroyAPIView):
-    permission_classes = [IsAdminUser]
+    permission_classes = [HasManageUsers]
     queryset = User.objects.all()
 
 class UserRegistrationView(generics.CreateAPIView):
@@ -145,6 +144,7 @@ class GoogleAuthView(APIView):
                 "is_admin": user.is_admin,
                 "role": user.role,
                 "is_frozen": user.is_frozen,
+                "permissions": sorted(get_effective_permission_codenames(user)),
             },
             status=status.HTTP_200_OK,
         )

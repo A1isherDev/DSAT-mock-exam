@@ -1,49 +1,78 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from django.contrib.auth.forms import UserCreationForm, UserChangeForm
+from django.contrib.auth.forms import UserChangeForm, UserCreationForm
+
 from .models import User
+
 
 class CustomUserCreationForm(UserCreationForm):
     class Meta:
         model = User
-        fields = ('email', 'role', 'is_staff', 'is_superuser')
+        fields = ("email", "system_role", "is_staff", "is_superuser")
+
 
 class CustomUserChangeForm(UserChangeForm):
     class Meta:
         model = User
         fields = (
-            'email',
-            'username',
-            'first_name',
-            'last_name',
-            'profile_image',
-            'sat_exam_date',
-            'target_score',
-            'role',
-            'is_staff',
-            'is_superuser',
+            "email",
+            "username",
+            "first_name",
+            "last_name",
+            "profile_image",
+            "sat_exam_date",
+            "target_score",
+            "system_role",
+            "is_staff",
+            "is_superuser",
         )
 
+
+@admin.register(User)
 class CustomUserAdmin(UserAdmin):
     add_form = CustomUserCreationForm
     form = CustomUserChangeForm
     model = User
-    list_display = ['email', 'role', 'is_staff', 'is_active', 'is_frozen']
-    ordering = ['email']
-    # Username is removed from custom User model
+    list_display = ["email", "system_role", "is_staff", "is_active", "is_frozen"]
+    ordering = ["email"]
     fieldsets = (
-        (None, {'fields': ('email', 'username', 'password')}),
-        ('Personal info', {'fields': ('first_name', 'last_name', 'profile_image', 'sat_exam_date', 'target_score')}),
-        ('Permissions', {'fields': ('role', 'is_active', 'is_frozen', 'is_staff', 'is_superuser', 'groups', 'user_permissions')}),
-        ('Important dates', {'fields': ('last_login', 'date_joined')}),
+        (None, {"fields": ("email", "username", "password")}),
+        (
+            "Personal info",
+            {"fields": ("first_name", "last_name", "profile_image", "sat_exam_date", "target_score")},
+        ),
+        (
+            "Permissions",
+            {
+                "fields": (
+                    "system_role",
+                    "is_active",
+                    "is_frozen",
+                    "is_staff",
+                    "is_superuser",
+                    "groups",
+                    "user_permissions",
+                )
+            },
+        ),
+        ("Important dates", {"fields": ("last_login", "date_joined")}),
     )
     add_fieldsets = (
-        (None, {
-            'classes': ('wide',),
-            'fields': ('email', 'role', 'password1', 'password2', 'is_frozen', 'is_staff', 'is_superuser')}
+        (
+            None,
+            {
+                "classes": ("wide",),
+                "fields": (
+                    "email",
+                    "system_role",
+                    "password1",
+                    "password2",
+                    "is_frozen",
+                    "is_staff",
+                    "is_superuser",
+                ),
+            },
         ),
     )
-    search_fields = ('email',)
-    ordering = ('email',)
-
-admin.site.register(User, CustomUserAdmin)
+    search_fields = ("email",)
+    autocomplete_fields = ("system_role",)

@@ -9,6 +9,9 @@ from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
+from access import constants as acc_const
+from access.services import authorize
+
 from exams.models import TestAttempt
 from users.permissions import IsAuthenticatedAndNotFrozen
 
@@ -20,7 +23,7 @@ from .models import (
     Submission,
     Grade,
 )
-from .permissions import IsAdminUser, IsClassAdmin, IsClassMember
+from .permissions import IsClassAdmin, IsClassMember
 from .serializers import (
     ClassroomSerializer,
     ClassroomCreateSerializer,
@@ -56,8 +59,11 @@ class ClassroomViewSet(ModelViewSet):
         return ClassroomSerializer
 
     def create(self, request, *args, **kwargs):
-        if not getattr(request.user, "is_admin", False):
-            return Response({"detail": "Only admins can create classes."}, status=status.HTTP_403_FORBIDDEN)
+        if not authorize(request.user, acc_const.PERM_MANAGE_CLASSROOMS):
+            return Response(
+                {"detail": "You do not have permission to create groups."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         teacher = serializer.validated_data.get("teacher") or request.user

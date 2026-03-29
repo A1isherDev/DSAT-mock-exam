@@ -1,5 +1,10 @@
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+
+from access import constants as acc_const
+from access.models import Role
+from access.services import authorize, get_effective_permission_codenames, user_can_assign_as_class_teacher
+
 from .models import User
 
 
@@ -7,6 +12,8 @@ class UserMeSerializer(serializers.ModelSerializer):
     last_mock_result = serializers.SerializerMethodField(read_only=True)
     profile_image_url = serializers.SerializerMethodField(read_only=True)
     clear_profile_image = serializers.BooleanField(write_only=True, required=False)
+    role = serializers.SerializerMethodField()
+    permissions = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -22,6 +29,8 @@ class UserMeSerializer(serializers.ModelSerializer):
             "target_score",
             "last_mock_result",
             "clear_profile_image",
+            "role",
+            "permissions",
         ]
         extra_kwargs = {
             "profile_image": {"required": False, "allow_null": True},
@@ -104,26 +113,38 @@ class UserMeSerializer(serializers.ModelSerializer):
         data.pop("profile_image", None)
         return data
 
+    def get_role(self, obj):
+        return obj.role
+
+    def get_permissions(self, obj):
+        return sorted(get_effective_permission_codenames(obj))
+
+
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
     def get_token(cls, user):
         token = super().get_token(user)
-        # Add custom claims
-        token['is_admin'] = user.is_admin
-        token['role'] = user.role
-        token['is_frozen'] = user.is_frozen
+        perms = sorted(get_effective_permission_codenames(user))
+        token["is_admin"] = user.is_admin
+        token["role"] = user.role
+        token["is_frozen"] = user.is_frozen
+        token["permissions"] = perms
         return token
 
     def validate(self, attrs):
         data = super().validate(attrs)
-        data['is_admin'] = self.user.is_admin
-        data['role'] = self.user.role
-        data['is_frozen'] = self.user.is_frozen
+        data["is_admin"] = self.user.is_admin
+        data["role"] = self.user.role
+        data["is_frozen"] = self.user.is_frozen
+        data["permissions"] = sorted(get_effective_permission_codenames(self.user))
         return data
+
 
 class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=False)
-    is_admin = serializers.BooleanField(required=False)
+    is_admin = serializers.BooleanField(write_only=True, required=False)
+    role = serializers.SerializerMethodField()
+    class_teacher_eligible = serializers.SerializerMethodField()
 
     def validate_username(self, value):
         if value == '':
@@ -154,15 +175,70 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'email', 'username', 'first_name', 'last_name', 'role', 'is_admin', 'is_active', 'is_frozen', 'date_joined', 'password']
-        read_only_fields = ['date_joined']
+        fields = [
+            "id",
+            "email",
+            "username",
+            "first_name",
+            "last_name",
+            "role",
+            "class_teacher_eligible",
+            "is_admin",
+            "is_active",
+            "is_frozen",
+            "date_joined",
+            "password",
+        ]
+        read_only_fields = ["date_joined"]
+
+    def get_role(self, obj):
+        return obj.role
+
+    def get_class_teacher_eligible(self, obj):
+        return user_can_assign_as_class_teacher(obj)
+
+    def _incoming_role_code(self):
+        data = getattr(self, "initial_data", None) or {}
+        if not isinstance(data, dict):
+            return None
+        rc = data.get("role_code") or data.get("role")
+        if isinstance(rc, str) and rc.strip():
+            return rc.strip()
+        if data.get("is_admin") is True:
+            return acc_const.ROLE_ADMIN
+        if data.get("is_admin") is False:
+            return acc_const.ROLE_STUDENT
+        return None
+
+    def _resolve_system_role_for_write(self, *, instance=None):
+        rc = self._incoming_role_code()
+        request = self.context.get("request")
+        actor = getattr(request, "user", None) if request else None
+
+        if rc:
+            if not actor or not actor.is_authenticated:
+                raise serializers.ValidationError(
+                    {"role": "Authentication required to set role."}
+                )
+            if not authorize(actor, acc_const.PERM_MANAGE_ROLES):
+                raise serializers.ValidationError(
+                    {"role": "You do not have permission to assign roles."}
+                )
+            try:
+                return Role.objects.get(code=rc)
+            except Role.DoesNotExist as exc:
+                raise serializers.ValidationError({"role": "Invalid role code."}) from exc
+
+        if instance is None:
+            return Role.objects.get(code=acc_const.ROLE_STUDENT)
+        return None
 
     def create(self, validated_data):
-        is_admin = validated_data.pop('is_admin', None)
-        if 'role' not in validated_data and is_admin is not None:
-            validated_data['role'] = 'ADMIN' if is_admin else 'STUDENT'
-        
-        password = validated_data.pop('password', None)
+        validated_data.pop("is_admin", None)
+        validated_data.pop("system_role", None)
+        validated_data["system_role"] = self._resolve_system_role_for_write(instance=None)
+
+        password = validated_data.pop("password", None)
         user = super().create(validated_data)
         if password:
             user.set_password(password)
@@ -170,17 +246,13 @@ class UserSerializer(serializers.ModelSerializer):
         return user
 
     def update(self, instance, validated_data):
-        is_admin = validated_data.pop('is_admin', None)
-        role = validated_data.get('role', None)
-        
-        if role is not None:
-            instance.role = role
-            instance.save()
-        elif is_admin is not None:
-            instance.role = 'ADMIN' if is_admin else 'STUDENT'
-            instance.save()
+        validated_data.pop("is_admin", None)
+        new_role = self._resolve_system_role_for_write(instance=instance)
+        if new_role is not None:
+            instance.system_role = new_role
+            instance.save(update_fields=["system_role"])
 
-        password = validated_data.pop('password', None)
+        password = validated_data.pop("password", None)
         user = super().update(instance, validated_data)
         if password:
             user.set_password(password)

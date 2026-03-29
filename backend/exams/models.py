@@ -70,16 +70,37 @@ class Question(TimestampedModel):
         return False
 
 class MockExam(TimestampedModel):
+    KIND_MOCK_SAT = "MOCK_SAT"
+    KIND_MIDTERM = "MIDTERM"
+    KIND_CHOICES = [
+        (KIND_MOCK_SAT, "Full SAT mock (Reading & Writing + Math)"),
+        (KIND_MIDTERM, "Midterm (custom time, 1–2 modules, one subject)"),
+    ]
+
     title = models.CharField(max_length=200, db_index=True, help_text="e.g., International Form C")
     practice_date = models.DateField(null=True, blank=True, db_index=True)
     is_active = models.BooleanField(default=True, db_index=True)
-    # assigned_users moved to PracticeTest to allow granular assignments
-    
+    kind = models.CharField(
+        max_length=20,
+        choices=KIND_CHOICES,
+        default=KIND_MOCK_SAT,
+        db_index=True,
+    )
+    # Used when kind=MIDTERM (teacher/admin-configured)
+    midterm_subject = models.CharField(
+        max_length=20,
+        choices=[("READING_WRITING", "Reading & Writing"), ("MATH", "Math")],
+        default="READING_WRITING",
+    )
+    midterm_module_count = models.PositiveSmallIntegerField(default=2)
+    midterm_module1_minutes = models.PositiveIntegerField(default=60)
+    midterm_module2_minutes = models.PositiveIntegerField(default=60)
+
     class Meta:
-        db_table = 'mock_exams'
+        db_table = "mock_exams"
 
     def __str__(self):
-        date_str = self.practice_date.strftime('%B %Y') if self.practice_date else "No Date"
+        date_str = self.practice_date.strftime("%B %Y") if self.practice_date else "No Date"
         return f"{date_str} - {self.title}"
 
 class PracticeTest(TimestampedModel):
@@ -96,6 +117,10 @@ class PracticeTest(TimestampedModel):
     label = models.CharField(max_length=10, blank=True, help_text="e.g., A, B, C, D")
     form_type = models.CharField(max_length=20, choices=FORM_TYPES, default='INTERNATIONAL', db_index=True)
     assigned_users = models.ManyToManyField(User, related_name='assigned_tests', blank=True)
+    skip_default_modules = models.BooleanField(
+        default=False,
+        help_text="If True, post_save does not auto-create SAT modules (midterm/custom builds).",
+    )
     
     class Meta:
         db_table = 'practice_tests'
@@ -110,9 +135,18 @@ from django.dispatch import receiver
 
 @receiver(post_save, sender=PracticeTest)
 def create_default_modules(sender, instance, created, **kwargs):
-    if created:
-        Module.objects.create(practice_test=instance, module_order=1, time_limit_minutes=32 if instance.subject == 'READING_WRITING' else 35)
-        Module.objects.create(practice_test=instance, module_order=2, time_limit_minutes=32 if instance.subject == 'READING_WRITING' else 35)
+    if not created or instance.skip_default_modules:
+        return
+    Module.objects.create(
+        practice_test=instance,
+        module_order=1,
+        time_limit_minutes=32 if instance.subject == "READING_WRITING" else 35,
+    )
+    Module.objects.create(
+        practice_test=instance,
+        module_order=2,
+        time_limit_minutes=32 if instance.subject == "READING_WRITING" else 35,
+    )
 
 class Module(TimestampedModel):
     practice_test = models.ForeignKey(PracticeTest, on_delete=models.CASCADE, related_name='modules')

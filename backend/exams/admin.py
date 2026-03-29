@@ -51,11 +51,18 @@ class PracticeTestInline(admin.StackedInline):
 
 @admin.register(MockExam)
 class MockExamAdmin(admin.ModelAdmin):
-    list_display = ('title', 'practice_date', 'is_active')
-    list_filter = ('is_active', 'practice_date')
-    search_fields = ('title',)
+    list_display = ("title", "kind", "practice_date", "is_active")
+    list_filter = ("is_active", "kind", "practice_date")
+    search_fields = ("title",)
     inlines = [PracticeTestInline]
     list_per_page = 50
+    fieldsets = (
+        (None, {"fields": ("title", "practice_date", "is_active", "kind")}),
+        (
+            "Midterm options (when kind = Midterm)",
+            {"fields": ("midterm_subject", "midterm_module_count", "midterm_module1_minutes", "midterm_module2_minutes")},
+        ),
+    )
 
 @admin.register(PracticeTest)
 class PracticeTestAdmin(admin.ModelAdmin):

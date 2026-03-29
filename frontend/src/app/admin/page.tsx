@@ -1,8 +1,15 @@
 "use client";
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
 import { adminApi, examsApi } from '@/lib/api';
+import {
+    can,
+    canManageMockExamShell,
+    canCreateTestForSubject,
+    canEditQuestionsForSubject,
+    canDeletePracticeTestFromMock,
+} from '@/lib/permissions';
 
 const getImageUrl = (path: string | null | undefined) => {
     if (!path) return '';
@@ -189,6 +196,15 @@ const BTN_PRIMARY = "btn-primary text-xs";
 const BTN_GHOST = "btn-secondary text-xs !px-3 !py-2";
 const BTN_DANGER = "flex items-center gap-1 text-[11px] font-bold text-red-500 hover:text-red-700 px-2 py-1.5 rounded-lg hover:bg-red-50 transition-all";
 
+const STAFF_ROLE_OPTIONS: { value: string; label: string }[] = [
+    { value: 'STUDENT', label: 'Student' },
+    { value: 'ADMIN', label: 'Administrator' },
+    { value: 'SUPER_ADMIN', label: 'Super administrator' },
+    { value: 'TEST_ADMIN', label: 'Test author (create only)' },
+    { value: 'ENGLISH_ADMIN', label: 'English / R&W tests only' },
+    { value: 'MATH_ADMIN', label: 'Math tests only' },
+];
+
 export default function AdminPage() {
     const router = useRouter();
     const [activeTab, setActiveTab] = useState<Tab>('tests');
@@ -209,8 +225,17 @@ export default function AdminPage() {
     const [selectedModuleId, setSelectedModuleId] = useState<number | null>(null);
 
     // Forms
-    const [userForm, setUserForm] = useState({ first_name: '', last_name: '', username: '', email: '', password: '', is_admin: false, role: 'STUDENT', is_active: true, is_frozen: false });
-    const [mockForm, setMockForm] = useState({ title: '', practice_date: '', is_active: true });
+    const [userForm, setUserForm] = useState({ first_name: '', last_name: '', username: '', email: '', password: '', role: 'STUDENT', is_active: true, is_frozen: false });
+    const [mockForm, setMockForm] = useState({
+        title: '',
+        practice_date: '',
+        is_active: true,
+        kind: 'MOCK_SAT' as string,
+        midterm_subject: 'READING_WRITING',
+        midterm_module_count: 2,
+        midterm_module1_minutes: 60,
+        midterm_module2_minutes: 60,
+    });
     const [questionForm, setQuestionForm] = useState({ 
         question_text: '', question_prompt: '', 
         option_a: '', option_b: '', option_c: '', option_d: '',
@@ -310,11 +335,28 @@ export default function AdminPage() {
     const handleSaveUser = async () => {
         setSaving(true);
         try {
-            if (editingUser?.id) { await adminApi.updateUser(editingUser.id, userForm); }
-            else { await adminApi.createUser(userForm); }
+            const payload: Record<string, unknown> = {
+                first_name: userForm.first_name,
+                last_name: userForm.last_name,
+                username: userForm.username,
+                email: userForm.email,
+                is_active: userForm.is_active,
+                is_frozen: userForm.is_frozen,
+            };
+            if (can('manage_roles')) {
+                payload.role = userForm.role;
+            }
+            if (userForm.password?.trim()) {
+                payload.password = userForm.password;
+            }
+            if (editingUser?.id) {
+                await adminApi.updateUser(editingUser.id, payload);
+            } else {
+                await adminApi.createUser({ ...payload, password: userForm.password || '' });
+            }
             await fetchUsers();
             setEditingUser(null);
-            setUserForm({ first_name: '', last_name: '', username: '', email: '', password: '', is_admin: false, role: 'STUDENT', is_active: true, is_frozen: false });
+            setUserForm({ first_name: '', last_name: '', username: '', email: '', password: '', role: 'STUDENT', is_active: true, is_frozen: false });
             showToast('User saved ✓');
         } finally { setSaving(false); }
     };
@@ -331,7 +373,16 @@ export default function AdminPage() {
             else { await adminApi.createMockExam(mockForm); }
             await fetchMockExams();
             setEditingMock(null);
-            setMockForm({ title: '', practice_date: '', is_active: true });
+            setMockForm({
+                title: '',
+                practice_date: '',
+                is_active: true,
+                kind: 'MOCK_SAT',
+                midterm_subject: 'READING_WRITING',
+                midterm_module_count: 2,
+                midterm_module1_minutes: 60,
+                midterm_module2_minutes: 60,
+            });
             showToast('Mock Exam saved ✓');
         } finally { setSaving(false); }
     };
@@ -510,21 +561,50 @@ export default function AdminPage() {
 
     const currentModule = modules.find(m => m.id === selectedModuleId);
     const currentTest = practiceTests.find(t => t.id === selectedPracticeTestId);
+    const activeMockForQuestions = mockExams.find(m => m.id === selectedMockId);
+    const isMidtermExamContext = activeMockForQuestions?.kind === 'MIDTERM';
     const moduleScoreSum = questions.reduce((sum, q) => sum + (q.score || 0), 0);
-    const budget = (currentTest && currentModule) ? getModuleBudget(currentTest.subject, currentModule.module_order) : 0;
+    const budget = (currentTest && currentModule)
+        ? (isMidtermExamContext ? 9_999_999 : getModuleBudget(currentTest.subject, currentModule.module_order))
+        : 0;
     const base = (currentTest && currentModule) ? getModuleBase(currentTest.subject, currentModule.module_order) : 0;
     
-    const maxQuestions = currentTest?.subject === 'MATH' ? 22 : 27;
+    const maxQuestions = isMidtermExamContext ? 999 : (currentTest?.subject === 'MATH' ? 22 : 27);
+    const selectedPracticeSubject = currentTest?.subject as string | undefined;
+    const canEditCurrentQuestions = canEditQuestionsForSubject(selectedPracticeSubject);
     const isAtLimit = questions.length >= maxQuestions;
     const predictedSum = editingQuestion !== null ? (moduleScoreSum - (editingQuestion.id ? (questions.find(q => q.id === editingQuestion.id)?.score || 0) : 0) + (questionForm.score || 0)) : moduleScoreSum;
     const isOverBudget = predictedSum > budget;
 
-    const navItems: { key: Tab; label: string; icon: React.ReactNode }[] = [
-        { key: 'tests', label: 'Mock Exams', icon: <BookOpen className="w-4 h-4" /> },
-        { key: 'questions', label: 'Questions', icon: <HelpCircle className="w-4 h-4" /> },
-        { key: 'assignments', label: 'Assignments', icon: <CheckSquare className="w-4 h-4" /> },
-        { key: 'users', label: 'Users', icon: <Users className="w-4 h-4" /> },
-    ];
+    const navItems: { key: Tab; label: string; icon: React.ReactNode }[] = useMemo(() => {
+        const all: { key: Tab; label: string; icon: React.ReactNode }[] = [
+            { key: 'tests', label: 'Mock Exams', icon: <BookOpen className="w-4 h-4" /> },
+            { key: 'questions', label: 'Questions', icon: <HelpCircle className="w-4 h-4" /> },
+            { key: 'assignments', label: 'Assignments', icon: <CheckSquare className="w-4 h-4" /> },
+            { key: 'users', label: 'Users', icon: <Users className="w-4 h-4" /> },
+        ];
+        const testArea =
+            can('*') ||
+            can('view_all_tests') ||
+            can('view_english_tests') ||
+            can('view_math_tests') ||
+            can('create_test') ||
+            can('edit_test') ||
+            can('delete_test');
+        const filtered = all.filter((item) => {
+            if (item.key === 'users') return can('manage_users');
+            if (item.key === 'assignments') return can('assign_test_access');
+            return testArea;
+        });
+        return filtered.length ? filtered : all.filter((i) => i.key === 'tests');
+    }, []);
+
+    useEffect(() => {
+        const keys = navItems.map((i) => i.key);
+        if (!keys.includes(activeTab)) {
+            setActiveTab((keys[0] || 'tests') as Tab);
+        }
+    }, [navItems, activeTab]);
 
     return (
         <AuthGuard adminOnly={true}>
@@ -566,19 +646,61 @@ export default function AdminPage() {
                                 <div className="flex items-center justify-between">
                                     <h2 className="text-xl font-bold text-slate-900">Manage Mock Exams</h2>
                                     <div className="flex gap-2">
-                                        <button className={BTN_GHOST} onClick={() => setShowBulkModal(true)}>
-                                            <Users className="w-4 h-4" /> Bulk Assign Users
-                                        </button>
-                                        <button className={BTN_PRIMARY} onClick={() => { setEditingMock({}); setMockForm({ title: '', practice_date: '', is_active: true }); }}>
-                                            <Plus className="w-4 h-4" /> New Mock Exam
-                                        </button>
+                                        {can('assign_test_access') && (
+                                            <button className={BTN_GHOST} onClick={() => setShowBulkModal(true)}>
+                                                <Users className="w-4 h-4" /> Bulk Assign Users
+                                            </button>
+                                        )}
+                                        {canManageMockExamShell() && (
+                                            <button className={BTN_PRIMARY} onClick={() => { setEditingMock({}); setMockForm({
+                                                title: '',
+                                                practice_date: '',
+                                                is_active: true,
+                                                kind: 'MOCK_SAT',
+                                                midterm_subject: 'READING_WRITING',
+                                                midterm_module_count: 2,
+                                                midterm_module1_minutes: 60,
+                                                midterm_module2_minutes: 60,
+                                            }); }}>
+                                                <Plus className="w-4 h-4" /> New Mock Exam
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
                                 {editingMock !== null && (
                                     <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm grid grid-cols-2 gap-4">
                                         <Field label="Title"><input className={INPUT} value={mockForm.title} onChange={e => setMockForm({ ...mockForm, title: e.target.value })} placeholder="e.g. Mock SAT #1" /></Field>
                                         <Field label="Practice Date"><input type="date" className={INPUT} value={mockForm.practice_date} onChange={e => setMockForm({ ...mockForm, practice_date: e.target.value })} /></Field>
-                                        <div className="flex items-center gap-2 mt-4"><input type="checkbox" id="act" checked={mockForm.is_active} onChange={e => setMockForm({ ...mockForm, is_active: e.target.checked })} /><label htmlFor="act" className="text-sm font-bold text-slate-600">Is Active</label></div>
+                                        <Field label="Exam type">
+                                            <select
+                                                className={INPUT}
+                                                value={mockForm.kind}
+                                                disabled={!!editingMock?.id}
+                                                onChange={e => setMockForm({ ...mockForm, kind: e.target.value })}
+                                            >
+                                                <option value="MOCK_SAT">Full SAT mock (auto: English + Math)</option>
+                                                <option value="MIDTERM">Midterm (1 subject, 1–2 modules, custom time)</option>
+                                            </select>
+                                        </Field>
+                                        {mockForm.kind === 'MIDTERM' && !editingMock?.id && (
+                                            <>
+                                                <Field label="Midterm subject">
+                                                    <select className={INPUT} value={mockForm.midterm_subject} onChange={e => setMockForm({ ...mockForm, midterm_subject: e.target.value })}>
+                                                        <option value="READING_WRITING">Reading &amp; Writing</option>
+                                                        <option value="MATH">Math</option>
+                                                    </select>
+                                                </Field>
+                                                <Field label="Number of modules">
+                                                    <select className={INPUT} value={mockForm.midterm_module_count} onChange={e => setMockForm({ ...mockForm, midterm_module_count: Number(e.target.value) })}>
+                                                        <option value={1}>1 module</option>
+                                                        <option value={2}>2 modules</option>
+                                                    </select>
+                                                </Field>
+                                                <Field label="Module 1 (minutes)"><input type="number" min={1} className={INPUT} value={mockForm.midterm_module1_minutes} onChange={e => setMockForm({ ...mockForm, midterm_module1_minutes: Number(e.target.value) })} /></Field>
+                                                <Field label="Module 2 (minutes)"><input type="number" min={1} className={INPUT} disabled={mockForm.midterm_module_count < 2} value={mockForm.midterm_module2_minutes} onChange={e => setMockForm({ ...mockForm, midterm_module2_minutes: Number(e.target.value) })} /></Field>
+                                            </>
+                                        )}
+                                        <div className="flex items-center gap-2 mt-4 col-span-2"><input type="checkbox" id="act" checked={mockForm.is_active} onChange={e => setMockForm({ ...mockForm, is_active: e.target.checked })} /><label htmlFor="act" className="text-sm font-bold text-slate-600">Is Active</label></div>
                                         <div className="col-span-2 flex justify-end gap-2">
                                             <button className={BTN_GHOST} onClick={() => setEditingMock(null)}><X className="w-4 h-4" /> Cancel</button>
                                             <button className={BTN_PRIMARY} onClick={handleSaveMock} disabled={saving}>{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save</button>
@@ -591,11 +713,24 @@ export default function AdminPage() {
                                             <div className="p-5 flex items-center justify-between bg-slate-50/50">
                                                 <div>
                                                     <p className="font-bold text-base text-slate-900">{mock.title}</p>
-                                                    <p className="text-[11px] text-slate-400 uppercase tracking-wider font-bold">{mock.practice_date || 'No date'} · {mock.tests?.length || 0} Sections</p>
+                                                    <p className="text-[11px] text-slate-400 uppercase tracking-wider font-bold">{mock.kind === 'MIDTERM' ? 'Midterm · ' : 'Full mock · '}{mock.practice_date || 'No date'} · {mock.tests?.length || 0} Sections</p>
                                                 </div>
                                                 <div className="flex items-center gap-2">
-                                                    <button className={BTN_GHOST + " bg-white shadow-sm border border-slate-100"} onClick={e => { e.stopPropagation(); setEditingMock(mock); setMockForm({ title: mock.title, practice_date: mock.practice_date || '', is_active: !!mock.is_active }); }}><Pencil className="w-3.5 h-3.5" /> Edit</button>
-                                                    <button className={BTN_DANGER + " bg-white shadow-sm border border-slate-100"} onClick={e => { e.stopPropagation(); handleDeleteMock(mock.id); }}><Trash2 className="w-3.5 h-3.5" /> Delete</button>
+                                                    {canManageMockExamShell() && (
+                                                        <button className={BTN_GHOST + " bg-white shadow-sm border border-slate-100"} onClick={e => { e.stopPropagation(); setEditingMock(mock); setMockForm({
+                                                            title: mock.title,
+                                                            practice_date: mock.practice_date || '',
+                                                            is_active: !!mock.is_active,
+                                                            kind: mock.kind || 'MOCK_SAT',
+                                                            midterm_subject: mock.midterm_subject || 'READING_WRITING',
+                                                            midterm_module_count: mock.midterm_module_count ?? 2,
+                                                            midterm_module1_minutes: mock.midterm_module1_minutes ?? 60,
+                                                            midterm_module2_minutes: mock.midterm_module2_minutes ?? 60,
+                                                        }); }}><Pencil className="w-3.5 h-3.5" /> Edit</button>
+                                                    )}
+                                                    {canManageMockExamShell() && (
+                                                        <button className={BTN_DANGER + " bg-white shadow-sm border border-slate-100"} onClick={e => { e.stopPropagation(); handleDeleteMock(mock.id); }}><Trash2 className="w-3.5 h-3.5" /> Delete</button>
+                                                    )}
                                                 </div>
                                             </div>
                                             <div className="p-4 border-t border-slate-100 bg-white grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -609,10 +744,13 @@ export default function AdminPage() {
                                                             </div>
                                                             <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest ml-5">{t.form_type === 'US' ? 'US Standard' : 'International Form'}</span>
                                                         </div>
-                                                        <button onClick={(e) => { e.stopPropagation(); handleRemoveTest(t.id, mock.id); }} className="text-slate-300 hover:text-red-500 transition-colors"><X className="w-3.5 h-3.5" /></button>
+                                                        {canDeletePracticeTestFromMock(t.subject) && (
+                                                            <button onClick={(e) => { e.stopPropagation(); handleRemoveTest(t.id, mock.id); }} className="text-slate-300 hover:text-red-500 transition-colors"><X className="w-3.5 h-3.5" /></button>
+                                                        )}
                                                     </div>
                                                 ))}
                                                 
+                                                {mock.kind !== 'MIDTERM' && !(mock.kind === 'MOCK_SAT' && (mock.tests || []).some((t: any) => t.subject === 'READING_WRITING') && (mock.tests || []).some((t: any) => t.subject === 'MATH')) && (canCreateTestForSubject('READING_WRITING') || canCreateTestForSubject('MATH')) && (
                                                 <div className="md:col-span-2 mt-2 pt-3 border-t border-slate-50 space-y-3">
                                                     <div className="grid grid-cols-2 gap-3">
                                                         <div className="flex flex-col gap-1">
@@ -639,10 +777,15 @@ export default function AdminPage() {
                                                         </div>
                                                     </div>
                                                     <div className="flex gap-2">
+                                                        {canCreateTestForSubject('READING_WRITING') && (
                                                         <button onClick={(e) => { e.stopPropagation(); handleAddTest('READING_WRITING', mock.id); }} className="flex-1 flex items-center justify-center gap-2 py-2.5 border border-blue-100 bg-blue-50/50 text-blue-600 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-blue-100 transition-all"><Plus className="w-3 h-3" /> English</button>
+                                                        )}
+                                                        {canCreateTestForSubject('MATH') && (
                                                         <button onClick={(e) => { e.stopPropagation(); handleAddTest('MATH', mock.id); }} className="flex-1 flex items-center justify-center gap-2 py-2.5 border border-emerald-100 bg-emerald-50/50 text-emerald-600 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-emerald-100 transition-all"><Plus className="w-3 h-3" /> Mathematics</button>
+                                                        )}
                                                     </div>
                                                 </div>
+                                                )}
                                             </div>
                                         </div>
                                     ))}
@@ -690,7 +833,7 @@ export default function AdminPage() {
                                             <option value="">Select Module</option>
                                             {modules.map(m => <option key={m.id} value={m.id}>{`Module ${m.module_order}`}</option>)}
                                         </select>
-                                        <button className={BTN_PRIMARY} disabled={!selectedModuleId || (isAtLimit && !editingQuestion?.id)} onClick={() => { 
+                                        <button className={BTN_PRIMARY} disabled={!canEditCurrentQuestions || !selectedModuleId || (isAtLimit && !editingQuestion?.id)} onClick={() => { 
                                             const currentTest = practiceTests.find(t => t.id === selectedPracticeTestId);
                                             setEditingQuestion({}); 
                                             setQuestionForm({ 
@@ -713,7 +856,7 @@ export default function AdminPage() {
                                         </button>
                                         <button 
                                             className={`${BTN_PRIMARY} !bg-indigo-600 hover:!bg-indigo-700 disabled:!bg-slate-300 disabled:!text-slate-500`} 
-                                            disabled={!selectedModuleId || !isAtLimit || moduleScoreSum !== budget} 
+                                            disabled={!canEditCurrentQuestions || !selectedModuleId || !isAtLimit || moduleScoreSum !== budget} 
                                             onClick={() => {
                                                 setToast('✅ Module constraints verified and saved successfully!');
                                                 setTimeout(() => setToast(''), 3000);
@@ -724,7 +867,7 @@ export default function AdminPage() {
                                     </div>
                                 </div>
 
-                                {editingQuestion !== null && (
+                                {editingQuestion !== null && canEditCurrentQuestions && (
                                     <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
                                         <div className="grid grid-cols-2 gap-4">
                                             <div className="col-span-2">
@@ -935,10 +1078,13 @@ export default function AdminPage() {
                                                     <p className="text-sm text-slate-800 line-clamp-2">{q.question_text || q.question_prompt || '—'}</p>
                                                 </div>
                                                 <div className="flex items-center gap-1">
+                                                    {canEditCurrentQuestions && (
                                                     <div className="flex flex-col gap-0.5 mr-2">
                                                         <button disabled={idx === 0} onClick={() => handleReorderQuestion(q.id, 'up')} className={`p-1 rounded hover:bg-slate-200 text-slate-400 ${idx === 0 ? 'opacity-20 cursor-not-allowed' : 'hover:text-indigo-600'}`}><ArrowUp className="w-3 h-3" /></button>
                                                         <button disabled={idx === questions.length - 1} onClick={() => handleReorderQuestion(q.id, 'down')} className={`p-1 rounded hover:bg-slate-200 text-slate-400 ${idx === questions.length - 1 ? 'opacity-20 cursor-not-allowed' : 'hover:text-indigo-600'}`}><ArrowDown className="w-3 h-3" /></button>
                                                     </div>
+                                                    )}
+                                                    {canEditCurrentQuestions && (
                                                     <button className={BTN_GHOST} onClick={() => {
                                                         setEditingQuestion(q);
                                                         setQuestionForm({
@@ -958,7 +1104,10 @@ export default function AdminPage() {
                                                         setClearOptionCImage(false);
                                                         setClearOptionDImage(false);
                                                     }}><Pencil className="w-3.5 h-3.5" /></button>
+                                                    )}
+                                                    {canEditCurrentQuestions && (
                                                     <button className={BTN_DANGER} onClick={() => handleDeleteQuestion(q.id)}><Trash2 className="w-3.5 h-3.5" /></button>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
@@ -971,7 +1120,9 @@ export default function AdminPage() {
                             <div className="space-y-6 max-w-3xl">
                                 <div className="flex items-center justify-between">
                                     <h2 className="text-xl font-bold text-slate-900">Assign Users to Mock Exam</h2>
+                                    {can('assign_test_access') && (
                                     <button className={BTN_PRIMARY} onClick={() => selectedMockId && handleSaveAssignment(selectedMockId)} disabled={saving}>{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save</button>
+                                    )}
                                 </div>
                                 <div className="flex gap-3 flex-wrap">
                                     {mockExams.map(m => (
@@ -992,7 +1143,7 @@ export default function AdminPage() {
                                                     {isAssigned ? <CheckSquare className="w-4 h-4 text-indigo-600" /> : <Square className="w-4 h-4 text-slate-300" />}
                                                     <div><p className="font-bold text-sm text-slate-900">{user.first_name} {user.last_name}</p><p className="text-[11px] text-slate-400">{user.email} · @{user.username}</p></div>
                                                 </div>
-                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${user.role === 'ADMIN' ? 'bg-indigo-100 text-indigo-700' : 'bg-emerald-100 text-emerald-700'}`}>{user.role}</span>
+                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${user.role === 'STUDENT' ? 'bg-emerald-100 text-emerald-800' : user.role === 'SUPER_ADMIN' ? 'bg-violet-100 text-violet-800' : 'bg-indigo-100 text-indigo-800'}`}>{user.role}</span>
                                             </div>
                                         );
                                     })}
@@ -1004,7 +1155,7 @@ export default function AdminPage() {
                             <div className="space-y-6 max-w-4xl">
                                 <div className="flex items-center justify-between">
                                     <h2 className="text-xl font-bold text-slate-900">User Management</h2>
-                                    <button className={BTN_PRIMARY} onClick={() => { setEditingUser({}); setUserForm({ first_name: '', last_name: '', username: '', email: '', password: '', is_admin: false, role: 'STUDENT', is_active: true, is_frozen: false }); }}>
+                                    <button className={BTN_PRIMARY} onClick={() => { setEditingUser({}); setUserForm({ first_name: '', last_name: '', username: '', email: '', password: '', role: 'STUDENT', is_active: true, is_frozen: false }); }}>
                                         <Plus className="w-4 h-4" /> New User
                                     </button>
                                 </div>
@@ -1016,30 +1167,22 @@ export default function AdminPage() {
                                         <Field label="Email"><input className={INPUT} value={userForm.email || ''} onChange={e => setUserForm({ ...userForm, email: e.target.value })} /></Field>
                                         <Field label="Password"><input className={INPUT} type="password" value={userForm.password || ''} onChange={e => setUserForm({ ...userForm, password: e.target.value })} placeholder={editingUser.id ? "Leave blank to keep current" : "Set password"} /></Field>
                                         <Field label="User Role">
-                                            <select 
-                                                className={INPUT} 
-                                                value={userForm.role} 
-                                                onChange={e => {
-                                                    const newRole = e.target.value;
-                                                    setUserForm({ ...userForm, role: newRole, is_admin: newRole === 'ADMIN' });
-                                                }}
-                                            >
-                                                <option value="STUDENT">Student (Standard User)</option>
-                                                <option value="ADMIN">Administrator</option>
-                                            </select>
+                                            {can('manage_roles') ? (
+                                                <select
+                                                    className={INPUT}
+                                                    value={userForm.role}
+                                                    onChange={e => setUserForm({ ...userForm, role: e.target.value })}
+                                                >
+                                                    {STAFF_ROLE_OPTIONS.map((o) => (
+                                                        <option key={o.value} value={o.value}>{o.label}</option>
+                                                    ))}
+                                                </select>
+                                            ) : (
+                                                <p className="text-sm font-bold text-slate-600 py-2">
+                                                    {editingUser?.id ? userForm.role : 'Student (default)'}
+                                                </p>
+                                            )}
                                         </Field>
-                                        <div className="flex items-center gap-2 mt-4">
-                                            <input 
-                                                type="checkbox" 
-                                                id="adm" 
-                                                checked={!!userForm.is_admin} 
-                                                onChange={e => {
-                                                    const checked = e.target.checked;
-                                                    setUserForm({ ...userForm, is_admin: checked, role: checked ? 'ADMIN' : 'STUDENT' });
-                                                }} 
-                                            />
-                                            <label htmlFor="adm" className="text-sm font-bold text-slate-600">Admin Privileges (Mirror Role)</label>
-                                        </div>
                                         <div className="flex items-center gap-6 mt-2">
                                             <label className="flex items-center gap-2 text-sm font-bold text-slate-600">
                                                 <input type="checkbox" checked={!!userForm.is_active} onChange={e => setUserForm({ ...userForm, is_active: e.target.checked })} />
@@ -1061,10 +1204,10 @@ export default function AdminPage() {
                                         <div key={user.id} className="p-4 border-b last:border-0 flex items-center justify-between hover:bg-slate-50">
                                             <div className="flex items-center gap-4">
                                                 <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center font-bold text-slate-500">{user.first_name?.[0]}{user.last_name?.[0]}</div>
-                                                <div><p className="font-bold text-sm text-slate-900">{user.first_name} {user.last_name} {user.is_admin && <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded ml-1">ADMIN</span>} {user.is_frozen && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded ml-1">FROZEN</span>} {!user.is_active && <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded ml-1">INACTIVE</span>}</p><p className="text-[11px] text-slate-400">{user.email} · @{user.username}</p></div>
+                                                <div><p className="font-bold text-sm text-slate-900">{user.first_name} {user.last_name} {user.role && user.role !== 'STUDENT' && <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded ml-1">{user.role}</span>} {user.is_frozen && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded ml-1">FROZEN</span>} {!user.is_active && <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded ml-1">INACTIVE</span>}</p><p className="text-[11px] text-slate-400">{user.email} · @{user.username}</p></div>
                                             </div>
                                             <div className="flex items-center gap-2">
-                                                <button className={BTN_GHOST} onClick={() => { setEditingUser(user); setUserForm({ first_name: user.first_name, last_name: user.last_name, username: user.username, email: user.email, password: '', is_admin: !!user.is_admin, role: user.role || 'STUDENT', is_active: user.is_active !== false, is_frozen: !!user.is_frozen }); }}><Pencil className="w-3.5 h-3.5" /></button>
+                                                <button className={BTN_GHOST} onClick={() => { setEditingUser(user); setUserForm({ first_name: user.first_name, last_name: user.last_name, username: user.username, email: user.email, password: '', role: user.role || 'STUDENT', is_active: user.is_active !== false, is_frozen: !!user.is_frozen }); }}><Pencil className="w-3.5 h-3.5" /></button>
                                                 <button className={BTN_DANGER} onClick={() => handleDeleteUser(user.id)}><Trash2 className="w-3.5 h-3.5" /></button>
                                             </div>
                                         </div>
@@ -1129,8 +1272,8 @@ export default function AdminPage() {
                                 <div className="flex flex-col bg-slate-50/30">
                                     <div className="p-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
                                         <span className="text-xs font-extrabold text-slate-500 uppercase">Step 2: Select Users ({bulkAssignUsers.length})</span>
-                                        <button onClick={() => setBulkAssignUsers(bulkAssignUsers.length === users.filter(u => u.role !== 'ADMIN').length ? [] : users.filter(u => u.role !== 'ADMIN').map(u => u.id))} className="text-[10px] font-bold text-blue-600 hover:underline">
-                                            {bulkAssignUsers.length === users.filter(u => u.role !== 'ADMIN').length ? 'Deselect All' : 'Select All'}
+                                        <button onClick={() => setBulkAssignUsers(bulkAssignUsers.length === users.filter(u => u.role === 'STUDENT').length ? [] : users.filter(u => u.role === 'STUDENT').map(u => u.id))} className="text-[10px] font-bold text-blue-600 hover:underline">
+                                            {bulkAssignUsers.length === users.filter(u => u.role === 'STUDENT').length ? 'Deselect All' : 'Select All'}
                                         </button>
                                     </div>
                                     <div className="p-3 border-b border-slate-100 bg-white">
@@ -1145,7 +1288,7 @@ export default function AdminPage() {
                                         </div>
                                     </div>
                                     <div className="flex-1 overflow-y-auto p-2 space-y-1">
-                                        {users.filter(u => u.role !== 'ADMIN' && (u.first_name + ' ' + u.last_name + ' ' + u.username).toLowerCase().includes(bulkUserSearch.toLowerCase())).map(user => (
+                                        {users.filter(u => u.role === 'STUDENT' && (u.first_name + ' ' + u.last_name + ' ' + u.username).toLowerCase().includes(bulkUserSearch.toLowerCase())).map(user => (
                                             <label key={user.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-indigo-50/50 cursor-pointer transition-colors border border-transparent hover:border-indigo-100">
                                                 <input 
                                                     type="checkbox" 

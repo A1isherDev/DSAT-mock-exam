@@ -89,7 +89,13 @@ export default function TeacherDashboardPage() {
               <div className="flex flex-wrap gap-2">
                 <Link href="/teacher/homework" className="btn-primary">Manage homework</Link>
                 <Link href="/teacher/students" className="btn-secondary">View students</Link>
+                <Link href="/admin" className="btn-secondary">
+                  Exams admin
+                </Link>
               </div>
+              <p className="text-xs text-slate-500 mt-3 leading-relaxed">
+                If your account has staff permissions, use Exams admin to create full SAT mocks or midterm exams (custom time and 1–2 modules).
+              </p>
             </div>
           </div>
 
