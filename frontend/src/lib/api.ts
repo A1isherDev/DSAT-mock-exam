@@ -115,6 +115,15 @@ export const examsApi = {
         const res = await api.get(`/exams/mock-exams/${id}/`);
         return res.data;
     },
+    /** Standalone practice tests only (`mock_exam` null); not mock exam sections. */
+    getPracticeTests: async () => {
+        const res = await api.get('/exams/');
+        return res.data;
+    },
+    getPracticeTest: async (id: number) => {
+        const res = await api.get(`/exams/${id}/`);
+        return res.data;
+    },
     getAttempts: async () => {
         const res = await api.get('/exams/attempts/');
         return res.data;

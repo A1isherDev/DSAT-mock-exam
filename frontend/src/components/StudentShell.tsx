@@ -58,7 +58,12 @@ export default function StudentShell({ children }: { children: React.ReactNode }
           </div>
           <nav className="flex-1 px-5 pb-6 space-y-2 overflow-y-auto">
             {nav.map(({ href, label, icon: Icon }) => {
-              const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
+              const active =
+                href === "/"
+                  ? pathname === "/"
+                  : href === "/practice-tests"
+                    ? pathname === "/practice-tests" || pathname.startsWith("/practice-test/")
+                    : pathname.startsWith(href);
               return (
                 <Link
                   key={href}

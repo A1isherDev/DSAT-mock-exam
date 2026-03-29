@@ -71,7 +71,8 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         user = self.request.user
         perms = get_effective_permission_codenames(user)
-        base = PracticeTest.objects.all().prefetch_related("modules")
+        # Standalone practice only; sections under a MockExam appear via /mock-exams/ only.
+        base = PracticeTest.objects.filter(mock_exam__isnull=True).prefetch_related("modules")
         if acc_const.WILDCARD in perms or acc_const.PERM_VIEW_ALL_TESTS in perms:
             return base
         if {
@@ -83,7 +84,7 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
             acc_const.PERM_ASSIGN_TEST_ACCESS,
         } & perms:
             return filter_practice_tests_for_user(user, base)
-        return PracticeTest.objects.filter(assigned_users=user, mock_exam__is_active=True).prefetch_related(
+        return PracticeTest.objects.filter(assigned_users=user, mock_exam__isnull=True).prefetch_related(
             "modules"
         )
 
