@@ -148,6 +148,35 @@ class PortalMockExam(TimestampedModel):
         return f"Portal: {self.mock_exam}"
 
 
+class PastpaperPack(TimestampedModel):
+    """
+    Groups standalone pastpaper sections (R&W + Math) for one exam form.
+    PracticeTest rows link here when mock_exam is NULL.
+    """
+
+    title = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Pack title shown on student practice cards.",
+    )
+    practice_date = models.DateField(null=True, blank=True, db_index=True)
+    label = models.CharField(max_length=10, blank=True, help_text="e.g. A, B — shared by sections in this pack.")
+    form_type = models.CharField(
+        max_length=20,
+        choices=[("INTERNATIONAL", "International Form"), ("US", "US Form")],
+        default="INTERNATIONAL",
+        db_index=True,
+    )
+
+    class Meta:
+        db_table = "pastpaper_packs"
+        ordering = ["-practice_date", "-created_at"]
+
+    def __str__(self):
+        return self.title or f"Pack {self.pk}"
+
+
 class PracticeTest(TimestampedModel):
     SUBJECT_CHOICES = [
         ('READING_WRITING', 'Reading & Writing'),
@@ -164,6 +193,14 @@ class PracticeTest(TimestampedModel):
         null=True,
         blank=True,
         help_text="NULL = pastpaper / practice library. If set, this row is a mock-only section (staff-built under that mock, never linked from pastpapers).",
+    )
+    pastpaper_pack = models.ForeignKey(
+        PastpaperPack,
+        on_delete=models.CASCADE,
+        related_name="sections",
+        null=True,
+        blank=True,
+        help_text="When set (and mock_exam is NULL), this section belongs to a grouped pastpaper card.",
     )
     subject = models.CharField(max_length=20, choices=SUBJECT_CHOICES, db_index=True)
     title = models.CharField(
@@ -191,7 +228,12 @@ class PracticeTest(TimestampedModel):
         db_table = 'practice_tests'
 
     def __str__(self):
-        exam_title = self.mock_exam.title if self.mock_exam else "Unassigned"
+        if self.mock_exam:
+            exam_title = self.mock_exam.title
+        elif self.pastpaper_pack_id:
+            exam_title = self.pastpaper_pack.title or f"Pack {self.pastpaper_pack_id}"
+        else:
+            exam_title = "Unassigned"
         label_str = f" ({self.label})" if self.label else ""
         return f"{exam_title} - {self.get_subject_display()}{label_str} [{self.get_form_type_display()}]"
 

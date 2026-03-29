@@ -13,30 +13,66 @@ type PracticeTestsListProps = {
 };
 
 type CardPack = { kind: "pack"; mockKey: number; mock: any; tests: any[] };
-type CardPastpaperPack = { kind: "pastpaper_pack"; groupKey: string; tests: any[] };
+type CardPastpaperPack = { kind: "pastpaper_pack"; packKey: string; pack: any; tests: any[] };
 type CardSingle = { kind: "single"; test: any };
 
 function normalizePastpaperLabel(label: string | null | undefined) {
   return (label || "").trim();
 }
 
-/** Same date + form + label ⇒ one card (e.g. English + Math rows created as a pair). */
+/** Legacy rows without pastpaper_pack: group by date + form + label. */
 function standaloneGroupKey(t: any): string {
   return [t.practice_date || "", t.form_type || "", normalizePastpaperLabel(t.label)].join("|");
 }
 
+function sortPastpaperSections(tests: any[]) {
+  return [...tests].sort((a, b) => {
+    const order = (s: string) => (s === "READING_WRITING" ? 0 : s === "MATH" ? 1 : 2);
+    const d = order(a.subject) - order(b.subject);
+    if (d !== 0) return d;
+    return (a.id || 0) - (b.id || 0);
+  });
+}
+
 function buildCards(tests: any[]): (CardPack | CardPastpaperPack | CardSingle)[] {
-  const standalone: any[] = [];
   const byMock = new Map<number, any[]>();
+  const byPastpaperPack = new Map<number, { pack: any; tests: any[] }>();
+  const looseStandalone: any[] = [];
+
   for (const t of tests) {
     const m = t.mock_exam;
-    if (!m?.id) {
-      standalone.push(t);
+    if (m?.id) {
+      if (!byMock.has(m.id)) byMock.set(m.id, []);
+      byMock.get(m.id)!.push(t);
       continue;
     }
-    if (!byMock.has(m.id)) byMock.set(m.id, []);
-    byMock.get(m.id)!.push(t);
+    const rawPack = t.pastpaper_pack;
+    const pid =
+      rawPack && typeof rawPack === "object" && rawPack.id != null
+        ? Number(rawPack.id)
+        : t.pastpaper_pack_id != null
+          ? Number(t.pastpaper_pack_id)
+          : null;
+    if (pid != null && !Number.isNaN(pid)) {
+      if (!byPastpaperPack.has(pid)) {
+        const packObj =
+          rawPack && typeof rawPack === "object"
+            ? rawPack
+            : {
+                id: pid,
+                title: "",
+                practice_date: t.practice_date,
+                label: t.label,
+                form_type: t.form_type,
+              };
+        byPastpaperPack.set(pid, { pack: packObj, tests: [] });
+      }
+      byPastpaperPack.get(pid)!.tests.push(t);
+      continue;
+    }
+    looseStandalone.push(t);
   }
+
   const packs: CardPack[] = Array.from(byMock.entries()).map(([mockKey, list]) => ({
     kind: "pack",
     mockKey,
@@ -44,28 +80,47 @@ function buildCards(tests: any[]): (CardPack | CardPastpaperPack | CardSingle)[]
     tests: list,
   }));
 
-  const byStandalone = new Map<string, any[]>();
-  for (const t of standalone) {
+  const dbPastpaperPacks: CardPastpaperPack[] = Array.from(byPastpaperPack.entries()).map(([id, { pack, tests }]) => ({
+    kind: "pastpaper_pack",
+    packKey: `db-${id}`,
+    pack,
+    tests: sortPastpaperSections(tests),
+  }));
+
+  const byLoose = new Map<string, any[]>();
+  for (const t of looseStandalone) {
     const k = standaloneGroupKey(t);
-    if (!byStandalone.has(k)) byStandalone.set(k, []);
-    byStandalone.get(k)!.push(t);
+    if (!byLoose.has(k)) byLoose.set(k, []);
+    byLoose.get(k)!.push(t);
   }
 
-  const pastpaperPacks: CardPastpaperPack[] = [];
+  const legacyPacks: CardPastpaperPack[] = [];
   const singles: CardSingle[] = [];
-  for (const [groupKey, list] of byStandalone) {
+  for (const [groupKey, list] of byLoose) {
     const unique = [...new Map(list.map((x) => [x.id, x])).values()];
     if (unique.length >= 2) {
-      pastpaperPacks.push({ kind: "pastpaper_pack", groupKey, tests: unique });
+      const p0 = unique[0];
+      legacyPacks.push({
+        kind: "pastpaper_pack",
+        packKey: `legacy-${groupKey}`,
+        pack: {
+          id: null,
+          title: "",
+          practice_date: p0.practice_date,
+          label: p0.label,
+          form_type: p0.form_type,
+        },
+        tests: sortPastpaperSections(unique),
+      });
     } else if (unique.length === 1) {
       singles.push({ kind: "single", test: unique[0] });
     }
   }
 
-  const all: (CardPack | CardPastpaperPack | CardSingle)[] = [...packs, ...pastpaperPacks, ...singles];
+  const all: (CardPack | CardPastpaperPack | CardSingle)[] = [...packs, ...dbPastpaperPacks, ...legacyPacks, ...singles];
   const sortKey = (c: CardPack | CardPastpaperPack | CardSingle) => {
     if (c.kind === "pack") return c.mock.practice_date || "";
-    if (c.kind === "pastpaper_pack") return c.tests[0]?.practice_date || "";
+    if (c.kind === "pastpaper_pack") return c.pack?.practice_date || c.tests[0]?.practice_date || "";
     return c.test.practice_date || c.test.created_at || "";
   };
   all.sort((a, b) => sortKey(b).localeCompare(sortKey(a)));
@@ -284,9 +339,10 @@ export default function PracticeTestsList({
           if (c.kind === "pastpaper_pack") {
             const pct = progressPack(c.tests, attempts);
             const openId = firstSectionTestId(c.tests);
-            const lineDate = c.tests[0]?.practice_date || c.tests[0]?.created_at;
+            const lineDate = c.pack?.practice_date || c.tests[0]?.practice_date || c.tests[0]?.created_at;
+            const heading = (c.pack?.title && String(c.pack.title).trim()) || sharedPastpaperPackTitle(c.tests);
             return (
-              <div key={`pastpaper-pack-${c.groupKey}`} className={cardShell}>
+              <div key={`pastpaper-pack-${c.packKey}`} className={cardShell}>
                 <div className="p-8 pb-4 relative">
                   <div className="flex items-center justify-between mb-6">
                     <div className="flex flex-col gap-1">
@@ -300,7 +356,7 @@ export default function PracticeTestsList({
                     </div>
                   </div>
                   <h3 className="text-2xl font-serif font-bold text-slate-900 dark:text-slate-100 mb-6 tracking-tight leading-snug group-hover:text-violet-800 dark:group-hover:text-violet-300 transition-colors">
-                    {sharedPastpaperPackTitle(c.tests)}
+                    {heading}
                   </h3>
                   <div className="flex items-center gap-2">
                     <div className="flex-1 h-[3px] bg-slate-200/90 dark:bg-slate-700 rounded-full overflow-hidden">

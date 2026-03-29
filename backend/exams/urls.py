@@ -5,6 +5,7 @@ from .views import (
     PracticeTestViewSet,
     TestAttemptViewSet,
     AdminMockExamViewSet,
+    AdminPastpaperPackViewSet,
     AdminPracticeTestViewSet,
     AdminModuleViewSet,
     AdminQuestionViewSet,
@@ -19,6 +20,9 @@ router.register(r'', PracticeTestViewSet, basename='practice-test')
 # ── Admin routes (manual nested) ────────────────────────────────────────────
 admin_mock_exam_router = DefaultRouter()
 admin_mock_exam_router.register(r'', AdminMockExamViewSet, basename='admin-mock-exams')
+
+admin_pastpaper_pack_router = DefaultRouter()
+admin_pastpaper_pack_router.register(r'', AdminPastpaperPackViewSet, basename='admin-pastpaper-packs')
 
 admin_test_router = DefaultRouter()
 admin_test_router.register(r'', AdminPracticeTestViewSet, basename='admin-tests')
@@ -41,6 +45,9 @@ urlpatterns = [
 
     # Admin Mock Exams CRUD: /exams/admin/mock-exams/
     path('admin/mock-exams/', include(admin_mock_exam_router.urls)),
+
+    # Admin Pastpaper packs: /exams/admin/pastpaper-packs/
+    path('admin/pastpaper-packs/', include(admin_pastpaper_pack_router.urls)),
 
     # Student / Common routes
     path('', include(router.urls)),

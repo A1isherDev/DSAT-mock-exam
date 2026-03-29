@@ -193,6 +193,27 @@ def filter_practice_tests_for_user(user, queryset):
     return queryset.filter(q)
 
 
+def filter_pastpaper_packs_for_user(user, queryset):
+    """Packs with a visible section, plus empty shells for users who may add sections."""
+    from django.db.models import Count
+
+    from exams.models import PracticeTest
+
+    perms = get_effective_permission_codenames(user)
+    if constants.WILDCARD in perms or constants.PERM_VIEW_ALL_TESTS in perms:
+        return queryset
+
+    visible = filter_practice_tests_for_user(
+        user,
+        PracticeTest.objects.filter(mock_exam__isnull=True),
+    )
+    with_sections = queryset.filter(sections__in=visible)
+    if constants.PERM_CREATE_TEST in perms:
+        empty = queryset.annotate(_section_count=Count("sections")).filter(_section_count=0)
+        return (with_sections | empty).distinct()
+    return with_sections.distinct()
+
+
 def filter_mock_exams_for_user(user, queryset):
     """
     Mock exams the user may manage or see:

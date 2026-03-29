@@ -266,6 +266,26 @@ export const adminApi = {
         return res.data;
     },
 
+    getPastpaperPacks: async () => {
+        const r = await api.get('/exams/admin/pastpaper-packs/');
+        return r.data;
+    },
+    createPastpaperPack: async (data: object) => {
+        const r = await api.post('/exams/admin/pastpaper-packs/', data);
+        return r.data;
+    },
+    updatePastpaperPack: async (id: number, data: object) => {
+        const r = await api.patch(`/exams/admin/pastpaper-packs/${id}/`, data);
+        return r.data;
+    },
+    deletePastpaperPack: async (id: number) => {
+        await api.delete(`/exams/admin/pastpaper-packs/${id}/`);
+    },
+    addPastpaperPackSection: async (packId: number, subject: 'READING_WRITING' | 'MATH') => {
+        const r = await api.post(`/exams/admin/pastpaper-packs/${packId}/add_section/`, { subject });
+        return r.data;
+    },
+
     getPracticeTestsAdmin: async (standaloneOnly?: boolean) => {
         const r = await api.get('/exams/admin/tests/', {
             params: standaloneOnly ? { standalone: '1' } : undefined,

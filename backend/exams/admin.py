@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Question, PracticeTest, Module, TestAttempt, AuditLog, MockExam, PortalMockExam
+from .models import Question, PracticeTest, Module, TestAttempt, AuditLog, MockExam, PortalMockExam, PastpaperPack
 
 class QuestionInline(admin.StackedInline):
     model = Question
@@ -72,6 +72,21 @@ class MockExamAdmin(admin.ModelAdmin):
             {"fields": ("midterm_subject", "midterm_module_count", "midterm_module1_minutes", "midterm_module2_minutes")},
         ),
     )
+
+
+class PastpaperSectionInline(admin.TabularInline):
+    model = PracticeTest
+    fk_name = "pastpaper_pack"
+    extra = 0
+    show_change_link = True
+
+
+@admin.register(PastpaperPack)
+class PastpaperPackAdmin(admin.ModelAdmin):
+    list_display = ("id", "title", "practice_date", "form_type", "label")
+    list_filter = ("form_type",)
+    search_fields = ("title",)
+    inlines = [PastpaperSectionInline]
 
 
 @admin.register(PortalMockExam)

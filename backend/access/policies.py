@@ -5,7 +5,13 @@ from __future__ import annotations
 from rest_framework.permissions import BasePermission
 
 from . import constants
-from .services import authorize, filter_mock_exams_for_user, filter_practice_tests_for_user, get_effective_permission_codenames
+from .services import (
+    authorize,
+    filter_mock_exams_for_user,
+    filter_pastpaper_packs_for_user,
+    filter_practice_tests_for_user,
+    get_effective_permission_codenames,
+)
 
 
 def _can_view_practice_test(user, practice_test) -> bool:
@@ -58,6 +64,61 @@ class PracticeTestAdminAccess(BasePermission):
             return authorize(u, constants.PERM_EDIT_TEST, subject=obj.subject)
         if act == "destroy":
             return authorize(u, constants.PERM_DELETE_TEST, subject=obj.subject)
+        return False
+
+
+class PastpaperPackAdminAccess(BasePermission):
+    """CRUD on PastpaperPack shells; add_section uses create_test + subject ABAC."""
+
+    def has_permission(self, request, view):
+        u = request.user
+        act = view.action
+        perms = get_effective_permission_codenames(u)
+        if not perms:
+            return False
+        if act in ("list", "retrieve", "head", "options"):
+            return (
+                constants.WILDCARD in perms
+                or constants.PERM_VIEW_ALL_TESTS in perms
+                or constants.PERM_VIEW_ENGLISH_TESTS in perms
+                or constants.PERM_VIEW_MATH_TESTS in perms
+                or constants.PERM_CREATE_TEST in perms
+                or constants.PERM_EDIT_TEST in perms
+                or constants.PERM_DELETE_TEST in perms
+            )
+        if act == "create":
+            return authorize(u, constants.PERM_CREATE_TEST)
+        if act in ("update", "partial_update"):
+            return authorize(u, constants.PERM_EDIT_TEST)
+        if act == "destroy":
+            return True
+        if act == "add_section":
+            subj = (request.data or {}).get("subject")
+            return authorize(u, constants.PERM_CREATE_TEST, subject=subj)
+        return False
+
+    def has_object_permission(self, request, view, obj):
+        u = request.user
+        act = view.action
+        if act in ("retrieve", "head", "options"):
+            qs = filter_pastpaper_packs_for_user(u, type(obj).objects.filter(pk=obj.pk))
+            return qs.exists()
+        if act in ("update", "partial_update"):
+            if not authorize(u, constants.PERM_EDIT_TEST):
+                return False
+            qs = filter_pastpaper_packs_for_user(u, type(obj).objects.filter(pk=obj.pk))
+            return qs.exists()
+        if act == "destroy":
+            sections = list(obj.sections.all())
+            if not sections:
+                return authorize(u, constants.PERM_EDIT_TEST)
+            for t in sections:
+                if not authorize(u, constants.PERM_DELETE_TEST, subject=t.subject):
+                    return False
+            return True
+        if act == "add_section":
+            qs = filter_pastpaper_packs_for_user(u, type(obj).objects.filter(pk=obj.pk))
+            return qs.exists()
         return False
 
 

@@ -205,47 +205,6 @@ const STAFF_ROLE_OPTIONS: { value: string; label: string }[] = [
     { value: 'MATH_ADMIN', label: 'Math tests only' },
 ];
 
-function normalizePastpaperLabelAdmin(label: string | null | undefined) {
-    return String(label || "").trim();
-}
-
-function pastpaperAdminGroupKey(t: any) {
-    return [t.practice_date || "", t.form_type || "", normalizePastpaperLabelAdmin(t.label)].join("|");
-}
-
-function singlePastpaperDisplayTitle(t: any) {
-    if (t.title?.trim()) return t.title.trim();
-    const subj = t.subject === "MATH" ? "Math" : "Reading & Writing";
-    const form = t.form_type === "US" ? "US" : "International";
-    return `${subj} · ${form}${t.label ? ` (${t.label})` : ""}`;
-}
-
-function sharedPastpaperPackTitleAdmin(tests: any[]): string {
-    if (tests.length === 0) return "Pastpaper";
-    if (tests.length === 1) return singlePastpaperDisplayTitle(tests[0]);
-    const titles = tests.map((t) => (t.title || "").trim()).filter(Boolean);
-    if (titles.length === 0) {
-        const t = tests[0];
-        const form = t.form_type === "US" ? "US Form" : "International Form";
-        const letter = normalizePastpaperLabelAdmin(t.label) ? ` ${normalizePastpaperLabelAdmin(t.label)}` : "";
-        return `${form}${letter}`.trim();
-    }
-    const stripSubjectTail = (s: string) =>
-        s.replace(/\s*[—–-]\s*(Reading\s*&\s*Writing|R\s*&\s*W|English|Math|Mathematics)\s*$/i, "").trim();
-    const bases = [...new Set(titles.map(stripSubjectTail))].filter(Boolean);
-    if (bases.length === 1) return bases[0];
-    return stripSubjectTail(titles[0]) || titles[0];
-}
-
-function sortPastpaperSections(tests: any[]) {
-    return [...tests].sort((a, b) => {
-        const order = (s: string) => (s === "READING_WRITING" ? 0 : s === "MATH" ? 1 : 2);
-        const d = order(a.subject) - order(b.subject);
-        if (d !== 0) return d;
-        return (a.id || 0) - (b.id || 0);
-    });
-}
-
 export default function AdminPage() {
     const router = useRouter();
     const didInitMockSelection = useRef(false);
@@ -257,6 +216,7 @@ export default function AdminPage() {
     // Data
     const [users, setUsers] = useState<any[]>([]);
     const [mockExams, setMockExams] = useState<any[]>([]);
+    const [pastpaperPacks, setPastpaperPacks] = useState<any[]>([]);
     const [standaloneTests, setStandaloneTests] = useState<any[]>([]);
     const [modules, setModules] = useState<any[]>([]);
     const [questions, setQuestions] = useState<any[]>([]);
@@ -311,6 +271,13 @@ export default function AdminPage() {
     // New Test Creation State (per mock id)
     const [newTestLabels, setNewTestLabels] = useState<Record<number, string>>({});
     const [newTestFormTypes, setNewTestFormTypes] = useState<Record<number, string>>({});
+    const [editingPack, setEditingPack] = useState<any>(null);
+    const [packForm, setPackForm] = useState({
+        title: '',
+        practice_date: '',
+        label: '',
+        form_type: 'INTERNATIONAL',
+    });
     const [editingPastpaper, setEditingPastpaper] = useState<any>(null);
     const [pastpaperForm, setPastpaperForm] = useState({
         title: '',
@@ -352,6 +319,13 @@ export default function AdminPage() {
         } catch (e) { /* ignore */ }
     }, []);
 
+    const fetchPastpaperPacks = useCallback(async () => {
+        try {
+            const data = await adminApi.getPastpaperPacks();
+            setPastpaperPacks(Array.isArray(data) ? data : []);
+        } catch (e) { /* ignore */ }
+    }, []);
+
     const fetchModules = useCallback(async () => {
         if (!selectedPracticeTestId) return [];
         try {
@@ -366,7 +340,12 @@ export default function AdminPage() {
         try { setQuestions(await adminApi.getQuestions(selectedPracticeTestId, selectedModuleId)); } catch(e) {}
     }, [selectedPracticeTestId, selectedModuleId]);
 
-    useEffect(() => { fetchMockExams(); fetchStandaloneTests(); fetchUsers(); }, [fetchMockExams, fetchStandaloneTests, fetchUsers]);
+    useEffect(() => {
+        fetchMockExams();
+        fetchStandaloneTests();
+        fetchPastpaperPacks();
+        fetchUsers();
+    }, [fetchMockExams, fetchStandaloneTests, fetchPastpaperPacks, fetchUsers]);
 
     const allSelectableTests = useMemo(() => {
         const rows: any[] = [];
@@ -379,26 +358,10 @@ export default function AdminPage() {
         return rows;
     }, [standaloneTests, mockExams]);
 
-    /** Same exam date + form + label ⇒ one parent card (R&W + Math), matching student practice packs. */
-    const pastpaperGroups = useMemo(() => {
-        const by = new Map<string, any[]>();
-        for (const t of standaloneTests) {
-            const k = pastpaperAdminGroupKey(t);
-            if (!by.has(k)) by.set(k, []);
-            by.get(k)!.push(t);
-        }
-        const groups: { key: string; tests: any[] }[] = [];
-        for (const [key, list] of by) {
-            const unique = [...new Map(list.map((x) => [x.id, x])).values()];
-            groups.push({ key, tests: sortPastpaperSections(unique) });
-        }
-        groups.sort((a, b) => {
-            const da = a.tests[0]?.practice_date || "";
-            const db = b.tests[0]?.practice_date || "";
-            return db.localeCompare(da);
-        });
-        return groups;
-    }, [standaloneTests]);
+    const orphanPastpaperTests = useMemo(
+        () => standaloneTests.filter((t) => t.pastpaper_pack == null && t.pastpaper_pack_id == null),
+        [standaloneTests],
+    );
 
     const mockParentForSelectedTest = useMemo(() => {
         if (!selectedPracticeTestId) return null;
@@ -511,9 +474,81 @@ export default function AdminPage() {
         } finally { setSaving(false); }
     };
 
+    const handleSavePack = async () => {
+        if (!can('create_test') && !editingPack?.id) return;
+        if (editingPack?.id && !can('edit_test')) return;
+        setSaving(true);
+        try {
+            const payload = {
+                title: packForm.title.trim(),
+                practice_date: packForm.practice_date || null,
+                label: packForm.label.trim(),
+                form_type: packForm.form_type,
+            };
+            if (editingPack?.id) {
+                await adminApi.updatePastpaperPack(editingPack.id, payload);
+            } else {
+                await adminApi.createPastpaperPack(payload);
+            }
+            await fetchPastpaperPacks();
+            await fetchStandaloneTests();
+            setEditingPack(null);
+            setPackForm({ title: '', practice_date: '', label: '', form_type: 'INTERNATIONAL' });
+            showToast('Pastpaper pack saved ✓');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleDeletePack = async (id: number) => {
+        if (!confirm('Delete this pastpaper card and ALL English/Math sections inside it (questions included)?')) return;
+        setSaving(true);
+        try {
+            await adminApi.deletePastpaperPack(id);
+            await fetchPastpaperPacks();
+            await fetchStandaloneTests();
+            showToast('Pack deleted');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleAddPastpaperPackSection = async (packId: number, subject: 'READING_WRITING' | 'MATH') => {
+        if (!canCreateTestForSubject(subject)) return;
+        setSaving(true);
+        try {
+            await adminApi.addPastpaperPackSection(packId, subject);
+            await fetchPastpaperPacks();
+            await fetchStandaloneTests();
+            showToast(subject === 'READING_WRITING' ? 'English section added' : 'Math section added');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleMoveSectionToPack = async (testId: number, packId: number | null) => {
+        if (!can('edit_test')) return;
+        setSaving(true);
+        try {
+            await adminApi.updatePracticeTest(testId, { pastpaper_pack: packId });
+            await fetchPastpaperPacks();
+            await fetchStandaloneTests();
+            showToast(packId == null ? 'Section is now unassigned' : 'Section moved');
+        } catch (e: any) {
+            const d = e?.response?.data;
+            const msg =
+                (typeof d?.pastpaper_pack === 'string' ? d.pastpaper_pack : null) ||
+                (Array.isArray(d?.pastpaper_pack) ? d.pastpaper_pack[0] : null) ||
+                d?.detail ||
+                'Move failed';
+            showToast(String(msg));
+        } finally {
+            setSaving(false);
+        }
+    };
+
     const handleSavePastpaper = async () => {
-        if (!editingPastpaper?.id && !canCreateTestForSubject(pastpaperForm.subject)) return;
-        if (editingPastpaper?.id && !canEditQuestionsForSubject(pastpaperForm.subject)) return;
+        if (!editingPastpaper?.id || !canEditQuestionsForSubject(pastpaperForm.subject)) return;
         setSaving(true);
         try {
             const payload = {
@@ -523,15 +558,12 @@ export default function AdminPage() {
                 label: pastpaperForm.label.trim(),
                 form_type: pastpaperForm.form_type,
             };
-            if (editingPastpaper?.id) {
-                await adminApi.updatePracticeTest(editingPastpaper.id, payload);
-            } else {
-                await adminApi.createPracticeTest(payload);
-            }
+            await adminApi.updatePracticeTest(editingPastpaper.id, payload);
             await fetchStandaloneTests();
+            await fetchPastpaperPacks();
             setEditingPastpaper(null);
             setPastpaperForm({ title: '', practice_date: '', subject: 'READING_WRITING', label: '', form_type: 'INTERNATIONAL' });
-            showToast('Pastpaper practice test saved ✓');
+            showToast('Section saved ✓');
         } finally {
             setSaving(false);
         }
@@ -549,6 +581,7 @@ export default function AdminPage() {
                 setSelectedModuleId(null);
             }
             await fetchStandaloneTests();
+            await fetchPastpaperPacks();
             showToast('Deleted');
         } finally {
             setSaving(false);
@@ -698,6 +731,7 @@ export default function AdminPage() {
             closeBulkModal();
             fetchMockExams();
             fetchStandaloneTests();
+            fetchPastpaperPacks();
         } catch (e) {
             console.error(e);
             showToast("Failed to perform bulk assignment");
@@ -803,7 +837,7 @@ export default function AdminPage() {
                                     <div>
                                         <h2 className="text-xl font-bold text-slate-900">Pastpaper practice tests</h2>
                                         <p className="text-xs text-slate-500 mt-1 max-w-xl">
-                                            Official past papers and drills students use for <strong>skill practice</strong>. Rows with the same <strong>exam date</strong>, <strong>form type</strong>, and <strong>form label</strong> appear in one card (e.g. English + Math). Mock exams stay under Mock exams.
+                                            Create an empty <strong>pastpaper card</strong> first, then add <strong>English</strong> and/or <strong>Math</strong> sections. Move sections between cards with the dropdown. Updating the card syncs date, label, and form type to all sections.
                                         </p>
                                     </div>
                                     <div className="flex gap-2 shrink-0">
@@ -812,67 +846,189 @@ export default function AdminPage() {
                                                 <Users className="w-4 h-4" /> Bulk assign
                                             </button>
                                         )}
-                                        {(canCreateTestForSubject('READING_WRITING') || canCreateTestForSubject('MATH')) && (
-                                            <button className={BTN_PRIMARY} onClick={() => { setEditingPastpaper({}); setPastpaperForm({ title: '', practice_date: '', subject: 'READING_WRITING', label: '', form_type: 'INTERNATIONAL' }); }}>
-                                                <Plus className="w-4 h-4" /> New pastpaper test
+                                        {can('create_test') && (
+                                            <button
+                                                className={BTN_PRIMARY}
+                                                onClick={() => {
+                                                    setEditingPack({});
+                                                    setPackForm({ title: '', practice_date: '', label: '', form_type: 'INTERNATIONAL' });
+                                                }}
+                                            >
+                                                <Plus className="w-4 h-4" /> New pastpaper
                                             </button>
                                         )}
                                     </div>
                                 </div>
-                                {editingPastpaper !== null && (
+                                {editingPack !== null && (
                                     <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm grid grid-cols-2 gap-4">
-                                        <Field label="Title (pastpaper name)"><input className={INPUT} value={pastpaperForm.title} onChange={e => setPastpaperForm({ ...pastpaperForm, title: e.target.value })} placeholder="e.g. December 2025 Form C — English" /></Field>
-                                        <Field label="Exam date (shown to students)"><input type="date" className={INPUT} value={pastpaperForm.practice_date} onChange={e => setPastpaperForm({ ...pastpaperForm, practice_date: e.target.value })} /></Field>
-                                        <Field label="Section">
-                                            <select className={INPUT} value={pastpaperForm.subject} onChange={e => setPastpaperForm({ ...pastpaperForm, subject: e.target.value as 'READING_WRITING' | 'MATH' })}>
-                                                <option value="READING_WRITING">Reading &amp; Writing</option>
-                                                <option value="MATH">Math</option>
-                                            </select>
+                                        <Field label="Card title (shown to students)">
+                                            <input
+                                                className={INPUT}
+                                                value={packForm.title}
+                                                onChange={(e) => setPackForm({ ...packForm, title: e.target.value })}
+                                                placeholder="e.g. December 2025 Form C"
+                                            />
                                         </Field>
-                                        <Field label="Form label (e.g. A, B)"><input className={INPUT} value={pastpaperForm.label} onChange={e => setPastpaperForm({ ...pastpaperForm, label: e.target.value })} placeholder="Optional" /></Field>
+                                        <Field label="Exam date">
+                                            <input
+                                                type="date"
+                                                className={INPUT}
+                                                value={packForm.practice_date}
+                                                onChange={(e) => setPackForm({ ...packForm, practice_date: e.target.value })}
+                                            />
+                                        </Field>
+                                        <Field label="Form label (e.g. A, B)">
+                                            <input
+                                                className={INPUT}
+                                                value={packForm.label}
+                                                onChange={(e) => setPackForm({ ...packForm, label: e.target.value })}
+                                                placeholder="Optional"
+                                            />
+                                        </Field>
                                         <Field label="Form type">
-                                            <select className={INPUT} value={pastpaperForm.form_type} onChange={e => setPastpaperForm({ ...pastpaperForm, form_type: e.target.value })}>
+                                            <select
+                                                className={INPUT}
+                                                value={packForm.form_type}
+                                                onChange={(e) => setPackForm({ ...packForm, form_type: e.target.value })}
+                                            >
                                                 <option value="INTERNATIONAL">International</option>
                                                 <option value="US">US</option>
                                             </select>
                                         </Field>
                                         <div className="col-span-2 flex justify-end gap-2">
-                                            <button className={BTN_GHOST} onClick={() => setEditingPastpaper(null)}><X className="w-4 h-4" /> Cancel</button>
-                                            <button className={BTN_PRIMARY} onClick={() => void handleSavePastpaper()} disabled={saving || (!editingPastpaper?.id && !canCreateTestForSubject(pastpaperForm.subject)) || (!!editingPastpaper?.id && !canEditQuestionsForSubject(pastpaperForm.subject))}>{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save</button>
+                                            <button className={BTN_GHOST} onClick={() => setEditingPack(null)}>
+                                                <X className="w-4 h-4" /> Cancel
+                                            </button>
+                                            <button
+                                                className={BTN_PRIMARY}
+                                                onClick={() => void handleSavePack()}
+                                                disabled={saving || (!editingPack?.id && !can('create_test')) || (!!editingPack?.id && !can('edit_test'))}
+                                            >
+                                                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save card
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                                {editingPastpaper !== null && editingPastpaper?.id && (
+                                    <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm grid grid-cols-2 gap-4">
+                                        <Field label="Section title (optional)">
+                                            <input
+                                                className={INPUT}
+                                                value={pastpaperForm.title}
+                                                onChange={(e) => setPastpaperForm({ ...pastpaperForm, title: e.target.value })}
+                                                placeholder="Override label for this section only"
+                                            />
+                                        </Field>
+                                        <Field label="Exam date">
+                                            <input
+                                                type="date"
+                                                className={INPUT}
+                                                value={pastpaperForm.practice_date}
+                                                onChange={(e) => setPastpaperForm({ ...pastpaperForm, practice_date: e.target.value })}
+                                            />
+                                        </Field>
+                                        <Field label="Subject">
+                                            <select className={INPUT} value={pastpaperForm.subject} disabled>
+                                                <option value="READING_WRITING">Reading &amp; Writing</option>
+                                                <option value="MATH">Math</option>
+                                            </select>
+                                        </Field>
+                                        <Field label="Form label">
+                                            <input
+                                                className={INPUT}
+                                                value={pastpaperForm.label}
+                                                onChange={(e) => setPastpaperForm({ ...pastpaperForm, label: e.target.value })}
+                                            />
+                                        </Field>
+                                        <Field label="Form type">
+                                            <select
+                                                className={INPUT}
+                                                value={pastpaperForm.form_type}
+                                                onChange={(e) => setPastpaperForm({ ...pastpaperForm, form_type: e.target.value })}
+                                            >
+                                                <option value="INTERNATIONAL">International</option>
+                                                <option value="US">US</option>
+                                            </select>
+                                        </Field>
+                                        <div className="col-span-2 flex justify-end gap-2">
+                                            <button className={BTN_GHOST} onClick={() => setEditingPastpaper(null)}>
+                                                <X className="w-4 h-4" /> Cancel
+                                            </button>
+                                            <button
+                                                className={BTN_PRIMARY}
+                                                onClick={() => void handleSavePastpaper()}
+                                                disabled={saving || !canEditQuestionsForSubject(pastpaperForm.subject)}
+                                            >
+                                                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save section
+                                            </button>
                                         </div>
                                     </div>
                                 )}
                                 <div className="space-y-4">
-                                    {standaloneTests.length === 0 && (
-                                        <p className="text-sm text-slate-500 bg-white rounded-2xl border border-slate-200 p-6">No pastpaper tests yet. Create one, then add questions under the Questions tab.</p>
+                                    {pastpaperPacks.length === 0 && orphanPastpaperTests.length === 0 && (
+                                        <p className="text-sm text-slate-500 bg-white rounded-2xl border border-slate-200 p-6">
+                                            No pastpapers yet. Click <strong>New pastpaper</strong> to create a card, then add English and/or Math.
+                                        </p>
                                     )}
-                                    {pastpaperGroups.map(({ key, tests }) => {
-                                        const primary = tests[0];
-                                        const packTitle = sharedPastpaperPackTitleAdmin(tests);
-                                        const formLine = primary.form_type === "US" ? "US" : "International";
-                                        const dateStr = primary.practice_date || "No date";
-                                        const labelHint = normalizePastpaperLabelAdmin(primary.label);
-                                        const sectionLine = `${tests.length} section${tests.length !== 1 ? "s" : ""}`;
-                                        const groupSelected = tests.some((t) => t.id === selectedPracticeTestId);
+                                    {pastpaperPacks.map((pack) => {
+                                        const sections = pack.sections || [];
+                                        const hasRw = sections.some((s: any) => s.subject === "READING_WRITING");
+                                        const hasMath = sections.some((s: any) => s.subject === "MATH");
+                                        const packTitle = pack.title?.trim() || `Pack #${pack.id}`;
+                                        const formLine = pack.form_type === "US" ? "US" : "International";
+                                        const dateStr = pack.practice_date || "No date";
+                                        const labelHint = (pack.label || "").trim();
+                                        const groupSelected = sections.some((t: any) => t.id === selectedPracticeTestId);
                                         return (
                                             <div
-                                                key={key}
+                                                key={pack.id}
                                                 className={`bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow ${groupSelected ? "ring-2 ring-indigo-500" : ""}`}
                                             >
-                                                <div className="p-5 flex items-center justify-between bg-slate-50/50 border-b border-slate-100">
-                                                    <div className="min-w-0 pr-4">
+                                                <div className="p-5 flex items-center justify-between bg-slate-50/50 border-b border-slate-100 gap-3">
+                                                    <div className="min-w-0">
                                                         <p className="font-bold text-base text-slate-900 truncate">{packTitle}</p>
                                                         <p className="text-[11px] text-slate-400 uppercase tracking-wider font-bold mt-1">
                                                             Pastpaper · {dateStr} · {formLine}
-                                                            {labelHint ? ` (${labelHint})` : ""} · {sectionLine}
+                                                            {labelHint ? ` (${labelHint})` : ""} · {sections.length} section
+                                                            {sections.length !== 1 ? "s" : ""}
                                                         </p>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 shrink-0">
+                                                        {can("edit_test") && (
+                                                            <button
+                                                                type="button"
+                                                                className={BTN_GHOST + " bg-white shadow-sm border border-slate-100"}
+                                                                onClick={() => {
+                                                                    setEditingPack(pack);
+                                                                    setPackForm({
+                                                                        title: pack.title || "",
+                                                                        practice_date: pack.practice_date || "",
+                                                                        label: pack.label || "",
+                                                                        form_type: pack.form_type || "INTERNATIONAL",
+                                                                    });
+                                                                }}
+                                                            >
+                                                                <Pencil className="w-3.5 h-3.5" /> Edit card
+                                                            </button>
+                                                        )}
+                                                        {((sections.length === 0 && can("edit_test")) ||
+                                                            (sections.length > 0 &&
+                                                                sections.every((s: any) => canDeletePracticeTestFromMock(s.subject)))) && (
+                                                            <button
+                                                                type="button"
+                                                                className={BTN_DANGER + " bg-white shadow-sm border border-slate-100"}
+                                                                onClick={() => void handleDeletePack(pack.id)}
+                                                            >
+                                                                <Trash2 className="w-3.5 h-3.5" /> Delete
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 </div>
                                                 <div className="p-4 bg-white grid grid-cols-1 md:grid-cols-2 gap-3">
-                                                    {tests.map((t) => (
+                                                    {sections.map((t: any) => (
                                                         <div
                                                             key={t.id}
-                                                            className={`p-3 rounded-xl border flex items-center justify-between gap-3 ${
+                                                            className={`p-3 rounded-xl border flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between ${
                                                                 selectedPracticeTestId === t.id
                                                                     ? "border-indigo-200 bg-indigo-50/40"
                                                                     : "border-slate-100 bg-slate-50/50"
@@ -897,63 +1053,186 @@ export default function AdminPage() {
                                                                     <span className="text-[12px] font-black text-slate-800 uppercase tracking-wider">
                                                                         {t.subject === "MATH" ? "Mathematics" : "Reading & Writing"}
                                                                     </span>
-                                                                    {t.label && (
-                                                                        <span className="text-[10px] font-black bg-slate-900 text-white px-2 py-0.5 rounded-lg shadow-sm">
-                                                                            {t.label}
-                                                                        </span>
-                                                                    )}
                                                                 </div>
                                                                 <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest ml-5 block mt-1">
                                                                     {t.form_type === "US" ? "US Standard" : "International Form"} ·{" "}
                                                                     {(t.modules?.length ?? 0)} module(s)
                                                                 </span>
                                                             </button>
-                                                            <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
-                                                                <button
-                                                                    type="button"
-                                                                    className={BTN_GHOST + " !py-1.5"}
-                                                                    onClick={() => {
-                                                                        setActiveTab("questions");
-                                                                        setSelectedPracticeTestId(t.id);
-                                                                        setSelectedMockId(null);
-                                                                    }}
-                                                                >
-                                                                    Questions
-                                                                </button>
-                                                                {can("edit_test") && canEditQuestionsForSubject(t.subject) && (
+                                                            <div className="flex flex-col gap-2 shrink-0 w-full sm:w-auto">
+                                                                {can("edit_test") && (
+                                                                    <label className="flex flex-col gap-0.5">
+                                                                        <span className="text-[9px] font-bold text-slate-400 uppercase">Move to card</span>
+                                                                        <select
+                                                                            className={INPUT + " !py-1.5 !text-xs"}
+                                                                            value={pack.id}
+                                                                            onChange={(e) => {
+                                                                                const v = e.target.value;
+                                                                                void handleMoveSectionToPack(t.id, v === "" ? null : Number(v));
+                                                                            }}
+                                                                        >
+                                                                            <option value="">Unassigned</option>
+                                                                            {pastpaperPacks.map((p) => {
+                                                                                const taken = (p.sections || []).some(
+                                                                                    (s: any) => s.subject === t.subject && s.id !== t.id
+                                                                                );
+                                                                                const plabel = p.title?.trim() || p.practice_date || `Pack #${p.id}`;
+                                                                                return (
+                                                                                    <option key={p.id} value={p.id} disabled={taken}>
+                                                                                        #{p.id} {plabel}
+                                                                                    </option>
+                                                                                );
+                                                                            })}
+                                                                        </select>
+                                                                    </label>
+                                                                )}
+                                                                <div className="flex items-center gap-1 flex-wrap justify-end">
                                                                     <button
                                                                         type="button"
                                                                         className={BTN_GHOST + " !py-1.5"}
                                                                         onClick={() => {
-                                                                            setEditingPastpaper(t);
-                                                                            setPastpaperForm({
-                                                                                title: t.title || "",
-                                                                                practice_date: t.practice_date || "",
-                                                                                subject: t.subject,
-                                                                                label: t.label || "",
-                                                                                form_type: t.form_type || "INTERNATIONAL",
-                                                                            });
+                                                                            setActiveTab("questions");
+                                                                            setSelectedPracticeTestId(t.id);
+                                                                            setSelectedMockId(null);
                                                                         }}
                                                                     >
-                                                                        <Pencil className="w-3.5 h-3.5" /> Edit
+                                                                        Questions
                                                                     </button>
-                                                                )}
-                                                                {canDeletePracticeTestFromMock(t.subject) && (
-                                                                    <button
-                                                                        type="button"
-                                                                        className={BTN_DANGER + " !py-1.5"}
-                                                                        onClick={() => void handleDeletePastpaper(t.id)}
-                                                                    >
-                                                                        <Trash2 className="w-3.5 h-3.5" /> Delete
-                                                                    </button>
-                                                                )}
+                                                                    {can("edit_test") && canEditQuestionsForSubject(t.subject) && (
+                                                                        <button
+                                                                            type="button"
+                                                                            className={BTN_GHOST + " !py-1.5"}
+                                                                            onClick={() => {
+                                                                                setEditingPastpaper(t);
+                                                                                setPastpaperForm({
+                                                                                    title: t.title || "",
+                                                                                    practice_date: t.practice_date || "",
+                                                                                    subject: t.subject,
+                                                                                    label: t.label || "",
+                                                                                    form_type: t.form_type || "INTERNATIONAL",
+                                                                                });
+                                                                            }}
+                                                                        >
+                                                                            <Pencil className="w-3.5 h-3.5" /> Edit
+                                                                        </button>
+                                                                    )}
+                                                                    {canDeletePracticeTestFromMock(t.subject) && (
+                                                                        <button
+                                                                            type="button"
+                                                                            className={BTN_DANGER + " !py-1.5"}
+                                                                            onClick={() => void handleDeletePastpaper(t.id)}
+                                                                        >
+                                                                            <Trash2 className="w-3.5 h-3.5" /> Delete
+                                                                        </button>
+                                                                    )}
+                                                                </div>
                                                             </div>
                                                         </div>
                                                     ))}
+                                                    {(!hasRw || !hasMath) &&
+                                                        (canCreateTestForSubject("READING_WRITING") || canCreateTestForSubject("MATH")) && (
+                                                            <div className="md:col-span-2 mt-1 pt-3 border-t border-slate-50 flex flex-wrap gap-2">
+                                                                {!hasRw && canCreateTestForSubject("READING_WRITING") && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => void handleAddPastpaperPackSection(pack.id, "READING_WRITING")}
+                                                                        className="flex-1 min-w-[140px] flex items-center justify-center gap-2 py-2.5 border border-blue-100 bg-blue-50/50 text-blue-600 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-blue-100"
+                                                                    >
+                                                                        <Plus className="w-3 h-3" /> Add English
+                                                                    </button>
+                                                                )}
+                                                                {!hasMath && canCreateTestForSubject("MATH") && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => void handleAddPastpaperPackSection(pack.id, "MATH")}
+                                                                        className="flex-1 min-w-[140px] flex items-center justify-center gap-2 py-2.5 border border-emerald-100 bg-emerald-50/50 text-emerald-600 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-emerald-100"
+                                                                    >
+                                                                        <Plus className="w-3 h-3" /> Add Math
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        )}
                                                 </div>
                                             </div>
                                         );
                                     })}
+                                    {orphanPastpaperTests.length > 0 && (
+                                        <div className="rounded-2xl border border-amber-200 bg-amber-50/40 p-4 space-y-3">
+                                            <p className="text-xs font-bold text-amber-900">
+                                                Unassigned sections (legacy or moved out of a card). Assign each to a card above, or delete.
+                                            </p>
+                                            {orphanPastpaperTests.map((t) => (
+                                                <div
+                                                    key={t.id}
+                                                    className={`p-3 rounded-xl border border-slate-200 bg-white flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between ${
+                                                        selectedPracticeTestId === t.id ? "ring-2 ring-indigo-500" : ""
+                                                    }`}
+                                                >
+                                                    <button
+                                                        type="button"
+                                                        className="text-left font-bold text-slate-900"
+                                                        onClick={() => {
+                                                            setSelectedPracticeTestId(t.id);
+                                                            setSelectedMockId(null);
+                                                        }}
+                                                    >
+                                                        {t.subject === "MATH" ? "Math" : "Reading & Writing"} ·{" "}
+                                                        {t.form_type === "US" ? "US" : "International"}
+                                                        <span className="block text-[10px] font-bold text-slate-400 uppercase mt-1">
+                                                            {(t.modules?.length ?? 0)} module(s)
+                                                        </span>
+                                                    </button>
+                                                    <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
+                                                        {can("edit_test") && (
+                                                            <select
+                                                                className={INPUT + " !py-2 !text-xs min-w-[180px]"}
+                                                                value=""
+                                                                onChange={(e) => {
+                                                                    const v = e.target.value;
+                                                                    if (!v) return;
+                                                                    void handleMoveSectionToPack(t.id, Number(v));
+                                                                    e.target.value = "";
+                                                                }}
+                                                            >
+                                                                <option value="">Move to card…</option>
+                                                                {pastpaperPacks.map((p) => {
+                                                                    const taken = (p.sections || []).some((s: any) => s.subject === t.subject);
+                                                                    const plabel = p.title?.trim() || p.practice_date || `Pack #${p.id}`;
+                                                                    return (
+                                                                        <option key={p.id} value={p.id} disabled={taken}>
+                                                                            #{p.id} {plabel}
+                                                                        </option>
+                                                                    );
+                                                                })}
+                                                            </select>
+                                                        )}
+                                                        <div className="flex gap-1">
+                                                            <button
+                                                                type="button"
+                                                                className={BTN_GHOST + " !py-1.5"}
+                                                                onClick={() => {
+                                                                    setActiveTab("questions");
+                                                                    setSelectedPracticeTestId(t.id);
+                                                                    setSelectedMockId(null);
+                                                                }}
+                                                            >
+                                                                Questions
+                                                            </button>
+                                                            {canDeletePracticeTestFromMock(t.subject) && (
+                                                                <button
+                                                                    type="button"
+                                                                    className={BTN_DANGER + " !py-1.5"}
+                                                                    onClick={() => void handleDeletePastpaper(t.id)}
+                                                                >
+                                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         )}

@@ -1,7 +1,7 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
-from .models import Question, PracticeTest, Module, TestAttempt, MockExam, PortalMockExam
+from .models import Question, PracticeTest, Module, TestAttempt, MockExam, PortalMockExam, PastpaperPack
 
 User = get_user_model()
 
@@ -52,11 +52,18 @@ class PortalMockExamStudentSerializer(serializers.ModelSerializer):
         fields = ["id", "mock_exam_id", "title", "practice_date", "kind", "is_published", "section_test_ids"]
 
 
+class PastpaperPackBriefSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PastpaperPack
+        fields = ["id", "title", "practice_date", "label", "form_type"]
+
+
 class PracticeTestSerializer(serializers.ModelSerializer):
     """Student practice library: past papers only (mock_exam is always null for this endpoint)."""
 
     modules = ModuleListSerializer(many=True, read_only=True)
     subject = serializers.CharField()
+    pastpaper_pack = PastpaperPackBriefSerializer(read_only=True)
 
     class Meta:
         model = PracticeTest
@@ -69,6 +76,7 @@ class PracticeTestSerializer(serializers.ModelSerializer):
             "form_type",
             "modules",
             "created_at",
+            "pastpaper_pack",
         ]
         read_only_fields = ["created_at"]
 
@@ -215,6 +223,11 @@ class AdminPracticeTestSerializer(serializers.ModelSerializer):
     assigned_users = serializers.PrimaryKeyRelatedField(
         many=True, queryset=User.objects.all(), required=False
     )
+    pastpaper_pack = serializers.PrimaryKeyRelatedField(
+        queryset=PastpaperPack.objects.all(),
+        allow_null=True,
+        required=False,
+    )
 
     class Meta:
         model = PracticeTest
@@ -226,10 +239,26 @@ class AdminPracticeTestSerializer(serializers.ModelSerializer):
             "label",
             "form_type",
             "mock_exam",
+            "pastpaper_pack",
             "modules",
             "assigned_users",
         ]
         read_only_fields = ["mock_exam"]
+
+    def validate(self, attrs):
+        instance = self.instance
+        pack = attrs.get("pastpaper_pack", serializers.empty)
+        if pack is serializers.empty or instance is None:
+            return attrs
+        subj = attrs.get("subject", instance.subject)
+        if pack is not None:
+            qs = PracticeTest.objects.filter(pastpaper_pack=pack, subject=subj)
+            qs = qs.exclude(pk=instance.pk)
+            if qs.exists():
+                raise serializers.ValidationError(
+                    {"pastpaper_pack": "Target pack already has a section for this subject."}
+                )
+        return attrs
 
     def create(self, validated_data):
         assigned_users = validated_data.pop("assigned_users", [])
@@ -244,6 +273,24 @@ class AdminPracticeTestSerializer(serializers.ModelSerializer):
         if assigned_users is not serializers.empty:
             inst.assigned_users.set(assigned_users)
         return inst
+
+
+class AdminPastpaperPackSerializer(serializers.ModelSerializer):
+    sections = AdminPracticeTestSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = PastpaperPack
+        fields = [
+            "id",
+            "title",
+            "practice_date",
+            "label",
+            "form_type",
+            "sections",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["created_at", "updated_at"]
 
 
 class AdminMockExamSerializer(serializers.ModelSerializer):

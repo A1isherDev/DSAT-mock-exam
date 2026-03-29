@@ -12,17 +12,20 @@ from access.policies import (
     BulkAssignAccess,
     MockExamAdminAccess,
     ModuleNestedAdminAccess,
+    PastpaperPackAdminAccess,
     PracticeTestAdminAccess,
     QuestionNestedAdminAccess,
 )
 from access.services import (
     authorize,
     filter_mock_exams_for_user,
+    filter_pastpaper_packs_for_user,
     filter_practice_tests_for_user,
     get_effective_permission_codenames,
 )
 
 from .models import (
+    PastpaperPack,
     PracticeTest,
     TestAttempt,
     Module,
@@ -39,6 +42,7 @@ from .serializers import (
     TestAttemptSerializer,
     ModuleSerializer,
     AdminMockExamSerializer,
+    AdminPastpaperPackSerializer,
     AdminPracticeTestSerializer,
     AdminModuleSerializer,
     AdminQuestionSerializer,
@@ -127,7 +131,7 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
         # Library = past papers only; mock sections never appear here.
         base = (
             PracticeTest.objects.filter(mock_exam__isnull=True)
-            .select_related("mock_exam")
+            .select_related("mock_exam", "pastpaper_pack")
             .prefetch_related("modules")
         )
         if acc_const.WILDCARD in perms or acc_const.PERM_VIEW_ALL_TESTS in perms:
@@ -505,6 +509,59 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
         test = get_object_or_404(PracticeTest, id=test_id, mock_exam=self.get_object())
         test.delete()
         return Response({'status': 'removed'})
+
+
+class AdminPastpaperPackViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated, PastpaperPackAdminAccess]
+    serializer_class = AdminPastpaperPackSerializer
+
+    def get_queryset(self):
+        return (
+            filter_pastpaper_packs_for_user(
+                self.request.user,
+                PastpaperPack.objects.all().prefetch_related(
+                    "sections__modules",
+                    "sections__assigned_users",
+                ),
+            )
+            .order_by("-practice_date", "-id")
+        )
+
+    def perform_update(self, serializer):
+        pack = serializer.save()
+        PracticeTest.objects.filter(pastpaper_pack=pack).update(
+            practice_date=pack.practice_date,
+            label=pack.label,
+            form_type=pack.form_type,
+        )
+
+    @action(detail=True, methods=["post"])
+    def add_section(self, request, pk=None):
+        pack = self.get_object()
+        subject = request.data.get("subject")
+        if subject not in ("READING_WRITING", "MATH"):
+            return Response({"detail": "Invalid subject."}, status=status.HTTP_400_BAD_REQUEST)
+        if pack.sections.filter(subject=subject).exists():
+            return Response(
+                {"detail": "This pack already has that section."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        title = (request.data.get("title") or "").strip()
+        pt = PracticeTest.objects.create(
+            mock_exam=None,
+            pastpaper_pack=pack,
+            subject=subject,
+            title=title,
+            label=pack.label or "",
+            form_type=pack.form_type or "INTERNATIONAL",
+            practice_date=pack.practice_date,
+        )
+        pt = (
+            PracticeTest.objects.filter(pk=pt.pk)
+            .prefetch_related("modules", "assigned_users")
+            .first()
+        )
+        return Response(AdminPracticeTestSerializer(pt).data, status=status.HTTP_201_CREATED)
 
 
 class AdminPracticeTestViewSet(viewsets.ModelViewSet):
