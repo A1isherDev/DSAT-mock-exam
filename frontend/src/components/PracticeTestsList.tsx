@@ -150,7 +150,7 @@ export default function PracticeTestsList({
               No practice tests assigned yet
             </p>
             <p className="text-slate-400 dark:text-slate-500 text-xs mt-2 max-w-md mx-auto">
-              Your teacher or admin creates standalone practice tests and assigns them to you. Full SAT mocks live under Mock Exam.
+              Mock exam sections are only under Mock Exam. Here you will see standalone practice tests once your teacher assigns them.
             </p>
           </div>
         )}

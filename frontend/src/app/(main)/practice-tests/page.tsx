@@ -5,7 +5,7 @@ export default function PracticeTestsPage() {
     <PracticeTestsList
       eyebrow="Practice"
       title="Practice tests"
-      description="Standalone drills assigned by your teacher or admin. Timers can be paused here. Full SAT mocks are under Mock Exam."
+      description="Only standalone practice tests appear here (not mock exam sections). Mock exam R&W and Math live under Mock Exam. You can pause timers on practice tests."
     />
   );
 }

@@ -108,8 +108,8 @@ function PracticeTestDetailInner() {
 
         <main className="max-w-5xl mx-auto px-6 py-12">
           <p className="text-slate-500 dark:text-slate-400 mb-8 max-w-2xl">
-            You can pause the timer during practice. This is not a full mock exam—use <strong>Mock Exam</strong> for the
-            full SAT flow with break and no pause.
+            Standalone practice test—you can pause the timer. Full SAT mocks (Reading &amp; Writing → break → Math) are only
+            under <strong>Mock Exam</strong>.
           </p>
           <div className="max-w-xl">
             <div

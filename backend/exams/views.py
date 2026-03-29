@@ -71,7 +71,7 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         user = self.request.user
         perms = get_effective_permission_codenames(user)
-        # Standalone practice only; sections under a MockExam appear via /mock-exams/ only.
+        # Only standalone practice (no mock_exam). Mock sections are reached via /mock-exams/ only.
         base = PracticeTest.objects.filter(mock_exam__isnull=True).prefetch_related("modules")
         if acc_const.WILDCARD in perms or acc_const.PERM_VIEW_ALL_TESTS in perms:
             return base
