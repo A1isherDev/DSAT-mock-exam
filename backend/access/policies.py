@@ -86,6 +86,8 @@ class MockExamAdminAccess(BasePermission):
             )
         if act in ("create", "update", "partial_update", "destroy"):
             return constants.WILDCARD in perms or constants.PERM_VIEW_ALL_TESTS in perms
+        if act in ("publish", "unpublish"):
+            return constants.WILDCARD in perms or constants.PERM_VIEW_ALL_TESTS in perms
         if act == "assign_users":
             return authorize(u, constants.PERM_ASSIGN_TEST_ACCESS)
         if act == "add_test":
@@ -112,6 +114,9 @@ class MockExamAdminAccess(BasePermission):
             qs = filter_mock_exams_for_user(u, type(obj).objects.filter(pk=obj.pk))
             return qs.exists()
         if act in ("update", "partial_update", "destroy"):
+            perms = get_effective_permission_codenames(u)
+            return constants.WILDCARD in perms or constants.PERM_VIEW_ALL_TESTS in perms
+        if act in ("publish", "unpublish"):
             perms = get_effective_permission_codenames(u)
             return constants.WILDCARD in perms or constants.PERM_VIEW_ALL_TESTS in perms
         if act == "assign_users":

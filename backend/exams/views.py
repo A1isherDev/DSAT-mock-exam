@@ -73,6 +73,7 @@ class MockExamViewSet(viewsets.ReadOnlyModelViewSet):
             PortalMockExam.objects.filter(
                 is_active=True,
                 mock_exam__is_active=True,
+                mock_exam__is_published=True,
                 assigned_users=user,
             ).select_related("mock_exam")
         )
@@ -101,6 +102,7 @@ class MockExamViewSet(viewsets.ReadOnlyModelViewSet):
         allowed_mock_ids = PortalMockExam.objects.filter(
             is_active=True,
             mock_exam__is_active=True,
+            mock_exam__is_published=True,
             assigned_users=user,
         ).values_list("mock_exam_id", flat=True)
         return (
@@ -117,12 +119,15 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         user = self.request.user
         perms = get_effective_permission_codenames(user)
-        # Standalone tests + each section (R&W/Math) under an active mock — all listed as practice tests.
+        # Standalone + sections only for published mocks (draft mock content stays admin-only).
         base = (
             PracticeTest.objects.all()
             .select_related("mock_exam")
             .prefetch_related("modules")
-            .filter(Q(mock_exam__isnull=True) | Q(mock_exam__is_active=True))
+            .filter(
+                Q(mock_exam__isnull=True)
+                | (Q(mock_exam__isnull=False) & Q(mock_exam__is_published=True) & Q(mock_exam__is_active=True))
+            )
         )
         if acc_const.WILDCARD in perms or acc_const.PERM_VIEW_ALL_TESTS in perms:
             return base
@@ -424,6 +429,40 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
             portal.assigned_users.set(users)
 
         return Response({'status': 'assigned', 'users_count': len(users)})
+
+    @action(detail=True, methods=["post"])
+    def publish(self, request, pk=None):
+        from django.utils import timezone
+
+        from .publish_service import mock_exam_publish_ready
+
+        exam = self.get_object()
+        ok, msg = mock_exam_publish_ready(exam)
+        if not ok:
+            return Response({"detail": msg}, status=status.HTTP_400_BAD_REQUEST)
+        exam.is_published = True
+        exam.published_at = timezone.now()
+        exam.save(update_fields=["is_published", "published_at", "updated_at"])
+        portal, _ = PortalMockExam.objects.get_or_create(
+            mock_exam=exam,
+            defaults={"is_active": True},
+        )
+        portal.is_active = True
+        portal.save(update_fields=["is_active", "updated_at"])
+        if exam.assigned_users.exists():
+            portal.assigned_users.set(exam.assigned_users.all())
+        exam = MockExam.objects.prefetch_related("tests__modules__questions").get(pk=exam.pk)
+        return Response(AdminMockExamSerializer(exam).data)
+
+    @action(detail=True, methods=["post"])
+    def unpublish(self, request, pk=None):
+        exam = self.get_object()
+        exam.is_published = False
+        exam.published_at = None
+        exam.save(update_fields=["is_published", "published_at", "updated_at"])
+        PortalMockExam.objects.filter(mock_exam=exam).update(is_active=False)
+        exam = MockExam.objects.prefetch_related("tests__modules__questions").get(pk=exam.pk)
+        return Response(AdminMockExamSerializer(exam).data)
 
     @action(detail=True, methods=['post'])
     def add_test(self, request, pk=None):

@@ -37,6 +37,7 @@ class PortalMockExamStudentSerializer(serializers.ModelSerializer):
     title = serializers.CharField(source="mock_exam.title", read_only=True)
     practice_date = serializers.DateField(source="mock_exam.practice_date", read_only=True)
     kind = serializers.CharField(source="mock_exam.kind", read_only=True)
+    is_published = serializers.BooleanField(source="mock_exam.is_published", read_only=True)
     section_test_ids = serializers.SerializerMethodField()
 
     def get_section_test_ids(self, obj):
@@ -44,7 +45,7 @@ class PortalMockExamStudentSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PortalMockExam
-        fields = ["id", "mock_exam_id", "title", "practice_date", "kind", "section_test_ids"]
+        fields = ["id", "mock_exam_id", "title", "practice_date", "kind", "is_published", "section_test_ids"]
 
 
 class PracticeTestSerializer(serializers.ModelSerializer):
@@ -69,6 +70,8 @@ class MockExamSerializer(serializers.ModelSerializer):
             "title",
             "practice_date",
             "is_active",
+            "is_published",
+            "published_at",
             "kind",
             "midterm_subject",
             "midterm_module_count",
@@ -205,6 +208,8 @@ class AdminPracticeTestSerializer(serializers.ModelSerializer):
 
 class AdminMockExamSerializer(serializers.ModelSerializer):
     tests = AdminPracticeTestSerializer(many=True, read_only=True)
+    publish_ready = serializers.SerializerMethodField()
+    publish_block_reason = serializers.SerializerMethodField()
 
     class Meta:
         model = MockExam
@@ -213,13 +218,30 @@ class AdminMockExamSerializer(serializers.ModelSerializer):
             "title",
             "practice_date",
             "is_active",
+            "is_published",
+            "published_at",
             "kind",
             "midterm_subject",
             "midterm_module_count",
             "midterm_module1_minutes",
             "midterm_module2_minutes",
             "tests",
+            "publish_ready",
+            "publish_block_reason",
         ]
+        read_only_fields = ["is_published", "published_at", "publish_ready", "publish_block_reason"]
+
+    def get_publish_ready(self, obj):
+        from .publish_service import mock_exam_publish_ready
+
+        ok, _ = mock_exam_publish_ready(obj)
+        return ok
+
+    def get_publish_block_reason(self, obj):
+        from .publish_service import mock_exam_publish_ready
+
+        ok, msg = mock_exam_publish_ready(obj)
+        return "" if ok else msg
 
     def validate(self, attrs):
         kind = attrs.get("kind", getattr(self.instance, "kind", MockExam.KIND_MOCK_SAT))

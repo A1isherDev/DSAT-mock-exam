@@ -59,7 +59,7 @@ class PortalMockExamInline(admin.StackedInline):
 
 @admin.register(MockExam)
 class MockExamAdmin(admin.ModelAdmin):
-    list_display = ("title", "kind", "practice_date", "is_active")
+    list_display = ("title", "kind", "practice_date", "is_published", "is_active")
     list_filter = ("is_active", "kind", "practice_date")
     search_fields = ("title",)
     filter_horizontal = ("assigned_users",)

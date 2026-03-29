@@ -240,6 +240,14 @@ export const adminApi = {
         const r = await api.post(`/exams/admin/mock-exams/${examId}/assign_users/`, { user_ids: userIds });
         return r.data;
     },
+    publishMockExam: async (examId: number) => {
+        const r = await api.post(`/exams/admin/mock-exams/${examId}/publish/`);
+        return r.data;
+    },
+    unpublishMockExam: async (examId: number) => {
+        const r = await api.post(`/exams/admin/mock-exams/${examId}/unpublish/`);
+        return r.data;
+    },
     bulkAssignStudents: async (examIds: number[], userIds: number[], assignmentType: string = 'FULL', formType?: string) => {
         const payload: any = { 
             exam_ids: examIds, 

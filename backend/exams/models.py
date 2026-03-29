@@ -80,6 +80,12 @@ class MockExam(TimestampedModel):
     title = models.CharField(max_length=200, db_index=True, help_text="e.g., International Form C")
     practice_date = models.DateField(null=True, blank=True, db_index=True)
     is_active = models.BooleanField(default=True, db_index=True)
+    is_published = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="When True, students with portal access see this mock and section rows may appear in Practice Tests.",
+    )
+    published_at = models.DateTimeField(null=True, blank=True)
     kind = models.CharField(
         max_length=20,
         choices=KIND_CHOICES,

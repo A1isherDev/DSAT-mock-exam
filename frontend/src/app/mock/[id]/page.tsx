@@ -17,6 +17,7 @@ function MockExamDetailInner() {
   const [attempts, setAttempts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [startingModuleId, setStartingModuleId] = useState<number | null>(null);
+  const [showReadyOverlay, setShowReadyOverlay] = useState(false);
   const router = useRouter();
 
   const examIsMidterm = midtermQuery || mockExam?.kind === "MIDTERM";
@@ -95,10 +96,43 @@ function MockExamDetailInner() {
   }, [mockExam, attempts, mockIdStr]);
 
   const startFullMockRw = async () => {
-    if (!rwTest?.modules?.[0]?.id) return;
+    const mods = [...(rwTest?.modules || [])].sort(
+      (a: any, b: any) => (a.module_order ?? 0) - (b.module_order ?? 0)
+    );
+    const m0 = mods[0];
+    if (!rwTest?.id || !m0?.id) return;
     const q = `?mockFlow=1&mockExamId=${mockIdStr}`;
-    await handleStartModule(rwTest.id, rwTest.modules[0].id, q);
+    await handleStartModule(rwTest.id, m0.id, q);
   };
+
+  const confirmReadyAndStart = () => {
+    setShowReadyOverlay(false);
+    try {
+      const el = document.documentElement;
+      if (typeof el.requestFullscreen === "function") {
+        void el.requestFullscreen();
+      }
+    } catch {
+      /* optional fullscreen */
+    }
+    if (examIsMidterm) {
+      const t = (mockExam?.tests || [])[0];
+      const mods = [...(t?.modules || [])].sort(
+        (a: any, b: any) => (a.module_order ?? 0) - (b.module_order ?? 0)
+      );
+      if (t?.id && mods[0]?.id) void handleStartModule(t.id, mods[0].id, "?midterm=1");
+    } else {
+      void startFullMockRw();
+    }
+  };
+
+  const midtermTest = (mockExam?.tests || [])[0];
+  const midtermAttempt = midtermTest
+    ? attempts
+        .filter((a) => a.practice_test === midtermTest.id)
+        .sort((a, b) => (b.id || 0) - (a.id || 0))[0]
+    : null;
+  const midtermDone = !!midtermAttempt?.is_completed;
 
   const startMathAfterBreak = async () => {
     if (!mathTest?.modules?.[0]?.id || !rwAttempt?.id) return;
@@ -200,6 +234,34 @@ function MockExamDetailInner() {
   return (
     <AuthGuard>
       <div className="min-h-screen bg-[#f8f9fb]">
+        {showReadyOverlay && (
+          <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center bg-slate-950 text-white p-8">
+            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-300 mb-4">Mock exam</p>
+            <h2 className="text-3xl md:text-4xl font-black text-center mb-4 tracking-tight">Are you ready?</h2>
+            <p className="text-slate-400 text-center max-w-md mb-10 font-medium leading-relaxed">
+              {examIsMidterm
+                ? "You will enter full screen for your midterm. The timer runs continuously; pause is not available where applicable."
+                : "Reading & Writing runs first, then a required 10-minute break, then Math. No pause during the mock. Make sure you have a stable connection."}
+            </p>
+            <div className="flex flex-col sm:flex-row gap-4 w-full max-w-sm">
+              <button
+                type="button"
+                onClick={() => setShowReadyOverlay(false)}
+                className="flex-1 py-4 rounded-2xl border-2 border-slate-600 font-black text-sm uppercase tracking-widest hover:bg-slate-900"
+              >
+                Not yet
+              </button>
+              <button
+                type="button"
+                onClick={() => confirmReadyAndStart()}
+                disabled={startingModuleId !== null}
+                className="flex-1 py-4 rounded-2xl bg-indigo-500 hover:bg-indigo-400 font-black text-sm uppercase tracking-widest disabled:opacity-50"
+              >
+                Yes, start
+              </button>
+            </div>
+          </div>
+        )}
         <header className="bg-white border-b border-slate-200 sticky top-0 z-50">
           <div className="max-w-5xl mx-auto px-6 h-20 flex items-center justify-between">
             <button
@@ -248,29 +310,30 @@ function MockExamDetailInner() {
                   </button>
                 </div>
               ) : !rwDone ? (
-                <div className="bg-white rounded-3xl border-2 border-blue-100 p-10 shadow-sm">
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-                    <div>
-                      <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-2">Step 1</p>
-                      <h3 className="text-2xl font-black text-slate-900">Reading &amp; Writing</h3>
-                      <p className="text-slate-500 mt-2">Starts both modules of this section in one session.</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => startFullMockRw()}
-                      disabled={startingModuleId !== null}
-                      className="shrink-0 flex items-center justify-center gap-3 bg-blue-600 hover:bg-blue-700 text-white font-black px-10 py-5 rounded-2xl text-xs uppercase tracking-widest shadow-lg disabled:opacity-60"
-                    >
-                      {startingModuleId !== null ? (
-                        <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      ) : (
-                        <>
-                          <Play className="w-5 h-5 fill-current" />
-                          {rwAttempt ? "Resume Reading & Writing" : "Start mock (English first)"}
-                        </>
-                      )}
-                    </button>
-                  </div>
+                <div className="bg-white rounded-3xl border-2 border-indigo-100 p-10 shadow-sm">
+                  <h3 className="text-2xl font-black text-slate-900 mb-2">Full mock exam</h3>
+                  <p className="text-slate-500 font-medium mb-8 max-w-2xl">
+                    One continuous run: English (both modules) → 10-minute break → Math (both modules). No pause. When you are
+                    ready, you will see a full-screen confirmation before the timer starts.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (rwAttempt) void startFullMockRw();
+                      else setShowReadyOverlay(true);
+                    }}
+                    disabled={startingModuleId !== null}
+                    className="inline-flex items-center justify-center gap-3 bg-slate-900 hover:bg-indigo-600 text-white font-black px-10 py-5 rounded-2xl text-xs uppercase tracking-widest shadow-xl disabled:opacity-60"
+                  >
+                    {startingModuleId !== null ? (
+                      <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <>
+                        <Play className="w-5 h-5 fill-current" />
+                        {rwAttempt ? "Resume mock exam" : "Start mock exam"}
+                      </>
+                    )}
+                  </button>
                 </div>
               ) : rwDone && !breakDone ? (
                 <div className="bg-amber-50 border-2 border-amber-200 rounded-3xl p-10 text-center">
@@ -319,12 +382,27 @@ function MockExamDetailInner() {
           ) : (
             <>
               <div className="mb-12">
-                <h2 className="text-4xl font-black text-slate-900 mb-4 tracking-tight">Sections</h2>
+                <h2 className="text-4xl font-black text-slate-900 mb-4 tracking-tight">Midterm</h2>
                 <p className="text-slate-500 font-medium text-lg max-w-2xl">
-                  {examIsMidterm
-                    ? "Midterm: calculator and reference sheet are hidden. Your teacher or admin set the time and modules."
-                    : ""}
+                  Calculator and reference sheet are hidden. Start from the button below; confirm on the full-screen prompt.
                 </p>
+                {midtermTest && !midtermDone ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (midtermAttempt?.started_at && !midtermAttempt?.is_completed) {
+                        router.push(`/exam/${midtermAttempt.id}?midterm=1`);
+                      } else if (!midtermAttempt) {
+                        setShowReadyOverlay(true);
+                      }
+                    }}
+                    disabled={startingModuleId !== null}
+                    className="mt-6 inline-flex items-center gap-3 bg-slate-900 hover:bg-indigo-600 text-white font-black px-8 py-4 rounded-2xl text-xs uppercase tracking-widest disabled:opacity-60"
+                  >
+                    <Play className="w-5 h-5 fill-current" />
+                    {midtermAttempt?.started_at && !midtermAttempt?.is_completed ? "Resume midterm" : "Start midterm exam"}
+                  </button>
+                ) : null}
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 {(mockExam?.tests || [])

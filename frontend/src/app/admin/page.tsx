@@ -713,7 +713,57 @@ export default function AdminPage() {
                                             <div className="p-5 flex items-center justify-between bg-slate-50/50">
                                                 <div>
                                                     <p className="font-bold text-base text-slate-900">{mock.title}</p>
-                                                    <p className="text-[11px] text-slate-400 uppercase tracking-wider font-bold">{mock.kind === 'MIDTERM' ? 'Midterm · ' : 'Full mock · '}{mock.practice_date || 'No date'} · {mock.tests?.length || 0} Sections</p>
+                                                    <p className="text-[11px] text-slate-400 uppercase tracking-wider font-bold">
+                                                        <span className={mock.is_published ? "text-emerald-600" : "text-amber-600"}>
+                                                            {mock.is_published ? "Published · " : "Draft · "}
+                                                        </span>
+                                                        {mock.kind === "MIDTERM" ? "Midterm · " : "Full mock · "}
+                                                        {mock.practice_date || "No date"} · {mock.tests?.length || 0} Sections
+                                                    </p>
+                                                    {!mock.is_published && mock.publish_block_reason ? (
+                                                        <p className="text-[10px] text-amber-800 mt-1 max-w-xl leading-snug">{mock.publish_block_reason}</p>
+                                                    ) : null}
+                                                    {canManageMockExamShell() && (
+                                                        <div className="flex flex-wrap gap-2 mt-2" onClick={(e) => e.stopPropagation()}>
+                                                            {mock.publish_ready && !mock.is_published ? (
+                                                                <button
+                                                                    type="button"
+                                                                    className="text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700"
+                                                                    onClick={async (e) => {
+                                                                        e.stopPropagation();
+                                                                        try {
+                                                                            await adminApi.publishMockExam(mock.id);
+                                                                            await fetchMockExams();
+                                                                            showToast("Published. Assign students on the portal row or Assign users.");
+                                                                        } catch (er: any) {
+                                                                            showToast(er?.response?.data?.detail || "Publish failed");
+                                                                        }
+                                                                    }}
+                                                                >
+                                                                    Publish to students
+                                                                </button>
+                                                            ) : null}
+                                                            {mock.is_published ? (
+                                                                <button
+                                                                    type="button"
+                                                                    className="text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100"
+                                                                    onClick={async (e) => {
+                                                                        e.stopPropagation();
+                                                                        if (!confirm("Unpublish? Students will no longer see this mock.")) return;
+                                                                        try {
+                                                                            await adminApi.unpublishMockExam(mock.id);
+                                                                            await fetchMockExams();
+                                                                            showToast("Unpublished");
+                                                                        } catch (er: any) {
+                                                                            showToast(er?.response?.data?.detail || "Unpublish failed");
+                                                                        }
+                                                                    }}
+                                                                >
+                                                                    Unpublish
+                                                                </button>
+                                                            ) : null}
+                                                        </div>
+                                                    )}
                                                 </div>
                                                 <div className="flex items-center gap-2">
                                                     {canManageMockExamShell() && (

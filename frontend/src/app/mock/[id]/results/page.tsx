@@ -104,6 +104,56 @@ function ResultsInner() {
                 <p className="text-5xl font-black tabular-nums">{total ?? "—"}</p>
                 <p className="text-sm font-bold text-slate-400 mt-2">out of 1600</p>
               </div>
+
+              <div className="mt-12 text-left bg-white rounded-3xl border border-slate-200 p-8 shadow-sm">
+                <h2 className="text-lg font-black text-slate-900 mb-4 tracking-tight">Test analysis</h2>
+                <p className="text-sm text-slate-600 font-medium leading-relaxed mb-4">
+                  Short read on how this attempt lines up with typical SAT pacing. Use review links below to see every item you
+                  missed or skipped.
+                </p>
+                <ul className="space-y-3 text-sm text-slate-700">
+                  <li className="flex gap-2">
+                    <span className="font-black text-indigo-600 shrink-0">•</span>
+                    <span>
+                      <strong>Reading &amp; Writing:</strong>{" "}
+                      {rwScore == null
+                        ? "No completed R&amp;W attempt linked."
+                        : rwScore >= 600
+                          ? "Strong verbal performance — keep refining evidence and synthesis questions."
+                          : rwScore >= 400
+                            ? "Solid foundation — drill grammar conventions and passage evidence questions."
+                            : "Focus on core grammar rules and reading for main idea before timed sets."}
+                    </span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="font-black text-indigo-600 shrink-0">•</span>
+                    <span>
+                      <strong>Math:</strong>{" "}
+                      {mathScore == null
+                        ? "No completed Math attempt linked."
+                        : mathScore >= 600
+                          ? "Strong math — push into harder algebra and data interpretation under time."
+                          : mathScore >= 400
+                            ? "Good progress — target word problems and linear systems in practice."
+                            : "Rebuild fundamentals: linear equations, ratios, and basic geometry."}
+                    </span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="font-black text-indigo-600 shrink-0">•</span>
+                    <span>
+                      <strong>Overall:</strong>{" "}
+                      {total == null
+                        ? "Complete both sections to see a combined 1600-scale snapshot."
+                        : total >= 1200
+                          ? "Competitive range — simulate full mocks regularly to hold stamina."
+                          : total >= 900
+                            ? "On track — alternate missed-question review with timed sections."
+                            : "Prioritize missed-question review and one full mock every few weeks."}
+                    </span>
+                  </li>
+                </ul>
+              </div>
+
               <div className="mt-10 flex flex-wrap gap-3 justify-center">
                 {searchParams.get("rwAttempt") && (
                   <button
