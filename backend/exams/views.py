@@ -154,26 +154,44 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
             .prefetch_related("modules")
         )
         staff_library = base.filter(_assignee_count__gt=0)
-        # Students: only rows assigned to them (+ same-pack siblings from full base so one assign unlocks the card).
-        # Staff: pastpapers that at least one user can access — hides never-assigned junk from /practice-tests.
         assigned_qs = base.filter(assigned_users=user).distinct()
-        if getattr(user, "is_student", True):
-            qs = assigned_qs
-            return self._expand_pastpaper_pack_siblings(base, qs, user, staff_scoped=False)
-        if acc_const.WILDCARD in perms or acc_const.PERM_VIEW_ALL_TESTS in perms:
-            return staff_library
-        if {
+
+        subject_staff_perms = {
             acc_const.PERM_VIEW_ENGLISH_TESTS,
             acc_const.PERM_VIEW_MATH_TESTS,
             acc_const.PERM_CREATE_TEST,
             acc_const.PERM_EDIT_TEST,
             acc_const.PERM_DELETE_TEST,
             acc_const.PERM_ASSIGN_TEST_ACCESS,
-        } & perms:
+        } & perms
+        full_access = (
+            acc_const.WILDCARD in perms or acc_const.PERM_VIEW_ALL_TESTS in perms
+        )
+        # When expanding packs for staff, keep siblings inside their subject scope unless they have full library perms.
+        staff_scoped_expand = bool(subject_staff_perms) and not full_access
+
+        # Students: always "my assignments" (+ same-pack siblings from full base).
+        if getattr(user, "is_student", True):
+            return self._expand_pastpaper_pack_siblings(
+                base, assigned_qs, user, staff_scoped=False
+            )
+
+        # Staff: prefer this user's assignments so /practice-tests matches the student experience when they are assigned.
+        expanded_self = self._expand_pastpaper_pack_siblings(
+            base, assigned_qs, user, staff_scoped=staff_scoped_expand
+        )
+        if expanded_self.exists():
+            return expanded_self
+
+        # No tests assigned to this account: fall back to catalog (at least one assignee somewhere), scoped by perms.
+        if full_access:
+            return staff_library
+        if subject_staff_perms:
             qs = filter_practice_tests_for_user(user, staff_library)
-            return self._expand_pastpaper_pack_siblings(staff_library, qs, user, staff_scoped=True)
-        qs = assigned_qs
-        return self._expand_pastpaper_pack_siblings(base, qs, user, staff_scoped=False)
+            return self._expand_pastpaper_pack_siblings(
+                staff_library, qs, user, staff_scoped=True
+            )
+        return expanded_self
 
     @action(detail=False, methods=["post"], permission_classes=[IsAuthenticated, BulkAssignAccess])
     def bulk_assign(self, request):
