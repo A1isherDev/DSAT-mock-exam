@@ -140,12 +140,6 @@ function formatLineDate(iso?: string | null) {
   }
 }
 
-function firstSectionTestId(tests: any[]) {
-  const rw = tests.find((t) => t.subject === "READING_WRITING");
-  const math = tests.find((t) => t.subject === "MATH");
-  return (rw || math || tests[0])?.id;
-}
-
 function subjectLabel(subject: string) {
   if (subject === "MATH") return "Mathematics";
   return "Reading & Writing";
@@ -194,6 +188,61 @@ function progressSingle(test: any, attempts: any[]) {
   if (!total) return 0;
   const done = Array.isArray(att.completed_modules) ? att.completed_modules.length : 0;
   return Math.min(100, Math.round((done / total) * 100));
+}
+
+function PackSectionFooter({
+  tests,
+  isLoggedIn,
+  router,
+  attempts,
+}: {
+  tests: any[];
+  isLoggedIn: boolean;
+  attempts: any[];
+  router: ReturnType<typeof useRouter>;
+}) {
+  const sorted = sortPastpaperSections(tests);
+  return (
+    <div className="p-6 pt-2 mt-auto space-y-2">
+      {sorted.map((t) => {
+        const pct = progressSingle(t, attempts);
+        const att = attempts
+          .filter((a) => a.practice_test === t.id)
+          .sort((a, b) => (b.id || 0) - (a.id || 0))[0];
+        const completed = !!att?.is_completed;
+        const isMath = t.subject === "MATH";
+        return (
+          <div
+            key={t.id}
+            className="flex flex-col sm:flex-row sm:items-center gap-2 rounded-2xl border border-slate-200/80 dark:border-slate-600 bg-slate-50/80 dark:bg-slate-800/40 p-3"
+          >
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-black text-slate-900 dark:text-slate-100">{subjectLabel(t.subject)}</p>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                {(t.modules?.length ?? 0)} modules · {pct}%{completed ? " · Done" : ""}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (!isLoggedIn) {
+                  router.push("/login");
+                  return;
+                }
+                router.push(`/practice-test/${t.id}`);
+              }}
+              className={`shrink-0 flex items-center justify-center gap-2 font-black py-3 px-4 rounded-xl text-[10px] uppercase tracking-widest text-white ${
+                isMath ? "bg-emerald-600 hover:bg-emerald-700" : "bg-blue-600 hover:bg-blue-700"
+              }`}
+            >
+              Open
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 export default function PracticeTestsList({
@@ -286,7 +335,6 @@ export default function PracticeTestsList({
 
           if (c.kind === "pack") {
             const pct = progressPack(c.tests, attempts);
-            const openId = firstSectionTestId(c.tests);
             return (
               <div key={`pack-${c.mockKey}`} className={cardShell}>
                 <div className="p-8 pb-4 relative">
@@ -315,30 +363,13 @@ export default function PracticeTestsList({
                     </span>
                   </div>
                 </div>
-                <div className="p-6 pt-2 mt-auto">
-                  <button
-                    type="button"
-                    disabled={!openId}
-                    onClick={() => {
-                      if (!isLoggedIn) {
-                        router.push("/login");
-                        return;
-                      }
-                      if (openId) router.push(`/practice-test/${openId}`);
-                    }}
-                    className="group/btn w-full flex items-center justify-center gap-3 font-black py-4 px-6 rounded-2xl transition-all text-sm uppercase tracking-widest bg-[#0f172a] dark:bg-slate-950 text-white hover:bg-violet-700 dark:hover:bg-violet-700 shadow-lg shadow-slate-900/10 active:scale-[0.98] disabled:opacity-45"
-                  >
-                    Enter practice test
-                    <ArrowRight className="w-5 h-5 group-hover/btn:translate-x-1 transition-transform" />
-                  </button>
-                </div>
+                <PackSectionFooter tests={c.tests} isLoggedIn={isLoggedIn} router={router} attempts={attempts} />
               </div>
             );
           }
 
           if (c.kind === "pastpaper_pack") {
             const pct = progressPack(c.tests, attempts);
-            const openId = firstSectionTestId(c.tests);
             const lineDate = c.pack?.practice_date || c.tests[0]?.practice_date || c.tests[0]?.created_at;
             const heading = (c.pack?.title && String(c.pack.title).trim()) || sharedPastpaperPackTitle(c.tests);
             return (
@@ -367,23 +398,7 @@ export default function PracticeTestsList({
                     </span>
                   </div>
                 </div>
-                <div className="p-6 pt-2 mt-auto">
-                  <button
-                    type="button"
-                    disabled={!openId}
-                    onClick={() => {
-                      if (!isLoggedIn) {
-                        router.push("/login");
-                        return;
-                      }
-                      if (openId) router.push(`/practice-test/${openId}`);
-                    }}
-                    className="group/btn w-full flex items-center justify-center gap-3 font-black py-4 px-6 rounded-2xl transition-all text-sm uppercase tracking-widest bg-[#0f172a] dark:bg-slate-950 text-white hover:bg-violet-700 dark:hover:bg-violet-700 shadow-lg shadow-slate-900/10 active:scale-[0.98] disabled:opacity-45"
-                  >
-                    Enter practice test
-                    <ArrowRight className="w-5 h-5 group-hover/btn:translate-x-1 transition-transform" />
-                  </button>
-                </div>
+                <PackSectionFooter tests={c.tests} isLoggedIn={isLoggedIn} router={router} attempts={attempts} />
               </div>
             );
           }

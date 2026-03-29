@@ -225,6 +225,8 @@ export default function AdminPage() {
     const [selectedMockId, setSelectedMockId] = useState<number | null>(null);
     const [selectedPracticeTestId, setSelectedPracticeTestId] = useState<number | null>(null);
     const [selectedModuleId, setSelectedModuleId] = useState<number | null>(null);
+    /** Questions tab: pick pastpaper card / unassigned / mock, then section. */
+    const [questionsGroupValue, setQuestionsGroupValue] = useState('');
 
     // Forms
     const [userForm, setUserForm] = useState({ first_name: '', last_name: '', username: '', email: '', password: '', role: 'STUDENT', is_active: true, is_frozen: false });
@@ -362,6 +364,69 @@ export default function AdminPage() {
         () => standaloneTests.filter((t) => t.pastpaper_pack == null && t.pastpaper_pack_id == null),
         [standaloneTests],
     );
+
+    const questionSectionOptions = useMemo(() => {
+        if (!questionsGroupValue) return [];
+        if (questionsGroupValue === 'orphan') return orphanPastpaperTests;
+        if (questionsGroupValue.startsWith('pack:')) {
+            const pid = Number(questionsGroupValue.slice(5));
+            const p = pastpaperPacks.find((x) => x.id === pid);
+            return p?.sections || [];
+        }
+        if (questionsGroupValue.startsWith('mock:')) {
+            const mid = Number(questionsGroupValue.slice(5));
+            const m = mockExams.find((x) => x.id === mid);
+            return m?.tests || [];
+        }
+        return [];
+    }, [questionsGroupValue, pastpaperPacks, orphanPastpaperTests, mockExams]);
+
+    const handleQuestionsGroupChange = useCallback(
+        (val: string) => {
+            setQuestionsGroupValue(val);
+            setSelectedModuleId(null);
+            let opts: any[] = [];
+            if (val === 'orphan') opts = orphanPastpaperTests;
+            else if (val.startsWith('pack:')) {
+                const pid = Number(val.slice(5));
+                opts = pastpaperPacks.find((x) => x.id === pid)?.sections || [];
+            } else if (val.startsWith('mock:')) {
+                const mid = Number(val.slice(5));
+                opts = mockExams.find((x) => x.id === mid)?.tests || [];
+            }
+            const first = opts[0];
+            if (first) {
+                setSelectedPracticeTestId(first.id);
+                const row = allSelectableTests.find((x) => x.id === first.id);
+                setSelectedMockId(row?._mockId ?? null);
+            } else {
+                setSelectedPracticeTestId(null);
+                setSelectedMockId(null);
+            }
+        },
+        [allSelectableTests, orphanPastpaperTests, pastpaperPacks, mockExams],
+    );
+
+    useEffect(() => {
+        if (questionsGroupValue) return;
+        if (!selectedPracticeTestId) return;
+        const t = standaloneTests.find((x) => x.id === selectedPracticeTestId);
+        const pp = t?.pastpaper_pack;
+        let pid: number | null = null;
+        if (typeof pp === 'number') pid = pp;
+        else if (pp != null && typeof pp === 'object' && pp.id != null) pid = Number(pp.id);
+        else if (t?.pastpaper_pack_id != null) pid = Number(t.pastpaper_pack_id);
+        if (pid != null && !Number.isNaN(pid)) {
+            setQuestionsGroupValue(`pack:${pid}`);
+            return;
+        }
+        if (t && t.pastpaper_pack == null && t.pastpaper_pack_id == null) {
+            setQuestionsGroupValue('orphan');
+            return;
+        }
+        const row = allSelectableTests.find((x) => x.id === selectedPracticeTestId);
+        if (row?._mockId) setQuestionsGroupValue(`mock:${row._mockId}`);
+    }, [selectedPracticeTestId, standaloneTests, allSelectableTests, questionsGroupValue]);
 
     const mockParentForSelectedTest = useMemo(() => {
         if (!selectedPracticeTestId) return null;
@@ -1465,39 +1530,58 @@ export default function AdminPage() {
                                             </p>
                                         </div>
                                     </div>
-                                    <div className="flex gap-2 flex-wrap">
-                                        <select
-                                            className={INPUT + ' !min-w-[280px]'}
-                                            value={selectedPracticeTestId || ''}
-                                            onChange={(e) => {
-                                                const id = Number(e.target.value);
-                                                setSelectedPracticeTestId(id || null);
-                                                setSelectedModuleId(null);
-                                                const row = allSelectableTests.find((x) => x.id === id);
-                                                if (row?._mockId) setSelectedMockId(row._mockId);
-                                                else setSelectedMockId(null);
-                                            }}
-                                        >
-                                            <option value="">Select practice test</option>
-                                            <optgroup label="Pastpaper practice tests">
-                                                {standaloneTests.map((t) => (
+                                    <div className="flex gap-2 flex-wrap items-end">
+                                        <div className="flex flex-col gap-1">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Card / mock</span>
+                                            <select
+                                                className={INPUT + ' !min-w-[240px]'}
+                                                value={questionsGroupValue}
+                                                onChange={(e) => handleQuestionsGroupChange(e.target.value)}
+                                            >
+                                                <option value="">Select pastpaper card or mock…</option>
+                                                <optgroup label="Pastpaper cards">
+                                                    {pastpaperPacks.map((p) => (
+                                                        <option key={p.id} value={`pack:${p.id}`}>
+                                                            #{p.id} {p.title?.trim() || p.practice_date || 'Untitled'}
+                                                        </option>
+                                                    ))}
+                                                </optgroup>
+                                                {orphanPastpaperTests.length > 0 ? (
+                                                    <option value="orphan">Unassigned pastpaper sections</option>
+                                                ) : null}
+                                                <optgroup label="Timed mocks">
+                                                    {mockExams.map((m) => (
+                                                        <option key={m.id} value={`mock:${m.id}`}>
+                                                            {m.title}
+                                                        </option>
+                                                    ))}
+                                                </optgroup>
+                                            </select>
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Section</span>
+                                            <select
+                                                className={INPUT + ' !min-w-[220px]'}
+                                                value={selectedPracticeTestId || ''}
+                                                disabled={!questionSectionOptions.length}
+                                                onChange={(e) => {
+                                                    const id = Number(e.target.value);
+                                                    setSelectedPracticeTestId(id || null);
+                                                    setSelectedModuleId(null);
+                                                    const row = allSelectableTests.find((x) => x.id === id);
+                                                    if (row?._mockId) setSelectedMockId(row._mockId);
+                                                    else setSelectedMockId(null);
+                                                }}
+                                            >
+                                                <option value="">{questionsGroupValue ? 'Choose section…' : 'Pick a card first'}</option>
+                                                {questionSectionOptions.map((t: any) => (
                                                     <option key={t.id} value={t.id}>
-                                                        {(t.title?.trim() || `${t.subject === 'MATH' ? 'Math' : 'English'}`) +
-                                                            (t.label ? ` [${t.label}]` : '')}
+                                                        {t.subject === 'MATH' ? 'Math' : 'Reading & Writing'}
+                                                        {t.label ? ` [${t.label}]` : ''}
                                                     </option>
                                                 ))}
-                                            </optgroup>
-                                            <optgroup label="Mock exam sections">
-                                                {mockExams.flatMap((m) =>
-                                                    (m.tests || []).map((t: any) => (
-                                                        <option key={t.id} value={t.id}>
-                                                            {m.title} — {t.subject === 'MATH' ? 'Math' : 'English'}
-                                                            {t.label ? ` [${t.label}]` : ''}
-                                                        </option>
-                                                    ))
-                                                )}
-                                            </optgroup>
-                                        </select>
+                                            </select>
+                                        </div>
                                         <select className={INPUT + ' !w-auto'} value={selectedModuleId || ''} onChange={e => setSelectedModuleId(Number(e.target.value))}>
                                             <option value="">Select Module</option>
                                             {modules.map(m => <option key={m.id} value={m.id}>{`Module ${m.module_order}`}</option>)}

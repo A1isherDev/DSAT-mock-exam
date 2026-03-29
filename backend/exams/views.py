@@ -125,6 +125,24 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated]
     serializer_class = PracticeTestSerializer
 
+    def _expand_pastpaper_pack_siblings(self, base, qs, user, staff_scoped: bool):
+        """
+        If the user can access any section of a PastpaperPack, expose every section in that pack
+        (so one assignment unlocks the full card on /practice-tests).
+        Staff with subject-scoped permissions still only see sections allowed by ABAC.
+        """
+        pack_ids = list(
+            qs.filter(pastpaper_pack_id__isnull=False)
+            .values_list("pastpaper_pack_id", flat=True)
+            .distinct()
+        )
+        if not pack_ids:
+            return qs
+        sibling_qs = base.filter(pastpaper_pack_id__in=pack_ids)
+        if staff_scoped:
+            sibling_qs = filter_practice_tests_for_user(user, sibling_qs)
+        return (qs | sibling_qs).distinct()
+
     def get_queryset(self):
         user = self.request.user
         perms = get_effective_permission_codenames(user)
@@ -144,8 +162,10 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
             acc_const.PERM_DELETE_TEST,
             acc_const.PERM_ASSIGN_TEST_ACCESS,
         } & perms:
-            return filter_practice_tests_for_user(user, base)
-        return base.filter(assigned_users=user).distinct()
+            qs = filter_practice_tests_for_user(user, base)
+            return self._expand_pastpaper_pack_siblings(base, qs, user, staff_scoped=True)
+        qs = base.filter(assigned_users=user).distinct()
+        return self._expand_pastpaper_pack_siblings(base, qs, user, staff_scoped=False)
 
     @action(detail=False, methods=["post"], permission_classes=[IsAuthenticated, BulkAssignAccess])
     def bulk_assign(self, request):

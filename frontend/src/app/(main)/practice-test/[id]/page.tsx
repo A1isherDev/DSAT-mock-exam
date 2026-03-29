@@ -91,7 +91,7 @@ function PracticeTestDetailInner() {
     <AuthGuard>
       <div className="min-h-screen bg-[#f8f9fb] dark:bg-slate-950">
         <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-50">
-          <div className="max-w-5xl mx-auto px-6 h-20 flex items-center justify-between">
+          <div className="max-w-5xl mx-auto px-6 h-16 flex items-center">
             <button
               type="button"
               onClick={() => router.push("/practice-tests")}
@@ -99,10 +99,6 @@ function PracticeTestDetailInner() {
             >
               <ArrowLeft className="w-5 h-5" /> Back
             </button>
-            <div className="text-right">
-              <h1 className="text-xl font-black text-slate-900 dark:text-slate-100 tracking-tight">{label}</h1>
-              <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Practice test</p>
-            </div>
           </div>
         </header>
 
