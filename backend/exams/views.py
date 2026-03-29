@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from django.db.models import Count, Prefetch
+from django.db.models import Prefetch
 
 from access import constants as acc_const
 from access.permissions import RequiresSubmitTest
@@ -125,11 +125,10 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated]
     serializer_class = PracticeTestSerializer
 
-    def _expand_pastpaper_pack_siblings(self, base, qs, user, staff_scoped: bool):
+    def _expand_pastpaper_pack_siblings(self, base, qs):
         """
-        If the user can access any section of a PastpaperPack, expose every section in that pack
-        (so one assignment unlocks the full card on /practice-tests).
-        Staff with subject-scoped permissions still only see sections allowed by ABAC.
+        If the user is assigned any section of a PastpaperPack, include every section in that pack
+        (one assignment unlocks the full card on /practice-tests).
         """
         pack_ids = list(
             qs.filter(pastpaper_pack_id__isnull=False)
@@ -139,59 +138,22 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
         if not pack_ids:
             return qs
         sibling_qs = base.filter(pastpaper_pack_id__in=pack_ids)
-        if staff_scoped:
-            sibling_qs = filter_practice_tests_for_user(user, sibling_qs)
         return (qs | sibling_qs).distinct()
 
     def get_queryset(self):
+        """
+        Single rule for all roles: only PracticeTest rows assigned to this user, plus other sections
+        in the same pastpaper pack. No permission-based library fallback (avoids showing other users'
+        assignments or unassigned junk). Admins browse/edit everything via /exams/admin/tests/.
+        """
         user = self.request.user
-        perms = get_effective_permission_codenames(user)
-        # Library = past papers only; mock sections never appear here.
         base = (
             PracticeTest.objects.filter(mock_exam__isnull=True)
-            .annotate(_assignee_count=Count("assigned_users", distinct=True))
             .select_related("mock_exam", "pastpaper_pack")
             .prefetch_related("modules")
         )
-        staff_library = base.filter(_assignee_count__gt=0)
-        assigned_qs = base.filter(assigned_users=user).distinct()
-
-        subject_staff_perms = {
-            acc_const.PERM_VIEW_ENGLISH_TESTS,
-            acc_const.PERM_VIEW_MATH_TESTS,
-            acc_const.PERM_CREATE_TEST,
-            acc_const.PERM_EDIT_TEST,
-            acc_const.PERM_DELETE_TEST,
-            acc_const.PERM_ASSIGN_TEST_ACCESS,
-        } & perms
-        full_access = (
-            acc_const.WILDCARD in perms or acc_const.PERM_VIEW_ALL_TESTS in perms
-        )
-        # When expanding packs for staff, keep siblings inside their subject scope unless they have full library perms.
-        staff_scoped_expand = bool(subject_staff_perms) and not full_access
-
-        # Students: always "my assignments" (+ same-pack siblings from full base).
-        if getattr(user, "is_student", True):
-            return self._expand_pastpaper_pack_siblings(
-                base, assigned_qs, user, staff_scoped=False
-            )
-
-        # Staff: prefer this user's assignments so /practice-tests matches the student experience when they are assigned.
-        expanded_self = self._expand_pastpaper_pack_siblings(
-            base, assigned_qs, user, staff_scoped=staff_scoped_expand
-        )
-        if expanded_self.exists():
-            return expanded_self
-
-        # No tests assigned to this account: fall back to catalog (at least one assignee somewhere), scoped by perms.
-        if full_access:
-            return staff_library
-        if subject_staff_perms:
-            qs = filter_practice_tests_for_user(user, staff_library)
-            return self._expand_pastpaper_pack_siblings(
-                staff_library, qs, user, staff_scoped=True
-            )
-        return expanded_self
+        mine = base.filter(assigned_users=user).distinct()
+        return self._expand_pastpaper_pack_siblings(base, mine)
 
     @action(detail=False, methods=["post"], permission_classes=[IsAuthenticated, BulkAssignAccess])
     def bulk_assign(self, request):
