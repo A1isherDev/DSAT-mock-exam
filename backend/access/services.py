@@ -194,7 +194,14 @@ def filter_practice_tests_for_user(user, queryset):
 
 
 def filter_mock_exams_for_user(user, queryset):
-    """Mock exams that have at least one practice test visible to the user."""
+    """
+    Mock exams the user may manage or see:
+    - mocks that contain at least one PracticeTest row visible to them, and
+    - empty MOCK_SAT shells (no sections yet) for users who can create tests, so new timed mocks
+      appear in the admin list right after create.
+    """
+    from django.db.models import Count
+
     from exams.models import PracticeTest
 
     perms = get_effective_permission_codenames(user)
@@ -202,7 +209,11 @@ def filter_mock_exams_for_user(user, queryset):
         return queryset
 
     visible_tests = filter_practice_tests_for_user(user, PracticeTest.objects.all())
-    return queryset.filter(tests__in=visible_tests).distinct()
+    with_tests = queryset.filter(tests__in=visible_tests)
+    if constants.PERM_CREATE_TEST in perms:
+        empty_shells = queryset.annotate(_tc=Count("tests")).filter(_tc=0)
+        return (with_tests | empty_shells).distinct()
+    return with_tests.distinct()
 
 
 def user_can_assign_as_class_teacher(user) -> bool:

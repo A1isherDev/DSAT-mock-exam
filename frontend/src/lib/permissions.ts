@@ -37,9 +37,15 @@ export function can(codename: string): boolean {
   return false;
 }
 
-/** Mock exam shell create/update/delete — backend requires wildcard or view_all_tests. */
+/** Timed mock shell: create/edit/publish/delete controls (mirrors MockExamAdminAccess + create_test). */
 export function canManageMockExamShell(): boolean {
-  return can("*") || can("view_all_tests");
+  return (
+    can("*") ||
+    can("view_all_tests") ||
+    can("create_test") ||
+    can("edit_test") ||
+    can("delete_test")
+  );
 }
 
 /**

@@ -63,9 +63,14 @@ class PracticeTestAdminAccess(BasePermission):
 
 class MockExamAdminAccess(BasePermission):
     """
-    Mock exam *shell* CRUD is limited to platform admins (view_all_tests or wildcard).
-    Nested test operations use create/delete with ABAC; assignments use assign_test_access.
+    Timed mock shell: full admins (view_all_tests / *) may do everything.
+    Test authors with create_test / edit_test / delete_test may create shells and manage mocks
+    they are allowed to see (see filter_mock_exams_for_user); nested sections use ABAC.
     """
+
+    def _shell_admin(self, u) -> bool:
+        perms = get_effective_permission_codenames(u)
+        return constants.WILDCARD in perms or constants.PERM_VIEW_ALL_TESTS in perms
 
     def has_permission(self, request, view):
         u = request.user
@@ -84,10 +89,14 @@ class MockExamAdminAccess(BasePermission):
                 or constants.PERM_DELETE_TEST in perms
                 or constants.PERM_ASSIGN_TEST_ACCESS in perms
             )
-        if act in ("create", "update", "partial_update", "destroy"):
-            return constants.WILDCARD in perms or constants.PERM_VIEW_ALL_TESTS in perms
+        if act == "create":
+            return self._shell_admin(u) or authorize(u, constants.PERM_CREATE_TEST)
+        if act in ("update", "partial_update"):
+            return self._shell_admin(u) or authorize(u, constants.PERM_EDIT_TEST)
+        if act == "destroy":
+            return self._shell_admin(u) or authorize(u, constants.PERM_DELETE_TEST)
         if act in ("publish", "unpublish"):
-            return constants.WILDCARD in perms or constants.PERM_VIEW_ALL_TESTS in perms
+            return self._shell_admin(u) or authorize(u, constants.PERM_EDIT_TEST)
         if act == "assign_users":
             return authorize(u, constants.PERM_ASSIGN_TEST_ACCESS)
         if act == "add_test":
@@ -113,12 +122,27 @@ class MockExamAdminAccess(BasePermission):
         if act in ("retrieve", "head", "options"):
             qs = filter_mock_exams_for_user(u, type(obj).objects.filter(pk=obj.pk))
             return qs.exists()
-        if act in ("update", "partial_update", "destroy"):
-            perms = get_effective_permission_codenames(u)
-            return constants.WILDCARD in perms or constants.PERM_VIEW_ALL_TESTS in perms
+        if act in ("update", "partial_update"):
+            if self._shell_admin(u):
+                return True
+            if not authorize(u, constants.PERM_EDIT_TEST):
+                return False
+            qs = filter_mock_exams_for_user(u, type(obj).objects.filter(pk=obj.pk))
+            return qs.exists()
+        if act == "destroy":
+            if self._shell_admin(u):
+                return True
+            if not authorize(u, constants.PERM_DELETE_TEST):
+                return False
+            qs = filter_mock_exams_for_user(u, type(obj).objects.filter(pk=obj.pk))
+            return qs.exists()
         if act in ("publish", "unpublish"):
-            perms = get_effective_permission_codenames(u)
-            return constants.WILDCARD in perms or constants.PERM_VIEW_ALL_TESTS in perms
+            if self._shell_admin(u):
+                return True
+            if not authorize(u, constants.PERM_EDIT_TEST):
+                return False
+            qs = filter_mock_exams_for_user(u, type(obj).objects.filter(pk=obj.pk))
+            return qs.exists()
         if act == "assign_users":
             return authorize(u, constants.PERM_ASSIGN_TEST_ACCESS)
         if act == "add_test":
