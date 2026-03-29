@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from django.db.models import Prefetch
+from django.db.models import Count, Prefetch
 
 from access import constants as acc_const
 from access.permissions import RequiresSubmitTest
@@ -149,15 +149,19 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
         # Library = past papers only; mock sections never appear here.
         base = (
             PracticeTest.objects.filter(mock_exam__isnull=True)
+            .annotate(_assignee_count=Count("assigned_users", distinct=True))
             .select_related("mock_exam", "pastpaper_pack")
             .prefetch_related("modules")
         )
-        # /practice-tests: only rows on assigned_users (plus same-pack siblings below). No unassigned library cards.
-        # Staff/super admins browse or edit the full catalog via /exams/admin/*; assign themselves to preview as a student.
+        staff_library = base.filter(_assignee_count__gt=0)
+        # Students: only rows assigned to them (+ same-pack siblings from full base so one assign unlocks the card).
+        # Staff: pastpapers that at least one user can access — hides never-assigned junk from /practice-tests.
         assigned_qs = base.filter(assigned_users=user).distinct()
-        if acc_const.WILDCARD in perms or acc_const.PERM_VIEW_ALL_TESTS in perms:
+        if getattr(user, "is_student", True):
             qs = assigned_qs
             return self._expand_pastpaper_pack_siblings(base, qs, user, staff_scoped=False)
+        if acc_const.WILDCARD in perms or acc_const.PERM_VIEW_ALL_TESTS in perms:
+            return staff_library
         if {
             acc_const.PERM_VIEW_ENGLISH_TESTS,
             acc_const.PERM_VIEW_MATH_TESTS,
@@ -166,8 +170,8 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
             acc_const.PERM_DELETE_TEST,
             acc_const.PERM_ASSIGN_TEST_ACCESS,
         } & perms:
-            qs = filter_practice_tests_for_user(user, assigned_qs)
-            return self._expand_pastpaper_pack_siblings(base, qs, user, staff_scoped=True)
+            qs = filter_practice_tests_for_user(user, staff_library)
+            return self._expand_pastpaper_pack_siblings(staff_library, qs, user, staff_scoped=True)
         qs = assigned_qs
         return self._expand_pastpaper_pack_siblings(base, qs, user, staff_scoped=False)
 
