@@ -13,9 +13,19 @@ type PracticeTestsListProps = {
 };
 
 type CardPack = { kind: "pack"; mockKey: number; mock: any; tests: any[] };
+type CardPastpaperPack = { kind: "pastpaper_pack"; groupKey: string; tests: any[] };
 type CardSingle = { kind: "single"; test: any };
 
-function buildCards(tests: any[]): (CardPack | CardSingle)[] {
+function normalizePastpaperLabel(label: string | null | undefined) {
+  return (label || "").trim();
+}
+
+/** Same date + form + label ⇒ one card (e.g. English + Math rows created as a pair). */
+function standaloneGroupKey(t: any): string {
+  return [t.practice_date || "", t.form_type || "", normalizePastpaperLabel(t.label)].join("|");
+}
+
+function buildCards(tests: any[]): (CardPack | CardPastpaperPack | CardSingle)[] {
   const standalone: any[] = [];
   const byMock = new Map<number, any[]>();
   for (const t of tests) {
@@ -33,13 +43,33 @@ function buildCards(tests: any[]): (CardPack | CardSingle)[] {
     mock: list[0].mock_exam,
     tests: list,
   }));
-  packs.sort((a, b) => {
-    const da = a.mock.practice_date || "";
-    const db = b.mock.practice_date || "";
-    return db.localeCompare(da);
-  });
-  const singles: CardSingle[] = standalone.map((test) => ({ kind: "single", test }));
-  return [...packs, ...singles];
+
+  const byStandalone = new Map<string, any[]>();
+  for (const t of standalone) {
+    const k = standaloneGroupKey(t);
+    if (!byStandalone.has(k)) byStandalone.set(k, []);
+    byStandalone.get(k)!.push(t);
+  }
+
+  const pastpaperPacks: CardPastpaperPack[] = [];
+  const singles: CardSingle[] = [];
+  for (const [groupKey, list] of byStandalone) {
+    const unique = [...new Map(list.map((x) => [x.id, x])).values()];
+    if (unique.length >= 2) {
+      pastpaperPacks.push({ kind: "pastpaper_pack", groupKey, tests: unique });
+    } else if (unique.length === 1) {
+      singles.push({ kind: "single", test: unique[0] });
+    }
+  }
+
+  const all: (CardPack | CardPastpaperPack | CardSingle)[] = [...packs, ...pastpaperPacks, ...singles];
+  const sortKey = (c: CardPack | CardPastpaperPack | CardSingle) => {
+    if (c.kind === "pack") return c.mock.practice_date || "";
+    if (c.kind === "pastpaper_pack") return c.tests[0]?.practice_date || "";
+    return c.test.practice_date || c.test.created_at || "";
+  };
+  all.sort((a, b) => sortKey(b).localeCompare(sortKey(a)));
+  return all;
 }
 
 function formatLineDate(iso?: string | null) {
@@ -71,6 +101,23 @@ function singleDisplayTitle(test: any) {
   const form = test.form_type === "US" ? "US Form" : "International Form";
   const letter = test.label ? ` ${test.label}` : "";
   return `${form}${letter} · ${subjectLabel(test.subject)}`.trim();
+}
+
+function sharedPastpaperPackTitle(tests: any[]): string {
+  if (tests.length === 0) return "Practice test";
+  if (tests.length === 1) return singleDisplayTitle(tests[0]);
+  const titles = tests.map((t) => (t.title || "").trim()).filter(Boolean);
+  if (titles.length === 0) {
+    const t = tests[0];
+    const form = t.form_type === "US" ? "US Form" : "International Form";
+    const letter = normalizePastpaperLabel(t.label) ? ` ${normalizePastpaperLabel(t.label)}` : "";
+    return `${form}${letter}`.trim();
+  }
+  const stripSubjectTail = (s: string) =>
+    s.replace(/\s*[—–-]\s*(Reading\s*&\s*Writing|R\s*&\s*W|English|Math|Mathematics)\s*$/i, "").trim();
+  const bases = [...new Set(titles.map(stripSubjectTail))].filter(Boolean);
+  if (bases.length === 1) return bases[0];
+  return stripSubjectTail(titles[0]) || titles[0];
 }
 
 function progressPack(tests: any[], attempts: any[]) {
@@ -132,6 +179,10 @@ export default function PracticeTestsList({
     return cards.filter((c) => {
       if (c.kind === "pack") {
         const blob = `${c.mock.title || ""} ${formatLineDate(c.mock.practice_date)} ${c.tests.map((t) => subjectLabel(t.subject)).join(" ")}`.toLowerCase();
+        return blob.includes(q);
+      }
+      if (c.kind === "pastpaper_pack") {
+        const blob = `${sharedPastpaperPackTitle(c.tests)} ${formatLineDate(c.tests[0]?.practice_date)} ${c.tests.map((t) => subjectLabel(t.subject)).join(" ")}`.toLowerCase();
         return blob.includes(q);
       }
       const t = c.test;
@@ -199,6 +250,57 @@ export default function PracticeTestsList({
                   </div>
                   <h3 className="text-2xl font-serif font-bold text-slate-900 dark:text-slate-100 mb-6 tracking-tight leading-snug group-hover:text-violet-800 dark:group-hover:text-violet-300 transition-colors">
                     {c.mock.title}
+                  </h3>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-[3px] bg-slate-200/90 dark:bg-slate-700 rounded-full overflow-hidden">
+                      <div className="h-full bg-violet-500 transition-all duration-1000" style={{ width: `${pct}%` }} />
+                    </div>
+                    <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider tabular-nums min-w-[2.25rem] text-right">
+                      {pct}%
+                    </span>
+                  </div>
+                </div>
+                <div className="p-6 pt-2 mt-auto">
+                  <button
+                    type="button"
+                    disabled={!openId}
+                    onClick={() => {
+                      if (!isLoggedIn) {
+                        router.push("/login");
+                        return;
+                      }
+                      if (openId) router.push(`/practice-test/${openId}`);
+                    }}
+                    className="group/btn w-full flex items-center justify-center gap-3 font-black py-4 px-6 rounded-2xl transition-all text-sm uppercase tracking-widest bg-[#0f172a] dark:bg-slate-950 text-white hover:bg-violet-700 dark:hover:bg-violet-700 shadow-lg shadow-slate-900/10 active:scale-[0.98] disabled:opacity-45"
+                  >
+                    Enter practice test
+                    <ArrowRight className="w-5 h-5 group-hover/btn:translate-x-1 transition-transform" />
+                  </button>
+                </div>
+              </div>
+            );
+          }
+
+          if (c.kind === "pastpaper_pack") {
+            const pct = progressPack(c.tests, attempts);
+            const openId = firstSectionTestId(c.tests);
+            const lineDate = c.tests[0]?.practice_date || c.tests[0]?.created_at;
+            return (
+              <div key={`pastpaper-pack-${c.groupKey}`} className={cardShell}>
+                <div className="p-8 pb-4 relative">
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[10px] font-black uppercase tracking-[0.2em] text-violet-600 dark:text-violet-400">
+                        Practice test
+                      </span>
+                      <span className="text-xs font-bold text-slate-400 dark:text-slate-500">{formatLineDate(lineDate)}</span>
+                    </div>
+                    <div className="w-12 h-12 rounded-xl bg-violet-100 dark:bg-violet-950/80 flex items-center justify-center text-violet-700 dark:text-violet-300 shadow-sm border border-violet-200/60 dark:border-violet-800/50">
+                      <FileText className="w-6 h-6" />
+                    </div>
+                  </div>
+                  <h3 className="text-2xl font-serif font-bold text-slate-900 dark:text-slate-100 mb-6 tracking-tight leading-snug group-hover:text-violet-800 dark:group-hover:text-violet-300 transition-colors">
+                    {sharedPastpaperPackTitle(c.tests)}
                   </h3>
                   <div className="flex items-center gap-2">
                     <div className="flex-1 h-[3px] bg-slate-200/90 dark:bg-slate-700 rounded-full overflow-hidden">
