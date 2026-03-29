@@ -741,7 +741,7 @@ export default function AdminPage() {
                                     <div>
                                         <h2 className="text-xl font-bold text-slate-900">Pastpaper practice tests</h2>
                                         <p className="text-xs text-slate-500 mt-1 max-w-xl">
-                                            Past papers and sectional drills as standalone tests. These are not timed mock exams; use <strong>Mock exams</strong> for full SAT / midterm flows.
+                                            Official past papers and drills students use for <strong>skill practice</strong>. These rows never become mock sections—mock exams are built separately under Mock exams.
                                         </p>
                                     </div>
                                     <div className="flex gap-2 shrink-0">
@@ -812,7 +812,9 @@ export default function AdminPage() {
                                 <div className="flex items-center justify-between">
                                     <div>
                                         <h2 className="text-xl font-bold text-slate-900">Timed mock exams</h2>
-                                        <p className="text-xs text-slate-500 mt-1">Full SAT or midterm flows, publish to the student mock portal, and assign access.</p>
+                                        <p className="text-xs text-slate-500 mt-1 max-w-xl">
+                                            <strong>Readiness checks</strong> under timed rules. Add English/Math (or midterm) sections here and write or import questions for <em>this mock only</em>—do not attach pastpaper library tests. Publish to the portal when ready.
+                                        </p>
                                     </div>
                                     <div className="flex gap-2">
                                         {can('assign_test_access') && (

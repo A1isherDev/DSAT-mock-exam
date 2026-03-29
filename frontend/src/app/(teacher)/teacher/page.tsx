@@ -94,7 +94,8 @@ export default function TeacherDashboardPage() {
                 </Link>
               </div>
               <p className="text-xs text-slate-500 mt-3 leading-relaxed">
-                If your account has staff permissions, use Exams admin to create full SAT mocks or midterm exams (custom time and 1–2 modules).
+                With staff access, use Exams admin: <strong>Pastpaper tests</strong> for released-form practice, and{" "}
+                <strong>Mock exams</strong> for separate timed diagnostics (questions you build for that mock—not the practice bank).
               </p>
             </div>
           </div>

@@ -5,7 +5,7 @@ export default function MidtermPage() {
     <MockExamsList
       eyebrow="Midterm"
       title="Midterm"
-      description="These exams are created as “Midterm” in the admin panel: you choose subject, number of modules (1 or 2), and time per module. Calculator and reference sheet stay hidden."
+      description="Timed midterm-style attempts your instructors publish (separate from pastpaper practice). Same rules as other mocks: staff build the exam; it is not assembled from the practice test library."
       mockQuerySuffix="?midterm=1"
       examKindFilter="MIDTERM"
     />

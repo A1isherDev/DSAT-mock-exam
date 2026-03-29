@@ -235,9 +235,9 @@ export default function MockExamsList({
             <FileText className="w-12 h-12 text-slate-200 mx-auto mb-4" />
             <p className="text-slate-600 font-bold text-sm uppercase tracking-widest">No mock exams here yet</p>
             <p className="text-slate-400 text-sm mt-3 leading-relaxed">
-              The student list uses the <strong>Portal mock exam</strong> table only (Django admin → Portal mock exams, or
-              inline under Mock exam). Practice sections stay under <strong>Practice Tests</strong>. Assign users on the
-              portal row so this page shows an entry.
+              Nothing is listed until an admin publishes a <strong>timed mock</strong> and assigns you on the portal. These
+              exams are authored for assessment only—not linked to pastpaper practice tests. Practice real released forms
+              under <strong>Pastpaper tests</strong> first.
             </p>
           </div>
         )}

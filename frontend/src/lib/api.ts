@@ -115,7 +115,7 @@ export const examsApi = {
         const res = await api.get(`/exams/mock-exams/${id}/`);
         return res.data;
     },
-    /** Practice: standalone tests only (mock sections use mock-exams APIs). */
+    /** Pastpaper practice library only (standalone tests). Timed mocks: mock-exams APIs + /mock/:id. */
     getPracticeTests: async () => {
         const res = await api.get('/exams/');
         return res.data;

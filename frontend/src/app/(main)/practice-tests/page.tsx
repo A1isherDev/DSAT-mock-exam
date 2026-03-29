@@ -5,7 +5,7 @@ export default function PracticeTestsPage() {
     <PracticeTestsList
       eyebrow="Practice"
       title="Pastpaper practice tests"
-      description="Official past papers and sectional drills. Open a card to work modules at your own pace. Timed full SAT flows with break stay under Mock exam."
+      description="Use released past papers and drills to build skills before test day—work modules at your own pace, review as you go. When you are ready to check readiness under timed conditions, use Timed mock (original exams your instructors publish; those are not assembled from this practice bank)."
     />
   );
 }

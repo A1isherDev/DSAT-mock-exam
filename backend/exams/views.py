@@ -47,8 +47,8 @@ from .serializers import (
 
 class MockExamViewSet(viewsets.ReadOnlyModelViewSet):
     """
-    List: students see PortalMockExam rows only (no PracticeTest payload).
-    Retrieve: MockExam + tests for /mock/:id flow if user has a portal assignment.
+    Timed diagnostic mocks (staff-authored sections, not the pastpaper library).
+    List: PortalMockExam rows for students. Retrieve: mock shell + sections for /mock/:id.
     """
 
     permission_classes = [IsAuthenticated]
@@ -113,13 +113,18 @@ class MockExamViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Pastpaper / skill practice only: standalone PracticeTest rows (no mock_exam).
+    Timed mocks and their sections are only exposed via mock-exams + /mock/:id.
+    """
+
     permission_classes = [IsAuthenticated]
     serializer_class = PracticeTestSerializer
 
     def get_queryset(self):
         user = self.request.user
         perms = get_effective_permission_codenames(user)
-        # Practice Tests API: standalone rows only (mock sections are reached via mock-exams flow).
+        # Library = past papers only; mock sections never appear here.
         base = (
             PracticeTest.objects.filter(mock_exam__isnull=True)
             .select_related("mock_exam")
@@ -467,7 +472,7 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def add_test(self, request, pk=None):
-        """Create a new PracticeTest (with auto-generated modules) under this MockExam."""
+        """Create a mock-only section (new items; do not reuse pastpaper PracticeTest rows)."""
         exam = self.get_object()
         if exam.kind == MockExam.KIND_MIDTERM:
             return Response(

@@ -53,11 +53,10 @@ class PortalMockExamStudentSerializer(serializers.ModelSerializer):
 
 
 class PracticeTestSerializer(serializers.ModelSerializer):
-    """Practice list: standalone rows and mock-linked section rows (same model, different mock_exam)."""
+    """Student practice library: past papers only (mock_exam is always null for this endpoint)."""
 
     modules = ModuleListSerializer(many=True, read_only=True)
     subject = serializers.CharField()
-    mock_exam = PracticeTestMockExamBriefSerializer(read_only=True, allow_null=True)
 
     class Meta:
         model = PracticeTest
@@ -70,7 +69,6 @@ class PracticeTestSerializer(serializers.ModelSerializer):
             "form_type",
             "modules",
             "created_at",
-            "mock_exam",
         ]
         read_only_fields = ["created_at"]
 
@@ -231,6 +229,7 @@ class AdminPracticeTestSerializer(serializers.ModelSerializer):
             "modules",
             "assigned_users",
         ]
+        read_only_fields = ["mock_exam"]
 
     def create(self, validated_data):
         assigned_users = validated_data.pop("assigned_users", [])

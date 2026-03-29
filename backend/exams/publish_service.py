@@ -1,4 +1,4 @@
-"""Rules for publishing a mock exam to students (portal + practice visibility)."""
+"""Rules for publishing a timed mock to the student portal (separate from pastpaper practice)."""
 
 from __future__ import annotations
 

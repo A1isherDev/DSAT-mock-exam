@@ -77,13 +77,17 @@ class MockExam(TimestampedModel):
         (KIND_MIDTERM, "Midterm (custom time, 1–2 modules, one subject)"),
     ]
 
-    title = models.CharField(max_length=200, db_index=True, help_text="e.g., International Form C")
+    title = models.CharField(
+        max_length=200,
+        db_index=True,
+        help_text="Timed diagnostic mock (staff-authored). Not built from pastpaper practice items.",
+    )
     practice_date = models.DateField(null=True, blank=True, db_index=True)
     is_active = models.BooleanField(default=True, db_index=True)
     is_published = models.BooleanField(
         default=False,
         db_index=True,
-        help_text="When True, students with portal access see this mock and section rows may appear in Practice Tests.",
+        help_text="When True, students with portal access see this timed mock. Pastpaper practice uses separate standalone tests.",
     )
     published_at = models.DateTimeField(null=True, blank=True)
     kind = models.CharField(
@@ -159,7 +163,7 @@ class PracticeTest(TimestampedModel):
         related_name="tests",
         null=True,
         blank=True,
-        help_text="If set, this row is a mock exam section only (not shown on the Practice Tests list).",
+        help_text="NULL = pastpaper / practice library. If set, this row is a mock-only section (staff-built under that mock, never linked from pastpapers).",
     )
     subject = models.CharField(max_length=20, choices=SUBJECT_CHOICES, db_index=True)
     title = models.CharField(
