@@ -67,6 +67,7 @@ function subjectLabel(subject: string) {
 }
 
 function singleDisplayTitle(test: any) {
+  if (test.title && String(test.title).trim()) return String(test.title).trim();
   const form = test.form_type === "US" ? "US Form" : "International Form";
   const letter = test.label ? ` ${test.label}` : "";
   return `${form}${letter} · ${subjectLabel(test.subject)}`.trim();

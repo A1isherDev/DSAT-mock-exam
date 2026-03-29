@@ -140,7 +140,8 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=["post"], permission_classes=[IsAuthenticated, BulkAssignAccess])
     def bulk_assign(self, request):
-        exam_ids = request.data.get("exam_ids", [])
+        exam_ids = request.data.get("exam_ids") or []
+        practice_test_ids = request.data.get("practice_test_ids") or []
         user_ids = request.data.get("user_ids", [])
         assignment_type = request.data.get("assignment_type", "FULL")
         form_type = request.data.get("form_type")
@@ -150,49 +151,67 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
         User = get_user_model()
         users = list(User.objects.filter(id__in=user_ids))
 
-        subject_map = {
-            "MATH": (["MATH"], ["READING_WRITING"]),
-            "ENGLISH": (["READING_WRITING"], ["MATH"]),
-            "FULL": (["MATH", "READING_WRITING"], []),
-        }
-        to_add_subjects, to_remove_subjects = subject_map.get(
-            assignment_type, (["MATH", "READING_WRITING"], [])
-        )
+        if not user_ids:
+            return Response({"detail": "user_ids is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not exam_ids and not practice_test_ids:
+            return Response(
+                {"detail": "Provide exam_ids (mock exams) and/or practice_test_ids (pastpaper tests)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        add_filters = {"mock_exam_id__in": exam_ids, "subject__in": to_add_subjects}
-        if form_type:
-            add_filters["form_type"] = form_type
-
-        add_tests = PracticeTest.objects.filter(**add_filters)
         added_count = 0
-        mock_ids_touched = set()
-        for pt in add_tests:
-            if authorize(request.user, acc_const.PERM_ASSIGN_TEST_ACCESS, subject=pt.subject):
-                pt.assigned_users.add(*users)
-                added_count += 1
-                if pt.mock_exam_id:
-                    mock_ids_touched.add(pt.mock_exam_id)
-
-        for me in MockExam.objects.filter(pk__in=mock_ids_touched):
-            portal = PortalMockExam.objects.filter(mock_exam=me, is_active=True).first()
-            if portal:
-                portal.assigned_users.add(*users)
-
         removed_count = 0
-        if to_remove_subjects:
-            remove_filters = {"mock_exam_id__in": exam_ids, "subject__in": to_remove_subjects}
-            if form_type:
-                remove_filters["form_type"] = form_type
-            remove_tests = PracticeTest.objects.filter(**remove_filters)
-            for pt in remove_tests:
+
+        if practice_test_ids:
+            pts = PracticeTest.objects.filter(pk__in=practice_test_ids, mock_exam__isnull=True)
+            for pt in pts:
                 if authorize(request.user, acc_const.PERM_ASSIGN_TEST_ACCESS, subject=pt.subject):
-                    pt.assigned_users.remove(*users)
-                    removed_count += 1
+                    pt.assigned_users.add(*users)
+                    added_count += 1
+
+        mock_ids_touched = set()
+        if exam_ids:
+            subject_map = {
+                "MATH": (["MATH"], ["READING_WRITING"]),
+                "ENGLISH": (["READING_WRITING"], ["MATH"]),
+                "FULL": (["MATH", "READING_WRITING"], []),
+            }
+            to_add_subjects, to_remove_subjects = subject_map.get(
+                assignment_type, (["MATH", "READING_WRITING"], [])
+            )
+
+            add_filters = {"mock_exam_id__in": exam_ids, "subject__in": to_add_subjects}
+            if form_type:
+                add_filters["form_type"] = form_type
+
+            add_tests = PracticeTest.objects.filter(**add_filters)
+            for pt in add_tests:
+                if authorize(request.user, acc_const.PERM_ASSIGN_TEST_ACCESS, subject=pt.subject):
+                    pt.assigned_users.add(*users)
+                    added_count += 1
+                    if pt.mock_exam_id:
+                        mock_ids_touched.add(pt.mock_exam_id)
+
+            for me in MockExam.objects.filter(pk__in=mock_ids_touched):
+                portal = PortalMockExam.objects.filter(mock_exam=me, is_active=True).first()
+                if portal:
+                    portal.assigned_users.add(*users)
+
+            if to_remove_subjects:
+                remove_filters = {"mock_exam_id__in": exam_ids, "subject__in": to_remove_subjects}
+                if form_type:
+                    remove_filters["form_type"] = form_type
+                remove_tests = PracticeTest.objects.filter(**remove_filters)
+                for pt in remove_tests:
+                    if authorize(request.user, acc_const.PERM_ASSIGN_TEST_ACCESS, subject=pt.subject):
+                        pt.assigned_users.remove(*users)
+                        removed_count += 1
 
         return Response(
             {
                 "status": "bulk_assigned",
                 "exams_count": len(exam_ids),
+                "practice_tests_count": len(practice_test_ids),
                 "tests_added": added_count,
                 "tests_removed": removed_count,
                 "users_count": len(users),
@@ -488,9 +507,14 @@ class AdminPracticeTestViewSet(viewsets.ModelViewSet):
     serializer_class = AdminPracticeTestSerializer
 
     def get_queryset(self):
-        return filter_practice_tests_for_user(
-            self.request.user, PracticeTest.objects.all().prefetch_related("modules")
+        qs = filter_practice_tests_for_user(
+            self.request.user,
+            PracticeTest.objects.all().prefetch_related("modules", "assigned_users"),
         )
+        standalone = self.request.query_params.get("standalone")
+        if standalone in ("1", "true", "yes"):
+            qs = qs.filter(mock_exam__isnull=True)
+        return qs
 
 
 class AdminModuleViewSet(viewsets.ModelViewSet):

@@ -1,5 +1,9 @@
+from django.contrib.auth import get_user_model
 from rest_framework import serializers
+
 from .models import Question, PracticeTest, Module, TestAttempt, MockExam, PortalMockExam
+
+User = get_user_model()
 
 class QuestionSerializer(serializers.ModelSerializer):
     class Meta:
@@ -57,7 +61,7 @@ class PracticeTestSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PracticeTest
-        fields = ["id", "subject", "label", "form_type", "modules", "created_at", "mock_exam"]
+        fields = ["id", "title", "subject", "label", "form_type", "modules", "created_at", "mock_exam"]
         read_only_fields = ["created_at"]
 
 class MockExamSerializer(serializers.ModelSerializer):
@@ -200,10 +204,36 @@ class AdminModuleSerializer(serializers.ModelSerializer):
 class AdminPracticeTestSerializer(serializers.ModelSerializer):
     modules = AdminModuleSerializer(many=True, read_only=True)
     subject = serializers.CharField()
+    assigned_users = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=User.objects.all(), required=False
+    )
 
     class Meta:
         model = PracticeTest
-        fields = ['id', 'subject', 'label', 'form_type', 'mock_exam', 'modules']
+        fields = [
+            "id",
+            "title",
+            "subject",
+            "label",
+            "form_type",
+            "mock_exam",
+            "modules",
+            "assigned_users",
+        ]
+
+    def create(self, validated_data):
+        assigned_users = validated_data.pop("assigned_users", [])
+        inst = super().create(validated_data)
+        if assigned_users:
+            inst.assigned_users.set(assigned_users)
+        return inst
+
+    def update(self, instance, validated_data):
+        assigned_users = validated_data.pop("assigned_users", serializers.empty)
+        inst = super().update(instance, validated_data)
+        if assigned_users is not serializers.empty:
+            inst.assigned_users.set(assigned_users)
+        return inst
 
 
 class AdminMockExamSerializer(serializers.ModelSerializer):

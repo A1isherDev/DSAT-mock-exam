@@ -162,6 +162,13 @@ class PracticeTest(TimestampedModel):
         help_text="If set, this row is a mock exam section only (not shown on the Practice Tests list).",
     )
     subject = models.CharField(max_length=20, choices=SUBJECT_CHOICES, db_index=True)
+    title = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text="Pastpaper / practice test name (shown in admin and student lists).",
+    )
     label = models.CharField(max_length=10, blank=True, help_text="e.g., A, B, C, D")
     form_type = models.CharField(max_length=20, choices=FORM_TYPES, default='INTERNATIONAL', db_index=True)
     assigned_users = models.ManyToManyField(User, related_name='assigned_tests', blank=True)

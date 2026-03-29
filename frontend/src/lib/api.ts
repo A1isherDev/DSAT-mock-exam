@@ -248,15 +248,40 @@ export const adminApi = {
         const r = await api.post(`/exams/admin/mock-exams/${examId}/unpublish/`);
         return r.data;
     },
-    bulkAssignStudents: async (examIds: number[], userIds: number[], assignmentType: string = 'FULL', formType?: string) => {
-        const payload: any = { 
-            exam_ids: examIds, 
+    bulkAssignStudents: async (
+        examIds: number[],
+        userIds: number[],
+        assignmentType: string = 'FULL',
+        formType?: string,
+        practiceTestIds?: number[]
+    ) => {
+        const payload: any = {
+            exam_ids: examIds,
             user_ids: userIds,
-            assignment_type: assignmentType 
+            assignment_type: assignmentType,
         };
         if (formType) payload.form_type = formType;
+        if (practiceTestIds?.length) payload.practice_test_ids = practiceTestIds;
         const res = await api.post('/exams/bulk_assign/', payload);
         return res.data;
+    },
+
+    getPracticeTestsAdmin: async (standaloneOnly?: boolean) => {
+        const r = await api.get('/exams/admin/tests/', {
+            params: standaloneOnly ? { standalone: '1' } : undefined,
+        });
+        return r.data;
+    },
+    createPracticeTest: async (data: Record<string, unknown>) => {
+        const r = await api.post('/exams/admin/tests/', { mock_exam: null, ...data });
+        return r.data;
+    },
+    updatePracticeTest: async (id: number, data: object) => {
+        const r = await api.patch(`/exams/admin/tests/${id}/`, data);
+        return r.data;
+    },
+    deletePracticeTest: async (id: number) => {
+        await api.delete(`/exams/admin/tests/${id}/`);
     },
 
     // Modules
