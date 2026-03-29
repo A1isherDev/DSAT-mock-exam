@@ -5,7 +5,7 @@ export default function MockExamPage() {
     <MockExamsList
       eyebrow="Mock"
       title="Mock Exam"
-      description="Official full mocks only (Reading &amp; Writing → break → Math, no pause). Sectional drills stay under Practice Tests."
+      description="Nothing appears here until an admin assigns you a mock on the Mock Exam record (admin panel or Assign users). Until then, use Practice Tests for every section. Full flow: R&amp;W → break → Math, no pause."
       examKindFilter="MOCK_SAT"
     />
   );

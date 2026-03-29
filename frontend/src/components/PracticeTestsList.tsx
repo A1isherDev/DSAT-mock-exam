@@ -76,7 +76,9 @@ export default function PracticeTestsList({
     const q = searchQuery.toLowerCase().trim();
     if (!q) return tests;
     return tests.filter((t: any) => {
-      const blob = `${buildPracticeCardTitle(t)} ${t.form_type || ""} ${formatCardDate(t.created_at)}`.toLowerCase();
+      const mockTitle = t.mock_exam?.title || "";
+      const blob =
+        `${buildPracticeCardTitle(t)} ${t.form_type || ""} ${formatCardDate(t.created_at)} ${mockTitle}`.toLowerCase();
       return blob.includes(q);
     });
   }, [tests, searchQuery]);
@@ -142,6 +144,15 @@ export default function PracticeTestsList({
                 <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 mb-3 tracking-tight group-hover:text-indigo-600 transition-colors">
                   {buildPracticeCardTitle(t)}
                 </h3>
+                {t.mock_exam?.title ? (
+                  <p className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">
+                    From mock pack: {t.mock_exam.title}
+                  </p>
+                ) : (
+                  <p className="text-[10px] font-black text-indigo-700/70 dark:text-indigo-400/80 uppercase tracking-widest mb-2">
+                    Standalone practice
+                  </p>
+                )}
 
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-4">
                   {modules.length} modules · {totalMin} min total
@@ -185,8 +196,8 @@ export default function PracticeTestsList({
               No practice tests assigned yet
             </p>
             <p className="text-slate-400 dark:text-slate-500 text-xs mt-2 max-w-md mx-auto">
-              Sectional and form drills live here. Full SAT-style mocks with break and no pause are only under{" "}
-              <strong>Mock Exam</strong>.
+              Includes standalone drills and each English/Math section from assigned mock packs. The continuous full mock
+              (break, no pause) appears under <strong>Mock Exam</strong> only when an admin assigns that mock to you there.
             </p>
           </div>
         )}

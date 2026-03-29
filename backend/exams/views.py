@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Q
 
 from access import constants as acc_const
 from access.permissions import RequiresSubmitTest
@@ -44,7 +44,7 @@ from .serializers import (
 
 
 class MockExamViewSet(viewsets.ReadOnlyModelViewSet):
-    """Full mock / midterm containers (MockExam). Internal R&W/Math rows are not listed under Practice Tests API."""
+    """Students: only MockExams explicitly assigned on the mock (assigned_users). Section rows stay under Practice Tests API."""
     permission_classes = [IsAuthenticated]
     serializer_class = MockExamSerializer
 
@@ -83,15 +83,15 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         user = self.request.user
         perms = get_effective_permission_codenames(user)
-        # Standalone practice tests only (mock sections use MockExam + internal PracticeTest rows).
-        standalone = (
+        # Standalone tests + each section (R&W/Math) under an active mock — all listed as practice tests.
+        base = (
             PracticeTest.objects.all()
             .select_related("mock_exam")
             .prefetch_related("modules")
-            .filter(mock_exam__isnull=True)
+            .filter(Q(mock_exam__isnull=True) | Q(mock_exam__is_active=True))
         )
         if acc_const.WILDCARD in perms or acc_const.PERM_VIEW_ALL_TESTS in perms:
-            return standalone
+            return base
         if {
             acc_const.PERM_VIEW_ENGLISH_TESTS,
             acc_const.PERM_VIEW_MATH_TESTS,
@@ -100,8 +100,8 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
             acc_const.PERM_DELETE_TEST,
             acc_const.PERM_ASSIGN_TEST_ACCESS,
         } & perms:
-            return filter_practice_tests_for_user(user, standalone)
-        return standalone.filter(assigned_users=user).distinct()
+            return filter_practice_tests_for_user(user, base)
+        return base.filter(assigned_users=user).distinct()
 
     @action(detail=False, methods=["post"], permission_classes=[IsAuthenticated, BulkAssignAccess])
     def bulk_assign(self, request):

@@ -199,7 +199,13 @@ export default function MockExamsList({
         })}
 
         {groupedExams.length === 0 && (
-          <div className="p-12 text-center text-slate-400 text-sm font-medium">No mock exams available.</div>
+          <div className="p-12 text-center text-slate-500 text-sm font-medium max-w-lg mx-auto">
+            <p className="font-bold text-slate-600">No mock exam assigned to you yet.</p>
+            <p className="text-xs text-slate-400 mt-3 leading-relaxed">
+              This list only shows mocks after an admin assigns you on the <strong>Mock Exam</strong> record (Django admin or
+              Assign users). All section tests appear under <strong>Practice Tests</strong> until then.
+            </p>
+          </div>
         )}
         {groupedExams.length > 0 && rows.length === 0 && (
           <div className="p-12 text-center text-slate-400 text-sm font-medium">No matches for your filters.</div>
