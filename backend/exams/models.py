@@ -110,6 +110,34 @@ class MockExam(TimestampedModel):
         date_str = self.practice_date.strftime("%B %Y") if self.practice_date else "No Date"
         return f"{date_str} - {self.title}"
 
+
+class PortalMockExam(TimestampedModel):
+    """
+    Student Mock Exam page only: separate table from PracticeTest.
+    Until a row exists here, the portal mock list is empty. Links to MockExam for /mock/:id engine data.
+    """
+
+    mock_exam = models.OneToOneField(
+        MockExam,
+        on_delete=models.CASCADE,
+        related_name="portal_listing",
+        help_text="Underlying mock (R&W/Math sections are PracticeTest rows; not exposed on the mock list API).",
+    )
+    assigned_users = models.ManyToManyField(
+        User,
+        related_name="assigned_portal_mock_exams",
+        blank=True,
+        help_text="Who sees this mock on the student Mock Exam page.",
+    )
+    is_active = models.BooleanField(default=True, db_index=True)
+
+    class Meta:
+        db_table = "portal_mock_exams"
+
+    def __str__(self):
+        return f"Portal: {self.mock_exam}"
+
+
 class PracticeTest(TimestampedModel):
     SUBJECT_CHOICES = [
         ('READING_WRITING', 'Reading & Writing'),

@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Question, PracticeTest, Module, TestAttempt, AuditLog, MockExam
+from .models import Question, PracticeTest, Module, TestAttempt, AuditLog, MockExam, PortalMockExam
 
 class QuestionInline(admin.StackedInline):
     model = Question
@@ -49,13 +49,21 @@ class PracticeTestInline(admin.StackedInline):
     extra = 0
     show_change_link = True
 
+
+class PortalMockExamInline(admin.StackedInline):
+    model = PortalMockExam
+    extra = 0
+    max_num = 1
+    filter_horizontal = ("assigned_users",)
+
+
 @admin.register(MockExam)
 class MockExamAdmin(admin.ModelAdmin):
     list_display = ("title", "kind", "practice_date", "is_active")
     list_filter = ("is_active", "kind", "practice_date")
     search_fields = ("title",)
     filter_horizontal = ("assigned_users",)
-    inlines = [PracticeTestInline]
+    inlines = [PortalMockExamInline, PracticeTestInline]
     list_per_page = 50
     fieldsets = (
         (None, {"fields": ("title", "practice_date", "is_active", "kind", "assigned_users")}),
@@ -64,6 +72,16 @@ class MockExamAdmin(admin.ModelAdmin):
             {"fields": ("midterm_subject", "midterm_module_count", "midterm_module1_minutes", "midterm_module2_minutes")},
         ),
     )
+
+
+@admin.register(PortalMockExam)
+class PortalMockExamAdmin(admin.ModelAdmin):
+    list_display = ("id", "mock_exam", "is_active", "created_at")
+    list_filter = ("is_active",)
+    search_fields = ("mock_exam__title",)
+    autocomplete_fields = ("mock_exam",)
+    filter_horizontal = ("assigned_users",)
+
 
 @admin.register(PracticeTest)
 class PracticeTestAdmin(admin.ModelAdmin):

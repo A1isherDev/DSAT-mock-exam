@@ -115,7 +115,7 @@ export const examsApi = {
         const res = await api.get(`/exams/mock-exams/${id}/`);
         return res.data;
     },
-    /** Sectional practice: standalone tests + mock exam sections (R&W, Math rows). Full SAT flow: /mock-exams/. */
+    /** Practice: standalone + mock-pack sections. Mock list: portal_mock_exams only (no nested tests in list). */
     getPracticeTests: async () => {
         const res = await api.get('/exams/');
         return res.data;

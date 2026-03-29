@@ -29,10 +29,12 @@ from .models import (
     Question,
     AuditLog,
     MockExam,
+    PortalMockExam,
     ensure_full_mock_practice_test_modules,
 )
 from .serializers import (
     MockExamSerializer,
+    PortalMockExamStudentSerializer,
     PracticeTestSerializer,
     TestAttemptSerializer,
     ModuleSerializer,
@@ -44,16 +46,19 @@ from .serializers import (
 
 
 class MockExamViewSet(viewsets.ReadOnlyModelViewSet):
-    """Students: only MockExams explicitly assigned on the mock (assigned_users). Section rows stay under Practice Tests API."""
+    """
+    List: students see PortalMockExam rows only (no PracticeTest payload).
+    Retrieve: MockExam + tests for /mock/:id flow if user has a portal assignment.
+    """
+
     permission_classes = [IsAuthenticated]
     serializer_class = MockExamSerializer
 
-    def get_queryset(self):
-        user = self.request.user
+    def list(self, request, *args, **kwargs):
+        user = request.user
         perms = get_effective_permission_codenames(user)
-        base = MockExam.objects.filter(is_active=True)
         if acc_const.WILDCARD in perms or acc_const.PERM_VIEW_ALL_TESTS in perms:
-            return base.prefetch_related("tests__modules")
+            return super().list(request, *args, **kwargs)
         if {
             acc_const.PERM_VIEW_ENGLISH_TESTS,
             acc_const.PERM_VIEW_MATH_TESTS,
@@ -62,16 +67,45 @@ class MockExamViewSet(viewsets.ReadOnlyModelViewSet):
             acc_const.PERM_DELETE_TEST,
             acc_const.PERM_ASSIGN_TEST_ACCESS,
         } & perms:
-            return filter_mock_exams_for_user(user, base).prefetch_related("tests__modules")
+            return super().list(request, *args, **kwargs)
 
+        qs = (
+            PortalMockExam.objects.filter(
+                is_active=True,
+                mock_exam__is_active=True,
+                assigned_users=user,
+            ).select_related("mock_exam")
+        )
+        return Response(PortalMockExamStudentSerializer(qs, many=True).data)
+
+    def get_queryset(self):
+        user = self.request.user
+        perms = get_effective_permission_codenames(user)
+        base = MockExam.objects.filter(is_active=True)
+        tests_prefetch = Prefetch(
+            "tests",
+            queryset=PracticeTest.objects.all().prefetch_related("modules"),
+        )
+        if acc_const.WILDCARD in perms or acc_const.PERM_VIEW_ALL_TESTS in perms:
+            return base.prefetch_related(tests_prefetch)
+        if {
+            acc_const.PERM_VIEW_ENGLISH_TESTS,
+            acc_const.PERM_VIEW_MATH_TESTS,
+            acc_const.PERM_CREATE_TEST,
+            acc_const.PERM_EDIT_TEST,
+            acc_const.PERM_DELETE_TEST,
+            acc_const.PERM_ASSIGN_TEST_ACCESS,
+        } & perms:
+            return filter_mock_exams_for_user(user, base).prefetch_related(tests_prefetch)
+
+        allowed_mock_ids = PortalMockExam.objects.filter(
+            is_active=True,
+            mock_exam__is_active=True,
+            assigned_users=user,
+        ).values_list("mock_exam_id", flat=True)
         return (
-            MockExam.objects.filter(is_active=True, assigned_users=user)
-            .prefetch_related(
-                Prefetch(
-                    "tests",
-                    queryset=PracticeTest.objects.all().prefetch_related("modules"),
-                )
-            )
+            base.filter(id__in=allowed_mock_ids)
+            .prefetch_related(tests_prefetch)
             .distinct()
         )
 
@@ -139,7 +173,9 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
                     mock_ids_touched.add(pt.mock_exam_id)
 
         for me in MockExam.objects.filter(pk__in=mock_ids_touched):
-            me.assigned_users.add(*users)
+            portal = PortalMockExam.objects.filter(mock_exam=me, is_active=True).first()
+            if portal:
+                portal.assigned_users.add(*users)
 
         removed_count = 0
         if to_remove_subjects:
@@ -383,6 +419,9 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
         exam.assigned_users.set(users)
         for test in exam.tests.all():
             test.assigned_users.set(users)
+        portal = PortalMockExam.objects.filter(mock_exam=exam).first()
+        if portal:
+            portal.assigned_users.set(users)
 
         return Response({'status': 'assigned', 'users_count': len(users)})
 

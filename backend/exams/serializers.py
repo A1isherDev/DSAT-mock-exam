@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Question, PracticeTest, Module, TestAttempt, MockExam
+from .models import Question, PracticeTest, Module, TestAttempt, MockExam, PortalMockExam
 
 class QuestionSerializer(serializers.ModelSerializer):
     class Meta:
@@ -27,7 +27,24 @@ class ModuleListSerializer(serializers.ModelSerializer):
 class PracticeTestMockExamBriefSerializer(serializers.ModelSerializer):
     class Meta:
         model = MockExam
-        fields = ["id", "title", "kind"]
+        fields = ["id", "title", "kind", "practice_date"]
+
+
+class PortalMockExamStudentSerializer(serializers.ModelSerializer):
+    """Student mock list: no nested PracticeTest objects."""
+
+    mock_exam_id = serializers.IntegerField(source="mock_exam.id", read_only=True)
+    title = serializers.CharField(source="mock_exam.title", read_only=True)
+    practice_date = serializers.DateField(source="mock_exam.practice_date", read_only=True)
+    kind = serializers.CharField(source="mock_exam.kind", read_only=True)
+    section_test_ids = serializers.SerializerMethodField()
+
+    def get_section_test_ids(self, obj):
+        return list(obj.mock_exam.tests.values_list("id", flat=True))
+
+    class Meta:
+        model = PortalMockExam
+        fields = ["id", "mock_exam_id", "title", "practice_date", "kind", "section_test_ids"]
 
 
 class PracticeTestSerializer(serializers.ModelSerializer):

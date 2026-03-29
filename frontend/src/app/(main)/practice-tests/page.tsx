@@ -5,7 +5,7 @@ export default function PracticeTestsPage() {
     <PracticeTestsList
       eyebrow="Practice"
       title="Practice tests"
-      description="All sectional work lives here: standalone tests and Reading &amp; Writing / Math rows from mock packs you are assigned. The Mock Exam page stays empty until an admin assigns you a full mock there for the one continuous SAT-style run."
+      description="Form packs and sectional tests in the Digital SAT card layout. Same mock pack may show once per form (grouped); standalone drills have their own card. Full continuous mock (break, no pause) uses the separate Mock Exam portal entry only."
     />
   );
 }

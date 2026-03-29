@@ -5,7 +5,7 @@ export default function MockExamPage() {
     <MockExamsList
       eyebrow="Mock"
       title="Mock Exam"
-      description="Nothing appears here until an admin assigns you a mock on the Mock Exam record (admin panel or Assign users). Until then, use Practice Tests for every section. Full flow: R&amp;W → break → Math, no pause."
+      description="Entries come only from the Portal mock exam table in Django admin (one row per mock, with assigned users). No practice-test rows are listed here. Full flow: R&amp;W → break → Math, no pause."
       examKindFilter="MOCK_SAT"
     />
   );
