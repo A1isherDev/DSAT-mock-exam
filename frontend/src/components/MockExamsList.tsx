@@ -183,7 +183,7 @@ export default function MockExamsList({
                   <div className="flex items-center justify-between mb-6">
                     <div className="flex flex-col gap-1">
                       <span className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-500">
-                        {group.kind === "MIDTERM" ? "Midterm" : "Digital SAT Mock"}
+                        {group.kind === "MIDTERM" ? "Midterm" : "Full mock exam"}
                       </span>
                       <span className="text-xs font-bold text-slate-400">{formatDate(group.practice_date)}</span>
                     </div>

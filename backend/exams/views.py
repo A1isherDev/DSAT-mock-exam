@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Q
 
 from access import constants as acc_const
 from access.permissions import RequiresSubmitTest
@@ -22,7 +22,15 @@ from access.services import (
     get_effective_permission_codenames,
 )
 
-from .models import PracticeTest, TestAttempt, Module, Question, AuditLog, MockExam
+from .models import (
+    PracticeTest,
+    TestAttempt,
+    Module,
+    Question,
+    AuditLog,
+    MockExam,
+    ensure_full_mock_practice_test_modules,
+)
 from .serializers import (
     MockExamSerializer,
     PracticeTestSerializer,
@@ -36,7 +44,7 @@ from .serializers import (
 
 
 class MockExamViewSet(viewsets.ReadOnlyModelViewSet):
-    """Student-facing endpoint to list their assigned mock exams."""
+    """Full mock exams (containers). Sectional attempts use Practice Tests; start full SAT flow from here."""
     permission_classes = [IsAuthenticated]
     serializer_class = MockExamSerializer
 
@@ -71,8 +79,8 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         user = self.request.user
         perms = get_effective_permission_codenames(user)
-        # Only standalone practice (no mock_exam). Mock sections are reached via /mock-exams/ only.
-        base = PracticeTest.objects.filter(mock_exam__isnull=True).prefetch_related("modules")
+        # Sectional tests (not the "full" mock): standalone + each R&W/Math row under a mock.
+        base = PracticeTest.objects.all().select_related("mock_exam").prefetch_related("modules")
         if acc_const.WILDCARD in perms or acc_const.PERM_VIEW_ALL_TESTS in perms:
             return base
         if {
@@ -84,8 +92,12 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
             acc_const.PERM_ASSIGN_TEST_ACCESS,
         } & perms:
             return filter_practice_tests_for_user(user, base)
-        return PracticeTest.objects.filter(assigned_users=user, mock_exam__isnull=True).prefetch_related(
-            "modules"
+        return (
+            PracticeTest.objects.filter(assigned_users=user)
+            .filter(Q(mock_exam__isnull=True) | Q(mock_exam__is_active=True))
+            .select_related("mock_exam")
+            .prefetch_related("modules")
+            .distinct()
         )
 
     @action(detail=False, methods=["post"], permission_classes=[IsAuthenticated, BulkAssignAccess])
@@ -349,6 +361,8 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
                 subject="MATH",
                 form_type="INTERNATIONAL",
             )
+        for pt in exam.tests.filter(subject__in=["READING_WRITING", "MATH"]):
+            ensure_full_mock_practice_test_modules(pt)
 
     @action(detail=True, methods=['post'])
     def assign_users(self, request, pk=None):
@@ -387,6 +401,7 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
             label=label,
             form_type=form_type
         )
+        ensure_full_mock_practice_test_modules(test)
         from .serializers import AdminPracticeTestSerializer
         return Response(AdminPracticeTestSerializer(test).data, status=status.HTTP_201_CREATED)
 

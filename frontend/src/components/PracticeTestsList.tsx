@@ -116,6 +116,15 @@ export default function PracticeTestsList({
                     <span className="block text-sm font-bold text-slate-500 dark:text-slate-400 mt-1">Label: {t.label}</span>
                   ) : null}
                 </h3>
+                {t.mock_exam?.title ? (
+                  <p className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">
+                    Section · mock: {t.mock_exam.title}
+                  </p>
+                ) : (
+                  <p className="text-[10px] font-black text-emerald-700/80 dark:text-emerald-500/90 uppercase tracking-widest mb-1">
+                    Standalone practice
+                  </p>
+                )}
                 <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
                   {t.form_type === "US" ? "US Form" : "International"} · {modules.length} modules · {totalMin} min total
                 </p>
@@ -150,7 +159,7 @@ export default function PracticeTestsList({
               No practice tests assigned yet
             </p>
             <p className="text-slate-400 dark:text-slate-500 text-xs mt-2 max-w-md mx-auto">
-              Mock exam sections are only under Mock Exam. Here you will see standalone practice tests once your teacher assigns them.
+              Assigned sectional tests (including mock R&amp;W/Math) show here. Open Mock Exam for the full mock only.
             </p>
           </div>
         )}

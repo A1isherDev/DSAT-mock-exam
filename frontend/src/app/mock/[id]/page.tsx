@@ -224,8 +224,9 @@ function MockExamDetailInner() {
               <div>
                 <h2 className="text-4xl font-black text-slate-900 mb-4 tracking-tight">Full mock exam</h2>
                 <p className="text-slate-500 font-medium text-lg max-w-2xl">
-                  Reading &amp; Writing first, then a required 10-minute break, then Math. The timer cannot be paused
-                  during this mock. At the end you will see your total score out of 1600.
+                  This is the <strong>one full mock</strong> (not separate sectional runs). Reading &amp; Writing first, then a
+                  required 10-minute break, then Math—no pause. Total score out of 1600. To practice R&amp;W or Math alone with
+                  pause, use <strong>Practice Tests</strong>.
                 </p>
               </div>
 
@@ -291,7 +292,10 @@ function MockExamDetailInner() {
                     <div>
                       <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-2">Step 2</p>
                       <h3 className="text-2xl font-black text-slate-900">Mathematics</h3>
-                      <p className="text-slate-500 mt-2">Begins after your break. Pause is not available.</p>
+                      <p className="text-slate-500 mt-2">
+                        Opens automatically when the break timer ends. Use the button only if it did not open. Pause is not
+                        available.
+                      </p>
                     </div>
                     <button
                       type="button"

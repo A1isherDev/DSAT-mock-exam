@@ -166,6 +166,25 @@ class Module(TimestampedModel):
         )
         return f"{exam_title} - {self.practice_test.get_subject_display()} - Mod {self.module_order}"
 
+
+def ensure_full_mock_practice_test_modules(practice_test: PracticeTest) -> None:
+    """SAT full mock: guarantee two timed modules per R&W or Math section."""
+    if getattr(practice_test, "skip_default_modules", False):
+        return
+    if practice_test.subject not in ("READING_WRITING", "MATH"):
+        return
+    existing_orders = set(practice_test.modules.values_list("module_order", flat=True))
+    mins = 32 if practice_test.subject == "READING_WRITING" else 35
+    for order in (1, 2):
+        if order in existing_orders:
+            continue
+        Module.objects.create(
+            practice_test=practice_test,
+            module_order=order,
+            time_limit_minutes=mins,
+        )
+
+
 class TestAttempt(TimestampedModel):
     practice_test = models.ForeignKey(PracticeTest, on_delete=models.CASCADE, related_name='attempts')
     student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='test_attempts')

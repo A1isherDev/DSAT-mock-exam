@@ -1,8 +1,9 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import AuthGuard from "@/components/AuthGuard";
+import { examsApi } from "@/lib/api";
 import { ArrowLeft, Timer } from "lucide-react";
 
 const BREAK_SECONDS = 10 * 60;
@@ -14,6 +15,8 @@ function BreakInner() {
   const rwAttempt = searchParams.get("rwAttempt") || "";
   const mockId = String(id);
   const [left, setLeft] = useState(BREAK_SECONDS);
+  const [startingMath, setStartingMath] = useState(false);
+  const mathAutostartStarted = useRef(false);
 
   useEffect(() => {
     if (!rwAttempt) {
@@ -24,15 +27,6 @@ function BreakInner() {
       setLeft((s) => {
         if (s <= 1) {
           clearInterval(t);
-          try {
-            localStorage.setItem(`mastersat_mock_${mockId}_break_done`, "1");
-            if (rwAttempt) {
-              localStorage.setItem(`mastersat_mock_${mockId}_break_after_rw`, rwAttempt);
-            }
-          } catch {
-            /* ignore */
-          }
-          router.replace(`/mock/${mockId}`);
           return 0;
         }
         return s - 1;
@@ -40,6 +34,60 @@ function BreakInner() {
     }, 1000);
     return () => clearInterval(t);
   }, [mockId, rwAttempt, router]);
+
+  useEffect(() => {
+    if (left !== 0 || !rwAttempt) return;
+    if (mathAutostartStarted.current) return;
+    mathAutostartStarted.current = true;
+
+    let cancelled = false;
+    setStartingMath(true);
+
+    (async () => {
+      try {
+        localStorage.setItem(`mastersat_mock_${mockId}_break_done`, "1");
+        localStorage.setItem(`mastersat_mock_${mockId}_break_after_rw`, rwAttempt);
+      } catch {
+        /* ignore */
+      }
+
+      try {
+        const exam = await examsApi.getMockExam(Number(mockId));
+        const mathTest = (exam.tests || []).find((t: { subject?: string }) => t.subject === "MATH");
+        const modules = [...(mathTest?.modules || [])].sort(
+          (a: { module_order?: number }, b: { module_order?: number }) =>
+            (a.module_order ?? 0) - (b.module_order ?? 0)
+        );
+        const firstMod = modules[0];
+        if (!mathTest?.id || !firstMod?.id) {
+          throw new Error("No Math module");
+        }
+        const attemptsData = await examsApi.getAttempts();
+        let attempt = attemptsData.find(
+          (a: { practice_test?: number; is_completed?: boolean; is_expired?: boolean }) =>
+            a.practice_test === mathTest.id && !a.is_completed && !a.is_expired
+        );
+        if (!attempt) {
+          attempt = await examsApi.startTest(mathTest.id);
+        }
+        await examsApi.startModule(attempt.id, firstMod.id);
+        if (!cancelled) {
+          router.replace(
+            `/exam/${attempt.id}?mockFlow=1&mockExamId=${encodeURIComponent(mockId)}&rwAttempt=${encodeURIComponent(rwAttempt)}`
+          );
+        }
+      } catch {
+        mathAutostartStarted.current = false;
+        if (!cancelled) {
+          router.replace(`/mock/${mockId}`);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [left, rwAttempt, mockId, router]);
 
   const mm = Math.floor(left / 60);
   const ss = left % 60;
@@ -57,12 +105,22 @@ function BreakInner() {
         <Timer className="w-16 h-16 text-amber-400 mb-6" />
         <h1 className="text-3xl font-black tracking-tight text-center mb-2">Scheduled break</h1>
         <p className="text-slate-400 text-center max-w-md mb-10 font-medium">
-          Reading & Writing is complete. The digital SAT includes a 10-minute break before Math. Stay on this
-          screen until the timer finishes.
+          Reading & Writing is complete. The digital SAT includes a 10-minute break before Math. Stay on this screen until the
+          timer finishes—Math will open automatically.
         </p>
-        <div className="text-6xl font-mono font-black tabular-nums text-amber-300">
-          {mm}:{ss.toString().padStart(2, "0")}
-        </div>
+        {startingMath ? (
+          <>
+            <div className="w-14 h-14 border-4 border-amber-400 border-t-transparent rounded-full animate-spin mb-6" />
+            <p className="text-amber-200 font-bold text-sm uppercase tracking-widest">Starting Math…</p>
+            <p className="mt-4 text-xs text-slate-500 text-center max-w-sm">
+              If nothing happens, return to the mock page and use &quot;Start Math&quot;.
+            </p>
+          </>
+        ) : (
+          <div className="text-6xl font-mono font-black tabular-nums text-amber-300">
+            {mm}:{ss.toString().padStart(2, "0")}
+          </div>
+        )}
         <p className="mt-8 text-xs font-bold text-slate-500 uppercase tracking-widest">Pause is not available during the mock</p>
       </div>
     </AuthGuard>
