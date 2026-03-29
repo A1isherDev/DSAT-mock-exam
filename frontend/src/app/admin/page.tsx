@@ -205,6 +205,47 @@ const STAFF_ROLE_OPTIONS: { value: string; label: string }[] = [
     { value: 'MATH_ADMIN', label: 'Math tests only' },
 ];
 
+function normalizePastpaperLabelAdmin(label: string | null | undefined) {
+    return String(label || "").trim();
+}
+
+function pastpaperAdminGroupKey(t: any) {
+    return [t.practice_date || "", t.form_type || "", normalizePastpaperLabelAdmin(t.label)].join("|");
+}
+
+function singlePastpaperDisplayTitle(t: any) {
+    if (t.title?.trim()) return t.title.trim();
+    const subj = t.subject === "MATH" ? "Math" : "Reading & Writing";
+    const form = t.form_type === "US" ? "US" : "International";
+    return `${subj} · ${form}${t.label ? ` (${t.label})` : ""}`;
+}
+
+function sharedPastpaperPackTitleAdmin(tests: any[]): string {
+    if (tests.length === 0) return "Pastpaper";
+    if (tests.length === 1) return singlePastpaperDisplayTitle(tests[0]);
+    const titles = tests.map((t) => (t.title || "").trim()).filter(Boolean);
+    if (titles.length === 0) {
+        const t = tests[0];
+        const form = t.form_type === "US" ? "US Form" : "International Form";
+        const letter = normalizePastpaperLabelAdmin(t.label) ? ` ${normalizePastpaperLabelAdmin(t.label)}` : "";
+        return `${form}${letter}`.trim();
+    }
+    const stripSubjectTail = (s: string) =>
+        s.replace(/\s*[—–-]\s*(Reading\s*&\s*Writing|R\s*&\s*W|English|Math|Mathematics)\s*$/i, "").trim();
+    const bases = [...new Set(titles.map(stripSubjectTail))].filter(Boolean);
+    if (bases.length === 1) return bases[0];
+    return stripSubjectTail(titles[0]) || titles[0];
+}
+
+function sortPastpaperSections(tests: any[]) {
+    return [...tests].sort((a, b) => {
+        const order = (s: string) => (s === "READING_WRITING" ? 0 : s === "MATH" ? 1 : 2);
+        const d = order(a.subject) - order(b.subject);
+        if (d !== 0) return d;
+        return (a.id || 0) - (b.id || 0);
+    });
+}
+
 export default function AdminPage() {
     const router = useRouter();
     const didInitMockSelection = useRef(false);
@@ -337,6 +378,27 @@ export default function AdminPage() {
         );
         return rows;
     }, [standaloneTests, mockExams]);
+
+    /** Same exam date + form + label ⇒ one parent card (R&W + Math), matching student practice packs. */
+    const pastpaperGroups = useMemo(() => {
+        const by = new Map<string, any[]>();
+        for (const t of standaloneTests) {
+            const k = pastpaperAdminGroupKey(t);
+            if (!by.has(k)) by.set(k, []);
+            by.get(k)!.push(t);
+        }
+        const groups: { key: string; tests: any[] }[] = [];
+        for (const [key, list] of by) {
+            const unique = [...new Map(list.map((x) => [x.id, x])).values()];
+            groups.push({ key, tests: sortPastpaperSections(unique) });
+        }
+        groups.sort((a, b) => {
+            const da = a.tests[0]?.practice_date || "";
+            const db = b.tests[0]?.practice_date || "";
+            return db.localeCompare(da);
+        });
+        return groups;
+    }, [standaloneTests]);
 
     const mockParentForSelectedTest = useMemo(() => {
         if (!selectedPracticeTestId) return null;
@@ -741,7 +803,7 @@ export default function AdminPage() {
                                     <div>
                                         <h2 className="text-xl font-bold text-slate-900">Pastpaper practice tests</h2>
                                         <p className="text-xs text-slate-500 mt-1 max-w-xl">
-                                            Official past papers and drills students use for <strong>skill practice</strong>. These rows never become mock sections—mock exams are built separately under Mock exams.
+                                            Official past papers and drills students use for <strong>skill practice</strong>. Rows with the same <strong>exam date</strong>, <strong>form type</strong>, and <strong>form label</strong> appear in one card (e.g. English + Math). Mock exams stay under Mock exams.
                                         </p>
                                     </div>
                                     <div className="flex gap-2 shrink-0">
@@ -784,25 +846,114 @@ export default function AdminPage() {
                                     {standaloneTests.length === 0 && (
                                         <p className="text-sm text-slate-500 bg-white rounded-2xl border border-slate-200 p-6">No pastpaper tests yet. Create one, then add questions under the Questions tab.</p>
                                     )}
-                                    {standaloneTests.map((t) => (
-                                        <div key={t.id} className={`bg-white rounded-2xl border border-slate-200 p-5 shadow-sm ${selectedPracticeTestId === t.id ? 'ring-2 ring-indigo-500' : ''}`}>
-                                            <div className="flex items-start justify-between gap-4">
-                                                <button type="button" className="text-left flex-1 min-w-0" onClick={() => { setSelectedPracticeTestId(t.id); setSelectedMockId(null); }}>
-                                                    <p className="font-bold text-slate-900">{t.title?.trim() || `${t.subject === 'MATH' ? 'Math' : 'Reading & Writing'} · ${t.form_type === 'US' ? 'US' : 'International'}${t.label ? ` (${t.label})` : ''}`}</p>
-                                                    <p className="text-[11px] text-slate-400 uppercase tracking-wider font-bold mt-1">Pastpaper · {(t.modules?.length ?? 0)} module(s)</p>
-                                                </button>
-                                                <div className="flex items-center gap-2 shrink-0">
-                                                    <button type="button" className={BTN_GHOST} onClick={() => { setActiveTab('questions'); setSelectedPracticeTestId(t.id); setSelectedMockId(null); }}>Questions</button>
-                                                    {can('edit_test') && canEditQuestionsForSubject(t.subject) && (
-                                                        <button type="button" className={BTN_GHOST} onClick={() => { setEditingPastpaper(t); setPastpaperForm({ title: t.title || '', practice_date: t.practice_date || '', subject: t.subject, label: t.label || '', form_type: t.form_type || 'INTERNATIONAL' }); }}><Pencil className="w-3.5 h-3.5" /> Edit</button>
-                                                    )}
-                                                    {canDeletePracticeTestFromMock(t.subject) && (
-                                                        <button type="button" className={BTN_DANGER} onClick={() => void handleDeletePastpaper(t.id)}><Trash2 className="w-3.5 h-3.5" /> Delete</button>
-                                                    )}
+                                    {pastpaperGroups.map(({ key, tests }) => {
+                                        const primary = tests[0];
+                                        const packTitle = sharedPastpaperPackTitleAdmin(tests);
+                                        const formLine = primary.form_type === "US" ? "US" : "International";
+                                        const dateStr = primary.practice_date || "No date";
+                                        const labelHint = normalizePastpaperLabelAdmin(primary.label);
+                                        const sectionLine = `${tests.length} section${tests.length !== 1 ? "s" : ""}`;
+                                        const groupSelected = tests.some((t) => t.id === selectedPracticeTestId);
+                                        return (
+                                            <div
+                                                key={key}
+                                                className={`bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow ${groupSelected ? "ring-2 ring-indigo-500" : ""}`}
+                                            >
+                                                <div className="p-5 flex items-center justify-between bg-slate-50/50 border-b border-slate-100">
+                                                    <div className="min-w-0 pr-4">
+                                                        <p className="font-bold text-base text-slate-900 truncate">{packTitle}</p>
+                                                        <p className="text-[11px] text-slate-400 uppercase tracking-wider font-bold mt-1">
+                                                            Pastpaper · {dateStr} · {formLine}
+                                                            {labelHint ? ` (${labelHint})` : ""} · {sectionLine}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <div className="p-4 bg-white grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                    {tests.map((t) => (
+                                                        <div
+                                                            key={t.id}
+                                                            className={`p-3 rounded-xl border flex items-center justify-between gap-3 ${
+                                                                selectedPracticeTestId === t.id
+                                                                    ? "border-indigo-200 bg-indigo-50/40"
+                                                                    : "border-slate-100 bg-slate-50/50"
+                                                            }`}
+                                                        >
+                                                            <button
+                                                                type="button"
+                                                                className="text-left flex-1 min-w-0"
+                                                                onClick={() => {
+                                                                    setSelectedPracticeTestId(t.id);
+                                                                    setSelectedMockId(null);
+                                                                }}
+                                                            >
+                                                                <div className="flex items-center gap-3">
+                                                                    <div
+                                                                        className={`w-2 h-2 rounded-full shrink-0 ${
+                                                                            t.subject === "MATH"
+                                                                                ? "bg-emerald-500"
+                                                                                : "bg-blue-500 shadow-sm shadow-blue-200"
+                                                                        }`}
+                                                                    />
+                                                                    <span className="text-[12px] font-black text-slate-800 uppercase tracking-wider">
+                                                                        {t.subject === "MATH" ? "Mathematics" : "Reading & Writing"}
+                                                                    </span>
+                                                                    {t.label && (
+                                                                        <span className="text-[10px] font-black bg-slate-900 text-white px-2 py-0.5 rounded-lg shadow-sm">
+                                                                            {t.label}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest ml-5 block mt-1">
+                                                                    {t.form_type === "US" ? "US Standard" : "International Form"} ·{" "}
+                                                                    {(t.modules?.length ?? 0)} module(s)
+                                                                </span>
+                                                            </button>
+                                                            <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
+                                                                <button
+                                                                    type="button"
+                                                                    className={BTN_GHOST + " !py-1.5"}
+                                                                    onClick={() => {
+                                                                        setActiveTab("questions");
+                                                                        setSelectedPracticeTestId(t.id);
+                                                                        setSelectedMockId(null);
+                                                                    }}
+                                                                >
+                                                                    Questions
+                                                                </button>
+                                                                {can("edit_test") && canEditQuestionsForSubject(t.subject) && (
+                                                                    <button
+                                                                        type="button"
+                                                                        className={BTN_GHOST + " !py-1.5"}
+                                                                        onClick={() => {
+                                                                            setEditingPastpaper(t);
+                                                                            setPastpaperForm({
+                                                                                title: t.title || "",
+                                                                                practice_date: t.practice_date || "",
+                                                                                subject: t.subject,
+                                                                                label: t.label || "",
+                                                                                form_type: t.form_type || "INTERNATIONAL",
+                                                                            });
+                                                                        }}
+                                                                    >
+                                                                        <Pencil className="w-3.5 h-3.5" /> Edit
+                                                                    </button>
+                                                                )}
+                                                                {canDeletePracticeTestFromMock(t.subject) && (
+                                                                    <button
+                                                                        type="button"
+                                                                        className={BTN_DANGER + " !py-1.5"}
+                                                                        onClick={() => void handleDeletePastpaper(t.id)}
+                                                                    >
+                                                                        <Trash2 className="w-3.5 h-3.5" /> Delete
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    ))}
                                                 </div>
                                             </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </div>
                         )}
