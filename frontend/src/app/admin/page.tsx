@@ -23,7 +23,7 @@ const getImageUrl = (path: string | null | undefined) => {
 import {
     Users, BookOpen, ShieldCheck, LogOut, Plus, Pencil, Trash2, Save,
     X, Loader2, ChevronRight, CheckSquare, Square, Layers, HelpCircle, Search, Upload, Image as ImageIcon, ArrowUp, ArrowDown,
-    Bold as BoldIcon, Italic as ItalicIcon, Underline as UnderlineIcon, Sigma, Percent, Variable
+    Bold as BoldIcon, Italic as ItalicIcon, Underline as UnderlineIcon, Sigma, Percent, Variable, SlidersHorizontal, AlertTriangle
 } from 'lucide-react';
 
 // KaTeX dynamic import for rendering math in previews
@@ -199,6 +199,59 @@ const BTN_PRIMARY = "btn-primary text-xs";
 const BTN_GHOST = "btn-secondary text-xs !px-3 !py-2";
 const BTN_DANGER = "flex items-center gap-1 text-[11px] font-bold text-red-500 hover:text-red-700 px-2 py-1.5 rounded-lg hover:bg-red-50 transition-all";
 
+/** Normalize for duplicate checks and search. */
+function adminNorm(s: string) {
+    return (s || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function pastpaperPackSignatureFromForm(f: { title: string; practice_date: string; label: string; form_type: string }) {
+    return `${adminNorm(f.title)}|${f.practice_date || ""}|${adminNorm(f.label)}|${f.form_type || "INTERNATIONAL"}`;
+}
+
+function pastpaperPackSignatureFromPack(p: any) {
+    return `${adminNorm(p?.title || "")}|${p?.practice_date || ""}|${adminNorm(p?.label || "")}|${p?.form_type || "INTERNATIONAL"}`;
+}
+
+/** One-line admin label: stable id + human title. */
+function formatPastpaperPackAdminLabel(p: any): string {
+    const title = (p?.title || "").trim();
+    const date = p?.practice_date || "";
+    const lbl = (p?.label || "").trim();
+    const ft = p?.form_type === "US" ? "US" : "Intl";
+    const head = title || (date ? `Card ${date}` : `Pastpaper card`);
+    return `#${p.id} · ${head} · ${ft}${lbl ? ` · Form ${lbl}` : ""}${date && title ? ` · ${date}` : !title && date ? ` · ${date}` : ""}`;
+}
+
+function formatMockExamAdminLabel(m: any): string {
+    const title = (m?.title || "").trim();
+    const kind = m?.kind === "MIDTERM" ? "Midterm" : "SAT mock";
+    const pub = m?.is_published ? "Live" : "Draft";
+    const head = title || `Untitled`;
+    return `#${m.id} · ${head} · ${kind} · ${pub}${m?.practice_date ? ` · ${m.practice_date}` : ""}`;
+}
+
+function pastpaperSectionSummary(sections: any[]): { hasRw: boolean; hasMath: boolean; n: number } {
+    const hasRw = sections.some((s: any) => s.subject === "READING_WRITING");
+    const hasMath = sections.some((s: any) => s.subject === "MATH");
+    return { hasRw, hasMath, n: sections.length };
+}
+
+/** Pastpaper section row in Assignments tab (may be orphan or in a card). */
+function formatPastpaperSectionForAssign(t: any): string {
+    const pp = t.pastpaper_pack;
+    const packId =
+        typeof pp === "object" && pp != null && pp.id != null
+            ? Number(pp.id)
+            : t.pastpaper_pack_id != null
+              ? Number(t.pastpaper_pack_id)
+              : null;
+    const packHint = packId != null && !Number.isNaN(packId) ? ` · Card #${packId}` : " · No card";
+    const subj = t.subject === "MATH" ? "Math" : "R&W";
+    const title = (t.title || "").trim();
+    const head = title || subj;
+    return `#${t.id} · ${head}${t.label ? ` [${t.label}]` : ""}${packHint}`;
+}
+
 const STAFF_ROLE_OPTIONS: { value: string; label: string }[] = [
     { value: 'STUDENT', label: 'Student' },
     { value: 'TEACHER', label: 'Teacher (classes, assign tests, midterms)' },
@@ -296,6 +349,19 @@ export default function AdminPage() {
     const [assignmentsFocus, setAssignmentsFocus] = useState<'mock' | 'pastpaper'>('mock');
     const [bulkAssignPracticeTests, setBulkAssignPracticeTests] = useState<number[]>([]);
 
+    /** Pastpaper list: search + filters (admin UX). */
+    const [pastpaperAdminQuery, setPastpaperAdminQuery] = useState("");
+    const [pastpaperFormFilter, setPastpaperFormFilter] = useState<"ALL" | "INTERNATIONAL" | "US">("ALL");
+    const [pastpaperSectionFilter, setPastpaperSectionFilter] = useState<
+        "ALL" | "COMPLETE" | "RW_ONLY" | "MATH_ONLY" | "EMPTY"
+    >("ALL");
+    const [pastpaperSort, setPastpaperSort] = useState<"DATE" | "TITLE" | "ID">("DATE");
+    /** Timed mock / midterm list */
+    const [mockAdminQuery, setMockAdminQuery] = useState("");
+    const [mockKindFilter, setMockKindFilter] = useState<"ALL" | "MOCK_SAT" | "MIDTERM">("ALL");
+    const [mockPublishedFilter, setMockPublishedFilter] = useState<"ALL" | "PUBLISHED" | "DRAFT">("ALL");
+    const [mockSort, setMockSort] = useState<"DATE" | "TITLE" | "ID">("DATE");
+
     const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
     // Fetch
@@ -368,6 +434,112 @@ export default function AdminPage() {
         () => standaloneTests.filter((t) => t.pastpaper_pack == null && t.pastpaper_pack_id == null),
         [standaloneTests],
     );
+
+    const pastpaperDuplicateSignatures = useMemo(() => {
+        const counts = new Map<string, number>();
+        pastpaperPacks.forEach((p) => {
+            const s = pastpaperPackSignatureFromPack(p);
+            counts.set(s, (counts.get(s) || 0) + 1);
+        });
+        const dup = new Set<string>();
+        counts.forEach((n, k) => {
+            if (n > 1) dup.add(k);
+        });
+        return dup;
+    }, [pastpaperPacks]);
+
+    const mockNormalizedTitleDupes = useMemo(() => {
+        const c = new Map<string, number>();
+        mockExams.forEach((m) => {
+            const k = adminNorm(m.title || "");
+            if (!k) return;
+            c.set(k, (c.get(k) || 0) + 1);
+        });
+        const s = new Set<string>();
+        c.forEach((n, k) => {
+            if (n > 1) s.add(k);
+        });
+        return s;
+    }, [mockExams]);
+
+    const filteredPastpaperPacksAdmin = useMemo(() => {
+        let list = [...pastpaperPacks];
+        const q = pastpaperAdminQuery.trim().toLowerCase();
+        if (q) {
+            list = list.filter((p) => {
+                const sections = p.sections || [];
+                const blob = `${p.id} ${p.title || ""} ${p.label || ""} ${p.practice_date || ""} ${p.form_type || ""}`.toLowerCase();
+                const secBlob = sections.map((s: any) => `${s.id} ${s.title || ""} ${s.subject || ""}`).join(" ").toLowerCase();
+                return blob.includes(q) || secBlob.includes(q);
+            });
+        }
+        if (pastpaperFormFilter !== "ALL") {
+            list = list.filter((p) => (p.form_type || "INTERNATIONAL") === pastpaperFormFilter);
+        }
+        if (pastpaperSectionFilter !== "ALL") {
+            list = list.filter((p) => {
+                const { hasRw, hasMath, n } = pastpaperSectionSummary(p.sections || []);
+                if (pastpaperSectionFilter === "EMPTY") return n === 0;
+                if (pastpaperSectionFilter === "COMPLETE") return hasRw && hasMath;
+                if (pastpaperSectionFilter === "RW_ONLY") return hasRw && !hasMath;
+                if (pastpaperSectionFilter === "MATH_ONLY") return hasMath && !hasRw;
+                return true;
+            });
+        }
+        if (pastpaperSort === "TITLE") {
+            list.sort((a, b) => (a.title || "").localeCompare(b.title || "", undefined, { sensitivity: "base" }));
+        } else if (pastpaperSort === "ID") {
+            list.sort((a, b) => b.id - a.id);
+        } else {
+            list.sort((a, b) => {
+                const da = a.practice_date || "";
+                const db = b.practice_date || "";
+                if (da !== db) return db.localeCompare(da);
+                return b.id - a.id;
+            });
+        }
+        return list;
+    }, [pastpaperPacks, pastpaperAdminQuery, pastpaperFormFilter, pastpaperSectionFilter, pastpaperSort]);
+
+    const filteredOrphansAdmin = useMemo(() => {
+        const q = pastpaperAdminQuery.trim().toLowerCase();
+        if (!q) return orphanPastpaperTests;
+        return orphanPastpaperTests.filter((t) => {
+            const blob = `${t.id} ${t.title || ""} ${t.label || ""} ${t.subject} ${t.form_type}`.toLowerCase();
+            return blob.includes(q);
+        });
+    }, [orphanPastpaperTests, pastpaperAdminQuery]);
+
+    const filteredMockExamsAdmin = useMemo(() => {
+        let list = [...mockExams];
+        const q = mockAdminQuery.trim().toLowerCase();
+        if (q) {
+            list = list.filter((m) => {
+                const tests = m.tests || [];
+                const blob = `${m.id} ${m.title || ""} ${m.kind || ""} ${m.practice_date || ""}`.toLowerCase();
+                const tb = tests.map((t: any) => `${t.id} ${t.subject} ${t.label || ""}`).join(" ").toLowerCase();
+                return blob.includes(q) || tb.includes(q);
+            });
+        }
+        if (mockKindFilter !== "ALL") {
+            list = list.filter((m) => (m.kind || "MOCK_SAT") === mockKindFilter);
+        }
+        if (mockPublishedFilter === "PUBLISHED") list = list.filter((m) => !!m.is_published);
+        if (mockPublishedFilter === "DRAFT") list = list.filter((m) => !m.is_published);
+        if (mockSort === "TITLE") {
+            list.sort((a, b) => (a.title || "").localeCompare(b.title || "", undefined, { sensitivity: "base" }));
+        } else if (mockSort === "ID") {
+            list.sort((a, b) => b.id - a.id);
+        } else {
+            list.sort((a, b) => {
+                const da = a.practice_date || "";
+                const db = b.practice_date || "";
+                if (da !== db) return db.localeCompare(da);
+                return b.id - a.id;
+            });
+        }
+        return list;
+    }, [mockExams, mockAdminQuery, mockKindFilter, mockPublishedFilter, mockSort]);
 
     const questionSectionOptions = useMemo(() => {
         if (!questionsGroupValue) return [];
@@ -498,6 +670,20 @@ export default function AdminPage() {
             showToast('No permission to create midterm exams.');
             return;
         }
+        const tn = adminNorm(mockForm.title);
+        if (tn) {
+            const titleDup = mockExams.some(
+                (m) => m.id !== editingMock?.id && adminNorm(m.title || "") === tn,
+            );
+            if (
+                titleDup &&
+                !confirm(
+                    "Another timed mock already uses this title. Use a unique name so admins can tell them apart. Continue anyway?",
+                )
+            ) {
+                return;
+            }
+        }
         setSaving(true);
         try {
             if (editingMock?.id) { await adminApi.updateMockExam(editingMock.id, mockForm); }
@@ -554,6 +740,23 @@ export default function AdminPage() {
     const handleSavePack = async () => {
         if (!can('create_test') && !editingPack?.id) return;
         if (editingPack?.id && !can('edit_test')) return;
+        const sig = pastpaperPackSignatureFromForm({
+            title: packForm.title,
+            practice_date: packForm.practice_date,
+            label: packForm.label,
+            form_type: packForm.form_type,
+        });
+        const packDup = pastpaperPacks.some(
+            (p) => p.id !== editingPack?.id && pastpaperPackSignatureFromPack(p) === sig,
+        );
+        if (
+            packDup &&
+            !confirm(
+                "Another pastpaper card already matches this title, exam date, form letter, and form type. Use a unique combination so lists stay clear. Continue anyway?",
+            )
+        ) {
+            return;
+        }
         setSaving(true);
         try {
             const payload = {
@@ -940,13 +1143,86 @@ export default function AdminPage() {
                                                 className={BTN_PRIMARY}
                                                 onClick={() => {
                                                     setEditingPack({});
-                                                    setPackForm({ title: '', practice_date: '', label: '', form_type: 'INTERNATIONAL' });
+                                                    const d = new Date().toISOString().slice(0, 10);
+                                                    setPackForm({
+                                                        title: `Pastpaper · ${d}`,
+                                                        practice_date: d,
+                                                        label: '',
+                                                        form_type: 'INTERNATIONAL',
+                                                    });
                                                 }}
                                             >
                                                 <Plus className="w-4 h-4" /> New pastpaper
                                             </button>
                                         )}
                                     </div>
+                                </div>
+                                <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                                    <div className="flex items-center gap-2 text-[11px] font-bold text-slate-500 uppercase tracking-widest">
+                                        <SlidersHorizontal className="w-4 h-4" /> Find &amp; filter cards
+                                    </div>
+                                    <div className="flex flex-wrap gap-3 items-end">
+                                        <div className="flex flex-col gap-1 min-w-[200px] flex-1">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase">Search</span>
+                                            <div className="relative">
+                                                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                                <input
+                                                    className={INPUT + " !pl-9"}
+                                                    placeholder="Title, #id, date, section…"
+                                                    value={pastpaperAdminQuery}
+                                                    onChange={(e) => setPastpaperAdminQuery(e.target.value)}
+                                                />
+                                            </div>
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase">Form</span>
+                                            <select
+                                                className={INPUT + " !min-w-[140px]"}
+                                                value={pastpaperFormFilter}
+                                                onChange={(e) => setPastpaperFormFilter(e.target.value as typeof pastpaperFormFilter)}
+                                            >
+                                                <option value="ALL">All forms</option>
+                                                <option value="INTERNATIONAL">International</option>
+                                                <option value="US">US</option>
+                                            </select>
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase">Sections</span>
+                                            <select
+                                                className={INPUT + " !min-w-[160px]"}
+                                                value={pastpaperSectionFilter}
+                                                onChange={(e) => setPastpaperSectionFilter(e.target.value as typeof pastpaperSectionFilter)}
+                                            >
+                                                <option value="ALL">Any</option>
+                                                <option value="COMPLETE">English + Math</option>
+                                                <option value="RW_ONLY">English only</option>
+                                                <option value="MATH_ONLY">Math only</option>
+                                                <option value="EMPTY">Empty card</option>
+                                            </select>
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase">Sort</span>
+                                            <select
+                                                className={INPUT + " !min-w-[130px]"}
+                                                value={pastpaperSort}
+                                                onChange={(e) => setPastpaperSort(e.target.value as typeof pastpaperSort)}
+                                            >
+                                                <option value="DATE">Exam date</option>
+                                                <option value="TITLE">Title A–Z</option>
+                                                <option value="ID">Newest id</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <p className="text-[11px] text-slate-500">
+                                        Showing <strong>{filteredPastpaperPacksAdmin.length}</strong> of {pastpaperPacks.length} cards
+                                        {orphanPastpaperTests.length > 0 ? (
+                                            <>
+                                                {" "}
+                                                · <strong>{filteredOrphansAdmin.length}</strong> of {orphanPastpaperTests.length} unassigned sections
+                                            </>
+                                        ) : null}
+                                        . Each card shows a stable numeric <span className="font-mono text-slate-600">#id</span> in lists and dropdowns.
+                                    </p>
                                 </div>
                                 {editingPack !== null && (
                                     <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm grid grid-cols-2 gap-4">
@@ -984,6 +1260,28 @@ export default function AdminPage() {
                                                 <option value="US">US</option>
                                             </select>
                                         </Field>
+                                        {pastpaperPacks.some(
+                                            (p) =>
+                                                p.id !== editingPack?.id &&
+                                                pastpaperPackSignatureFromPack(p) ===
+                                                    pastpaperPackSignatureFromForm(packForm),
+                                        ) ? (
+                                            <div className="col-span-2 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50/90 px-3 py-2 text-xs text-amber-950">
+                                                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                                                <span>
+                                                    Another card already uses this <strong>title + date + form letter + form type</strong> combination.
+                                                    Adjust one field for a unique, easy-to-find name.
+                                                </span>
+                                            </div>
+                                        ) : null}
+                                        <p className="col-span-2 text-[11px] text-slate-500">
+                                            Admin list label:{" "}
+                                            <code className="text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded text-[10px]">
+                                                {editingPack?.id ? `#${editingPack.id}` : "#new"}
+                                            </code>
+                                            {" — "}
+                                            pick a title students will recognize; avoid duplicates (see warning above).
+                                        </p>
                                         <div className="col-span-2 flex justify-end gap-2">
                                             <button className={BTN_GHOST} onClick={() => setEditingPack(null)}>
                                                 <X className="w-4 h-4" /> Cancel
@@ -1059,15 +1357,24 @@ export default function AdminPage() {
                                             No pastpapers yet. Click <strong>New pastpaper</strong> to create a card, then add English and/or Math.
                                         </p>
                                     )}
-                                    {pastpaperPacks.map((pack) => {
+                                    {pastpaperPacks.length + orphanPastpaperTests.length > 0 &&
+                                        filteredPastpaperPacksAdmin.length === 0 &&
+                                        filteredOrphansAdmin.length === 0 && (
+                                            <p className="text-sm text-amber-900 bg-amber-50 rounded-2xl border border-amber-200 p-6">
+                                                No cards match your search or filters. Clear the search box or set filters to &quot;All&quot; / &quot;Any&quot;.
+                                            </p>
+                                        )}
+                                    {filteredPastpaperPacksAdmin.map((pack) => {
                                         const sections = pack.sections || [];
                                         const hasRw = sections.some((s: any) => s.subject === "READING_WRITING");
                                         const hasMath = sections.some((s: any) => s.subject === "MATH");
-                                        const packTitle = pack.title?.trim() || `Pack #${pack.id}`;
+                                        const packTitle = pack.title?.trim() || `Untitled card`;
                                         const formLine = pack.form_type === "US" ? "US" : "International";
                                         const dateStr = pack.practice_date || "No date";
                                         const labelHint = (pack.label || "").trim();
                                         const groupSelected = sections.some((t: any) => t.id === selectedPracticeTestId);
+                                        const sig = pastpaperPackSignatureFromPack(pack);
+                                        const isDupSignature = pastpaperDuplicateSignatures.has(sig);
                                         return (
                                             <div
                                                 key={pack.id}
@@ -1075,10 +1382,38 @@ export default function AdminPage() {
                                             >
                                                 <div className="p-5 flex items-center justify-between bg-slate-50/50 border-b border-slate-100 gap-3">
                                                     <div className="min-w-0">
+                                                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                                                            <span className="text-[10px] font-black uppercase tracking-wider text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-lg">
+                                                                Pastpaper · #{pack.id}
+                                                            </span>
+                                                            {isDupSignature ? (
+                                                                <span className="text-[10px] font-black uppercase tracking-wider text-amber-800 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-lg inline-flex items-center gap-1">
+                                                                    <AlertTriangle className="w-3 h-3" /> Duplicate label
+                                                                </span>
+                                                            ) : null}
+                                                            {!hasRw || !hasMath ? (
+                                                                <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-lg">
+                                                                    {sections.length === 0
+                                                                        ? "Empty — add sections"
+                                                                        : hasRw && !hasMath
+                                                                          ? "English only"
+                                                                          : hasMath && !hasRw
+                                                                            ? "Math only"
+                                                                            : ""}
+                                                                </span>
+                                                            ) : (
+                                                                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-lg">
+                                                                    English + Math
+                                                                </span>
+                                                            )}
+                                                        </div>
                                                         <p className="font-bold text-base text-slate-900 truncate">{packTitle}</p>
+                                                        <p className="text-[11px] text-slate-500 font-semibold mt-0.5 font-mono truncate">
+                                                            {formatPastpaperPackAdminLabel(pack)}
+                                                        </p>
                                                         <p className="text-[11px] text-slate-400 uppercase tracking-wider font-bold mt-1">
-                                                            Pastpaper · {dateStr} · {formLine}
-                                                            {labelHint ? ` (${labelHint})` : ""} · {sections.length} section
+                                                            {dateStr} · {formLine}
+                                                            {labelHint ? ` · Letter ${labelHint}` : ""} · {sections.length} section
                                                             {sections.length !== 1 ? "s" : ""}
                                                         </p>
                                                     </div>
@@ -1144,7 +1479,7 @@ export default function AdminPage() {
                                                                     </span>
                                                                 </div>
                                                                 <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest ml-5 block mt-1">
-                                                                    {t.form_type === "US" ? "US Standard" : "International Form"} ·{" "}
+                                                                    Section #{t.id} · {t.form_type === "US" ? "US Standard" : "International Form"} ·{" "}
                                                                     {(t.modules?.length ?? 0)} module(s)
                                                                 </span>
                                                             </button>
@@ -1165,10 +1500,9 @@ export default function AdminPage() {
                                                                                 const taken = (p.sections || []).some(
                                                                                     (s: any) => s.subject === t.subject && s.id !== t.id
                                                                                 );
-                                                                                const plabel = p.title?.trim() || p.practice_date || `Pack #${p.id}`;
                                                                                 return (
                                                                                     <option key={p.id} value={p.id} disabled={taken}>
-                                                                                        #{p.id} {plabel}
+                                                                                        {formatPastpaperPackAdminLabel(p)}
                                                                                     </option>
                                                                                 );
                                                                             })}
@@ -1245,12 +1579,12 @@ export default function AdminPage() {
                                             </div>
                                         );
                                     })}
-                                    {orphanPastpaperTests.length > 0 && (
+                                    {filteredOrphansAdmin.length > 0 && (
                                         <div className="rounded-2xl border border-amber-200 bg-amber-50/40 p-4 space-y-3">
                                             <p className="text-xs font-bold text-amber-900">
                                                 Unassigned sections (legacy or moved out of a card). Assign each to a card above, or delete.
                                             </p>
-                                            {orphanPastpaperTests.map((t) => (
+                                            {filteredOrphansAdmin.map((t) => (
                                                 <div
                                                     key={t.id}
                                                     className={`p-3 rounded-xl border border-slate-200 bg-white flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between ${
@@ -1265,10 +1599,11 @@ export default function AdminPage() {
                                                             setSelectedMockId(null);
                                                         }}
                                                     >
+                                                        <span className="text-[10px] font-mono text-indigo-600 font-bold">#{t.id}</span>{" "}
                                                         {t.subject === "MATH" ? "Math" : "Reading & Writing"} ·{" "}
                                                         {t.form_type === "US" ? "US" : "International"}
                                                         <span className="block text-[10px] font-bold text-slate-400 uppercase mt-1">
-                                                            {(t.modules?.length ?? 0)} module(s)
+                                                            {(t.modules?.length ?? 0)} module(s) · orphan (no card)
                                                         </span>
                                                     </button>
                                                     <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
@@ -1286,10 +1621,9 @@ export default function AdminPage() {
                                                                 <option value="">Move to card…</option>
                                                                 {pastpaperPacks.map((p) => {
                                                                     const taken = (p.sections || []).some((s: any) => s.subject === t.subject);
-                                                                    const plabel = p.title?.trim() || p.practice_date || `Pack #${p.id}`;
                                                                     return (
                                                                         <option key={p.id} value={p.id} disabled={taken}>
-                                                                            #{p.id} {plabel}
+                                                                            {formatPastpaperPackAdminLabel(p)}
                                                                         </option>
                                                                     );
                                                                 })}
@@ -1342,11 +1676,14 @@ export default function AdminPage() {
                                             </button>
                                         )}
                                         {canManageMockExamShell() && (
-                                            <button className={BTN_PRIMARY} onClick={() => { setEditingMock({}); setMockForm({
-                                                title: '',
-                                                practice_date: '',
+                                            <button className={BTN_PRIMARY} onClick={() => { 
+                                                const d = new Date().toISOString().slice(0, 10);
+                                                const kind = canCreateFullMockSat() ? 'MOCK_SAT' : 'MIDTERM';
+                                                setEditingMock({}); setMockForm({
+                                                title: kind === 'MIDTERM' ? `Midterm · ${d}` : `SAT mock · ${d}`,
+                                                practice_date: d,
                                                 is_active: true,
-                                                kind: canCreateFullMockSat() ? 'MOCK_SAT' : 'MIDTERM',
+                                                kind,
                                                 midterm_subject: 'READING_WRITING',
                                                 midterm_module_count: 2,
                                                 midterm_module1_minutes: 60,
@@ -1357,9 +1694,68 @@ export default function AdminPage() {
                                         )}
                                     </div>
                                 </div>
+                                <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                                    <div className="flex items-center gap-2 text-[11px] font-bold text-slate-500 uppercase tracking-widest">
+                                        <SlidersHorizontal className="w-4 h-4" /> Find timed mocks &amp; midterms
+                                    </div>
+                                    <div className="flex flex-wrap gap-3 items-end">
+                                        <div className="flex flex-col gap-1 min-w-[200px] flex-1">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase">Search</span>
+                                            <div className="relative">
+                                                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                                <input
+                                                    className={INPUT + " !pl-9"}
+                                                    placeholder="Title, #id, section subject…"
+                                                    value={mockAdminQuery}
+                                                    onChange={(e) => setMockAdminQuery(e.target.value)}
+                                                />
+                                            </div>
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase">Type</span>
+                                            <select
+                                                className={INPUT + " !min-w-[140px]"}
+                                                value={mockKindFilter}
+                                                onChange={(e) => setMockKindFilter(e.target.value as typeof mockKindFilter)}
+                                            >
+                                                <option value="ALL">All types</option>
+                                                <option value="MOCK_SAT">Full SAT mock</option>
+                                                <option value="MIDTERM">Midterm</option>
+                                            </select>
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase">Status</span>
+                                            <select
+                                                className={INPUT + " !min-w-[130px]"}
+                                                value={mockPublishedFilter}
+                                                onChange={(e) => setMockPublishedFilter(e.target.value as typeof mockPublishedFilter)}
+                                            >
+                                                <option value="ALL">Any</option>
+                                                <option value="PUBLISHED">Published</option>
+                                                <option value="DRAFT">Draft</option>
+                                            </select>
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase">Sort</span>
+                                            <select
+                                                className={INPUT + " !min-w-[130px]"}
+                                                value={mockSort}
+                                                onChange={(e) => setMockSort(e.target.value as typeof mockSort)}
+                                            >
+                                                <option value="DATE">Practice date</option>
+                                                <option value="TITLE">Title A–Z</option>
+                                                <option value="ID">Newest id</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <p className="text-[11px] text-slate-500">
+                                        Showing <strong>{filteredMockExamsAdmin.length}</strong> of {mockExams.length} timed exams. Use a{" "}
+                                        <strong>unique title</strong> (e.g. include date or cohort); lists show <span className="font-mono text-slate-600">#id</span> for support.
+                                    </p>
+                                </div>
                                 {editingMock !== null && (
                                     <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm grid grid-cols-2 gap-4">
-                                        <Field label="Title"><input className={INPUT} value={mockForm.title} onChange={e => setMockForm({ ...mockForm, title: e.target.value })} placeholder="e.g. Mock SAT #1" /></Field>
+                                        <Field label="Title (unique — shown in admin & student mock list)"><input className={INPUT} value={mockForm.title} onChange={e => setMockForm({ ...mockForm, title: e.target.value })} placeholder="e.g. SAT Mock · March 2026 · Cohort A" /></Field>
                                         <Field label="Practice Date"><input type="date" className={INPUT} value={mockForm.practice_date} onChange={e => setMockForm({ ...mockForm, practice_date: e.target.value })} /></Field>
                                         <Field label="Exam type">
                                             <select
@@ -1394,6 +1790,21 @@ export default function AdminPage() {
                                                 <Field label="Module 2 (minutes)"><input type="number" min={1} className={INPUT} disabled={mockForm.midterm_module_count < 2} value={mockForm.midterm_module2_minutes} onChange={e => setMockForm({ ...mockForm, midterm_module2_minutes: Number(e.target.value) })} /></Field>
                                             </>
                                         )}
+                                        {adminNorm(mockForm.title) &&
+                                        mockExams.some(
+                                            (m) => m.id !== editingMock?.id && adminNorm(m.title || "") === adminNorm(mockForm.title),
+                                        ) ? (
+                                            <div className="col-span-2 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50/90 px-3 py-2 text-xs text-amber-950">
+                                                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                                                <span>This title matches another timed mock. Choose a slightly different name so filters and assignments stay clear.</span>
+                                            </div>
+                                        ) : null}
+                                        <p className="col-span-2 text-[11px] text-slate-500">
+                                            Row in admin lists:{" "}
+                                            <code className="text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded text-[10px]">
+                                                {editingMock?.id ? formatMockExamAdminLabel(editingMock) : `#new · ${mockForm.kind === "MIDTERM" ? "Midterm" : "SAT mock"} · draft`}
+                                            </code>
+                                        </p>
                                         <div className="flex items-center gap-2 mt-4 col-span-2"><input type="checkbox" id="act" checked={mockForm.is_active} onChange={e => setMockForm({ ...mockForm, is_active: e.target.checked })} /><label htmlFor="act" className="text-sm font-bold text-slate-600">Is Active</label></div>
                                         <div className="col-span-2 flex justify-end gap-2">
                                             <button className={BTN_GHOST} onClick={() => setEditingMock(null)}><X className="w-4 h-4" /> Cancel</button>
@@ -1402,17 +1813,48 @@ export default function AdminPage() {
                                     </div>
                                 )}
                                 <div className="space-y-4">
-                                    {mockExams.map(mock => (
+                                    {mockExams.length > 0 && filteredMockExamsAdmin.length === 0 && (
+                                        <p className="text-sm text-amber-900 bg-amber-50 rounded-2xl border border-amber-200 p-6">
+                                            No timed exams match your search or filters. Clear the search or set filters to &quot;All&quot; / &quot;Any&quot;.
+                                        </p>
+                                    )}
+                                    {filteredMockExamsAdmin.map(mock => {
+                                        const titleDup =
+                                            adminNorm(mock.title || "") && mockNormalizedTitleDupes.has(adminNorm(mock.title || ""));
+                                        return (
                                         <div key={mock.id} className={`bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow ${selectedMockId === mock.id ? 'ring-2 ring-indigo-500' : ''}`} onClick={() => setSelectedMockId(mock.id)}>
                                             <div className="p-5 flex items-center justify-between bg-slate-50/50">
-                                                <div>
-                                                    <p className="font-bold text-base text-slate-900">{mock.title}</p>
-                                                    <p className="text-[11px] text-slate-400 uppercase tracking-wider font-bold">
-                                                        <span className={mock.is_published ? "text-emerald-600" : "text-amber-600"}>
-                                                            {mock.is_published ? "Published · " : "Draft · "}
+                                                <div className="min-w-0">
+                                                    <div className="flex flex-wrap items-center gap-2 mb-1">
+                                                        <span
+                                                            className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-lg border ${
+                                                                mock.kind === "MIDTERM"
+                                                                    ? "text-violet-800 bg-violet-50 border-violet-200"
+                                                                    : "text-sky-800 bg-sky-50 border-sky-200"
+                                                            }`}
+                                                        >
+                                                            {mock.kind === "MIDTERM" ? "Midterm" : "SAT timed mock"} · #{mock.id}
                                                         </span>
-                                                        {mock.kind === "MIDTERM" ? "Midterm · " : "SAT mock · "}
-                                                        {mock.practice_date || "No date"} · {mock.tests?.length || 0} Sections
+                                                        <span
+                                                            className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-lg border ${
+                                                                mock.is_published
+                                                                    ? "text-emerald-800 bg-emerald-50 border-emerald-200"
+                                                                    : "text-amber-800 bg-amber-50 border-amber-200"
+                                                            }`}
+                                                        >
+                                                            {mock.is_published ? "Published" : "Draft"}
+                                                        </span>
+                                                        {titleDup ? (
+                                                            <span className="text-[10px] font-black uppercase tracking-wider text-amber-900 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-lg inline-flex items-center gap-1">
+                                                                <AlertTriangle className="w-3 h-3" /> Duplicate title
+                                                            </span>
+                                                        ) : null}
+                                                    </div>
+                                                    <p className="font-bold text-base text-slate-900 truncate">{mock.title || `Untitled #${mock.id}`}</p>
+                                                    <p className="text-[11px] text-slate-500 font-mono truncate mt-0.5">{formatMockExamAdminLabel(mock)}</p>
+                                                    <p className="text-[11px] text-slate-400 uppercase tracking-wider font-bold mt-1">
+                                                        {mock.practice_date || "No date"} · {mock.tests?.length || 0} section
+                                                        {(mock.tests?.length || 0) !== 1 ? "s" : ""}
                                                     </p>
                                                     {!mock.is_published && mock.publish_block_reason ? (
                                                         <p className="text-[10px] text-amber-800 mt-1 max-w-xl leading-snug">{mock.publish_block_reason}</p>
@@ -1486,7 +1928,7 @@ export default function AdminPage() {
                                                                 <span className="text-[12px] font-black text-slate-800 uppercase tracking-wider">{t.subject === 'MATH' ? 'Mathematics' : 'Reading & Writing'}</span>
                                                                 {t.label && <span className="text-[10px] font-black bg-slate-900 text-white px-2 py-0.5 rounded-lg shadow-sm">{t.label}</span>}
                                                             </div>
-                                                            <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest ml-5">{t.form_type === 'US' ? 'US Standard' : 'International Form'}</span>
+                                                            <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest ml-5">Section #{t.id} · {t.form_type === 'US' ? 'US Standard' : 'International Form'}</span>
                                                         </div>
                                                         {canDeletePracticeTestFromMock(t.subject) && (
                                                             <button onClick={(e) => { e.stopPropagation(); handleRemoveTest(t.id, mock.id); }} className="text-slate-300 hover:text-red-500 transition-colors"><X className="w-3.5 h-3.5" /></button>
@@ -1532,7 +1974,8 @@ export default function AdminPage() {
                                                 )}
                                             </div>
                                         </div>
-                                    ))}
+                                    );
+                                    })}
                                 </div>
                             </div>
                         )}
@@ -1570,17 +2013,17 @@ export default function AdminPage() {
                                                 <optgroup label="Pastpaper cards">
                                                     {pastpaperPacks.map((p) => (
                                                         <option key={p.id} value={`pack:${p.id}`}>
-                                                            #{p.id} {p.title?.trim() || p.practice_date || 'Untitled'}
+                                                            {formatPastpaperPackAdminLabel(p)}
                                                         </option>
                                                     ))}
                                                 </optgroup>
                                                 {orphanPastpaperTests.length > 0 ? (
                                                     <option value="orphan">Unassigned pastpaper sections</option>
                                                 ) : null}
-                                                <optgroup label="Timed mocks">
+                                                <optgroup label="Timed mocks & midterms">
                                                     {mockExams.map((m) => (
                                                         <option key={m.id} value={`mock:${m.id}`}>
-                                                            {m.title}
+                                                            {formatMockExamAdminLabel(m)}
                                                         </option>
                                                     ))}
                                                 </optgroup>
@@ -1604,7 +2047,7 @@ export default function AdminPage() {
                                                 <option value="">{questionsGroupValue ? 'Choose section…' : 'Pick a card first'}</option>
                                                 {questionSectionOptions.map((t: any) => (
                                                     <option key={t.id} value={t.id}>
-                                                        {t.subject === 'MATH' ? 'Math' : 'Reading & Writing'}
+                                                        #{t.id} · {t.subject === 'MATH' ? 'Math' : 'Reading & Writing'}
                                                         {t.label ? ` [${t.label}]` : ''}
                                                     </option>
                                                 ))}
@@ -1928,8 +2371,21 @@ export default function AdminPage() {
                                             )}
                                         </div>
                                         <div className="flex gap-3 flex-wrap">
-                                            {mockExams.map(m => (
-                                                <button key={m.id} type="button" onClick={() => setSelectedMockId(m.id)} className={`text-xs font-bold px-4 py-2 rounded-lg border transition-all ${selectedMockId === m.id ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}>{m.title}</button>
+                                            {mockExams.map((m) => (
+                                                <button
+                                                    key={m.id}
+                                                    type="button"
+                                                    onClick={() => setSelectedMockId(m.id)}
+                                                    className={`text-left text-xs font-bold px-4 py-2 rounded-lg border transition-all max-w-[280px] ${selectedMockId === m.id ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"}`}
+                                                >
+                                                    <span className="block truncate">{m.title || `Untitled #${m.id}`}</span>
+                                                    <span
+                                                        className={`block text-[9px] font-mono font-normal truncate mt-0.5 ${selectedMockId === m.id ? "text-indigo-100" : "text-slate-400"}`}
+                                                    >
+                                                        {m.kind === "MIDTERM" ? "Midterm" : "SAT mock"} · #{m.id}
+                                                        {m.is_published ? " · Live" : " · Draft"}
+                                                    </span>
+                                                </button>
                                             ))}
                                         </div>
                                         <div className="relative"><Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" /><input className={INPUT + ' pl-9'} placeholder="Search users..." value={userSearch} onChange={e => setUserSearch(e.target.value)} /></div>
@@ -1964,9 +2420,9 @@ export default function AdminPage() {
                                                     key={t.id}
                                                     type="button"
                                                     onClick={() => setSelectedPracticeTestId(t.id)}
-                                                    className={`text-xs font-bold px-4 py-2 rounded-lg border transition-all ${selectedPracticeTestId === t.id ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
+                                                    className={`text-left text-xs font-bold px-4 py-2 rounded-lg border transition-all max-w-[280px] ${selectedPracticeTestId === t.id ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"}`}
                                                 >
-                                                    {t.title?.trim() || `${t.subject === 'MATH' ? 'Math' : 'R&W'}${t.label ? ` (${t.label})` : ''}`}
+                                                    <span className="block truncate">{formatPastpaperSectionForAssign(t)}</span>
                                                 </button>
                                             ))}
                                         </div>
@@ -1978,8 +2434,9 @@ export default function AdminPage() {
                                                     <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">
                                                         {(() => {
                                                             const st = standaloneTests.find((s) => s.id === selectedPracticeTestId);
-                                                            const label = st?.title?.trim() || (st ? `${st.subject === 'MATH' ? 'Math' : 'R&W'}${st.label ? ` (${st.label})` : ''}` : null);
-                                                            return label ? `Editing: ${label}` : 'Select a pastpaper test above';
+                                                            return st
+                                                                ? `Editing: ${formatPastpaperSectionForAssign(st)}`
+                                                                : "Select a pastpaper section above";
                                                         })()}
                                                     </p>
                                                     {can('assign_test_access') && selectedPracticeTestId && standaloneTests.some((s) => s.id === selectedPracticeTestId) && (
@@ -2105,14 +2562,21 @@ export default function AdminPage() {
                                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
                                             <input 
                                                 className={INPUT + ' pl-9 !py-1.5 !text-[11px]'} 
-                                                placeholder="Search exams..." 
+                                                placeholder="Search by title, #id, type…" 
                                                 value={bulkTestSearch}
                                                 onChange={e => setBulkTestSearch(e.target.value)}
                                             />
                                         </div>
                                     </div>
                                     <div className="flex-1 overflow-y-auto p-2 space-y-1">
-                                        {mockExams.filter(m => m.title.toLowerCase().includes(bulkTestSearch.toLowerCase())).map(mock => (
+                                        {mockExams
+                                            .filter((m) => {
+                                                const q = bulkTestSearch.trim().toLowerCase();
+                                                if (!q) return true;
+                                                const blob = `${m.id} ${m.title || ""} ${m.kind || ""} ${formatMockExamAdminLabel(m)}`.toLowerCase();
+                                                return blob.includes(q);
+                                            })
+                                            .map((mock) => (
                                             <label key={mock.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-blue-50/50 cursor-pointer transition-colors border border-transparent hover:border-blue-100">
                                                 <input 
                                                     type="checkbox" 
@@ -2123,9 +2587,9 @@ export default function AdminPage() {
                                                         else setBulkAssignExams(bulkAssignExams.filter(id => id !== mock.id));
                                                     }}
                                                 />
-                                                <div>
-                                                    <p className="text-sm font-bold text-slate-800">{mock.title}</p>
-                                                    <p className="text-[10px] text-slate-400 font-bold uppercase">{mock.practice_date}</p>
+                                                <div className="min-w-0">
+                                                    <p className="text-sm font-bold text-slate-800 truncate">{mock.title || `Untitled #${mock.id}`}</p>
+                                                    <p className="text-[10px] text-slate-500 font-mono truncate">{formatMockExamAdminLabel(mock)}</p>
                                                 </div>
                                             </label>
                                         ))}
@@ -2140,7 +2604,14 @@ export default function AdminPage() {
                                         {standaloneTests.length === 0 && (
                                             <p className="text-[11px] text-slate-400 p-2">No pastpaper tests.</p>
                                         )}
-                                        {standaloneTests.filter((t) => (t.title || '').toLowerCase().includes(bulkTestSearch.toLowerCase()) || `${t.subject}`.toLowerCase().includes(bulkTestSearch.toLowerCase())).map((t) => (
+                                        {standaloneTests
+                                            .filter((t) => {
+                                                const q = bulkTestSearch.trim().toLowerCase();
+                                                if (!q) return true;
+                                                const line = formatPastpaperSectionForAssign(t).toLowerCase();
+                                                return line.includes(q) || String(t.id).includes(q);
+                                            })
+                                            .map((t) => (
                                             <label key={t.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-emerald-50/50 cursor-pointer transition-colors border border-transparent hover:border-emerald-100">
                                                 <input
                                                     type="checkbox"
@@ -2151,9 +2622,12 @@ export default function AdminPage() {
                                                         else setBulkAssignPracticeTests(bulkAssignPracticeTests.filter((id) => id !== t.id));
                                                     }}
                                                 />
-                                                <div>
-                                                    <p className="text-sm font-bold text-slate-800">{t.title?.trim() || `${t.subject === 'MATH' ? 'Math' : 'Reading & Writing'}`}</p>
-                                                    <p className="text-[10px] text-slate-400 font-bold uppercase">{t.form_type === 'US' ? 'US' : 'International'}{t.label ? ` · ${t.label}` : ''}</p>
+                                                <div className="min-w-0">
+                                                    <p className="text-sm font-bold text-slate-800 truncate">{formatPastpaperSectionForAssign(t)}</p>
+                                                    <p className="text-[10px] text-slate-400 font-bold uppercase">
+                                                        {t.form_type === "US" ? "US" : "International"}
+                                                        {t.label ? ` · ${t.label}` : ""}
+                                                    </p>
                                                 </div>
                                             </label>
                                         ))}
