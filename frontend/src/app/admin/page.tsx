@@ -9,6 +9,9 @@ import {
     canCreateTestForSubject,
     canEditQuestionsForSubject,
     canDeletePracticeTestFromMock,
+    canCreateFullMockSat,
+    canCreateMidtermMock,
+    canUseGlobalQuestionsTab,
 } from '@/lib/permissions';
 
 const getImageUrl = (path: string | null | undefined) => {
@@ -198,9 +201,10 @@ const BTN_DANGER = "flex items-center gap-1 text-[11px] font-bold text-red-500 h
 
 const STAFF_ROLE_OPTIONS: { value: string; label: string }[] = [
     { value: 'STUDENT', label: 'Student' },
+    { value: 'TEACHER', label: 'Teacher (classes, assign tests, midterms)' },
     { value: 'ADMIN', label: 'Administrator' },
     { value: 'SUPER_ADMIN', label: 'Super administrator' },
-    { value: 'TEST_ADMIN', label: 'Test author (create only)' },
+    { value: 'TEST_ADMIN', label: 'Test author (pastpapers & questions)' },
     { value: 'ENGLISH_ADMIN', label: 'English / R&W tests only' },
     { value: 'MATH_ADMIN', label: 'Math tests only' },
 ];
@@ -486,6 +490,14 @@ export default function AdminPage() {
 
     // ── Mock Exam CRUD
     const handleSaveMock = async () => {
+        if (mockForm.kind === 'MOCK_SAT' && !canCreateFullMockSat()) {
+            showToast('You can only create midterm exams.');
+            return;
+        }
+        if (mockForm.kind === 'MIDTERM' && !canCreateMidtermMock()) {
+            showToast('No permission to create midterm exams.');
+            return;
+        }
         setSaving(true);
         try {
             if (editingMock?.id) { await adminApi.updateMockExam(editingMock.id, mockForm); }
@@ -845,10 +857,22 @@ export default function AdminPage() {
             can('view_math_tests') ||
             can('create_test') ||
             can('edit_test') ||
-            can('delete_test');
+            can('delete_test') ||
+            can('create_mock_sat') ||
+            can('create_midterm_mock');
         const filtered = all.filter((item) => {
             if (item.key === 'users') return can('manage_users');
             if (item.key === 'assignments') return can('assign_test_access');
+            if (item.key === 'questions') return canUseGlobalQuestionsTab();
+            if (item.key === 'mocks') {
+                return (
+                    can('*') ||
+                    can('view_all_tests') ||
+                    can('create_mock_sat') ||
+                    can('create_midterm_mock') ||
+                    can('assign_test_access')
+                );
+            }
             return testArea;
         });
         return filtered.length ? filtered : all.filter((i) => i.key === 'pastpapers');
@@ -1322,7 +1346,7 @@ export default function AdminPage() {
                                                 title: '',
                                                 practice_date: '',
                                                 is_active: true,
-                                                kind: 'MOCK_SAT',
+                                                kind: canCreateFullMockSat() ? 'MOCK_SAT' : 'MIDTERM',
                                                 midterm_subject: 'READING_WRITING',
                                                 midterm_module_count: 2,
                                                 midterm_module1_minutes: 60,
@@ -1344,8 +1368,12 @@ export default function AdminPage() {
                                                 disabled={!!editingMock?.id}
                                                 onChange={e => setMockForm({ ...mockForm, kind: e.target.value })}
                                             >
-                                                <option value="MOCK_SAT">SAT mock (add R&amp;W / Math sections below)</option>
-                                                <option value="MIDTERM">Midterm (1 subject, 1–2 modules, custom time)</option>
+                                                {canCreateFullMockSat() ? (
+                                                    <option value="MOCK_SAT">SAT mock (add R&amp;W / Math sections below)</option>
+                                                ) : null}
+                                                {canCreateMidtermMock() ? (
+                                                    <option value="MIDTERM">Midterm (1 subject, 1–2 modules, custom time)</option>
+                                                ) : null}
                                             </select>
                                         </Field>
                                         {mockForm.kind === 'MIDTERM' && !editingMock?.id && (
@@ -1444,7 +1472,7 @@ export default function AdminPage() {
                                                             midterm_module2_minutes: mock.midterm_module2_minutes ?? 60,
                                                         }); }}><Pencil className="w-3.5 h-3.5" /> Edit</button>
                                                     )}
-                                                    {canManageMockExamShell() && (
+                                                    {can('delete_test') && (
                                                         <button className={BTN_DANGER + " bg-white shadow-sm border border-slate-100"} onClick={e => { e.stopPropagation(); handleDeleteMock(mock.id); }}><Trash2 className="w-3.5 h-3.5" /> Delete</button>
                                                     )}
                                                 </div>
@@ -1466,7 +1494,7 @@ export default function AdminPage() {
                                                     </div>
                                                 ))}
                                                 
-                                                {mock.kind !== 'MIDTERM' && !(mock.kind === 'MOCK_SAT' && (mock.tests || []).some((t: any) => t.subject === 'READING_WRITING') && (mock.tests || []).some((t: any) => t.subject === 'MATH')) && (canCreateTestForSubject('READING_WRITING') || canCreateTestForSubject('MATH')) && (
+                                                {mock.kind !== 'MIDTERM' && canCreateFullMockSat() && !(mock.kind === 'MOCK_SAT' && (mock.tests || []).some((t: any) => t.subject === 'READING_WRITING') && (mock.tests || []).some((t: any) => t.subject === 'MATH')) && (canCreateTestForSubject('READING_WRITING') || canCreateTestForSubject('MATH')) && (
                                                 <div className="md:col-span-2 mt-2 pt-3 border-t border-slate-50 space-y-3">
                                                     <div className="grid grid-cols-2 gap-3">
                                                         <div className="flex flex-col gap-1">

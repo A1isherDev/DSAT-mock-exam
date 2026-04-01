@@ -38,16 +38,23 @@ def _frozen_permissions_for_role_code(role_code: str) -> FrozenSet[str]:
     return frozenset(granted)
 
 
-# Matches access.migrations.0002_seed_rbac ADMIN row if RolePermission rows are missing.
+# Matches LMS ADMIN role if RolePermission rows are missing.
 _ADMIN_FALLBACK: FrozenSet[str] = frozenset(
     {
         constants.PERM_MANAGE_USERS,
+        constants.PERM_MANAGE_ROLES,
+        constants.PERM_ACCESS_LMS_ADMIN,
         constants.PERM_CREATE_TEST,
         constants.PERM_EDIT_TEST,
         constants.PERM_DELETE_TEST,
         constants.PERM_VIEW_ALL_TESTS,
+        constants.PERM_VIEW_ENGLISH_TESTS,
+        constants.PERM_VIEW_MATH_TESTS,
         constants.PERM_ASSIGN_TEST_ACCESS,
         constants.PERM_MANAGE_CLASSROOMS,
+        constants.PERM_CREATE_MOCK_SAT,
+        constants.PERM_CREATE_MIDTERM_MOCK,
+        constants.PERM_SUBMIT_TEST,
     }
 )
 
@@ -113,13 +120,27 @@ def get_effective_permission_codenames(user) -> FrozenSet[str]:
 
 
 def is_lms_staff_user(user) -> bool:
-    """True if user is not a pure student (used for legacy UI flags / cookies)."""
+    """True if user may open the Next.js /admin app (access_lms_admin or wildcard)."""
     perms = get_effective_permission_codenames(user)
     if not perms:
         return False
     if constants.WILDCARD in perms:
         return True
-    return perms != frozenset({constants.PERM_SUBMIT_TEST})
+    return constants.PERM_ACCESS_LMS_ADMIN in perms
+
+
+def can_create_mock_exam_kind(user, kind: str) -> bool:
+    """
+    Timed MockExam shells: MOCK_SAT vs MIDTERM.
+    Teachers typically only have create_midterm_mock; full mocks need create_mock_sat (or wildcard / view_all).
+    """
+    perms = get_effective_permission_codenames(user)
+    if constants.WILDCARD in perms or constants.PERM_VIEW_ALL_TESTS in perms:
+        return True
+    if kind == "MIDTERM":
+        return constants.PERM_CREATE_MIDTERM_MOCK in perms or constants.PERM_CREATE_MOCK_SAT in perms
+    # MOCK_SAT or default
+    return constants.PERM_CREATE_MOCK_SAT in perms
 
 
 def authorize(user, permission_codename: str, *, subject: Optional[str] = None) -> bool:
@@ -216,27 +237,54 @@ def filter_pastpaper_packs_for_user(user, queryset):
 
 def filter_mock_exams_for_user(user, queryset):
     """
-    Mock exams the user may manage or see:
-    - mocks that contain at least one PracticeTest row visible to them, and
-    - empty MOCK_SAT shells (no sections yet) for users who can create tests, so new timed mocks
-      appear in the admin list right after create.
+    Who sees which MockExam rows in admin:
+    - Wildcard / view_all: all
+    - create_mock_sat (+ usual test visibility): full mock authoring list
+    - create_midterm_mock only: midterms; if also assign_test_access, include active MOCK_SAT for assignment
+    - assign_test_access only: active mocks (to assign students)
+    - else: none (e.g. test authors without mock perms)
     """
     from django.db.models import Count
 
-    from exams.models import PracticeTest
+    from exams.models import MockExam, PracticeTest
 
     perms = get_effective_permission_codenames(user)
-    if constants.WILDCARD in perms or constants.PERM_VIEW_ALL_TESTS in perms:
+    if constants.WILDCARD in perms:
+        return queryset
+    # view_all_tests scopes practice tests, not necessarily every timed mock shell.
+    if constants.PERM_VIEW_ALL_TESTS in perms and (
+        constants.PERM_CREATE_MOCK_SAT in perms
+        or constants.PERM_CREATE_MIDTERM_MOCK in perms
+        or constants.PERM_ASSIGN_TEST_ACCESS in perms
+    ):
         return queryset
 
-    visible_tests = filter_practice_tests_for_user(user, PracticeTest.objects.all())
-    with_tests = queryset.filter(tests__in=visible_tests)
-    if constants.PERM_CREATE_TEST in perms:
-        empty_shells = queryset.annotate(_tc=Count("tests")).filter(_tc=0)
-        return (with_tests | empty_shells).distinct()
-    return with_tests.distinct()
+    can_sat = constants.PERM_CREATE_MOCK_SAT in perms
+    can_mid = constants.PERM_CREATE_MIDTERM_MOCK in perms
+    can_assign = constants.PERM_ASSIGN_TEST_ACCESS in perms
+
+    if can_sat:
+        visible_tests = filter_practice_tests_for_user(user, PracticeTest.objects.all())
+        with_tests = queryset.filter(tests__in=visible_tests)
+        if constants.PERM_CREATE_TEST in perms:
+            empty_shells = queryset.annotate(_tc=Count("tests")).filter(_tc=0)
+            return (with_tests | empty_shells).distinct()
+        return with_tests.distinct()
+
+    if can_mid:
+        q = queryset.filter(kind=MockExam.KIND_MIDTERM, is_active=True)
+        if can_assign:
+            q = q | queryset.filter(kind=MockExam.KIND_MOCK_SAT, is_active=True)
+        return q.distinct()
+
+    if can_assign:
+        return queryset.filter(is_active=True)
+
+    return queryset.none()
 
 
 def user_can_assign_as_class_teacher(user) -> bool:
-    """Users who may be assigned as group teacher (replaces ad-hoc is_admin on User)."""
-    return authorize(user, constants.PERM_MANAGE_USERS)
+    """Users who may be assigned as the group's teacher when creating a class."""
+    return authorize(user, constants.PERM_MANAGE_USERS) or authorize(
+        user, constants.PERM_MANAGE_CLASSROOMS
+    )

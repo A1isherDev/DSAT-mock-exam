@@ -16,6 +16,11 @@ PERM_SUBMIT_TEST = "submit_test"
 
 # LMS areas not in the original spec list — assigned only to SUPER_ADMIN / ADMIN.
 PERM_MANAGE_CLASSROOMS = "manage_classrooms"
+# Next.js /admin panel (separate from Django is_staff / django-admin).
+PERM_ACCESS_LMS_ADMIN = "access_lms_admin"
+# Timed mock shells: full SAT vs midterm-only (teachers may create midterms only).
+PERM_CREATE_MOCK_SAT = "create_mock_sat"
+PERM_CREATE_MIDTERM_MOCK = "create_midterm_mock"
 
 ALL_PERMISSION_CODENAMES = (
     PERM_MANAGE_USERS,
@@ -29,6 +34,9 @@ ALL_PERMISSION_CODENAMES = (
     PERM_VIEW_MATH_TESTS,
     PERM_SUBMIT_TEST,
     PERM_MANAGE_CLASSROOMS,
+    PERM_ACCESS_LMS_ADMIN,
+    PERM_CREATE_MOCK_SAT,
+    PERM_CREATE_MIDTERM_MOCK,
 )
 
 # SAT practice tests use READING_WRITING for the English/R&W section.
@@ -38,6 +46,7 @@ SUBJECT_MATH_PLATFORM = "MATH"
 ROLE_SUPER_ADMIN = "SUPER_ADMIN"
 ROLE_ADMIN = "ADMIN"
 ROLE_TEST_ADMIN = "TEST_ADMIN"
+ROLE_TEACHER = "TEACHER"
 ROLE_ENGLISH_ADMIN = "ENGLISH_ADMIN"
 ROLE_MATH_ADMIN = "MATH_ADMIN"
 ROLE_STUDENT = "STUDENT"

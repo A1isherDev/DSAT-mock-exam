@@ -7,6 +7,7 @@ from rest_framework.permissions import BasePermission
 from . import constants
 from .services import (
     authorize,
+    can_create_mock_exam_kind,
     filter_mock_exams_for_user,
     filter_pastpaper_packs_for_user,
     filter_practice_tests_for_user,
@@ -124,14 +125,20 @@ class PastpaperPackAdminAccess(BasePermission):
 
 class MockExamAdminAccess(BasePermission):
     """
-    Timed mock shell: full admins (view_all_tests / *) may do everything.
-    Test authors with create_test / edit_test / delete_test may create shells and manage mocks
-    they are allowed to see (see filter_mock_exams_for_user); nested sections use ABAC.
+    Timed mock shell: MOCK_SAT needs create_mock_sat; MIDTERM needs create_midterm_mock (or wildcard).
+    Section add_test/remove_test on full mocks requires create_mock_sat-level access.
     """
 
     def _shell_admin(self, u) -> bool:
         perms = get_effective_permission_codenames(u)
         return constants.WILDCARD in perms or constants.PERM_VIEW_ALL_TESTS in perms
+
+    def _can_author_mock_sat_shell(self, u) -> bool:
+        perms = get_effective_permission_codenames(u)
+        return (
+            self._shell_admin(u)
+            or constants.PERM_CREATE_MOCK_SAT in perms
+        )
 
     def has_permission(self, request, view):
         u = request.user
@@ -149,9 +156,12 @@ class MockExamAdminAccess(BasePermission):
                 or constants.PERM_EDIT_TEST in perms
                 or constants.PERM_DELETE_TEST in perms
                 or constants.PERM_ASSIGN_TEST_ACCESS in perms
+                or constants.PERM_CREATE_MOCK_SAT in perms
+                or constants.PERM_CREATE_MIDTERM_MOCK in perms
             )
         if act == "create":
-            return self._shell_admin(u) or authorize(u, constants.PERM_CREATE_TEST)
+            kind = (request.data or {}).get("kind") or "MOCK_SAT"
+            return can_create_mock_exam_kind(u, kind)
         if act in ("update", "partial_update"):
             return self._shell_admin(u) or authorize(u, constants.PERM_EDIT_TEST)
         if act == "destroy":
@@ -161,20 +171,29 @@ class MockExamAdminAccess(BasePermission):
         if act == "assign_users":
             return authorize(u, constants.PERM_ASSIGN_TEST_ACCESS)
         if act == "add_test":
-            subj = (request.data or {}).get("subject")
-            return authorize(u, constants.PERM_CREATE_TEST, subject=subj)
+            from exams.models import MockExam
+
+            pk = view.kwargs.get("pk")
+            if not pk:
+                return False
+            exam = MockExam.objects.filter(pk=pk).only("kind").first()
+            if not exam or exam.kind != MockExam.KIND_MOCK_SAT:
+                return False
+            return self._can_author_mock_sat_shell(u)
         if act == "remove_test":
-            from exams.models import PracticeTest
+            from exams.models import MockExam, PracticeTest
 
             tid = (request.data or {}).get("test_id")
             pk = view.kwargs.get("pk")
             if not tid or not pk:
                 return False
             try:
-                t = PracticeTest.objects.get(pk=tid, mock_exam_id=pk)
+                t = PracticeTest.objects.select_related("mock_exam").get(pk=tid, mock_exam_id=pk)
             except PracticeTest.DoesNotExist:
                 return False
-            return authorize(u, constants.PERM_DELETE_TEST, subject=t.subject)
+            if not t.mock_exam or t.mock_exam.kind != MockExam.KIND_MOCK_SAT:
+                return False
+            return self._shell_admin(u) or authorize(u, constants.PERM_DELETE_TEST, subject=t.subject)
         return False
 
     def has_object_permission(self, request, view, obj):
@@ -207,19 +226,24 @@ class MockExamAdminAccess(BasePermission):
         if act == "assign_users":
             return authorize(u, constants.PERM_ASSIGN_TEST_ACCESS)
         if act == "add_test":
-            subj = (request.data or {}).get("subject")
-            return authorize(u, constants.PERM_CREATE_TEST, subject=subj)
+            from exams.models import MockExam
+
+            if obj.kind != MockExam.KIND_MOCK_SAT:
+                return False
+            return self._can_author_mock_sat_shell(u)
         if act == "remove_test":
-            from exams.models import PracticeTest
+            from exams.models import MockExam, PracticeTest
 
             tid = (request.data or {}).get("test_id")
             if not tid:
                 return False
             try:
-                t = PracticeTest.objects.get(pk=tid, mock_exam_id=obj.pk)
+                t = PracticeTest.objects.select_related("mock_exam").get(pk=tid, mock_exam_id=obj.pk)
             except PracticeTest.DoesNotExist:
                 return False
-            return authorize(u, constants.PERM_DELETE_TEST, subject=t.subject)
+            if not t.mock_exam or t.mock_exam.kind != MockExam.KIND_MOCK_SAT:
+                return False
+            return self._shell_admin(u) or authorize(u, constants.PERM_DELETE_TEST, subject=t.subject)
         return False
 
 

@@ -4,6 +4,7 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from access import constants as acc_const
 from access.models import Role
 from access.services import authorize, get_effective_permission_codenames, user_can_assign_as_class_teacher
+from users.utils_staff import sync_django_staff_flag
 
 from .models import User
 
@@ -242,6 +243,8 @@ class UserSerializer(serializers.ModelSerializer):
         if password:
             user.set_password(password)
             user.save()
+        sync_django_staff_flag(user)
+        user.refresh_from_db()
         return user
 
     def update(self, instance, validated_data):
@@ -256,5 +259,7 @@ class UserSerializer(serializers.ModelSerializer):
         if password:
             user.set_password(password)
             user.save()
+        sync_django_staff_flag(user)
+        user.refresh_from_db()
         return user
 

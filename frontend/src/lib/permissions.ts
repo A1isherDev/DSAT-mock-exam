@@ -2,7 +2,7 @@ import Cookies from "js-cookie";
 
 /**
  * UI-only permission helpers. The backend enforces all authorization.
- * Synced from login / Google auth responses into the `lms_permissions` cookie (JSON array).
+ * Synced from login / Google auth into the `lms_permissions` cookie (JSON array).
  */
 export function getPermissionList(): string[] {
   if (typeof window === "undefined") return [];
@@ -16,36 +16,27 @@ export function getPermissionList(): string[] {
   }
 }
 
-/** Mirrors backend access.migrations.0002_seed_rbac ADMIN permissions when JWT cookie is stale. */
-const ADMIN_ROLE_CODENAMES = new Set([
-  "manage_users",
-  "create_test",
-  "edit_test",
-  "delete_test",
-  "view_all_tests",
-  "assign_test_access",
-  "manage_classrooms",
-]);
-
 export function can(codename: string): boolean {
   const p = getPermissionList();
-  if (p.includes("*") || p.includes(codename)) return true;
-  if (typeof window === "undefined") return false;
-  const r = Cookies.get("role");
-  if (r === "SUPER_ADMIN") return true;
-  if (r === "ADMIN" && ADMIN_ROLE_CODENAMES.has(codename)) return true;
-  return false;
+  return p.includes("*") || p.includes(codename);
 }
 
-/** Timed mock shell: create/edit/publish/delete controls (mirrors MockExamAdminAccess + create_test). */
-export function canManageMockExamShell(): boolean {
+export function canCreateFullMockSat(): boolean {
+  return can("*") || can("view_all_tests") || can("create_mock_sat");
+}
+
+export function canCreateMidtermMock(): boolean {
   return (
     can("*") ||
     can("view_all_tests") ||
-    can("create_test") ||
-    can("edit_test") ||
-    can("delete_test")
+    can("create_midterm_mock") ||
+    can("create_mock_sat")
   );
+}
+
+/** Timed mock shell tab / cards: full SAT and/or midterm authoring. */
+export function canManageMockExamShell(): boolean {
+  return canCreateFullMockSat() || canCreateMidtermMock();
 }
 
 /**
@@ -74,4 +65,9 @@ export function canEditQuestionsForSubject(subject: string | undefined): boolean
 export function canDeletePracticeTestFromMock(subject: string | undefined): boolean {
   if (!subject) return false;
   return can("delete_test") && canAbacTestSubject(subject);
+}
+
+/** Global Questions admin tab (not midterm-only flows). */
+export function canUseGlobalQuestionsTab(): boolean {
+  return can("*") || can("view_all_tests") || can("create_test");
 }
