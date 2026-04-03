@@ -22,7 +22,7 @@ const getImageUrl = (path: string | null | undefined) => {
 };
 import {
     Users, BookOpen, ShieldCheck, LogOut, Plus, Pencil, Trash2, Save,
-    X, Loader2, ChevronRight, CheckSquare, Square, Layers, HelpCircle, Search, Upload, Image as ImageIcon, ArrowUp, ArrowDown,
+    X, Loader2, Layers, HelpCircle, Search, Upload, Image as ImageIcon, ArrowUp, ArrowDown,
     Bold as BoldIcon, Italic as ItalicIcon, Underline as UnderlineIcon, Sigma, Percent, Variable, SlidersHorizontal, AlertTriangle
 } from 'lucide-react';
 
@@ -182,7 +182,7 @@ const RichTextEditor = ({ value, onChange, label, placeholder = "" }: { value: s
     );
 };
 
-type Tab = 'users' | 'pastpapers' | 'mocks' | 'modules' | 'questions' | 'assignments';
+type Tab = 'users' | 'pastpapers' | 'mocks' | 'modules' | 'questions';
 
 // ─── Inline Form Row ──────────────────────────────────────────────────────────
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -312,8 +312,6 @@ export default function AdminPage() {
     const [clearOptionBImage, setClearOptionBImage] = useState(false);
     const [clearOptionCImage, setClearOptionCImage] = useState(false);
     const [clearOptionDImage, setClearOptionDImage] = useState(false);
-    const [assignments, setAssignments] = useState<Record<number, number[]>>({});
-    const [userSearch, setUserSearch] = useState('');
 
     // Editing
     const [editingUser, setEditingUser] = useState<any>(null);
@@ -345,8 +343,6 @@ export default function AdminPage() {
         label: '',
         form_type: 'INTERNATIONAL',
     });
-    const [pastpaperAssignments, setPastpaperAssignments] = useState<Record<number, number[]>>({});
-    const [assignmentsFocus, setAssignmentsFocus] = useState<'mock' | 'pastpaper'>('mock');
     const [bulkAssignPracticeTests, setBulkAssignPracticeTests] = useState<number[]>([]);
 
     /** Pastpaper list: search + filters (admin UX). */
@@ -361,6 +357,12 @@ export default function AdminPage() {
     const [mockKindFilter, setMockKindFilter] = useState<"ALL" | "MOCK_SAT" | "MIDTERM">("ALL");
     const [mockPublishedFilter, setMockPublishedFilter] = useState<"ALL" | "PUBLISHED" | "DRAFT">("ALL");
     const [mockSort, setMockSort] = useState<"DATE" | "TITLE" | "ID">("DATE");
+    /** Questions tab: narrow card/mock picker and section list */
+    const [questionsSourceQuery, setQuestionsSourceQuery] = useState("");
+    const [questionsSectionSubjectFilter, setQuestionsSectionSubjectFilter] = useState<
+        "ALL" | "READING_WRITING" | "MATH"
+    >("ALL");
+    const [questionsMockKindFilter, setQuestionsMockKindFilter] = useState<"ALL" | "MOCK_SAT" | "MIDTERM">("ALL");
 
     const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
@@ -375,9 +377,6 @@ export default function AdminPage() {
                 didInitMockSelection.current = true;
                 setSelectedMockId((prev) => prev ?? data[0].id);
             }
-            const init: Record<number, number[]> = {};
-            data.forEach((m: any) => { init[m.id] = m.assigned_users || []; });
-            setAssignments(init);
         } catch(e) {}
     }, []);
 
@@ -385,9 +384,6 @@ export default function AdminPage() {
         try {
             const data = await adminApi.getPracticeTestsAdmin(true);
             setStandaloneTests(data);
-            const init: Record<number, number[]> = {};
-            data.forEach((t: any) => { init[t.id] = t.assigned_users || []; });
-            setPastpaperAssignments(init);
         } catch (e) { /* ignore */ }
     }, []);
 
@@ -416,7 +412,9 @@ export default function AdminPage() {
         fetchMockExams();
         fetchStandaloneTests();
         fetchPastpaperPacks();
-        fetchUsers();
+        if (can("manage_users") || can("assign_test_access")) {
+            fetchUsers();
+        }
     }, [fetchMockExams, fetchStandaloneTests, fetchPastpaperPacks, fetchUsers]);
 
     const allSelectableTests = useMemo(() => {
@@ -557,6 +555,95 @@ export default function AdminPage() {
         return [];
     }, [questionsGroupValue, pastpaperPacks, orphanPastpaperTests, mockExams]);
 
+    const filteredPacksForQuestionsTab = useMemo(() => {
+        const q = questionsSourceQuery.trim().toLowerCase();
+        if (!q) return pastpaperPacks;
+        return pastpaperPacks.filter((p) => {
+            const blob = `${p.id} ${formatPastpaperPackAdminLabel(p)}`.toLowerCase();
+            const secBlob = (p.sections || [])
+                .map((s: any) => `${s.id} ${s.title || ""} ${s.subject || ""} ${s.label || ""}`)
+                .join(" ")
+                .toLowerCase();
+            return blob.includes(q) || secBlob.includes(q);
+        });
+    }, [pastpaperPacks, questionsSourceQuery]);
+
+    const filteredMocksForQuestionsTab = useMemo(() => {
+        let list = mockExams;
+        if (questionsMockKindFilter !== "ALL") {
+            list = list.filter((m) => (m.kind || "MOCK_SAT") === questionsMockKindFilter);
+        }
+        const q = questionsSourceQuery.trim().toLowerCase();
+        if (!q) return list;
+        return list.filter((m) => {
+            const blob = formatMockExamAdminLabel(m).toLowerCase();
+            const tb = (m.tests || [])
+                .map((t: any) => `${t.id} ${t.subject || ""} ${t.label || ""}`)
+                .join(" ")
+                .toLowerCase();
+            return blob.includes(q) || tb.includes(q);
+        });
+    }, [mockExams, questionsSourceQuery, questionsMockKindFilter]);
+
+    const filteredQuestionSectionOptions = useMemo(() => {
+        let opts = questionSectionOptions;
+        if (questionsSectionSubjectFilter === "READING_WRITING") {
+            opts = opts.filter((t: any) => t.subject === "READING_WRITING");
+        } else if (questionsSectionSubjectFilter === "MATH") {
+            opts = opts.filter((t: any) => t.subject === "MATH");
+        }
+        return [...opts].sort((a: any, b: any) => {
+            const sk = (s: string) => (s === "MATH" ? 1 : 0);
+            const c = sk(a.subject) - sk(b.subject);
+            if (c !== 0) return c;
+            return (a.id || 0) - (b.id || 0);
+        });
+    }, [questionSectionOptions, questionsSectionSubjectFilter]);
+
+    useEffect(() => {
+        if (!questionsGroupValue) return;
+        if (!filteredQuestionSectionOptions.length) {
+            if (selectedPracticeTestId !== null) {
+                setSelectedPracticeTestId(null);
+                setSelectedModuleId(null);
+            }
+            return;
+        }
+        const ok = filteredQuestionSectionOptions.some((t: any) => t.id === selectedPracticeTestId);
+        if (!ok) {
+            const first = filteredQuestionSectionOptions[0];
+            setSelectedPracticeTestId(first.id);
+            setSelectedModuleId(null);
+            const row = allSelectableTests.find((x) => x.id === first.id);
+            if (row?._mockId) setSelectedMockId(row._mockId);
+            else setSelectedMockId(null);
+        }
+    }, [
+        filteredQuestionSectionOptions,
+        questionsGroupValue,
+        selectedPracticeTestId,
+        allSelectableTests,
+    ]);
+
+    const pickFirstQuestionSection = useCallback(
+        (opts: any[]) => {
+            let o = opts;
+            if (questionsSectionSubjectFilter === "READING_WRITING") {
+                o = o.filter((t: any) => t.subject === "READING_WRITING");
+            } else if (questionsSectionSubjectFilter === "MATH") {
+                o = o.filter((t: any) => t.subject === "MATH");
+            }
+            const sorted = [...o].sort((a: any, b: any) => {
+                const sk = (s: string) => (s === "MATH" ? 1 : 0);
+                const c = sk(a.subject) - sk(b.subject);
+                if (c !== 0) return c;
+                return (a.id || 0) - (b.id || 0);
+            });
+            return sorted[0] || null;
+        },
+        [questionsSectionSubjectFilter],
+    );
+
     const handleQuestionsGroupChange = useCallback(
         (val: string) => {
             setQuestionsGroupValue(val);
@@ -570,7 +657,7 @@ export default function AdminPage() {
                 const mid = Number(val.slice(5));
                 opts = mockExams.find((x) => x.id === mid)?.tests || [];
             }
-            const first = opts[0];
+            const first = pickFirstQuestionSection(opts);
             if (first) {
                 setSelectedPracticeTestId(first.id);
                 const row = allSelectableTests.find((x) => x.id === first.id);
@@ -580,7 +667,7 @@ export default function AdminPage() {
                 setSelectedMockId(null);
             }
         },
-        [allSelectableTests, orphanPastpaperTests, pastpaperPacks, mockExams],
+        [allSelectableTests, orphanPastpaperTests, pastpaperPacks, mockExams, pickFirstQuestionSection],
     );
 
     useEffect(() => {
@@ -868,15 +955,6 @@ export default function AdminPage() {
         }
     };
 
-    const handleSavePastpaperAssignments = async (testId: number) => {
-        try {
-            await adminApi.updatePracticeTest(testId, { assigned_users: pastpaperAssignments[testId] || [] });
-            showToast('Assignments saved');
-        } catch (e) {
-            console.error(e);
-        }
-    };
-
     // ── Module CRUD (now within a specific PracticeTest)
     const handleSaveModule = async (moduleId?: number, data?: any) => {
         if (!selectedPracticeTestId) return;
@@ -969,14 +1047,6 @@ export default function AdminPage() {
         await fetchQuestions(); showToast('Question deleted');
     };
 
-    // ── Assignments
-    const handleSaveAssignment = async (examId: number) => {
-        try {
-            await adminApi.assignStudentsToExam(examId, assignments[examId] || []);
-            showToast("Assignments saved!");
-        } catch (e) { console.error(e); }
-    };
-
     const closeBulkModal = () => {
         setShowBulkModal(false);
         setBulkAssignExams([]);
@@ -1045,12 +1115,11 @@ export default function AdminPage() {
     const predictedSum = editingQuestion !== null ? (moduleScoreSum - (editingQuestion.id ? (questions.find(q => q.id === editingQuestion.id)?.score || 0) : 0) + (questionForm.score || 0)) : moduleScoreSum;
     const isOverBudget = predictedSum > budget;
 
-    const navItems: { key: Tab; label: string; icon: React.ReactNode }[] = useMemo(() => {
+    const navItems: { key: Tab; label: string; icon: React.ReactNode }[] = (() => {
         const all: { key: Tab; label: string; icon: React.ReactNode }[] = [
             { key: 'pastpapers', label: 'Pastpaper tests', icon: <BookOpen className="w-4 h-4" /> },
             { key: 'mocks', label: 'Mock exams', icon: <Layers className="w-4 h-4" /> },
             { key: 'questions', label: 'Questions', icon: <HelpCircle className="w-4 h-4" /> },
-            { key: 'assignments', label: 'Assignments', icon: <CheckSquare className="w-4 h-4" /> },
             { key: 'users', label: 'Users', icon: <Users className="w-4 h-4" /> },
         ];
         const testArea =
@@ -1065,7 +1134,6 @@ export default function AdminPage() {
             can('create_midterm_mock');
         const filtered = all.filter((item) => {
             if (item.key === 'users') return can('manage_users');
-            if (item.key === 'assignments') return can('assign_test_access');
             if (item.key === 'questions') return canUseGlobalQuestionsTab();
             if (item.key === 'mocks') {
                 return (
@@ -1073,13 +1141,15 @@ export default function AdminPage() {
                     can('view_all_tests') ||
                     can('create_mock_sat') ||
                     can('create_midterm_mock') ||
-                    can('assign_test_access')
+                    can('assign_test_access') ||
+                    can('edit_test') ||
+                    can('delete_test')
                 );
             }
             return testArea;
         });
         return filtered.length ? filtered : all.filter((i) => i.key === 'pastpapers');
-    }, []);
+    })();
 
     useEffect(() => {
         const keys = navItems.map((i) => i.key);
@@ -2001,7 +2071,57 @@ export default function AdminPage() {
                                             </p>
                                         </div>
                                     </div>
-                                    <div className="flex gap-2 flex-wrap items-end">
+                                    <div className="flex flex-col gap-4 w-full">
+                                        <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                                            <div className="flex items-center gap-2 text-[11px] font-bold text-slate-500 uppercase tracking-widest">
+                                                <SlidersHorizontal className="w-4 h-4" /> Find card or mock
+                                            </div>
+                                            <div className="flex flex-wrap gap-3 items-end">
+                                                <div className="flex flex-col gap-1 min-w-[200px] flex-1">
+                                                    <span className="text-[10px] font-bold text-slate-400 uppercase">Search</span>
+                                                    <div className="relative">
+                                                        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                                        <input
+                                                            className={INPUT + " !pl-9"}
+                                                            placeholder="Title, #id, section label…"
+                                                            value={questionsSourceQuery}
+                                                            onChange={(e) => setQuestionsSourceQuery(e.target.value)}
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div className="flex flex-col gap-1">
+                                                    <span className="text-[10px] font-bold text-slate-400 uppercase">Mock type</span>
+                                                    <select
+                                                        className={INPUT + " !min-w-[150px]"}
+                                                        value={questionsMockKindFilter}
+                                                        onChange={(e) =>
+                                                            setQuestionsMockKindFilter(e.target.value as typeof questionsMockKindFilter)
+                                                        }
+                                                    >
+                                                        <option value="ALL">All</option>
+                                                        <option value="MOCK_SAT">SAT mock</option>
+                                                        <option value="MIDTERM">Midterm</option>
+                                                    </select>
+                                                </div>
+                                                <div className="flex flex-col gap-1">
+                                                    <span className="text-[10px] font-bold text-slate-400 uppercase">Section subject</span>
+                                                    <select
+                                                        className={INPUT + " !min-w-[160px]"}
+                                                        value={questionsSectionSubjectFilter}
+                                                        onChange={(e) =>
+                                                            setQuestionsSectionSubjectFilter(
+                                                                e.target.value as typeof questionsSectionSubjectFilter,
+                                                            )
+                                                        }
+                                                    >
+                                                        <option value="ALL">All</option>
+                                                        <option value="READING_WRITING">Reading &amp; Writing</option>
+                                                        <option value="MATH">Math</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-2 flex-wrap items-end">
                                         <div className="flex flex-col gap-1">
                                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Card / mock</span>
                                             <select
@@ -2011,7 +2131,7 @@ export default function AdminPage() {
                                             >
                                                 <option value="">Select pastpaper card or mock…</option>
                                                 <optgroup label="Pastpaper cards">
-                                                    {pastpaperPacks.map((p) => (
+                                                    {filteredPacksForQuestionsTab.map((p) => (
                                                         <option key={p.id} value={`pack:${p.id}`}>
                                                             {formatPastpaperPackAdminLabel(p)}
                                                         </option>
@@ -2021,7 +2141,7 @@ export default function AdminPage() {
                                                     <option value="orphan">Unassigned pastpaper sections</option>
                                                 ) : null}
                                                 <optgroup label="Timed mocks & midterms">
-                                                    {mockExams.map((m) => (
+                                                    {filteredMocksForQuestionsTab.map((m) => (
                                                         <option key={m.id} value={`mock:${m.id}`}>
                                                             {formatMockExamAdminLabel(m)}
                                                         </option>
@@ -2034,7 +2154,7 @@ export default function AdminPage() {
                                             <select
                                                 className={INPUT + ' !min-w-[220px]'}
                                                 value={selectedPracticeTestId || ''}
-                                                disabled={!questionSectionOptions.length}
+                                                disabled={!filteredQuestionSectionOptions.length}
                                                 onChange={(e) => {
                                                     const id = Number(e.target.value);
                                                     setSelectedPracticeTestId(id || null);
@@ -2045,7 +2165,7 @@ export default function AdminPage() {
                                                 }}
                                             >
                                                 <option value="">{questionsGroupValue ? 'Choose section…' : 'Pick a card first'}</option>
-                                                {questionSectionOptions.map((t: any) => (
+                                                {filteredQuestionSectionOptions.map((t: any) => (
                                                     <option key={t.id} value={t.id}>
                                                         #{t.id} · {t.subject === 'MATH' ? 'Math' : 'Reading & Writing'}
                                                         {t.label ? ` [${t.label}]` : ''}
@@ -2089,6 +2209,7 @@ export default function AdminPage() {
                                             <Save className="w-4 h-4" /> Save Module
                                         </button>
                                     </div>
+                                </div>
                                 </div>
 
                                 {editingQuestion !== null && canEditCurrentQuestions && (
@@ -2337,137 +2458,6 @@ export default function AdminPage() {
                                         </div>
                                     ))}
                                 </div>
-                            </div>
-                        )}
-
-                        {activeTab === 'assignments' && (
-                            <div className="space-y-6 max-w-3xl">
-                                <div className="flex items-center justify-between flex-wrap gap-3">
-                                    <h2 className="text-xl font-bold text-slate-900">Assignments</h2>
-                                    <div className="flex rounded-xl border border-slate-200 overflow-hidden">
-                                        <button
-                                            type="button"
-                                            className={`px-4 py-2 text-xs font-bold ${assignmentsFocus === 'mock' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600'}`}
-                                            onClick={() => setAssignmentsFocus('mock')}
-                                        >
-                                            Mock exams
-                                        </button>
-                                        <button
-                                            type="button"
-                                            className={`px-4 py-2 text-xs font-bold ${assignmentsFocus === 'pastpaper' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600'}`}
-                                            onClick={() => setAssignmentsFocus('pastpaper')}
-                                        >
-                                            Pastpaper tests
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {assignmentsFocus === 'mock' && (
-                                    <>
-                                        <div className="flex items-center justify-between">
-                                            <p className="text-sm text-slate-600">Assign users to a timed mock (portal + sections).</p>
-                                            {can('assign_test_access') && (
-                                                <button className={BTN_PRIMARY} onClick={() => selectedMockId && handleSaveAssignment(selectedMockId)} disabled={saving || !selectedMockId}>{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save</button>
-                                            )}
-                                        </div>
-                                        <div className="flex gap-3 flex-wrap">
-                                            {mockExams.map((m) => (
-                                                <button
-                                                    key={m.id}
-                                                    type="button"
-                                                    onClick={() => setSelectedMockId(m.id)}
-                                                    className={`text-left text-xs font-bold px-4 py-2 rounded-lg border transition-all max-w-[280px] ${selectedMockId === m.id ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"}`}
-                                                >
-                                                    <span className="block truncate">{m.title || `Untitled #${m.id}`}</span>
-                                                    <span
-                                                        className={`block text-[9px] font-mono font-normal truncate mt-0.5 ${selectedMockId === m.id ? "text-indigo-100" : "text-slate-400"}`}
-                                                    >
-                                                        {m.kind === "MIDTERM" ? "Midterm" : "SAT mock"} · #{m.id}
-                                                        {m.is_published ? " · Live" : " · Draft"}
-                                                    </span>
-                                                </button>
-                                            ))}
-                                        </div>
-                                        <div className="relative"><Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" /><input className={INPUT + ' pl-9'} placeholder="Search users..." value={userSearch} onChange={e => setUserSearch(e.target.value)} /></div>
-                                        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-                                            {users.filter(u => (u.email + u.first_name + u.last_name + u.username).toLowerCase().includes(userSearch.toLowerCase())).map(user => {
-                                                const isAssigned = (assignments[selectedMockId!] || []).includes(user.id);
-                                                return (
-                                                    <div key={user.id} className="p-4 border-b last:border-0 flex items-center justify-between hover:bg-slate-50 cursor-pointer" onClick={() => {
-                                                        if (!selectedMockId) return;
-                                                        const current = assignments[selectedMockId] || [];
-                                                        const updated = isAssigned ? current.filter(id => id !== user.id) : [...current, user.id];
-                                                        setAssignments({ ...assignments, [selectedMockId]: updated });
-                                                    }}>
-                                                        <div className="flex items-center gap-3">
-                                                            {isAssigned ? <CheckSquare className="w-4 h-4 text-indigo-600" /> : <Square className="w-4 h-4 text-slate-300" />}
-                                                            <div><p className="font-bold text-sm text-slate-900">{user.first_name} {user.last_name}</p><p className="text-[11px] text-slate-400">{user.email} · @{user.username}</p></div>
-                                                        </div>
-                                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${user.role === 'STUDENT' ? 'bg-emerald-100 text-emerald-800' : user.role === 'SUPER_ADMIN' ? 'bg-violet-100 text-violet-800' : 'bg-indigo-100 text-indigo-800'}`}>{user.role}</span>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    </>
-                                )}
-
-                                {assignmentsFocus === 'pastpaper' && (
-                                    <>
-                                        <p className="text-sm text-slate-600">Who can see each pastpaper in Practice Tests.</p>
-                                        <div className="flex gap-3 flex-wrap">
-                                            {standaloneTests.map((t) => (
-                                                <button
-                                                    key={t.id}
-                                                    type="button"
-                                                    onClick={() => setSelectedPracticeTestId(t.id)}
-                                                    className={`text-left text-xs font-bold px-4 py-2 rounded-lg border transition-all max-w-[280px] ${selectedPracticeTestId === t.id ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"}`}
-                                                >
-                                                    <span className="block truncate">{formatPastpaperSectionForAssign(t)}</span>
-                                                </button>
-                                            ))}
-                                        </div>
-                                        {standaloneTests.length === 0 ? (
-                                            <p className="text-sm text-slate-500">Create pastpaper tests in the Pastpaper tab first.</p>
-                                        ) : (
-                                            <>
-                                                <div className="flex items-center justify-between">
-                                                    <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">
-                                                        {(() => {
-                                                            const st = standaloneTests.find((s) => s.id === selectedPracticeTestId);
-                                                            return st
-                                                                ? `Editing: ${formatPastpaperSectionForAssign(st)}`
-                                                                : "Select a pastpaper section above";
-                                                        })()}
-                                                    </p>
-                                                    {can('assign_test_access') && selectedPracticeTestId && standaloneTests.some((s) => s.id === selectedPracticeTestId) && (
-                                                        <button className={BTN_PRIMARY} onClick={() => void handleSavePastpaperAssignments(selectedPracticeTestId)} disabled={saving}>{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save</button>
-                                                    )}
-                                                </div>
-                                                <div className="relative"><Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" /><input className={INPUT + ' pl-9'} placeholder="Search users..." value={userSearch} onChange={e => setUserSearch(e.target.value)} /></div>
-                                                <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-                                                    {users.filter(u => (u.email + u.first_name + u.last_name + u.username).toLowerCase().includes(userSearch.toLowerCase())).map((user) => {
-                                                        const tid = selectedPracticeTestId;
-                                                        const isAssigned = tid ? (pastpaperAssignments[tid] || []).includes(user.id) : false;
-                                                        return (
-                                                            <div key={user.id} className="p-4 border-b last:border-0 flex items-center justify-between hover:bg-slate-50 cursor-pointer" onClick={() => {
-                                                                if (!tid || !standaloneTests.some((s) => s.id === tid)) return;
-                                                                const current = pastpaperAssignments[tid] || [];
-                                                                const updated = isAssigned ? current.filter((id) => id !== user.id) : [...current, user.id];
-                                                                setPastpaperAssignments({ ...pastpaperAssignments, [tid]: updated });
-                                                            }}>
-                                                                <div className="flex items-center gap-3">
-                                                                    {isAssigned ? <CheckSquare className="w-4 h-4 text-indigo-600" /> : <Square className="w-4 h-4 text-slate-300" />}
-                                                                    <div><p className="font-bold text-sm text-slate-900">{user.first_name} {user.last_name}</p><p className="text-[11px] text-slate-400">{user.email} · @{user.username}</p></div>
-                                                                </div>
-                                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${user.role === 'STUDENT' ? 'bg-emerald-100 text-emerald-800' : user.role === 'SUPER_ADMIN' ? 'bg-violet-100 text-violet-800' : 'bg-indigo-100 text-indigo-800'}`}>{user.role}</span>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </>
-                                        )}
-                                    </>
-                                )}
                             </div>
                         )}
 

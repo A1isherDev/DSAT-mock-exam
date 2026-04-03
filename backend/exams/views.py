@@ -18,6 +18,7 @@ from access.policies import (
 )
 from access.services import (
     authorize,
+    can_browse_standalone_practice_library,
     filter_mock_exams_for_user,
     filter_pastpaper_packs_for_user,
     filter_practice_tests_for_user,
@@ -142,9 +143,9 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         """
-        Single rule for all roles: only PracticeTest rows assigned to this user, plus other sections
-        in the same pastpaper pack. No permission-based library fallback (avoids showing other users'
-        assignments or unassigned junk). Admins browse/edit everything via /exams/admin/tests/.
+        Students: assigned standalone tests plus siblings in the same pastpaper pack.
+        Staff with test-library permissions: all standalone tests visible per ABAC
+        (view_all / subject scopes / authoring perms), same as admin test lists.
         """
         user = self.request.user
         base = (
@@ -152,6 +153,8 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
             .select_related("mock_exam", "pastpaper_pack")
             .prefetch_related("modules")
         )
+        if can_browse_standalone_practice_library(user):
+            return filter_practice_tests_for_user(user, base).distinct()
         mine = base.filter(assigned_users=user).distinct()
         return self._expand_pastpaper_pack_siblings(base, mine)
 

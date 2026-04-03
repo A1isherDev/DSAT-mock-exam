@@ -50,6 +50,8 @@ def seed_rbac_v2(apps, schema_editor):
         "access_lms_admin",
         "create_test",
         "edit_test",
+        "delete_test",
+        "view_all_tests",
     ]
     admin = [
         "submit_test",

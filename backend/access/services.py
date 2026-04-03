@@ -191,6 +191,26 @@ def _math_admin_allows(permission_codename: str, subject: Optional[str]) -> bool
     return True
 
 
+def can_browse_standalone_practice_library(user) -> bool:
+    """
+    Users who may see the full pastpaper / standalone library on the student portal
+    (/exams/), not only rows assigned to them. Mirrors admin list visibility for tests.
+    """
+    perms = get_effective_permission_codenames(user)
+    if not perms:
+        return False
+    if constants.WILDCARD in perms or constants.PERM_VIEW_ALL_TESTS in perms:
+        return True
+    browse = {
+        constants.PERM_VIEW_ENGLISH_TESTS,
+        constants.PERM_VIEW_MATH_TESTS,
+        constants.PERM_CREATE_TEST,
+        constants.PERM_EDIT_TEST,
+        constants.PERM_DELETE_TEST,
+    }
+    return bool(browse & perms)
+
+
 def filter_practice_tests_for_user(user, queryset):
     """Narrow PracticeTest queryset by view_* permissions (no hardcoded role checks)."""
     perms = get_effective_permission_codenames(user)
@@ -251,12 +271,7 @@ def filter_mock_exams_for_user(user, queryset):
     perms = get_effective_permission_codenames(user)
     if constants.WILDCARD in perms:
         return queryset
-    # view_all_tests scopes practice tests, not necessarily every timed mock shell.
-    if constants.PERM_VIEW_ALL_TESTS in perms and (
-        constants.PERM_CREATE_MOCK_SAT in perms
-        or constants.PERM_CREATE_MIDTERM_MOCK in perms
-        or constants.PERM_ASSIGN_TEST_ACCESS in perms
-    ):
+    if constants.PERM_VIEW_ALL_TESTS in perms:
         return queryset
 
     can_sat = constants.PERM_CREATE_MOCK_SAT in perms
