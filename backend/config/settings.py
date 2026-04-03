@@ -24,6 +24,13 @@ DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
 
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '')
+# Telegram Login Widget: bot token (server only) + bot username for the widget (public).
+TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
+# Synthetic email domain for users without email (must stay unique per Telegram user id).
+TELEGRAM_SYNTHETIC_EMAIL_DOMAIN = os.getenv(
+    'TELEGRAM_SYNTHETIC_EMAIL_DOMAIN',
+    'telegram.mastersat.local',
+)
 
 
 # ─── Application Definition ───────────────────────────────────────────────────

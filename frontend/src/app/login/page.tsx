@@ -1,9 +1,10 @@
 "use client";
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { authApi } from '@/lib/api';
 import { useRouter } from 'next/navigation';
 import { AlertCircle, Loader2, LogIn } from 'lucide-react';
 import Link from 'next/link';
+import TelegramLoginButton, { type TelegramAuthUser } from '@/components/TelegramLoginButton';
 
 declare global {
     interface Window {
@@ -36,6 +37,22 @@ export default function LoginPage() {
             setLoading(false);
         }
     };
+
+    const handleTelegramAuth = useCallback(
+        async (user: TelegramAuthUser) => {
+            setLoading(true);
+            setError('');
+            try {
+                await authApi.telegramAuth(user, rememberMe);
+                router.push('/');
+            } catch (err: any) {
+                setError(err?.response?.data?.detail || 'Telegram orqali kirish muvaffaqiyatsiz.');
+            } finally {
+                setLoading(false);
+            }
+        },
+        [rememberMe, router],
+    );
 
     const handleGoogleCredential = async (credential: string, profile?: { first_name?: string; last_name?: string; username?: string }) => {
         setLoading(true);
@@ -163,8 +180,18 @@ export default function LoginPage() {
                             <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">or</span>
                             <div className="h-px bg-slate-200 dark:bg-slate-800 flex-1" />
                         </div>
-                        <div className="flex justify-center bg-white dark:bg-white rounded-full mx-auto w-fit p-1">
-                            <div ref={googleButtonRef} className="dark:mix-blend-normal" />
+                        <div className="flex flex-col items-center gap-4">
+                            <div className="flex justify-center bg-white dark:bg-white rounded-full mx-auto w-fit p-1">
+                                <div ref={googleButtonRef} className="dark:mix-blend-normal" />
+                            </div>
+                            {process.env.NEXT_PUBLIC_TELEGRAM_BOT_NAME ? (
+                                <div className="w-full flex flex-col items-center gap-2">
+                                    <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
+                                        Telegram bilan kirish
+                                    </span>
+                                    <TelegramLoginButton onAuth={handleTelegramAuth} />
+                                </div>
+                            ) : null}
                         </div>
                         {googleMissing.length > 0 && (
                             <div className="space-y-3 pt-2">

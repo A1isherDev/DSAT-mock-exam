@@ -95,6 +95,34 @@ export const authApi = {
         }
         return response.data;
     },
+    telegramAuth: async (
+        payload: {
+            id: number;
+            first_name?: string;
+            last_name?: string;
+            username?: string;
+            photo_url?: string;
+            auth_date: number;
+            hash: string;
+        },
+        rememberMe = true
+    ) => {
+        const response = await api.post('/users/telegram/', payload);
+        const cookieOptions = {
+            secure: IS_PROD,
+            sameSite: 'strict' as const,
+            expires: rememberMe ? 7 : undefined
+        };
+        Cookies.set('access_token', response.data.access, cookieOptions);
+        Cookies.set('refresh_token', response.data.refresh, cookieOptions);
+        Cookies.set('is_admin', response.data.is_admin ? 'true' : 'false', cookieOptions);
+        Cookies.set('is_frozen', response.data.is_frozen ? 'true' : 'false', cookieOptions);
+        Cookies.set('role', response.data.role || 'STUDENT', cookieOptions);
+        if (Array.isArray(response.data.permissions)) {
+            Cookies.set('lms_permissions', JSON.stringify(response.data.permissions), cookieOptions);
+        }
+        return response.data;
+    },
     logout: () => {
         Cookies.remove('access_token');
         Cookies.remove('refresh_token');
