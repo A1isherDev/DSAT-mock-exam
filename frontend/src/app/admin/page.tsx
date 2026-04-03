@@ -702,12 +702,22 @@ export default function AdminPage() {
 
     useEffect(() => { 
         if (selectedPracticeTestId) {
-            fetchModules().then(data => {
-                if (data && data.length > 0) setSelectedModuleId(data[0].id);
-                else setSelectedModuleId(null);
+            fetchModules().then((data) => {
+                if (!data || data.length === 0) {
+                    setSelectedModuleId(null);
+                    return;
+                }
+                setSelectedModuleId((prev) => {
+                    if (prev != null && data.some((m: { id: number }) => m.id === prev)) return prev;
+                    return data[0].id;
+                });
             });
         }
     }, [selectedPracticeTestId, fetchModules]);
+
+    useEffect(() => {
+        setEditingQuestion(null);
+    }, [selectedPracticeTestId]);
 
     useEffect(() => { 
         if (selectedPracticeTestId && selectedModuleId) fetchQuestions(); 
@@ -996,13 +1006,31 @@ export default function AdminPage() {
             if (clearOptionCImage) formData.append('clear_option_c_image', 'true');
             if (clearOptionDImage) formData.append('clear_option_d_image', 'true');
 
-            if (editingQuestion?.id) { 
-                await adminApi.updateQuestion(selectedPracticeTestId, selectedModuleId, editingQuestion.id, formData, true); 
+            const qid = editingQuestion?.id;
+            const isEdit =
+                qid != null &&
+                qid !== '' &&
+                typeof qid !== 'object' &&
+                Number.isFinite(Number(qid));
+            const testIdForApi =
+                isEdit && editingQuestion?.practice_test_id != null
+                    ? Number(editingQuestion.practice_test_id)
+                    : selectedPracticeTestId;
+            const moduleIdForApi =
+                isEdit && editingQuestion?.module_id != null
+                    ? Number(editingQuestion.module_id)
+                    : selectedModuleId;
+
+            if (isEdit) {
+                await adminApi.updateQuestion(testIdForApi, moduleIdForApi, Number(qid), formData, true);
+            } else {
+                await adminApi.createQuestion(selectedPracticeTestId, selectedModuleId, formData, true);
             }
-            else { 
-                await adminApi.createQuestion(selectedPracticeTestId, selectedModuleId, formData, true); 
-            }
-            await fetchQuestions();
+
+            if (testIdForApi !== selectedPracticeTestId) setSelectedPracticeTestId(testIdForApi);
+            if (moduleIdForApi !== selectedModuleId) setSelectedModuleId(moduleIdForApi);
+            const list = await adminApi.getQuestions(testIdForApi, moduleIdForApi);
+            setQuestions(Array.isArray(list) ? list : []);
             setEditingQuestion(null);
             setQuestionForm({ 
                 question_text: '', question_prompt: '', 

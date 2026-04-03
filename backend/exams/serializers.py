@@ -143,6 +143,8 @@ class TestAttemptSerializer(serializers.ModelSerializer):
 
 class AdminQuestionSerializer(serializers.ModelSerializer):
     correct_answer = serializers.CharField(source='correct_answers', required=True)
+    module_id = serializers.IntegerField(read_only=True)
+    practice_test_id = serializers.IntegerField(source="module.practice_test_id", read_only=True)
     option_a = serializers.CharField(required=False, allow_blank=True)
     option_b = serializers.CharField(required=False, allow_blank=True)
     option_c = serializers.CharField(required=False, allow_blank=True)
@@ -155,7 +157,7 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Question
-        fields = ['id', 'question_type', 'question_text', 'question_prompt', 'question_image',
+        fields = ['id', 'module_id', 'practice_test_id', 'question_type', 'question_text', 'question_prompt', 'question_image',
                   'is_math_input', 'correct_answer', 'score', 'explanation', 'order',
                   'option_a', 'option_b', 'option_c', 'option_d',
                   'option_a_image', 'option_b_image', 'option_c_image', 'option_d_image',

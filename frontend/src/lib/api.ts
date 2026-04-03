@@ -311,11 +311,12 @@ export const adminApi = {
     // Questions
     getQuestions: async (testId: number, moduleId: number) => { const r = await api.get(`/exams/admin/tests/${testId}/modules/${moduleId}/questions/`); return r.data; },
     createQuestion: async (testId: number, moduleId: number, data: FormData | object, isFormData = false) => {
-        const r = await api.post(`/exams/admin/tests/${testId}/modules/${moduleId}/questions/`, data, isFormData ? { headers: { 'Content-Type': 'multipart/form-data' } } : {});
+        // Let axios set multipart boundary; a bare Content-Type breaks file uploads.
+        const r = await api.post(`/exams/admin/tests/${testId}/modules/${moduleId}/questions/`, data, isFormData ? {} : {});
         return r.data;
     },
     updateQuestion: async (testId: number, moduleId: number, questionId: number, data: FormData | object, isFormData = false) => {
-        const r = await api.patch(`/exams/admin/tests/${testId}/modules/${moduleId}/questions/${questionId}/`, data, isFormData ? { headers: { 'Content-Type': 'multipart/form-data' } } : {});
+        const r = await api.patch(`/exams/admin/tests/${testId}/modules/${moduleId}/questions/${questionId}/`, data, isFormData ? {} : {});
         return r.data;
     },
     deleteQuestion: async (testId: number, moduleId: number, questionId: number) => {
