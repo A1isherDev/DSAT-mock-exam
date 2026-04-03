@@ -16,6 +16,7 @@ class UserMeSerializer(serializers.ModelSerializer):
     clear_profile_image = serializers.BooleanField(write_only=True, required=False)
     role = serializers.SerializerMethodField()
     permissions = serializers.SerializerMethodField()
+    telegram_linked = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -26,6 +27,7 @@ class UserMeSerializer(serializers.ModelSerializer):
             "first_name",
             "last_name",
             "phone_number",
+            "telegram_linked",
             "profile_image",
             "profile_image_url",
             "sat_exam_date",
@@ -133,6 +135,9 @@ class UserMeSerializer(serializers.ModelSerializer):
 
     def get_role(self, obj):
         return obj.role
+
+    def get_telegram_linked(self, obj):
+        return obj.telegram_id is not None
 
     def get_permissions(self, obj):
         return sorted(get_effective_permission_codenames(obj))

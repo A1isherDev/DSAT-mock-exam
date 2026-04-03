@@ -6,6 +6,7 @@ from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 from rest_framework_simplejwt.tokens import RefreshToken
+from django.db.models import Q
 from .models import User
 from access.permissions import HasManageUsers
 from access.services import get_effective_permission_codenames
@@ -17,6 +18,38 @@ import re
 
 from .telegram_auth import verify_telegram_login
 from .phone_utils import normalize_phone
+from .telegram_bot_info import telegram_bot_username_for_token
+
+
+def _apply_telegram_phone(user, data) -> Response | None:
+    """Persist verified phone from Telegram payload; return error Response or None."""
+    raw_phone = data.get("phone_number")
+    if raw_phone is None or not str(raw_phone).strip():
+        return None
+    try:
+        normalized = normalize_phone(raw_phone)
+    except ValueError:
+        return Response({"detail": "Invalid phone number."}, status=status.HTTP_400_BAD_REQUEST)
+    if not normalized:
+        return None
+    if User.objects.filter(phone_number=normalized).exclude(pk=user.pk).exists():
+        return Response(
+            {"detail": "This phone number is already in use."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    user.phone_number = normalized
+    user.save(update_fields=["phone_number"])
+    return None
+
+
+def _effective_telegram_bot_username() -> str:
+    u = getattr(settings, "TELEGRAM_BOT_USERNAME", "") or ""
+    if u:
+        return u
+    token = getattr(settings, "TELEGRAM_BOT_TOKEN", "") or ""
+    if not token:
+        return ""
+    return telegram_bot_username_for_token(token)
 
 class ThrottledTokenObtainPairView(TokenObtainPairView):
     serializer_class = MyTokenObtainPairSerializer
@@ -153,6 +186,62 @@ class GoogleAuthView(APIView):
         )
 
 
+class TelegramWidgetConfigView(APIView):
+    """Public: whether Telegram login is configured and which bot username the widget needs."""
+
+    permission_classes = []
+
+    def get(self, request):
+        token = getattr(settings, "TELEGRAM_BOT_TOKEN", "") or ""
+        if not token:
+            return Response({"enabled": False, "bot_username": None})
+        username = _effective_telegram_bot_username()
+        if not username:
+            return Response({"enabled": False, "bot_username": None})
+        return Response({"enabled": True, "bot_username": username})
+
+
+class TelegramLinkView(APIView):
+    """Link Telegram to the currently logged-in account (profile «Connect Telegram»)."""
+
+    permission_classes = [IsAuthenticatedAndNotFrozen]
+
+    def post(self, request):
+        token = getattr(settings, "TELEGRAM_BOT_TOKEN", "") or ""
+        if not token:
+            return Response(
+                {"detail": "Telegram is not configured on the server."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        data = request.data
+        if not verify_telegram_login(data, token):
+            return Response({"detail": "Invalid or expired Telegram sign-in."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            tg_id = int(data.get("id"))
+        except (TypeError, ValueError):
+            return Response({"detail": "Invalid Telegram user id."}, status=status.HTTP_400_BAD_REQUEST)
+
+        domain = getattr(settings, "TELEGRAM_SYNTHETIC_EMAIL_DOMAIN", "telegram.mastersat.local")
+        synthetic = f"tg{tg_id}@{domain}".lower()
+        if User.objects.filter(Q(telegram_id=tg_id) | Q(email__iexact=synthetic)).exclude(pk=request.user.pk).exists():
+            return Response(
+                {"detail": "This Telegram account is already linked to another user."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        user = request.user
+        if user.telegram_id is not None and user.telegram_id != tg_id:
+            return Response(
+                {"detail": "Your account is already linked to a different Telegram account."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        phone_err = _apply_telegram_phone(user, data)
+        if phone_err is not None:
+            return phone_err
+        user.telegram_id = tg_id
+        user.save(update_fields=["telegram_id"])
+        return Response(UserMeSerializer(user, context={"request": request}).data, status=status.HTTP_200_OK)
+
+
 class TelegramAuthView(APIView):
     """Telegram Login (oauth embed): verify HMAC, optional verified ``phone_number`` from Telegram, issue JWT."""
 
@@ -226,19 +315,11 @@ class TelegramAuthView(APIView):
             if updated:
                 user.save(update_fields=["first_name", "last_name"])
 
-        raw_phone = request.data.get("phone_number")
-        if raw_phone is not None and str(raw_phone).strip():
-            try:
-                normalized = normalize_phone(raw_phone)
-            except ValueError:
-                return Response({"detail": "Invalid phone number."}, status=status.HTTP_400_BAD_REQUEST)
-            if User.objects.filter(phone_number=normalized).exclude(pk=user.pk).exists():
-                return Response(
-                    {"detail": "This phone number is already in use."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            user.phone_number = normalized
-            user.save(update_fields=["phone_number"])
+        phone_err = _apply_telegram_phone(user, data)
+        if phone_err is not None:
+            return phone_err
+        user.telegram_id = tg_id
+        user.save(update_fields=["telegram_id"])
 
         refresh = RefreshToken.for_user(user)
         return Response(

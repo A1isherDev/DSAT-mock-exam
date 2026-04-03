@@ -22,19 +22,22 @@ declare global {
 
 type Props = {
     onAuth: (user: TelegramAuthUser) => void;
+    /** Bot username without @. Prefer this from GET /users/telegram/config/ so login works with only server env. */
+    botUsername?: string | null;
 };
 
 /**
  * Telegram Login Widget (https://core.telegram.org/widgets/login).
- * Set NEXT_PUBLIC_TELEGRAM_BOT_NAME to the bot username without @.
+ * Uses ``botUsername`` when set, otherwise ``NEXT_PUBLIC_TELEGRAM_BOT_NAME``.
  */
-export default function TelegramLoginButton({ onAuth }: Props) {
+export default function TelegramLoginButton({ onAuth, botUsername }: Props) {
     const containerRef = useRef<HTMLDivElement>(null);
     const onAuthRef = useRef(onAuth);
     onAuthRef.current = onAuth;
 
+    const bot = (botUsername ?? process.env.NEXT_PUBLIC_TELEGRAM_BOT_NAME)?.trim() || "";
+
     useEffect(() => {
-        const bot = process.env.NEXT_PUBLIC_TELEGRAM_BOT_NAME;
         const el = containerRef.current;
         if (!bot || !el) return;
 
@@ -55,9 +58,9 @@ export default function TelegramLoginButton({ onAuth }: Props) {
             delete window.onTelegramAuth;
             el.innerHTML = "";
         };
-    }, []);
+    }, [bot]);
 
-    if (!process.env.NEXT_PUBLIC_TELEGRAM_BOT_NAME) {
+    if (!bot) {
         return null;
     }
 

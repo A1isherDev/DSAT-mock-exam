@@ -20,6 +20,7 @@ class CustomUserChangeForm(UserChangeForm):
             "first_name",
             "last_name",
             "phone_number",
+            "telegram_id",
             "profile_image",
             "sat_exam_date",
             "target_score",
@@ -34,13 +35,13 @@ class CustomUserAdmin(UserAdmin):
     add_form = CustomUserCreationForm
     form = CustomUserChangeForm
     model = User
-    list_display = ["email", "phone_number", "system_role", "is_staff", "is_active", "is_frozen"]
+    list_display = ["email", "phone_number", "telegram_id", "system_role", "is_staff", "is_active", "is_frozen"]
     ordering = ["email"]
     fieldsets = (
         (None, {"fields": ("email", "username", "password")}),
         (
             "Personal info",
-            {"fields": ("first_name", "last_name", "profile_image", "sat_exam_date", "target_score")},
+            {"fields": ("first_name", "last_name", "phone_number", "telegram_id", "profile_image", "sat_exam_date", "target_score")},
         ),
         (
             "Permissions",

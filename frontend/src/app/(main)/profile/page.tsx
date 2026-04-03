@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { classesApi, examsApi, usersApi } from "@/lib/api";
+import TelegramLoginButton, { type TelegramAuthUser } from "@/components/TelegramLoginButton";
 import {
   BookOpen,
   CalendarClock,
@@ -26,6 +27,7 @@ type MeForm = {
   last_name: string;
   email: string;
   phone_number: string;
+  telegram_linked: boolean;
   sat_exam_date: string;
   target_score: string;
   profile_image_url: string | null;
@@ -111,6 +113,25 @@ export default function ProfilePage() {
   const [lastMockResult, setLastMockResult] = useState<MeForm["last_mock_result"]>(null);
   const [homeworkProgress, setHomeworkProgress] = useState({ total: 0, submitted: 0, pending: 0, overdue: 0 });
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
+  const [telegramCfg, setTelegramCfg] = useState<{ enabled: boolean; bot_username: string | null } | null>(null);
+  const [telegramLinkBusy, setTelegramLinkBusy] = useState(false);
+
+  const handleTelegramLink = useCallback(async (user: TelegramAuthUser) => {
+    setTelegramLinkBusy(true);
+    setMessage(null);
+    try {
+      const updated = await usersApi.linkTelegram(user as unknown as Record<string, unknown>);
+      setMe(mapMeToForm(updated));
+      setMessage("Telegram connected to your account.");
+      window.setTimeout(() => setMessage(null), 4000);
+    } catch (err: unknown) {
+      const d = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setMessage(typeof d === "string" ? d : "Could not link Telegram.");
+      window.setTimeout(() => setMessage(null), 5000);
+    } finally {
+      setTelegramLinkBusy(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (!file) {
@@ -126,8 +147,13 @@ export default function ProfilePage() {
     let cancelled = false;
     (async () => {
       try {
-        const [meData, classData] = await Promise.all([usersApi.getMe(), classesApi.list()]);
+        const [meData, classData, tgWidget] = await Promise.all([
+          usersApi.getMe(),
+          classesApi.list(),
+          usersApi.getTelegramWidgetConfig().catch(() => ({ enabled: false, bot_username: null as string | null })),
+        ]);
         if (!cancelled) {
+          setTelegramCfg(tgWidget);
           const meMapped = mapMeToForm(meData);
           setMe(meMapped);
           setLastMockResult(meMapped.last_mock_result || null);
@@ -455,6 +481,12 @@ export default function ProfilePage() {
                   <span>{me.phone_number}</span>
                 </div>
               ) : null}
+              {me.telegram_linked ? (
+                <div className="flex items-center gap-2 text-slate-600 mt-2 text-sm font-semibold">
+                  <MessageCircle className="w-4 h-4 text-sky-600 shrink-0" />
+                  <span>Telegram connected</span>
+                </div>
+              ) : null}
             </div>
             <Link href="/classes" className="btn-secondary inline-flex items-center justify-center">
               <Trophy className="w-4 h-4" />
@@ -463,6 +495,28 @@ export default function ProfilePage() {
           </div>
         </div>
       </div>
+
+      {!loading && telegramCfg?.enabled && !me.telegram_linked && telegramCfg.bot_username ? (
+        <div className="mt-10 rounded-2xl border border-sky-200/80 bg-gradient-to-br from-sky-50/90 to-white p-6 md:p-8 shadow-sm">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+            <div className="max-w-xl">
+              <p className="text-xs font-black uppercase tracking-widest text-sky-700 mb-1">Telegram</p>
+              <h2 className="text-xl font-extrabold text-slate-900">Connect your Telegram</h2>
+              <p className="text-slate-600 text-sm mt-2 leading-relaxed">
+                Link Telegram to sign in with one tap next time. If you approve phone access in Telegram, we can sync your
+                verified number to your profile.
+              </p>
+            </div>
+            <div className="flex flex-col items-center gap-2 shrink-0">
+              {telegramLinkBusy ? (
+                <Loader2 className="w-8 h-8 animate-spin text-sky-600" />
+              ) : (
+                <TelegramLoginButton botUsername={telegramCfg.bot_username} onAuth={handleTelegramLink} />
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* Cards */}
       <div className="mt-16 grid grid-cols-1 md:grid-cols-3 gap-6">

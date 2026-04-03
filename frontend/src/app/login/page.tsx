@@ -1,6 +1,6 @@
 "use client";
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { authApi } from '@/lib/api';
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { authApi, usersApi } from "@/lib/api";
 import { useRouter } from 'next/navigation';
 import { AlertCircle, Loader2, LogIn } from 'lucide-react';
 import Link from 'next/link';
@@ -184,14 +184,27 @@ export default function LoginPage() {
                             <div className="flex justify-center bg-white dark:bg-white rounded-full mx-auto w-fit p-1">
                                 <div ref={googleButtonRef} className="dark:mix-blend-normal" />
                             </div>
-                            {process.env.NEXT_PUBLIC_TELEGRAM_BOT_NAME ? (
-                                <div className="w-full flex flex-col items-center gap-2">
-                                    <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
-                                        Telegram bilan kirish
-                                    </span>
-                                    <TelegramLoginButton onAuth={handleTelegramAuth} />
-                                </div>
-                            ) : null}
+                            <div className="w-full flex flex-col items-center gap-2">
+                                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
+                                    Telegram bilan kirish
+                                </span>
+                                {telegramCfg === null ? (
+                                    <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
+                                ) : telegramCfg.enabled && telegramCfg.bot_username ? (
+                                    <TelegramLoginButton
+                                        botUsername={telegramCfg.bot_username}
+                                        onAuth={handleTelegramAuth}
+                                    />
+                                ) : (
+                                    <p className="text-center text-xs text-slate-500 dark:text-slate-400 max-w-sm px-2">
+                                        Telegram orqali kirish hozircha yo‘q. Administrator{" "}
+                                        <code className="text-[10px] bg-slate-100 dark:bg-slate-800 px-1 rounded">
+                                            TELEGRAM_BOT_TOKEN
+                                        </code>{" "}
+                                        va BotFather-da Web Login domenini sozlasin.
+                                    </p>
+                                )}
+                            </div>
                         </div>
                         {googleMissing.length > 0 && (
                             <div className="space-y-3 pt-2">

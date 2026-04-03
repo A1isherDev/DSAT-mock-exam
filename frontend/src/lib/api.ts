@@ -48,6 +48,16 @@ export const usersApi = {
         const r = await api.patch('/users/me/', data);
         return r.data;
     },
+    /** Public: Telegram widget bot username when TELEGRAM_BOT_TOKEN is set (uses getMe if TELEGRAM_BOT_USERNAME unset). */
+    getTelegramWidgetConfig: async (): Promise<{ enabled: boolean; bot_username: string | null }> => {
+        const r = await api.get('/users/telegram/config/');
+        return r.data;
+    },
+    /** Link Telegram to the logged-in user (profile). */
+    linkTelegram: async (payload: Record<string, unknown>) => {
+        const r = await api.post('/users/telegram/link/', payload);
+        return r.data;
+    },
 };
 
 export const authApi = {

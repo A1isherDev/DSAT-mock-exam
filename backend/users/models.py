@@ -53,6 +53,13 @@ class User(AbstractUser):
         db_index=True,
         help_text="E.164-style or local digits; optional, unique when set (e.g. for Telegram users).",
     )
+    telegram_id = models.BigIntegerField(
+        null=True,
+        blank=True,
+        unique=True,
+        db_index=True,
+        help_text="Telegram user id when linked or signed up via Telegram.",
+    )
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = []
