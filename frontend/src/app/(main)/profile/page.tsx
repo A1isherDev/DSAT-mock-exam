@@ -87,6 +87,7 @@ function mapMeToForm(me: any): MeForm {
     last_name: me.last_name || "",
     email: me.email || "",
     phone_number: me.phone_number || "",
+    telegram_linked: !!me.telegram_linked,
     sat_exam_date: me.sat_exam_date || "",
     target_score: me.target_score != null ? String(me.target_score) : "",
     profile_image_url: me.profile_image_url || null,
