@@ -29,6 +29,11 @@ def _can_view_practice_test(user, practice_test) -> bool:
         and practice_test.subject == constants.SUBJECT_MATH_PLATFORM
     ):
         return True
+    # Authoring with no subject scope (mirrors filter_practice_tests_for_user).
+    if (constants.PERM_CREATE_TEST in perms or constants.PERM_EDIT_TEST in perms) and not (
+        constants.PERM_VIEW_ENGLISH_TESTS in perms or constants.PERM_VIEW_MATH_TESTS in perms
+    ):
+        return True
     return False
 
 
@@ -248,6 +253,7 @@ class MockExamAdminAccess(BasePermission):
 
 
 def _practice_test_from_module_view(view) -> "PracticeTest | None":
+    """Resolves parent test for question URLs: .../tests/<test_pk>/modules/<module_pk>/questions/."""
     from exams.models import Module, PracticeTest
 
     test_pk = view.kwargs.get("test_pk")
@@ -263,11 +269,46 @@ def _practice_test_from_module_view(view) -> "PracticeTest | None":
         return None
 
 
+def _practice_test_for_admin_module_viewset(view) -> "PracticeTest | None":
+    """
+    AdminModuleViewSet URLs:
+    - list/create: .../tests/<test_pk>/modules/  (no module id in kwargs)
+    - detail: .../tests/<test_pk>/modules/<pk>/   (DRF uses pk, not module_pk)
+    """
+    from exams.models import Module, PracticeTest
+
+    test_pk = view.kwargs.get("test_pk")
+    if not test_pk:
+        return None
+
+    module_pk = view.kwargs.get("module_pk")
+    if module_pk is not None:
+        try:
+            mod = Module.objects.select_related("practice_test").get(
+                pk=module_pk, practice_test_id=test_pk
+            )
+            return mod.practice_test
+        except Module.DoesNotExist:
+            return None
+
+    pk = view.kwargs.get("pk")
+    if pk is not None:
+        try:
+            mod = Module.objects.select_related("practice_test").get(
+                pk=pk, practice_test_id=test_pk
+            )
+            return mod.practice_test
+        except Module.DoesNotExist:
+            return None
+
+    return PracticeTest.objects.filter(pk=test_pk).first()
+
+
 class ModuleNestedAdminAccess(BasePermission):
     """Modules under a practice test."""
 
     def has_permission(self, request, view):
-        pt = _practice_test_from_module_view(view)
+        pt = _practice_test_for_admin_module_viewset(view)
         if pt is None:
             return False
         if view.action in ("list", "retrieve", "head", "options"):
