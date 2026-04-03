@@ -134,6 +134,7 @@ const RichTextEditor = ({ value, onChange, label, placeholder = "" }: { value: s
         { label: 'Greater', icon: <span className="text-xs font-bold">{'>'}</span>, syntax: '>' },
         { label: 'LE', icon: <span className="text-xs font-bold">≤</span>, syntax: '\\le ' },
         { label: 'GE', icon: <span className="text-xs font-bold">≥</span>, syntax: '\\ge ' },
+        { label: 'Plus-minus', icon: <span className="text-xs font-bold">±</span>, syntax: '\\pm ' },
     ];
 
     return (
