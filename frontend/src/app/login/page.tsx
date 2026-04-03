@@ -23,6 +23,17 @@ export default function LoginPage() {
     const [googleProfile, setGoogleProfile] = useState({ first_name: '', last_name: '', username: '' });
     const googleButtonRef = useRef<HTMLDivElement>(null);
     const router = useRouter();
+    const [telegramCfg, setTelegramCfg] = useState<{
+        enabled: boolean;
+        bot_username: string | null;
+    } | null>(null);
+
+    useEffect(() => {
+        usersApi
+            .getTelegramWidgetConfig()
+            .then(setTelegramCfg)
+            .catch(() => setTelegramCfg({ enabled: false, bot_username: null }));
+    }, []);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
