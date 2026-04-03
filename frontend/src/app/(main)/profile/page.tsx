@@ -9,6 +9,7 @@ import {
   Copy,
   FileText,
   Loader2,
+  Phone,
   Pencil,
   School,
   Sparkles,
@@ -24,6 +25,7 @@ type MeForm = {
   first_name: string;
   last_name: string;
   email: string;
+  phone_number: string;
   sat_exam_date: string;
   target_score: string;
   profile_image_url: string | null;
@@ -82,6 +84,7 @@ function mapMeToForm(me: any): MeForm {
     first_name: me.first_name || "",
     last_name: me.last_name || "",
     email: me.email || "",
+    phone_number: me.phone_number || "",
     sat_exam_date: me.sat_exam_date || "",
     target_score: me.target_score != null ? String(me.target_score) : "",
     profile_image_url: me.profile_image_url || null,
@@ -243,6 +246,7 @@ export default function ProfilePage() {
         first_name: draft.first_name.trim(),
         last_name: draft.last_name.trim(),
         email: draft.email.trim(),
+        phone_number: draft.phone_number.trim() || null,
         sat_exam_date: draft.sat_exam_date || null,
         target_score: draft.target_score.trim() ? parseInt(draft.target_score, 10) : null,
       };
@@ -445,6 +449,12 @@ export default function ProfilePage() {
                 <div className="neo-chip">Student</div>
               </div>
               <div className="text-slate-500 mt-1 text-base">@{me.username}</div>
+              {me.phone_number?.trim() ? (
+                <div className="flex items-center gap-2 text-slate-600 mt-2 text-sm font-semibold">
+                  <Phone className="w-4 h-4 text-blue-600 shrink-0" />
+                  <span>{me.phone_number}</span>
+                </div>
+              ) : null}
             </div>
             <Link href="/classes" className="btn-secondary inline-flex items-center justify-center">
               <Trophy className="w-4 h-4" />
@@ -823,6 +833,24 @@ export default function ProfilePage() {
                       onChange={(e) => setDraft({ ...draft, email: e.target.value })}
                       required
                     />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      Phone <span className="font-normal normal-case text-slate-400">(optional)</span>
+                    </label>
+                    <input
+                      type="tel"
+                      className="input-modern"
+                      inputMode="tel"
+                      autoComplete="tel"
+                      placeholder="+998901234567"
+                      value={draft.phone_number}
+                      onChange={(e) => setDraft({ ...draft, phone_number: e.target.value })}
+                    />
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      Optional. If you approve phone access when signing in with Telegram, it can be filled in
+                      automatically—you can still edit it here anytime.
+                    </p>
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">First name</label>

@@ -45,7 +45,15 @@ class User(AbstractUser):
     profile_image = models.ImageField(upload_to='profiles/', null=True, blank=True)
     sat_exam_date = models.DateField(null=True, blank=True, help_text='Planned SAT exam date')
     target_score = models.PositiveIntegerField(null=True, blank=True, help_text='Target total SAT score (400–1600)')
-    
+    phone_number = models.CharField(
+        max_length=20,
+        null=True,
+        blank=True,
+        unique=True,
+        db_index=True,
+        help_text="E.164-style or local digits; optional, unique when set (e.g. for Telegram users).",
+    )
+
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = []
     

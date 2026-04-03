@@ -5,6 +5,7 @@ from access import constants as acc_const
 from access.models import Role
 from access.services import authorize, get_effective_permission_codenames, user_can_assign_as_class_teacher
 from users.utils_staff import sync_django_staff_flag
+from users.phone_utils import normalize_phone
 
 from .models import User
 
@@ -24,6 +25,7 @@ class UserMeSerializer(serializers.ModelSerializer):
             "username",
             "first_name",
             "last_name",
+            "phone_number",
             "profile_image",
             "profile_image_url",
             "sat_exam_date",
@@ -70,6 +72,22 @@ class UserMeSerializer(serializers.ModelSerializer):
         if value < 400 or value > 1600:
             raise serializers.ValidationError("Target score must be between 400 and 1600.")
         return value
+
+    def validate_phone_number(self, value):
+        if value is None or (isinstance(value, str) and not str(value).strip()):
+            return None
+        try:
+            normalized = normalize_phone(value)
+        except ValueError as e:
+            raise serializers.ValidationError(str(e)) from e
+        if not normalized:
+            return None
+        qs = User.objects.filter(phone_number=normalized)
+        if self.instance and self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError("This phone number is already in use.")
+        return normalized
 
     def get_profile_image_url(self, obj):
         if not obj.profile_image:
@@ -173,6 +191,22 @@ class UserSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("user with this email already exists.")
         return value
 
+    def validate_phone_number(self, value):
+        if value in (None, ""):
+            return None
+        try:
+            normalized = normalize_phone(value)
+        except ValueError as e:
+            raise serializers.ValidationError(str(e)) from e
+        if not normalized:
+            return None
+        qs = User.objects.filter(phone_number=normalized)
+        if self.instance and self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError("This phone number is already in use.")
+        return normalized
+
     class Meta:
         model = User
         fields = [
@@ -181,6 +215,7 @@ class UserSerializer(serializers.ModelSerializer):
             "username",
             "first_name",
             "last_name",
+            "phone_number",
             "role",
             "class_teacher_eligible",
             "is_admin",

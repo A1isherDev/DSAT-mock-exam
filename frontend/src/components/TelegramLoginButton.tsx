@@ -8,6 +8,8 @@ export type TelegramAuthUser = {
     last_name?: string;
     username?: string;
     photo_url?: string;
+    /** Present when the widget uses ``data-request-access`` including ``phone`` and the user approves. */
+    phone_number?: string;
     auth_date: number;
     hash: string;
 };
@@ -44,7 +46,8 @@ export default function TelegramLoginButton({ onAuth }: Props) {
         script.setAttribute("data-telegram-login", bot);
         script.setAttribute("data-size", "large");
         script.setAttribute("data-radius", "8");
-        script.setAttribute("data-request-access", "write");
+        // Ask for DM access and verified phone when the user agrees (oauth.telegram.org embed).
+        script.setAttribute("data-request-access", "phone write");
         script.setAttribute("data-onauth", "onTelegramAuth(user)");
         el.appendChild(script);
 

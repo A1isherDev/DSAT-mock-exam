@@ -16,6 +16,7 @@ from django.conf import settings
 import re
 
 from .telegram_auth import verify_telegram_login
+from .phone_utils import normalize_phone
 
 class ThrottledTokenObtainPairView(TokenObtainPairView):
     serializer_class = MyTokenObtainPairSerializer
@@ -153,7 +154,7 @@ class GoogleAuthView(APIView):
 
 
 class TelegramAuthView(APIView):
-    """Telegram Login Widget callback: verify HMAC, issue JWT (same cookies contract as Google)."""
+    """Telegram Login (oauth embed): verify HMAC, optional verified ``phone_number`` from Telegram, issue JWT."""
 
     permission_classes = []
 
@@ -224,6 +225,20 @@ class TelegramAuthView(APIView):
                 updated = True
             if updated:
                 user.save(update_fields=["first_name", "last_name"])
+
+        raw_phone = request.data.get("phone_number")
+        if raw_phone is not None and str(raw_phone).strip():
+            try:
+                normalized = normalize_phone(raw_phone)
+            except ValueError:
+                return Response({"detail": "Invalid phone number."}, status=status.HTTP_400_BAD_REQUEST)
+            if User.objects.filter(phone_number=normalized).exclude(pk=user.pk).exists():
+                return Response(
+                    {"detail": "This phone number is already in use."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            user.phone_number = normalized
+            user.save(update_fields=["phone_number"])
 
         refresh = RefreshToken.for_user(user)
         return Response(
