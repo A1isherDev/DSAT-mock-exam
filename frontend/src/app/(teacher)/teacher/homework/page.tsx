@@ -76,13 +76,13 @@ export default function TeacherHomeworkPage() {
         <div className="space-y-4 max-w-3xl">
             <div className="bg-white border border-slate-200 rounded-2xl p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-1">Guruh</p>
+                <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-1">Class</p>
                 <select
                   value={selectedGroupId ?? ""}
                   onChange={(e) => setSelectedGroupId(Number(e.target.value))}
                   className="w-full sm:w-auto min-w-[200px] border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold bg-white"
                 >
-                  <option value="">Guruhni tanlang</option>
+                  <option value="">Select a class</option>
                   {groups.map((g) => (
                     <option key={g.id} value={g.id}>
                       {g.name} {g.subject ? `(${g.subject})` : ""}
@@ -99,13 +99,13 @@ export default function TeacherHomeworkPage() {
                       className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700"
                     >
                       <Plus className="w-4 h-4" />
-                      Topshiriq yaratish
+                      Create assignment
                     </button>
                     <Link
                       href={`/classes/${selectedGroupId}`}
                       className="inline-flex items-center px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 hover:bg-slate-50"
                     >
-                      Guruh sahifasi
+                      Class page
                     </Link>
                   </>
                 ) : null}
@@ -115,7 +115,7 @@ export default function TeacherHomeworkPage() {
             <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
               <div className="p-5 border-b border-slate-200 font-bold text-slate-900">Assignments</div>
               {assignments.length === 0 ? (
-                <div className="p-6 text-slate-600">Hozircha topshiriq yo‘q. Yuqoridagi «Topshiriq yaratish» tugmasini bosing.</div>
+                <div className="p-6 text-slate-600">No homework yet. Use “Create assignment” above.</div>
               ) : (
                 <div className="divide-y divide-slate-100">
                   {assignments.map((a) => (

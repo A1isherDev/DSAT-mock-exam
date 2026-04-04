@@ -127,7 +127,7 @@ class ClassroomViewSet(ModelViewSet):
     @action(detail=True, methods=["get"], permission_classes=[IsAuthenticatedAndNotFrozen], url_path="assignment-options")
     def assignment_options(self, request, pk=None):
         """
-        Mock exams + pastpaper practice tests (with modules) the teacher may attach to homework.
+        Mock exams + pastpaper practice tests the teacher may attach to homework (full test only).
         Uses the same visibility rules as /exams/mock-exams/ and /exams/.
         """
         classroom = self.get_object()
@@ -147,7 +147,7 @@ class ClassroomViewSet(ModelViewSet):
         pvs = PracticeTestViewSet()
         pvs.request = request
         pvs.format_kwarg = None
-        pt_qs = pvs.get_queryset().prefetch_related("modules")
+        pt_qs = pvs.get_queryset()
 
         mock_exams = [
             {
@@ -161,7 +161,6 @@ class ClassroomViewSet(ModelViewSet):
 
         practice_tests = []
         for pt in pt_qs:
-            mods = sorted(pt.modules.all(), key=lambda x: (x.module_order, x.id))
             label = (pt.title or "").strip()
             if not label:
                 subj = dict(PracticeTest.SUBJECT_CHOICES).get(pt.subject, pt.subject)
@@ -173,7 +172,6 @@ class ClassroomViewSet(ModelViewSet):
                     "subject": pt.subject,
                     "label": pt.label or "",
                     "practice_date": pt.practice_date.isoformat() if pt.practice_date else None,
-                    "modules": [{"id": mod.id, "module_order": mod.module_order} for mod in mods],
                 }
             )
 

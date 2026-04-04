@@ -214,7 +214,7 @@ export default function ClassDetailPage() {
               <div>
                 <h2 className="text-lg font-extrabold text-slate-900">Classwork</h2>
                 <p className="text-sm text-slate-500 mt-0.5">
-                  Topshiriqlar ro‘yxati. Yangi topshiriqni modal orqali qo‘shing — mock va pastpaper ro‘yxatdan tanlanadi.
+                  Homework for this class. Teachers add assignments from the button — optional mock or full pastpaper test.
                 </p>
               </div>
               <button
@@ -223,7 +223,7 @@ export default function ClassDetailPage() {
                 className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold text-sm shadow-lg shadow-blue-600/25 hover:from-blue-700 hover:to-indigo-700 transition-all shrink-0"
               >
                 <Plus className="w-5 h-5" />
-                Topshiriq yaratish
+                Create assignment
               </button>
             </div>
           ) : (
@@ -261,7 +261,7 @@ export default function ClassDetailPage() {
                       <p className="text-sm text-slate-500 mt-1">{formatDue(a.due_at)}</p>
                     </div>
                     <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">
-                      {a.submissions_count ?? 0} yuborilgan
+                      {a.submissions_count ?? 0} submitted
                     </div>
                   </div>
                   {a.instructions ? (
