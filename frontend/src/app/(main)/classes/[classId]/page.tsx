@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import Cookies from "js-cookie";
 import Link from "next/link";
 import { classesApi } from "@/lib/api";
-import { ClipboardList, Users, Megaphone, GraduationCap, KeyRound, RefreshCcw } from "lucide-react";
+import ClassLeaderboard from "@/components/ClassLeaderboard";
+import { ClipboardList, Users, Megaphone, GraduationCap, KeyRound, RefreshCcw, Trophy } from "lucide-react";
 
 function TabButton({ active, onClick, icon: Icon, label }: any) {
   return (
@@ -25,12 +25,12 @@ function TabButton({ active, onClick, icon: Icon, label }: any) {
 export default function ClassDetailPage() {
   const { classId } = useParams();
   const id = Number(classId);
-  const isAdmin = typeof window !== "undefined" && Cookies.get("is_admin") === "true";
 
-  const [tab, setTab] = useState<"stream" | "classwork" | "people" | "grades">("stream");
+  const [tab, setTab] = useState<"stream" | "classwork" | "people" | "grades" | "leaderboard">("stream");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [klass, setKlass] = useState<any>(null);
+  const isClassAdmin = klass?.my_role === "ADMIN";
 
   const [posts, setPosts] = useState<any[]>([]);
   const [postText, setPostText] = useState("");
@@ -151,6 +151,7 @@ export default function ClassDetailPage() {
         <TabButton active={tab === "stream"} onClick={() => setTab("stream")} icon={Megaphone} label="Stream" />
         <TabButton active={tab === "classwork"} onClick={() => setTab("classwork")} icon={ClipboardList} label="Classwork" />
         <TabButton active={tab === "people"} onClick={() => setTab("people")} icon={Users} label="People" />
+        <TabButton active={tab === "leaderboard"} onClick={() => setTab("leaderboard")} icon={Trophy} label="Leaderboard" />
         <TabButton active={tab === "grades"} onClick={() => setTab("grades")} icon={GraduationCap} label="Grades" />
       </div>
 
@@ -194,7 +195,7 @@ export default function ClassDetailPage() {
                   ) : null}
                 </div>
               )}
-              {isAdmin && (
+              {isClassAdmin && (
                 <button
                   type="button"
                   onClick={async () => {
@@ -208,7 +209,7 @@ export default function ClassDetailPage() {
               )}
             </div>
 
-            {isAdmin && (
+            {isClassAdmin && (
               <div className="bg-white border border-slate-200 rounded-2xl p-6">
                 <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">Post announcement</p>
                 <textarea
@@ -243,7 +244,14 @@ export default function ClassDetailPage() {
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
-                      <p className="text-lg font-extrabold text-slate-900 truncate">{a.title}</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-lg font-extrabold text-slate-900 truncate">{a.title}</p>
+                        {a.practice_test ? (
+                          <span className="shrink-0 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-lg bg-violet-100 text-violet-800">
+                            Pastpaper
+                          </span>
+                        ) : null}
+                      </div>
                       <p className="text-sm text-slate-500 mt-1">{formatDue(a.due_at)}</p>
                     </div>
                     <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">
@@ -258,7 +266,7 @@ export default function ClassDetailPage() {
             )}
           </div>
 
-          {isAdmin && (
+          {isClassAdmin && (
             <div className="bg-white border border-slate-200 rounded-2xl p-6">
               <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">Create assignment</p>
               <div className="space-y-3">
@@ -346,9 +354,13 @@ export default function ClassDetailPage() {
             </div>
           )}
         </div>
+      ) : tab === "leaderboard" ? (
+        <ClassLeaderboard classId={id} />
       ) : (
         <div className="bg-white border border-slate-200 rounded-2xl p-8 text-slate-600">
-          Grades tab (MVP): open an assignment to see submissions & grading.
+          <p className="font-semibold text-slate-800 mb-2">Grades</p>
+          <p className="text-sm">Open a classwork item to review submissions and enter scores. For pastpaper stats and class
+            averages, use the <strong>Leaderboard</strong> tab.</p>
         </div>
       )}
     </div>

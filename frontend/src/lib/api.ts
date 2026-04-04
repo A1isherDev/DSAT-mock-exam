@@ -213,6 +213,10 @@ export const classesApi = {
         const r = await api.get(`/classes/${classId}/people/`);
         return r.data;
     },
+    getLeaderboard: async (classId: number) => {
+        const r = await api.get(`/classes/${classId}/leaderboard/`);
+        return r.data;
+    },
     // Stream
     listPosts: async (classId: number) => {
         const r = await api.get(`/classes/${classId}/posts/`);

@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import Cookies from "js-cookie";
 import Link from "next/link";
 import { classesApi, examsApi } from "@/lib/api";
 import { ArrowLeft, ClipboardCheck, ExternalLink, Save, Send, Trophy } from "lucide-react";
@@ -12,7 +11,8 @@ export default function AssignmentDetailPage() {
   const { classId, assignmentId } = useParams();
   const cid = Number(classId);
   const aid = Number(assignmentId);
-  const isAdmin = typeof window !== "undefined" && Cookies.get("is_admin") === "true";
+  const [classMeta, setClassMeta] = useState<{ my_role?: string } | null>(null);
+  const isClassAdmin = classMeta?.my_role === "ADMIN";
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -30,17 +30,24 @@ export default function AssignmentDetailPage() {
     setError(null);
     setLoading(true);
     try {
+      const clsList = await classesApi.list();
+      const cls = Array.isArray(clsList) ? clsList.find((c) => Number(c.id) === cid) : null;
+      setClassMeta(cls || {});
+
       const list = await classesApi.listAssignments(cid);
       const found = Array.isArray(list) ? list.find((a) => Number(a.id) === aid) : null;
       setAssignment(found || { id: aid });
       const mine = await classesApi.getMySubmission(cid, aid);
-      setMySubmission(mine);
-      setResponseText(mine?.text_response || "");
-      setAttemptId(mine?.attempt ? String(mine.attempt) : "");
+      const sub = mine && typeof mine === "object" && "id" in mine && mine.id != null ? mine : null;
+      setMySubmission(sub);
+      setResponseText(sub?.text_response || "");
+      setAttemptId(sub?.attempt != null ? String(sub.attempt) : "");
 
-      if (isAdmin) {
+      if (cls?.my_role === "ADMIN") {
         const subs = await classesApi.listSubmissions(cid, aid);
         setSubmissions(Array.isArray(subs) ? subs : []);
+      } else {
+        setSubmissions([]);
       }
     } catch (e: any) {
       setError(e?.response?.data?.detail || "Could not load assignment.");
@@ -80,7 +87,10 @@ export default function AssignmentDetailPage() {
       router.push(`/mock/${assignment.mock_exam}`);
       return;
     }
-    // practice test/module attachments can be handled later; for now, students can use the normal mock list.
+    if (assignment.practice_test) {
+      router.push(`/practice-test/${assignment.practice_test}`);
+      return;
+    }
     if (assignment.external_url) {
       const url = /^https?:\/\//i.test(assignment.external_url) ? assignment.external_url : `https://${assignment.external_url}`;
       window.open(url, "_blank", "noopener,noreferrer");
@@ -120,7 +130,10 @@ export default function AssignmentDetailPage() {
               <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">{assignment?.title || "Assignment"}</h1>
               {assignment?.instructions ? <p className="text-slate-600 mt-3 whitespace-pre-wrap">{assignment.instructions}</p> : null}
               <div className="mt-5 flex flex-wrap gap-2">
-                {(assignment?.mock_exam || assignment?.external_url || assignment?.attachment_file_url) && (
+                {(assignment?.mock_exam ||
+                  assignment?.practice_test ||
+                  assignment?.external_url ||
+                  assignment?.attachment_file_url) && (
                   <button
                     type="button"
                     onClick={openAttachment}
@@ -133,7 +146,7 @@ export default function AssignmentDetailPage() {
               </div>
             </div>
 
-            {!isAdmin && (
+            {!isClassAdmin && (
               <div className="bg-white border border-slate-200 rounded-2xl p-6">
                 <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">Your submission</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -215,7 +228,7 @@ export default function AssignmentDetailPage() {
               </div>
             </div>
 
-            {isAdmin && (
+            {isClassAdmin && (
               <div className="bg-white border border-slate-200 rounded-2xl p-6">
                 <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">Submissions & grading</p>
                 {submissions.length === 0 ? (
@@ -228,7 +241,10 @@ export default function AssignmentDetailPage() {
                           {s.student?.first_name || s.student?.email} {s.student?.last_name || ""}
                         </p>
                         <p className="text-xs text-slate-500 mt-0.5">{s.status}</p>
-                        {s.student_comment ? <p className="text-sm text-slate-700 mt-2">{s.student_comment}</p> : null}
+                        {s.text_response ? <p className="text-sm text-slate-700 mt-2 whitespace-pre-wrap">{s.text_response}</p> : null}
+                        {s.attempt != null ? (
+                          <p className="text-xs text-indigo-600 font-semibold mt-1">Attempt ID: {s.attempt}</p>
+                        ) : null}
                         <div className="mt-3 grid grid-cols-2 gap-2">
                           <input
                             value={grading[String(s.id)]?.score ?? (s.grade?.score ?? "")}

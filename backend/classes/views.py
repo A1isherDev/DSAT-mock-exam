@@ -1,3 +1,6 @@
+from collections import defaultdict
+from statistics import mean
+
 from django.db.models import Count
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -121,6 +124,137 @@ class ClassroomViewSet(ModelViewSet):
         memberships = classroom.memberships.select_related("user").all().order_by("role", "-joined_at")
         return Response(ClassroomMembershipSerializer(memberships, many=True, context={"request": request}).data)
 
+    @action(detail=True, methods=["get"], permission_classes=[IsAuthenticatedAndNotFrozen], url_path="leaderboard")
+    def leaderboard(self, request, pk=None):
+        """
+        Pastpaper / practice-test homework stats: per-assignment group mean, per-student ranks,
+        and score on the most recently assigned practice test in this class.
+        """
+        classroom = self.get_object()
+        if not classroom.memberships.filter(user=request.user).exists():
+            return Response({"detail": "Not a member."}, status=status.HTTP_403_FORBIDDEN)
+
+        student_memberships = list(
+            classroom.memberships.filter(role=ClassroomMembership.ROLE_STUDENT)
+            .select_related("user")
+            .order_by("user__first_name", "user__last_name", "user__email")
+        )
+        student_ids = [m.user_id for m in student_memberships]
+        n_students = len(student_ids)
+
+        practice_assignments = list(
+            Assignment.objects.filter(classroom=classroom, practice_test__isnull=False)
+            .select_related("practice_test")
+            .order_by("-created_at")
+        )
+        assign_ids = [a.id for a in practice_assignments]
+        latest_pa = practice_assignments[0] if practice_assignments else None
+
+        scores_by_assignment: dict[int, list[int]] = defaultdict(list)
+        sub_map: dict[tuple[int, int], Submission] = {}
+        if assign_ids and student_ids:
+            subs_qs = Submission.objects.filter(
+                assignment_id__in=assign_ids,
+                student_id__in=student_ids,
+            ).select_related("attempt", "assignment", "assignment__practice_test")
+            for s in subs_qs:
+                sub_map[(s.student_id, s.assignment_id)] = s
+                att = s.attempt
+                if att and att.is_completed and att.score is not None:
+                    scores_by_assignment[s.assignment_id].append(att.score)
+
+        assignments_summary = []
+        for a in practice_assignments:
+            scores = scores_by_assignment.get(a.id, [])
+            pt = a.practice_test
+            assignments_summary.append(
+                {
+                    "assignment_id": a.id,
+                    "title": a.title,
+                    "due_at": a.due_at.isoformat() if a.due_at else None,
+                    "created_at": a.created_at.isoformat() if a.created_at else None,
+                    "practice_test_id": a.practice_test_id,
+                    "practice_test_title": pt.title if pt else None,
+                    "subject": pt.subject if pt else None,
+                    "group_mean_score": round(mean(scores), 1) if scores else None,
+                    "completed_count": len(scores),
+                    "student_headcount": n_students,
+                    "completion_rate_pct": round(100.0 * len(scores) / n_students, 1) if n_students else 0.0,
+                }
+            )
+
+        rows = []
+        for mem in student_memberships:
+            u = mem.user
+            scores_list: list[int] = []
+            for a in practice_assignments:
+                s = sub_map.get((u.id, a.id))
+                att = s.attempt if s else None
+                if att and att.is_completed and att.score is not None:
+                    scores_list.append(att.score)
+
+            latest_practice = None
+            if latest_pa:
+                s = sub_map.get((u.id, latest_pa.id))
+                att = s.attempt if s else None
+                pt = latest_pa.practice_test
+                latest_practice = {
+                    "assignment_id": latest_pa.id,
+                    "assignment_title": latest_pa.title,
+                    "practice_test_title": pt.title if pt else None,
+                    "subject": pt.subject if pt else None,
+                    "score": att.score
+                    if att and att.is_completed and att.score is not None
+                    else None,
+                    "submitted_at": att.submitted_at.isoformat() if att and att.submitted_at else None,
+                    "attempt_id": att.id if att else None,
+                    "in_progress": bool(att and not att.is_completed),
+                }
+
+            practice_average = round(sum(scores_list) / len(scores_list), 1) if scores_list else None
+            rows.append(
+                {
+                    "user_id": u.id,
+                    "first_name": u.first_name or "",
+                    "last_name": u.last_name or "",
+                    "username": getattr(u, "username", None) or "",
+                    "email": u.email or "",
+                    "latest_practice": latest_practice,
+                    "practice_average": practice_average,
+                    "practice_completed_count": len(scores_list),
+                    "practice_total_assigned": len(practice_assignments),
+                }
+            )
+
+        rows.sort(
+            key=lambda r: (
+                -(r["practice_average"] if r["practice_average"] is not None else -1.0),
+                -r["practice_completed_count"],
+                (r["first_name"] or r["email"]).lower(),
+            )
+        )
+        for i, r in enumerate(rows, start=1):
+            r["rank"] = i
+
+        student_avgs = [r["practice_average"] for r in rows if r["practice_average"] is not None]
+        class_practice_average = round(mean(student_avgs), 1) if student_avgs else None
+
+        global_means = [x["group_mean_score"] for x in assignments_summary if x["group_mean_score"] is not None]
+        overall_assignment_mean = round(mean(global_means), 1) if global_means else None
+
+        return Response(
+            {
+                "classroom_id": classroom.id,
+                "classroom_name": classroom.name,
+                "student_count": n_students,
+                "practice_assignment_count": len(practice_assignments),
+                "class_practice_average": class_practice_average,
+                "overall_group_mean_of_assignments": overall_assignment_mean,
+                "assignments_summary": assignments_summary,
+                "students": rows,
+            }
+        )
+
 
 class JoinClassView(APIView):
     permission_classes = [IsAuthenticatedAndNotFrozen]
@@ -235,7 +369,9 @@ class AssignmentViewSet(ModelViewSet):
             return Response({"detail": "Not a member."}, status=status.HTTP_403_FORBIDDEN)
         assignment = get_object_or_404(Assignment, pk=pk, classroom=classroom)
         sub = Submission.objects.filter(assignment=assignment, student=request.user).select_related("attempt").first()
-        return Response(SubmissionSerializer(sub, context={"request": request}).data if sub else None)
+        if not sub:
+            return Response({}, status=status.HTTP_200_OK)
+        return Response(SubmissionSerializer(sub, context={"request": request}).data)
 
     @action(detail=True, methods=["get"], url_path="submissions")
     def submissions(self, request, classroom_pk=None, pk=None):
