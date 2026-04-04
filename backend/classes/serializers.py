@@ -1,6 +1,10 @@
+import json
+
 from rest_framework import serializers
 from urllib.parse import urlparse
 from django.core.validators import URLValidator
+
+from exams.models import PastpaperPack, PracticeTest
 
 from .models import (
     Classroom,
@@ -9,6 +13,7 @@ from .models import (
     Assignment,
     Submission,
     Grade,
+    assignment_target_practice_test_ids,
 )
 
 
@@ -142,6 +147,11 @@ class AssignmentSerializer(serializers.ModelSerializer):
     submissions_count = serializers.IntegerField(read_only=True)
     attachment_file_url = serializers.SerializerMethodField(read_only=True)
     external_url = serializers.CharField(required=False, allow_blank=True)
+    pastpaper_pack = serializers.PrimaryKeyRelatedField(
+        queryset=PastpaperPack.objects.all(), required=False, allow_null=True
+    )
+    practice_test_ids = serializers.JSONField(required=False, allow_null=True)
+    practice_bundle_tests = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Assignment
@@ -152,6 +162,9 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "due_at",
             "mock_exam",
             "practice_test",
+            "pastpaper_pack",
+            "practice_test_ids",
+            "practice_bundle_tests",
             "module",
             "external_url",
             "attachment_file",
@@ -160,7 +173,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "created_by",
             "submissions_count",
         ]
-        read_only_fields = ["id", "created_at", "created_by", "submissions_count"]
+        read_only_fields = ["id", "created_at", "created_by", "submissions_count", "practice_bundle_tests"]
 
     def get_created_by(self, obj):
         u = obj.created_by
@@ -180,6 +193,65 @@ class AssignmentSerializer(serializers.ModelSerializer):
         if request:
             return request.build_absolute_uri(url)
         return url
+
+    def get_practice_bundle_tests(self, obj):
+        ids = assignment_target_practice_test_ids(obj)
+        if not ids:
+            return []
+        order = {"READING_WRITING": 0, "MATH": 1}
+        pts = list(PracticeTest.objects.filter(id__in=ids))
+        pts.sort(key=lambda p: (order.get(p.subject, 9), p.id))
+        return [
+            {"id": p.id, "title": (p.title or "").strip(), "subject": p.subject}
+            for p in pts
+        ]
+
+    def validate_practice_test_ids(self, value):
+        if value is None:
+            return None
+        if isinstance(value, str):
+            s = value.strip()
+            if not s or s == "null":
+                return None
+            value = json.loads(s)
+        if not isinstance(value, list):
+            raise serializers.ValidationError("practice_test_ids must be a list of integers.")
+        if len(value) == 0:
+            return None
+        out = [int(x) for x in value]
+        if len(out) != len(set(out)):
+            raise serializers.ValidationError("Duplicate practice test ids.")
+        return out
+
+    def validate(self, attrs):
+        if self.instance is not None:
+            return super().validate(attrs)
+
+        pp = attrs.get("pastpaper_pack")
+        pids = attrs.get("practice_test_ids")
+        pt = attrs.get("practice_test")
+
+        if pp == "":
+            pp = None
+        if pt == "":
+            pt = None
+
+        if pp is not None:
+            attrs["pastpaper_pack"] = pp
+            attrs["practice_test"] = None
+            attrs["practice_test_ids"] = None
+        elif pids:
+            attrs["pastpaper_pack"] = None
+            attrs["practice_test_ids"] = pids
+            if len(pids) == 1:
+                attrs["practice_test"] = PracticeTest.objects.filter(pk=pids[0], mock_exam__isnull=True).first()
+            else:
+                attrs["practice_test"] = None
+        else:
+            attrs["pastpaper_pack"] = None
+            attrs["practice_test_ids"] = None
+
+        return super().validate(attrs)
 
     def validate_external_url(self, value):
         """

@@ -1,7 +1,7 @@
 from collections import defaultdict
 from statistics import mean
 
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
@@ -25,6 +25,7 @@ from .models import (
     Assignment,
     Submission,
     Grade,
+    assignment_target_practice_test_ids,
 )
 from .permissions import IsClassAdmin, IsClassMember
 from .serializers import (
@@ -147,7 +148,7 @@ class ClassroomViewSet(ModelViewSet):
         pvs = PracticeTestViewSet()
         pvs.request = request
         pvs.format_kwarg = None
-        pt_qs = pvs.get_queryset()
+        pt_qs = pvs.get_queryset().select_related("pastpaper_pack")
 
         mock_exams = [
             {
@@ -161,17 +162,29 @@ class ClassroomViewSet(ModelViewSet):
 
         practice_tests = []
         for pt in pt_qs:
-            label = (pt.title or "").strip()
-            if not label:
-                subj = dict(PracticeTest.SUBJECT_CHOICES).get(pt.subject, pt.subject)
-                label = f"{subj} · {pt.label}" if pt.label else str(subj)
+            pack = pt.pastpaper_pack
             practice_tests.append(
                 {
                     "id": pt.id,
-                    "title": label,
+                    "title": (pt.title or "").strip(),
                     "subject": pt.subject,
                     "label": pt.label or "",
+                    "form_type": pt.form_type,
                     "practice_date": pt.practice_date.isoformat() if pt.practice_date else None,
+                    "created_at": pt.created_at.isoformat() if pt.created_at else None,
+                    "mock_exam": None,
+                    "pastpaper_pack_id": pt.pastpaper_pack_id,
+                    "pastpaper_pack": (
+                        {
+                            "id": pack.id,
+                            "title": pack.title or "",
+                            "practice_date": pack.practice_date.isoformat() if pack.practice_date else None,
+                            "label": pack.label or "",
+                            "form_type": pack.form_type,
+                        }
+                        if pack
+                        else None
+                    ),
                 }
             )
 
@@ -196,8 +209,13 @@ class ClassroomViewSet(ModelViewSet):
         n_students = len(student_ids)
 
         practice_assignments = list(
-            Assignment.objects.filter(classroom=classroom, practice_test__isnull=False)
-            .select_related("practice_test")
+            Assignment.objects.filter(classroom=classroom)
+            .filter(
+                Q(practice_test__isnull=False)
+                | Q(pastpaper_pack__isnull=False)
+                | Q(practice_test_ids__isnull=False)
+            )
+            .select_related("practice_test", "pastpaper_pack")
             .order_by("-created_at")
         )
         assign_ids = [a.id for a in practice_assignments]
@@ -209,26 +227,30 @@ class ClassroomViewSet(ModelViewSet):
             subs_qs = Submission.objects.filter(
                 assignment_id__in=assign_ids,
                 student_id__in=student_ids,
-            ).select_related("attempt", "assignment", "assignment__practice_test")
+            ).select_related("attempt", "assignment", "assignment__practice_test", "assignment__pastpaper_pack")
             for s in subs_qs:
                 sub_map[(s.student_id, s.assignment_id)] = s
                 att = s.attempt
                 if att and att.is_completed and att.score is not None:
-                    scores_by_assignment[s.assignment_id].append(att.score)
+                    targets = assignment_target_practice_test_ids(s.assignment)
+                    if att.practice_test_id in targets:
+                        scores_by_assignment[s.assignment_id].append(att.score)
 
         assignments_summary = []
         for a in practice_assignments:
             scores = scores_by_assignment.get(a.id, [])
-            pt = a.practice_test
+            target_ids = assignment_target_practice_test_ids(a)
+            pt_first = PracticeTest.objects.filter(pk=target_ids[0]).first() if target_ids else None
+            title_fallback = a.pastpaper_pack.title if a.pastpaper_pack_id and a.pastpaper_pack else None
             assignments_summary.append(
                 {
                     "assignment_id": a.id,
                     "title": a.title,
                     "due_at": a.due_at.isoformat() if a.due_at else None,
                     "created_at": a.created_at.isoformat() if a.created_at else None,
-                    "practice_test_id": a.practice_test_id,
-                    "practice_test_title": pt.title if pt else None,
-                    "subject": pt.subject if pt else None,
+                    "practice_test_id": target_ids[0] if target_ids else None,
+                    "practice_test_title": (pt_first.title if pt_first else None) or title_fallback,
+                    "subject": pt_first.subject if pt_first else None,
                     "group_mean_score": round(mean(scores), 1) if scores else None,
                     "completed_count": len(scores),
                     "student_headcount": n_students,
@@ -244,17 +266,20 @@ class ClassroomViewSet(ModelViewSet):
                 s = sub_map.get((u.id, a.id))
                 att = s.attempt if s else None
                 if att and att.is_completed and att.score is not None:
-                    scores_list.append(att.score)
+                    if att.practice_test_id in assignment_target_practice_test_ids(a):
+                        scores_list.append(att.score)
 
             latest_practice = None
             if latest_pa:
                 s = sub_map.get((u.id, latest_pa.id))
                 att = s.attempt if s else None
-                pt = latest_pa.practice_test
+                lt_ids = assignment_target_practice_test_ids(latest_pa)
+                pt = PracticeTest.objects.filter(pk=lt_ids[0]).first() if lt_ids else None
+                title_fb = latest_pa.pastpaper_pack.title if latest_pa.pastpaper_pack_id and latest_pa.pastpaper_pack else None
                 latest_practice = {
                     "assignment_id": latest_pa.id,
                     "assignment_title": latest_pa.title,
-                    "practice_test_title": pt.title if pt else None,
+                    "practice_test_title": (pt.title if pt else None) or title_fb,
                     "subject": pt.subject if pt else None,
                     "score": att.score
                     if att and att.is_completed and att.score is not None
@@ -370,7 +395,7 @@ class AssignmentViewSet(ModelViewSet):
         if not classroom.memberships.filter(user=self.request.user).exists():
             return Assignment.objects.none()
         return Assignment.objects.filter(classroom=classroom).select_related(
-            "created_by", "mock_exam", "practice_test", "module"
+            "created_by", "mock_exam", "practice_test", "pastpaper_pack", "module"
         ).annotate(submissions_count=Count("submissions"))
 
     def create(self, request, *args, **kwargs):

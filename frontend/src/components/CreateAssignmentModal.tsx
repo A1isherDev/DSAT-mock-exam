@@ -1,24 +1,31 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { classesApi } from "@/lib/api";
+import {
+  buildHomeworkPastpaperCards,
+  formatLineDate,
+  sharedPastpaperPackTitle,
+  singleDisplayTitle,
+  subjectLabel,
+  type CardPastpaperPack,
+  type CardSingle,
+} from "@/lib/practiceTestCards";
 import { Loader2, X } from "lucide-react";
 
 type AssignmentOptMock = { id: number; title: string; practice_date: string | null; kind: string };
-type AssignmentOptPt = {
+
+type PastpaperRow = Record<string, unknown> & {
   id: number;
-  title: string;
-  subject: string;
-  label: string;
-  practice_date: string | null;
+  pastpaper_pack?: { id: number; title?: string; practice_date?: string | null; label?: string; form_type?: string } | null;
+  pastpaper_pack_id?: number | null;
 };
 
-function formatSubject(s?: string | null) {
-  if (!s) return "Practice";
-  if (s === "READING_WRITING") return "Reading & Writing";
-  if (s === "MATH") return "Math";
-  return s.replace(/_/g, " ");
-}
+type PastSelection =
+  | { mode: "none" }
+  | { mode: "single"; testId: number }
+  | { mode: "pack_db"; packId: number }
+  | { mode: "pack_legacy"; testIds: number[] };
 
 type Props = {
   open: boolean;
@@ -27,24 +34,49 @@ type Props = {
   onSuccess: () => void | Promise<void>;
 };
 
+function cardReactKey(c: CardPastpaperPack | CardSingle): string {
+  if (c.kind === "single") return `single-${c.test.id}`;
+  return `pack-${c.packKey}`;
+}
+
+function selectionMatchesCard(sel: PastSelection, c: CardPastpaperPack | CardSingle): boolean {
+  if (c.kind === "single") return sel.mode === "single" && sel.testId === c.test.id;
+  if (c.pack?.id != null) return sel.mode === "pack_db" && sel.packId === c.pack.id;
+  const ids = c.tests.map((t) => t.id).sort((a, b) => a - b);
+  if (sel.mode !== "pack_legacy" || ids.length === 0) return false;
+  const a = [...sel.testIds].sort((x, y) => x - y);
+  return a.length === ids.length && a.every((v, i) => v === ids[i]);
+}
+
+function selectFromCard(c: CardPastpaperPack | CardSingle): PastSelection {
+  if (c.kind === "single") return { mode: "single", testId: c.test.id };
+  if (c.pack?.id != null) return { mode: "pack_db", packId: c.pack.id };
+  return { mode: "pack_legacy", testIds: c.tests.map((t) => t.id) };
+}
+
 export default function CreateAssignmentModal({ open, classId, onClose, onSuccess }: Props) {
   const [newAsg, setNewAsg] = useState({
     title: "",
     instructions: "",
     external_url: "",
     mock_exam: "",
-    practice_test: "",
   });
+  const [pastSel, setPastSel] = useState<PastSelection>({ mode: "none" });
   const [dueLocal, setDueLocal] = useState("");
   const [asgFile, setAsgFile] = useState<File | null>(null);
   const [assignmentOptions, setAssignmentOptions] = useState<{
     mock_exams: AssignmentOptMock[];
-    practice_tests: AssignmentOptPt[];
+    practice_tests: PastpaperRow[];
   }>({ mock_exams: [], practice_tests: [] });
   const [asgOptionsLoading, setAsgOptionsLoading] = useState(false);
   const [asgOptionsError, setAsgOptionsError] = useState<string | null>(null);
   const [creatingAsg, setCreatingAsg] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  const pastpaperCards = useMemo(
+    () => buildHomeworkPastpaperCards(assignmentOptions.practice_tests as any[]),
+    [assignmentOptions.practice_tests]
+  );
 
   const resetForm = () => {
     setNewAsg({
@@ -52,8 +84,8 @@ export default function CreateAssignmentModal({ open, classId, onClose, onSucces
       instructions: "",
       external_url: "",
       mock_exam: "",
-      practice_test: "",
     });
+    setPastSel({ mode: "none" });
     setDueLocal("");
     setAsgFile(null);
     setFormError(null);
@@ -110,7 +142,11 @@ export default function CreateAssignmentModal({ open, classId, onClose, onSucces
       }
       if (newAsg.external_url.trim()) fd.append("external_url", newAsg.external_url.trim());
       if (newAsg.mock_exam) fd.append("mock_exam", String(Number(newAsg.mock_exam)));
-      if (newAsg.practice_test) fd.append("practice_test", String(Number(newAsg.practice_test)));
+
+      if (pastSel.mode === "pack_db") fd.append("pastpaper_pack", String(pastSel.packId));
+      else if (pastSel.mode === "pack_legacy") fd.append("practice_test_ids", JSON.stringify(pastSel.testIds));
+      else if (pastSel.mode === "single") fd.append("practice_test", String(pastSel.testId));
+
       if (asgFile) fd.append("attachment_file", asgFile);
 
       await classesApi.createAssignment(classId, fd, true);
@@ -141,7 +177,7 @@ export default function CreateAssignmentModal({ open, classId, onClose, onSucces
       onClick={onClose}
     >
       <div
-        className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl border border-slate-200 bg-white shadow-2xl shadow-slate-900/20"
+        className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-3xl border border-slate-200 bg-white shadow-2xl shadow-slate-900/20"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="sticky top-0 z-10 flex items-center justify-between gap-4 px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white rounded-t-3xl">
@@ -177,8 +213,8 @@ export default function CreateAssignmentModal({ open, classId, onClose, onSucces
           ) : null}
 
           <p className="text-xs text-slate-500 leading-relaxed">
-            <strong>Mock</strong> is a timed diagnostic exam. <strong>Pastpaper</strong> links a full practice test (class
-            leaderboard). All links are optional; title is required.
+            <strong>Mock</strong> is a timed diagnostic exam. <strong>Pastpaper</strong> matches the practice-test library:
+            one card per full exam (English + Math when both exist). All links are optional; title is required.
           </p>
 
           <div>
@@ -244,34 +280,55 @@ export default function CreateAssignmentModal({ open, classId, onClose, onSucces
 
           <div>
             <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">
-              Pastpaper (full test)
+              Pastpaper (full exam card)
             </label>
             <p className="text-[11px] text-slate-500 mb-2">
-              Pick a practice test card. Students complete the entire test, not a single section.
+              Same grouping as the student practice-test page: one card combines Reading &amp; Writing and Math when they
+              share a pastpaper. Students open each section from the assignment.
             </p>
-            <div className="grid gap-2 sm:grid-cols-2 max-h-[240px] overflow-y-auto pr-1">
+            <div className="grid gap-3 sm:grid-cols-2 max-h-[320px] overflow-y-auto pr-1">
               <button
                 type="button"
-                onClick={() => setNewAsg((p) => ({ ...p, practice_test: "" }))}
-                className={`${cardBase} ${newAsg.practice_test === "" ? cardSel : cardUnsel}`}
+                onClick={() => setPastSel({ mode: "none" })}
+                className={`${cardBase} ${pastSel.mode === "none" ? cardSel : cardUnsel}`}
               >
-                <p className="text-sm font-bold text-slate-800">No practice test</p>
+                <p className="text-[10px] font-black uppercase tracking-wider text-violet-600">Pastpaper</p>
+                <p className="text-sm font-bold text-slate-800 mt-1">No practice test</p>
                 <p className="text-xs text-slate-500 mt-0.5">Assignment without a linked pastpaper</p>
               </button>
-              {assignmentOptions.practice_tests.map((pt) => {
-                const selected = String(pt.id) === newAsg.practice_test;
-                const meta = [formatSubject(pt.subject), pt.label?.trim() || null, pt.practice_date || null]
-                  .filter(Boolean)
-                  .join(" · ");
+              {pastpaperCards.map((c) => {
+                const selected = selectionMatchesCard(pastSel, c);
+                const lineDate =
+                  c.kind === "pastpaper_pack"
+                    ? c.pack?.practice_date || c.tests[0]?.practice_date || c.tests[0]?.created_at
+                    : c.test.practice_date || c.test.created_at;
+                const heading =
+                  c.kind === "pastpaper_pack"
+                    ? (c.pack?.title && String(c.pack.title).trim()) || sharedPastpaperPackTitle(c.tests)
+                    : singleDisplayTitle(c.test);
+                const sectionRows =
+                  c.kind === "pastpaper_pack" ? c.tests : [{ id: c.test.id, subject: c.test.subject }];
+
                 return (
                   <button
-                    key={pt.id}
+                    key={cardReactKey(c)}
                     type="button"
-                    onClick={() => setNewAsg((p) => ({ ...p, practice_test: String(pt.id) }))}
+                    onClick={() => setPastSel(selectFromCard(c))}
                     className={`${cardBase} ${selected ? cardSel : cardUnsel}`}
                   >
-                    <p className="text-sm font-bold text-slate-900 line-clamp-2">{pt.title}</p>
-                    {meta ? <p className="text-xs text-slate-500 mt-1 line-clamp-2">{meta}</p> : null}
+                    <p className="text-[10px] font-black uppercase tracking-wider text-violet-600">Practice test</p>
+                    <p className="text-xs font-bold text-slate-400 mt-1">{formatLineDate(lineDate)}</p>
+                    <p className="text-sm font-bold text-slate-900 mt-2 line-clamp-2 leading-snug">{heading}</p>
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {sectionRows.map((t) => (
+                        <span
+                          key={t.id}
+                          className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-lg bg-violet-100 text-violet-800"
+                        >
+                          {subjectLabel(t.subject)}
+                        </span>
+                      ))}
+                    </div>
                   </button>
                 );
               })}

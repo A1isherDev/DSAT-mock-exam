@@ -233,8 +233,8 @@ export default function ClassDetailPage() {
           <div className="space-y-4">
             {assignments.length === 0 ? (
               <div className="bg-white border border-slate-200 rounded-2xl p-8 text-slate-600 font-medium text-center">
-                Hozircha topshiriqlar yo‘q.
-                {isClassAdmin ? " «Topshiriq yaratish» tugmasini bosing." : ""}
+                There are no assignments yet.
+                {isClassAdmin ? " Click the \"Create assignment\" button." : ""}
               </div>
             ) : (
               assignments.map((a) => (
@@ -247,7 +247,10 @@ export default function ClassDetailPage() {
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-lg font-extrabold text-slate-900 truncate">{a.title}</p>
-                        {a.practice_test ? (
+                        {(a.practice_test ||
+                          a.pastpaper_pack ||
+                          (Array.isArray(a.practice_test_ids) && a.practice_test_ids.length > 0) ||
+                          (Array.isArray(a.practice_bundle_tests) && a.practice_bundle_tests.length > 0)) ? (
                           <span className="shrink-0 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-lg bg-violet-100 text-violet-800">
                             Pastpaper
                           </span>

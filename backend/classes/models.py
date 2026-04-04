@@ -7,7 +7,7 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
-from exams.models import MockExam, PracticeTest, Module, TestAttempt
+from exams.models import MockExam, PastpaperPack, PracticeTest, Module, TestAttempt
 
 
 def _generate_join_code(length: int = 7) -> str:
@@ -134,6 +134,14 @@ class Assignment(models.Model):
     practice_test = models.ForeignKey(
         PracticeTest, on_delete=models.SET_NULL, null=True, blank=True, related_name="class_assignments"
     )
+    pastpaper_pack = models.ForeignKey(
+        PastpaperPack,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="class_assignments",
+    )
+    practice_test_ids = models.JSONField(null=True, blank=True)
     module = models.ForeignKey(
         Module, on_delete=models.SET_NULL, null=True, blank=True, related_name="class_assignments"
     )
@@ -146,6 +154,26 @@ class Assignment(models.Model):
     class Meta:
         db_table = "class_assignments"
         ordering = ["-created_at"]
+
+
+def assignment_target_practice_test_ids(assignment: Assignment) -> list[int]:
+    """
+    Practice test row ids this homework refers to (full pastpaper pack, legacy bundle, or single).
+    """
+    if assignment.pastpaper_pack_id:
+        order = {"READING_WRITING": 0, "MATH": 1}
+        rows = list(
+            PracticeTest.objects.filter(pastpaper_pack_id=assignment.pastpaper_pack_id).values_list(
+                "id", "subject"
+            )
+        )
+        rows.sort(key=lambda r: (order.get(r[1], 9), r[0]))
+        return [r[0] for r in rows]
+    if assignment.practice_test_ids:
+        return [int(x) for x in assignment.practice_test_ids]
+    if assignment.practice_test_id:
+        return [assignment.practice_test_id]
+    return []
 
 
 class Submission(models.Model):

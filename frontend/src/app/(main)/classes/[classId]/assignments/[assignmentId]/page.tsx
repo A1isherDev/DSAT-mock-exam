@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { classesApi, examsApi } from "@/lib/api";
+import { classesApi } from "@/lib/api";
+import { subjectLabel } from "@/lib/practiceTestCards";
 import { ArrowLeft, ClipboardCheck, ExternalLink, Save, Send, Trophy } from "lucide-react";
 
 export default function AssignmentDetailPage() {
@@ -80,17 +81,8 @@ export default function AssignmentDetailPage() {
     }
   };
 
-  const openAttachment = () => {
+  const openExternalOrFile = () => {
     if (!assignment) return;
-    // If assignment attaches a mock exam, send user to /mock/:id
-    if (assignment.mock_exam) {
-      router.push(`/mock/${assignment.mock_exam}`);
-      return;
-    }
-    if (assignment.practice_test) {
-      router.push(`/practice-test/${assignment.practice_test}`);
-      return;
-    }
     if (assignment.external_url) {
       const url = /^https?:\/\//i.test(assignment.external_url) ? assignment.external_url : `https://${assignment.external_url}`;
       window.open(url, "_blank", "noopener,noreferrer");
@@ -98,9 +90,14 @@ export default function AssignmentDetailPage() {
     }
     if (assignment.attachment_file_url) {
       window.open(assignment.attachment_file_url, "_blank", "noopener,noreferrer");
-      return;
     }
   };
+
+  const bundleTests: { id: number; subject: string; title?: string }[] = Array.isArray(assignment?.practice_bundle_tests)
+    ? assignment.practice_bundle_tests
+    : [];
+  const hasPastpaperBundle = bundleTests.length > 0;
+  const legacyPracticeTestId = assignment?.practice_test;
 
   const gradeOne = async (submissionId: number) => {
     const g = grading[String(submissionId)] || {};
@@ -130,19 +127,53 @@ export default function AssignmentDetailPage() {
               <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">{assignment?.title || "Assignment"}</h1>
               {assignment?.instructions ? <p className="text-slate-600 mt-3 whitespace-pre-wrap">{assignment.instructions}</p> : null}
               <div className="mt-5 flex flex-wrap gap-2">
-                {(assignment?.mock_exam ||
-                  assignment?.practice_test ||
-                  assignment?.external_url ||
-                  assignment?.attachment_file_url) && (
+                {assignment?.mock_exam ? (
                   <button
                     type="button"
-                    onClick={openAttachment}
+                    onClick={() => router.push(`/mock/${assignment.mock_exam}`)}
                     className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 font-bold text-sm hover:bg-slate-50"
                   >
                     <ExternalLink className="w-4 h-4" />
-                    Open attached work
+                    Open mock exam
                   </button>
-                )}
+                ) : null}
+                {hasPastpaperBundle
+                  ? bundleTests.map((t) => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => router.push(`/practice-test/${t.id}`)}
+                        className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl border font-bold text-sm text-white ${
+                          t.subject === "MATH"
+                            ? "border-emerald-600 bg-emerald-600 hover:bg-emerald-700"
+                            : "border-blue-600 bg-blue-600 hover:bg-blue-700"
+                        }`}
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        Open {subjectLabel(t.subject)}
+                      </button>
+                    ))
+                  : null}
+                {!hasPastpaperBundle && legacyPracticeTestId ? (
+                  <button
+                    type="button"
+                    onClick={() => router.push(`/practice-test/${legacyPracticeTestId}`)}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-violet-200 bg-violet-600 text-white font-bold text-sm hover:bg-violet-700"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    Open practice test
+                  </button>
+                ) : null}
+                {assignment?.external_url || assignment?.attachment_file_url ? (
+                  <button
+                    type="button"
+                    onClick={openExternalOrFile}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 font-bold text-sm hover:bg-slate-50"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    {assignment?.external_url ? "Open link" : "Open attached file"}
+                  </button>
+                ) : null}
               </div>
             </div>
 
