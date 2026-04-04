@@ -5,7 +5,17 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { classesApi } from "@/lib/api";
 import ClassLeaderboard from "@/components/ClassLeaderboard";
-import { ClipboardList, Users, Megaphone, GraduationCap, KeyRound, RefreshCcw, Trophy } from "lucide-react";
+import CreateAssignmentModal from "@/components/CreateAssignmentModal";
+import {
+  ClipboardList,
+  Users,
+  Megaphone,
+  GraduationCap,
+  KeyRound,
+  RefreshCcw,
+  Trophy,
+  Plus,
+} from "lucide-react";
 
 function TabButton({ active, onClick, icon: Icon, label }: any) {
   return (
@@ -36,16 +46,7 @@ export default function ClassDetailPage() {
   const [postText, setPostText] = useState("");
 
   const [assignments, setAssignments] = useState<any[]>([]);
-  const [newAsg, setNewAsg] = useState({
-    title: "",
-    instructions: "",
-    due_at: "",
-    external_url: "",
-    mock_exam: "",
-    practice_test: "",
-    module: "",
-  });
-  const [asgFile, setAsgFile] = useState<File | null>(null);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
 
   const [people, setPeople] = useState<any[]>([]);
 
@@ -86,30 +87,6 @@ export default function ClassDetailPage() {
       setPosts(Array.isArray(p) ? p : []);
     } catch (e: any) {
       setError(e?.response?.data?.detail || "Could not post.");
-    }
-  };
-
-  const handleCreateAssignment = async () => {
-    setError(null);
-    try {
-      const fd = new FormData();
-      fd.append("title", newAsg.title);
-      fd.append("instructions", newAsg.instructions);
-      if (newAsg.due_at) fd.append("due_at", newAsg.due_at);
-      if (newAsg.external_url) fd.append("external_url", newAsg.external_url);
-      if (newAsg.mock_exam) fd.append("mock_exam", String(Number(newAsg.mock_exam)));
-      if (newAsg.practice_test) fd.append("practice_test", String(Number(newAsg.practice_test)));
-      if (newAsg.module) fd.append("module", String(Number(newAsg.module)));
-      if (asgFile) fd.append("attachment_file", asgFile);
-
-      await classesApi.createAssignment(id, fd, true);
-      setNewAsg({ title: "", instructions: "", due_at: "", external_url: "", mock_exam: "", practice_test: "", module: "" });
-      setAsgFile(null);
-      const a = await classesApi.listAssignments(id);
-      setAssignments(Array.isArray(a) ? a : []);
-      setTab("classwork");
-    } catch (e: any) {
-      setError(e?.response?.data?.detail || "Could not create assignment.");
     }
   };
 
@@ -231,10 +208,34 @@ export default function ClassDetailPage() {
           </div>
         </div>
       ) : tab === "classwork" ? (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 space-y-4">
+        <div className="space-y-6">
+          {isClassAdmin ? (
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-extrabold text-slate-900">Classwork</h2>
+                <p className="text-sm text-slate-500 mt-0.5">
+                  Topshiriqlar ro‘yxati. Yangi topshiriqni modal orqali qo‘shing — mock va pastpaper ro‘yxatdan tanlanadi.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCreateModalOpen(true)}
+                className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold text-sm shadow-lg shadow-blue-600/25 hover:from-blue-700 hover:to-indigo-700 transition-all shrink-0"
+              >
+                <Plus className="w-5 h-5" />
+                Topshiriq yaratish
+              </button>
+            </div>
+          ) : (
+            <h2 className="text-lg font-extrabold text-slate-900">Classwork</h2>
+          )}
+
+          <div className="space-y-4">
             {assignments.length === 0 ? (
-              <div className="bg-white border border-slate-200 rounded-2xl p-8 text-slate-600 font-medium">No assignments yet.</div>
+              <div className="bg-white border border-slate-200 rounded-2xl p-8 text-slate-600 font-medium text-center">
+                Hozircha topshiriqlar yo‘q.
+                {isClassAdmin ? " «Topshiriq yaratish» tugmasini bosing." : ""}
+              </div>
             ) : (
               assignments.map((a) => (
                 <Link
@@ -251,11 +252,16 @@ export default function ClassDetailPage() {
                             Pastpaper
                           </span>
                         ) : null}
+                        {a.mock_exam ? (
+                          <span className="shrink-0 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-lg bg-sky-100 text-sky-800">
+                            Mock
+                          </span>
+                        ) : null}
                       </div>
                       <p className="text-sm text-slate-500 mt-1">{formatDue(a.due_at)}</p>
                     </div>
                     <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">
-                      {a.submissions_count ?? 0} submitted
+                      {a.submissions_count ?? 0} yuborilgan
                     </div>
                   </div>
                   {a.instructions ? (
@@ -266,70 +272,16 @@ export default function ClassDetailPage() {
             )}
           </div>
 
-          {isClassAdmin && (
-            <div className="bg-white border border-slate-200 rounded-2xl p-6">
-              <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">Create assignment</p>
-              <div className="space-y-3">
-                <input
-                  value={newAsg.title}
-                  onChange={(e) => setNewAsg((p) => ({ ...p, title: e.target.value }))}
-                  placeholder="Title"
-                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold"
-                />
-                <textarea
-                  value={newAsg.instructions}
-                  onChange={(e) => setNewAsg((p) => ({ ...p, instructions: e.target.value }))}
-                  placeholder="Instructions"
-                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm min-h-[100px]"
-                />
-                <input
-                  value={newAsg.due_at}
-                  onChange={(e) => setNewAsg((p) => ({ ...p, due_at: e.target.value }))}
-                  placeholder="Due date/time (ISO) e.g. 2026-04-01T18:00:00Z"
-                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm"
-                />
-                <input
-                  value={newAsg.external_url}
-                  onChange={(e) => setNewAsg((p) => ({ ...p, external_url: e.target.value }))}
-                  placeholder="External URL (optional)"
-                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm"
-                />
-                <div className="grid grid-cols-3 gap-2">
-                  <input
-                    value={newAsg.mock_exam}
-                    onChange={(e) => setNewAsg((p) => ({ ...p, mock_exam: e.target.value }))}
-                    placeholder="MockExam ID"
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm"
-                  />
-                  <input
-                    value={newAsg.practice_test}
-                    onChange={(e) => setNewAsg((p) => ({ ...p, practice_test: e.target.value }))}
-                    placeholder="Test ID"
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm"
-                  />
-                  <input
-                    value={newAsg.module}
-                    onChange={(e) => setNewAsg((p) => ({ ...p, module: e.target.value }))}
-                    placeholder="Module ID"
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm"
-                  />
-                </div>
-                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-widest">File (optional)</label>
-                <input type="file" onChange={(e) => setAsgFile(e.target.files?.[0] || null)} className="w-full text-sm" />
-                <p className="text-[11px] text-slate-400">
-                  Attach a file or a link, plus optional test IDs (MVP).
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={handleCreateAssignment}
-                disabled={!newAsg.title.trim()}
-                className="w-full mt-3 py-3 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 disabled:opacity-60"
-              >
-                Create
-              </button>
-            </div>
-          )}
+          <CreateAssignmentModal
+            open={createModalOpen && isClassAdmin}
+            classId={id}
+            onClose={() => setCreateModalOpen(false)}
+            onSuccess={async () => {
+              const a = await classesApi.listAssignments(id);
+              setAssignments(Array.isArray(a) ? a : []);
+              setTab("classwork");
+            }}
+          />
         </div>
       ) : tab === "people" ? (
         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">

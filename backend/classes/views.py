@@ -15,7 +15,7 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from access import constants as acc_const
 from access.services import authorize
 
-from exams.models import TestAttempt
+from exams.models import PracticeTest, TestAttempt
 from users.permissions import IsAuthenticatedAndNotFrozen
 
 from .models import (
@@ -123,6 +123,61 @@ class ClassroomViewSet(ModelViewSet):
         classroom = self.get_object()
         memberships = classroom.memberships.select_related("user").all().order_by("role", "-joined_at")
         return Response(ClassroomMembershipSerializer(memberships, many=True, context={"request": request}).data)
+
+    @action(detail=True, methods=["get"], permission_classes=[IsAuthenticatedAndNotFrozen], url_path="assignment-options")
+    def assignment_options(self, request, pk=None):
+        """
+        Mock exams + pastpaper practice tests (with modules) the teacher may attach to homework.
+        Uses the same visibility rules as /exams/mock-exams/ and /exams/.
+        """
+        classroom = self.get_object()
+        if not classroom.memberships.filter(user=request.user, role="ADMIN").exists():
+            return Response(
+                {"detail": "Only class teachers can load assignment options."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        from exams.views import MockExamViewSet, PracticeTestViewSet
+
+        mvs = MockExamViewSet()
+        mvs.request = request
+        mvs.format_kwarg = None
+        mock_qs = mvs.get_queryset()
+
+        pvs = PracticeTestViewSet()
+        pvs.request = request
+        pvs.format_kwarg = None
+        pt_qs = pvs.get_queryset().prefetch_related("modules")
+
+        mock_exams = [
+            {
+                "id": m.id,
+                "title": m.title,
+                "practice_date": m.practice_date.isoformat() if m.practice_date else None,
+                "kind": m.kind,
+            }
+            for m in mock_qs
+        ]
+
+        practice_tests = []
+        for pt in pt_qs:
+            mods = sorted(pt.modules.all(), key=lambda x: (x.module_order, x.id))
+            label = (pt.title or "").strip()
+            if not label:
+                subj = dict(PracticeTest.SUBJECT_CHOICES).get(pt.subject, pt.subject)
+                label = f"{subj} · {pt.label}" if pt.label else str(subj)
+            practice_tests.append(
+                {
+                    "id": pt.id,
+                    "title": label,
+                    "subject": pt.subject,
+                    "label": pt.label or "",
+                    "practice_date": pt.practice_date.isoformat() if pt.practice_date else None,
+                    "modules": [{"id": mod.id, "module_order": mod.module_order} for mod in mods],
+                }
+            )
+
+        return Response({"mock_exams": mock_exams, "practice_tests": practice_tests})
 
     @action(detail=True, methods=["get"], permission_classes=[IsAuthenticatedAndNotFrozen], url_path="leaderboard")
     def leaderboard(self, request, pk=None):

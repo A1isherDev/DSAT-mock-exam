@@ -217,6 +217,11 @@ export const classesApi = {
         const r = await api.get(`/classes/${classId}/leaderboard/`);
         return r.data;
     },
+    /** Class teacher: mock exams + pastpaper tests/modules for homework form (same visibility as portal lists). */
+    getAssignmentOptions: async (classId: number) => {
+        const r = await api.get(`/classes/${classId}/assignment-options/`);
+        return r.data;
+    },
     // Stream
     listPosts: async (classId: number) => {
         const r = await api.get(`/classes/${classId}/posts/`);
