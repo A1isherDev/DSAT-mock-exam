@@ -25,13 +25,14 @@
   Surfaces & text: use bg-background | bg-card | bg-surface-2, text-foreground, text-muted-foreground, text-label-foreground, border-border
 */
 :root {
-  --bg: #f3f6fc;
-  --surface: #ffffff;
-  --surface-2: #f1f5f9;
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-label: #64748b;
-  --border-subtle: rgba(15, 23, 42, 0.1);
+  /* Charcoal-light base (closer to black than icy blue-gray) */
+  --bg: #e6e8ec;
+  --surface: #f0f1f4;
+  --surface-2: #dcdfe5;
+  --text-primary: #050508;
+  --text-secondary: #3d4554;
+  --text-label: #5c6370;
+  --border-subtle: rgba(5, 5, 8, 0.12);
   --accent-cyan: #22d3ee;
   /* Modal / drawer scrim — theme-aware dimming */
   --overlay-scrim: rgba(15, 23, 42, 0.48);
@@ -55,6 +56,10 @@
   --ds-secondary-soft: rgba(180, 83, 9, 0.12);
   --ds-accent: #2563eb;
   --ds-accent-amber: #d97706;
+  /* Gold edge accents (vertical rails on cards / chrome) */
+  --gold-rail: color-mix(in srgb, var(--ds-gold-bright) 22%, transparent);
+  --gold-rail-soft: color-mix(in srgb, var(--ds-gold) 7%, transparent);
+  --gold-rail-glow: color-mix(in srgb, var(--ds-gold-bright) 10%, transparent);
   /* Align legacy ds-* surfaces with core tokens (one visual language app-wide) */
   --ds-surface-0: var(--background);
   --ds-surface-1: var(--card);
@@ -74,24 +79,15 @@
 }
 
 .dark {
-  --bg: #0a0f1c;
-  --surface: #121a2b;
-  --surface-2: #0f172a;
-  --text-primary: #e6edf3;
-  --text-secondary: #94a3b8;
-  --text-label: #8b96a8;
-  --border-subtle: rgba(255, 255, 255, 0.08);
+  /* Near-black surfaces */
+  --bg: #020203;
+  --surface: #0a0a0c;
+  --surface-2: #030304;
+  --text-primary: #e8eaed;
+  --text-secondary: #9aa0a8;
+  --text-label: #7d8490;
   --accent-cyan: #22d3ee;
-  --overlay-scrim: rgba(0, 0, 0, 0.62);
-
-  --background: var(--bg);
-  --foreground: var(--text-primary);
-  --card: var(--surface);
-  --border: var(--border-subtle);
-  --primary: #3b82f6;
-  --primary-hover: #60a5fa;
-  --muted: var(--text-secondary);
-  --ring: rgba(96, 165, 250, 0.35);
+  --overlay-scrim: rgba(0, 0, 0, 0.78);
 
   --ds-primary: #3b82f6;
   --ds-primary-hover: #60a5fa;
@@ -103,6 +99,19 @@
   --ds-secondary-soft: rgba(245, 158, 11, 0.14);
   --ds-accent: #60a5fa;
   --ds-accent-amber: #fbbf24;
+  --border-subtle: color-mix(in srgb, var(--ds-gold-bright) 10%, rgba(255, 255, 255, 0.05));
+  --gold-rail: color-mix(in srgb, var(--ds-gold-bright) 48%, transparent);
+  --gold-rail-soft: color-mix(in srgb, var(--ds-gold-bright) 12%, transparent);
+  --gold-rail-glow: color-mix(in srgb, var(--ds-gold-bright) 14%, transparent);
+
+  --background: var(--bg);
+  --foreground: var(--text-primary);
+  --card: var(--surface);
+  --border: var(--border-subtle);
+  --primary: #3b82f6;
+  --primary-hover: #60a5fa;
+  --muted: var(--text-secondary);
+  --ring: rgba(96, 165, 250, 0.35);
   --ds-surface-0: var(--background);
   --ds-surface-1: var(--card);
   --ds-surface-2: var(--surface-2);
@@ -203,6 +212,13 @@ body {
 
 .app-bg {
   background:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--ds-gold-bright) 5%, transparent) 0%,
+      transparent 12%,
+      transparent 88%,
+      color-mix(in srgb, var(--ds-gold-bright) 5%, transparent) 100%
+    ),
     radial-gradient(1000px 520px at 0% 0%, var(--ds-primary-soft), transparent 55%),
     radial-gradient(900px 480px at 100% 8%, var(--ds-secondary-soft), transparent 48%),
     radial-gradient(700px 400px at 50% 100%, color-mix(in srgb, var(--primary) 6%, transparent), transparent 45%),
@@ -212,9 +228,16 @@ body {
 
 .dark .app-bg {
   background:
-    radial-gradient(900px 480px at 0% 0%, rgba(59, 130, 246, 0.12), transparent 55%),
-    radial-gradient(780px 400px at 100% 0%, rgba(245, 158, 11, 0.1), transparent 48%),
-    radial-gradient(600px 360px at 40% 100%, rgba(251, 191, 36, 0.06), transparent 45%),
+    /* Gold wash along left / right viewport edges */
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--ds-gold-bright) 9%, transparent) 0%,
+      transparent 14%,
+      transparent 86%,
+      color-mix(in srgb, var(--ds-gold-bright) 9%, transparent) 100%
+    ),
+    radial-gradient(900px 520px at 50% -20%, color-mix(in srgb, var(--primary) 7%, transparent), transparent 58%),
+    radial-gradient(700px 400px at 100% 100%, color-mix(in srgb, var(--ds-gold-bright) 5%, transparent), transparent 50%),
     var(--background);
 }
 
@@ -251,18 +274,27 @@ body {
   border-radius: 1rem;
   background: color-mix(in srgb, var(--card) 92%, transparent);
   border: 1px solid var(--border);
-  box-shadow: var(--ds-shadow-sm);
+  box-shadow:
+    inset 1px 0 0 var(--gold-rail),
+    inset -1px 0 0 var(--gold-rail),
+    inset 5px 0 18px -10px var(--gold-rail-soft),
+    inset -5px 0 18px -10px var(--gold-rail-soft),
+    var(--ds-shadow-sm);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
 
-/* Futuristic elevated cards (lists, dashboards) */
+/* Futuristic elevated cards (lists, dashboards) + gold side rails */
 .ui-card {
   background: color-mix(in srgb, var(--card) 94%, transparent);
   border: 1px solid var(--border);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   box-shadow:
+    inset 1px 0 0 var(--gold-rail),
+    inset -1px 0 0 var(--gold-rail),
+    inset 6px 0 22px -10px var(--gold-rail-soft),
+    inset -6px 0 22px -10px var(--gold-rail-soft),
     0 4px 24px -6px color-mix(in srgb, var(--foreground) 8%, transparent),
     0 0 0 1px color-mix(in srgb, var(--primary) 5%, transparent);
   transition:
@@ -273,13 +305,21 @@ body {
 
 .dark .ui-card {
   box-shadow:
+    inset 1px 0 0 var(--gold-rail),
+    inset -1px 0 0 var(--gold-rail),
+    inset 10px 0 32px -12px var(--gold-rail-soft),
+    inset -10px 0 32px -12px var(--gold-rail-soft),
     0 8px 36px -10px color-mix(in srgb, var(--ds-primary) 16%, transparent),
     0 0 0 1px color-mix(in srgb, var(--foreground) 6%, transparent);
 }
 
 .ui-card:hover {
-  border-color: color-mix(in srgb, var(--primary) 25%, var(--border));
+  border-color: color-mix(in srgb, var(--ds-gold-bright) 22%, var(--border));
   box-shadow:
+    inset 1px 0 0 color-mix(in srgb, var(--ds-gold-bright) 55%, transparent),
+    inset -1px 0 0 color-mix(in srgb, var(--ds-gold-bright) 45%, transparent),
+    inset 8px 0 28px -8px var(--gold-rail-glow),
+    inset -8px 0 28px -8px var(--gold-rail-glow),
     0 0 28px color-mix(in srgb, var(--primary) 14%, transparent),
     0 16px 48px -12px color-mix(in srgb, var(--primary) 10%, transparent);
 }
@@ -511,7 +551,12 @@ body {
     radial-gradient(700px 320px at 85% -10%, color-mix(in srgb, var(--primary) 14%, transparent), transparent 60%),
     radial-gradient(500px 260px at -10% 110%, color-mix(in srgb, var(--ds-gold-bright) 12%, transparent), transparent 58%);
   border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--border));
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--ds-gold-bright) 14%, transparent);
+  box-shadow:
+    inset 1px 0 0 var(--gold-rail),
+    inset -1px 0 0 var(--gold-rail),
+    inset 8px 0 28px -12px var(--gold-rail-soft),
+    inset -8px 0 28px -12px var(--gold-rail-soft),
+    inset 0 1px 0 color-mix(in srgb, var(--ds-gold-bright) 14%, transparent);
 }
 
 .hero-shell::before {
@@ -531,7 +576,12 @@ body {
     radial-gradient(700px 320px at 85% -10%, color-mix(in srgb, var(--primary) 18%, transparent), transparent 60%),
     radial-gradient(500px 260px at -10% 110%, color-mix(in srgb, var(--ds-gold-bright) 14%, transparent), transparent 58%);
   border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--border));
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--ds-gold-bright) 10%, transparent);
+  box-shadow:
+    inset 1px 0 0 var(--gold-rail),
+    inset -1px 0 0 var(--gold-rail),
+    inset 10px 0 36px -12px var(--gold-rail-soft),
+    inset -10px 0 36px -12px var(--gold-rail-soft),
+    inset 0 1px 0 color-mix(in srgb, var(--ds-gold-bright) 10%, transparent);
 }
 
 .dark .hero-shell::before {
@@ -551,6 +601,10 @@ body {
     color-mix(in srgb, var(--ds-primary-soft) 28%, var(--card)) 100%
   );
   box-shadow:
+    inset 1px 0 0 var(--gold-rail),
+    inset -1px 0 0 var(--gold-rail),
+    inset 6px 0 20px -10px var(--gold-rail-soft),
+    inset -6px 0 20px -10px var(--gold-rail-soft),
     0 1px 2px color-mix(in srgb, var(--foreground) 4%, transparent),
     0 22px 42px color-mix(in srgb, var(--primary) 9%, transparent);
   backdrop-filter: blur(10px);
@@ -560,8 +614,12 @@ body {
 
 .metric-tile:hover {
   transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--primary) 35%, var(--border));
+  border-color: color-mix(in srgb, var(--ds-gold-bright) 25%, var(--border));
   box-shadow:
+    inset 1px 0 0 color-mix(in srgb, var(--ds-gold-bright) 50%, transparent),
+    inset -1px 0 0 color-mix(in srgb, var(--ds-gold-bright) 40%, transparent),
+    inset 7px 0 24px -8px var(--gold-rail-glow),
+    inset -7px 0 24px -8px var(--gold-rail-glow),
     0 1px 2px color-mix(in srgb, var(--foreground) 4%, transparent),
     0 22px 40px color-mix(in srgb, var(--primary) 12%, transparent);
 }
@@ -586,13 +644,21 @@ body {
     color-mix(in srgb, var(--surface-2) 88%, transparent) 100%
   );
   box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.25),
+    inset 1px 0 0 var(--gold-rail),
+    inset -1px 0 0 var(--gold-rail),
+    inset 8px 0 26px -10px var(--gold-rail-soft),
+    inset -8px 0 26px -10px var(--gold-rail-soft),
+    0 1px 2px rgba(0, 0, 0, 0.35),
     0 22px 40px color-mix(in srgb, var(--primary) 11%, transparent);
 }
 
 .dark .metric-tile:hover {
   box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.25),
+    inset 1px 0 0 color-mix(in srgb, var(--ds-gold-bright) 55%, transparent),
+    inset -1px 0 0 color-mix(in srgb, var(--ds-gold-bright) 45%, transparent),
+    inset 10px 0 30px -8px var(--gold-rail-glow),
+    inset -10px 0 30px -8px var(--gold-rail-glow),
+    0 1px 2px rgba(0, 0, 0, 0.35),
     0 26px 44px color-mix(in srgb, var(--primary) 18%, transparent);
 }
 
@@ -648,6 +714,10 @@ body {
   border: 1px solid var(--border);
   background: color-mix(in srgb, var(--card) 82%, transparent);
   box-shadow:
+    inset 1px 0 0 var(--gold-rail),
+    inset -1px 0 0 var(--gold-rail),
+    inset 5px 0 16px -8px var(--gold-rail-soft),
+    inset -5px 0 16px -8px var(--gold-rail-soft),
     0 1px 2px color-mix(in srgb, var(--foreground) 4%, transparent),
     0 8px 24px color-mix(in srgb, var(--foreground) 5%, transparent);
   backdrop-filter: blur(12px);
@@ -657,8 +727,21 @@ body {
 .dark .cr-surface {
   background: color-mix(in srgb, var(--card) 88%, transparent);
   box-shadow:
+    inset 1px 0 0 var(--gold-rail),
+    inset -1px 0 0 var(--gold-rail),
+    inset 7px 0 22px -10px var(--gold-rail-soft),
+    inset -7px 0 22px -10px var(--gold-rail-soft),
     0 1px 2px rgba(0, 0, 0, 0.25),
     0 12px 32px color-mix(in srgb, var(--ds-primary) 10%, transparent);
+}
+
+/* Main shell sidebars: gold-tinged divider + outward glow into content */
+.shell-sidebar-gold {
+  border-right-color: color-mix(in srgb, var(--ds-gold-bright) 22%, var(--border)) !important;
+  box-shadow:
+    inset -4px 0 24px -10px var(--gold-rail-glow),
+    8px 0 48px -20px color-mix(in srgb, var(--ds-gold-bright) 7%, transparent),
+    0 25px 50px -12px color-mix(in srgb, var(--foreground) 6%, transparent);
 }
 
 .cr-hero {

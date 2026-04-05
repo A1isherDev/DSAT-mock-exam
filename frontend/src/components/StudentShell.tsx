@@ -157,7 +157,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
         {/* Sidebar */}
         <aside
           className={cn(
-            "fixed inset-y-0 left-0 z-[100] flex h-[100dvh] w-[min(100%,280px)] shrink-0 flex-col overflow-hidden border-r border-border bg-card shadow-xl shadow-primary/5 backdrop-blur-xl transition-[transform,width,padding] duration-200 ease-out md:relative md:z-30 md:h-full md:max-h-full md:min-h-0 md:translate-x-0 md:shadow-none",
+            "shell-sidebar-gold fixed inset-y-0 left-0 z-[100] flex h-[100dvh] w-[min(100%,280px)] shrink-0 flex-col overflow-hidden border-r border-border bg-card backdrop-blur-xl transition-[transform,width,padding] duration-200 ease-out md:relative md:z-30 md:h-full md:max-h-full md:min-h-0 md:translate-x-0",
             sidebarCollapsed ? "md:w-[4.25rem] md:px-0" : "md:w-72",
             mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
           )}

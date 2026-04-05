@@ -57,7 +57,7 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
 
         <aside
           className={cn(
-            "fixed inset-y-0 left-0 z-[100] flex h-[100dvh] w-[min(100%,272px)] shrink-0 flex-col border-r border-border bg-card shadow-xl shadow-primary/5 backdrop-blur-xl transition-transform duration-200 md:static md:h-screen md:min-h-0 md:translate-x-0 md:shadow-none",
+            "shell-sidebar-gold fixed inset-y-0 left-0 z-[100] flex h-[100dvh] w-[min(100%,272px)] shrink-0 flex-col border-r border-border bg-card backdrop-blur-xl transition-transform duration-200 md:static md:h-screen md:min-h-0 md:translate-x-0",
             mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
           )}
         >
