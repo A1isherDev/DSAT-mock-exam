@@ -2,9 +2,12 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import Cookies from "js-cookie";
 import { usersApi } from "@/lib/api";
 import { Calendar, Target, Trophy } from "lucide-react";
+import { Badge } from "@/components/ui/Badge";
+import { ClassroomButton, DashboardSkeleton } from "@/components/classroom";
 
 type Me = {
   sat_exam_date: string | null;
@@ -18,6 +21,7 @@ type Me = {
 };
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
   const [hasToken, setHasToken] = useState(false);
@@ -68,31 +72,31 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-10 lg:px-8 lg:py-12">
-      <div className="mb-10 hero-shell p-8 md:p-10">
+    <div className="mx-auto max-w-6xl px-4 py-8 lg:px-8 lg:py-12">
+      <div className="hero-shell mb-10 p-8 md:p-10">
         <div className="relative z-10">
-          <span className="neo-chip mb-3">Personal command center</span>
-          <h1 className="title-xl">Welcome back</h1>
-          <p className="text-slate-600 mt-2 max-w-xl">
-            Track your exam date, target score, and your latest mock exam result in one focused view.
+          <Badge variant="live" className="mb-3">
+            Command center
+          </Badge>
+          <h1 className="ds-title-xl">Welcome back</h1>
+          <p className="ds-body mt-3 max-w-xl text-slate-600 dark:text-slate-400">
+            Exam date, target score, and your latest mock—prioritized so you always know what to do next.
           </p>
         </div>
       </div>
 
       {!hasToken ? (
-        <div className="panel p-10 text-center transition-all duration-300">
-          <p className="text-slate-600 dark:text-slate-300 font-medium mb-6">Sign in to view your personal dashboard data.</p>
-          <Link
-            href="/login"
-            className="inline-flex items-center justify-center rounded-xl bg-blue-600 dark:bg-blue-500 text-white font-bold px-8 py-3.5 text-sm hover:bg-blue-700 dark:hover:bg-blue-600 transition-all shadow-lg hover:shadow-blue-500/25 hover:-translate-y-0.5"
-          >
+        <div className="cr-surface rounded-2xl p-10 text-center transition-all duration-300">
+          <p className="mb-2 text-lg font-bold text-slate-800 dark:text-slate-100">You’re browsing as a guest</p>
+          <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">
+            Sign in to sync your exam date, targets, and mock history across devices.
+          </p>
+          <ClassroomButton variant="primary" size="md" onClick={() => router.push("/login")}>
             Sign in
-          </Link>
+          </ClassroomButton>
         </div>
       ) : loading ? (
-        <div className="flex justify-center py-20">
-          <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-        </div>
+        <DashboardSkeleton />
       ) : (
         <div className="grid gap-6 sm:grid-cols-3">
           <div className="metric-tile p-6 lg:p-7 group">

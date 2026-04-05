@@ -15,17 +15,17 @@ export function ClassroomField({ label, htmlFor, hint, error, children, classNam
     <div className={cn("flex flex-col gap-2", className)}>
       <label
         htmlFor={htmlFor}
-        className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400"
+        className="ds-section-title text-slate-500 dark:text-slate-400"
       >
         {label}
       </label>
       {children}
       {error ? (
-        <p className="text-xs font-medium text-red-600 dark:text-red-400" role="alert">
+        <p className="rounded-lg border border-red-200/80 bg-red-50/90 px-2.5 py-1.5 text-xs font-semibold text-red-800 dark:border-red-900/50 dark:bg-red-950/35 dark:text-red-200" role="alert">
           {error}
         </p>
       ) : hint ? (
-        <p className="text-xs text-slate-400 dark:text-slate-500">{hint}</p>
+        <p className="ds-caption text-slate-400 dark:text-slate-500">{hint}</p>
       ) : null}
     </div>
   );

@@ -37,7 +37,7 @@ export function ClassroomModal({
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 sm:p-6" role="presentation">
       <button
         type="button"
-        className="absolute inset-0 bg-slate-950/45 backdrop-blur-[6px] transition-opacity duration-200 dark:bg-slate-950/65"
+        className="absolute inset-0 bg-slate-950/50 backdrop-blur-[8px] transition-opacity duration-200 dark:bg-slate-950/70"
         aria-label="Close dialog"
         onClick={onClose}
       />
@@ -46,7 +46,8 @@ export function ClassroomModal({
         aria-modal="true"
         aria-labelledby={titleId}
         className={cn(
-          "relative flex max-h-[min(90vh,880px)] w-full flex-col overflow-hidden rounded-[1.25rem] border border-slate-200/80 bg-white/95 shadow-2xl shadow-slate-900/10 dark:border-slate-700/80 dark:bg-slate-900/95 dark:shadow-black/40",
+          "relative flex max-h-[min(90vh,880px)] w-full flex-col overflow-hidden rounded-[1.25rem] border border-slate-200/80 bg-white/95 shadow-2xl shadow-violet-500/10 dark:border-slate-700/80 dark:bg-slate-900/95 dark:shadow-black/50",
+          "animate-[ds-modal-in_0.22s_cubic-bezier(0.16,1,0.3,1)]",
           maxW,
           className,
         )}
@@ -55,7 +56,7 @@ export function ClassroomModal({
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               {eyebrow ? (
-                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-indigo-600 dark:text-indigo-400">
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-violet-600 dark:text-violet-400">
                   {eyebrow}
                 </p>
               ) : null}

@@ -16,7 +16,9 @@ import {
   crInputClass,
   crSelectClass,
 } from "@/components/classroom";
-import { ArrowRight, Plus, RefreshCcw, Users } from "lucide-react";
+import { ArrowRight, MoreHorizontal, Plus, RefreshCcw, Search, Users } from "lucide-react";
+import { DropdownMenu, DropdownMenuItem } from "@/components/ui/DropdownMenu";
+import { IconButton } from "@/components/ui/IconButton";
 
 function isoDateToInput(value: string | null | undefined): string {
   if (!value) return "";
@@ -63,10 +65,10 @@ function parseApiError(e: unknown, fallback: string): string {
 }
 
 const groupTileClass =
-  "group relative w-full overflow-hidden text-left transition-all duration-200 ease-out hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--background)] dark:focus-visible:ring-offset-slate-950";
+  "group relative w-full overflow-hidden text-left transition-all duration-200 ease-out hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--background)] dark:focus-visible:ring-offset-slate-950";
 
 const groupTileAccent =
-  "pointer-events-none absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-indigo-500 via-indigo-400 to-cyan-500 opacity-90";
+  "pointer-events-none absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-violet-500 via-fuchsia-500 to-cyan-500 opacity-90";
 
 export default function ClassesPage() {
   const router = useRouter();
@@ -95,6 +97,8 @@ export default function ClassesPage() {
     teacher: "",
     max_students: "",
   });
+  const [classFilter, setClassFilter] = useState("");
+
   const [editClass, setEditClass] = useState({
     name: "",
     subject: "ENGLISH",
@@ -233,6 +237,16 @@ export default function ClassesPage() {
   };
 
   const editingClass = editingId ? classes.find((c) => c.id === editingId) : null;
+
+  const filteredClasses = useMemo(() => {
+    const q = classFilter.trim().toLowerCase();
+    if (!q) return classes;
+    return classes.filter((c) => {
+      const name = String(c.name ?? "").toLowerCase();
+      const sub = String(c.subject ?? "").toLowerCase();
+      return name.includes(q) || sub.includes(q);
+    });
+  }, [classes, classFilter]);
   const editTeacherOptions = useMemo(() => {
     if (!editingClass) return teachers;
     const tid = teacherIdFromClass(editingClass);
@@ -279,10 +293,22 @@ export default function ClassesPage() {
           title="Your learning spaces"
           description="Join with a code, open a space for announcements, homework, submissions, and grades."
         />
-        <ClassroomButton variant="secondary" size="md" onClick={fetchClasses} disabled={loading} className="shrink-0">
-          <RefreshCcw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          Refresh
-        </ClassroomButton>
+        <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center lg:w-auto lg:shrink-0">
+          <div className="relative min-w-[200px] flex-1 lg:max-w-xs">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              value={classFilter}
+              onChange={(e) => setClassFilter(e.target.value)}
+              placeholder="Search groups…"
+              className={`${crInputClass} !py-2.5 pl-9`}
+              aria-label="Filter groups by name or subject"
+            />
+          </div>
+          <ClassroomButton variant="secondary" size="md" onClick={fetchClasses} disabled={loading} loading={loading} className="w-full sm:w-auto">
+            {!loading ? <RefreshCcw className="h-4 w-4" /> : null}
+            Refresh
+          </ClassroomButton>
+        </div>
       </div>
 
       {error ? (
@@ -301,17 +327,46 @@ export default function ClassesPage() {
               title="No groups yet"
               description="Enter a group code from your teacher, or wait until an admin creates a space for you."
             />
+          ) : filteredClasses.length === 0 ? (
+            <ClassroomEmptyState
+              icon={Search}
+              title="No matches"
+              description="Try a different search, or clear the filter to see all groups."
+              action={{ label: "Clear search", onClick: () => setClassFilter("") }}
+            />
           ) : (
             <div className="grid gap-4 sm:grid-cols-2">
-              {classes.map((c) => (
+              {filteredClasses.map((c) => (
                 <button
                   key={c.id}
                   type="button"
                   onClick={() => router.push(`/classes/${c.id}`)}
-                  className={`cr-surface rounded-2xl p-6 pl-6 ${groupTileClass}`}
+                  className={`relative cr-surface rounded-2xl p-6 pl-6 text-left ${groupTileClass}`}
                 >
                   <span className={groupTileAccent} aria-hidden />
-                  <div className="relative flex items-start justify-between gap-4 pl-2">
+                  {isAdmin ? (
+                    <div
+                      className="absolute right-4 top-4 z-10"
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
+                    >
+                      <DropdownMenu
+                        align="end"
+                        trigger={
+                          <IconButton variant="ghost" size="sm" aria-label={`Actions for ${c.name}`}>
+                            <MoreHorizontal className="h-4 w-4" />
+                          </IconButton>
+                        }
+                      >
+                        <DropdownMenuItem onClick={() => router.push(`/classes/${c.id}`)}>
+                          <ArrowRight className="h-4 w-4 opacity-70" />
+                          Open class
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => beginEdit(c)}>Edit details</DropdownMenuItem>
+                      </DropdownMenu>
+                    </div>
+                  ) : null}
+                  <div className="relative flex items-start justify-between gap-4 pl-2 pr-10">
                     <div className="min-w-0">
                       <p className="truncate text-lg font-bold text-slate-900 dark:text-slate-50">{c.name}</p>
                       <p className="mt-1 truncate text-sm text-slate-500 dark:text-slate-400">
@@ -320,7 +375,7 @@ export default function ClassesPage() {
                         {c.lesson_time ? ` · ${c.lesson_time}` : ""}
                       </p>
                     </div>
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-600 transition-transform duration-200 group-hover:scale-105 dark:text-indigo-400">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-600 transition-transform duration-200 group-hover:scale-105 dark:text-violet-400">
                       <Users className="h-5 w-5" />
                     </div>
                   </div>
@@ -329,23 +384,11 @@ export default function ClassesPage() {
                       {c.members_count ?? 0} members
                       {c.max_students ? ` / ${c.max_students} max` : ""}
                     </span>
-                    <span className="inline-flex items-center gap-1 text-indigo-600 transition-transform duration-200 group-hover:translate-x-0.5 dark:text-indigo-400">
+                    <span className="inline-flex items-center gap-1 text-violet-600 transition-transform duration-200 group-hover:translate-x-0.5 dark:text-violet-400">
                       Open
                       <ArrowRight className="h-4 w-4" />
                     </span>
                   </div>
-                  {isAdmin ? (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        beginEdit(c);
-                      }}
-                      className="relative mt-3 block w-full pl-2 text-left text-xs font-semibold text-slate-400 transition-colors hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 rounded-md dark:hover:text-indigo-400"
-                    >
-                      Edit details
-                    </button>
-                  ) : null}
                 </button>
               ))}
             </div>

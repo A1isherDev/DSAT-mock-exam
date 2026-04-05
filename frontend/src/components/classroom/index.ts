@@ -8,6 +8,11 @@ export { ClassroomField } from "./Field";
 export { crInputClass, crInputInvalidClass, crSelectClass } from "./inputStyles";
 export { ClassroomModal } from "./Modal";
 export { ClassroomPageHeader } from "./PageHeader";
-export { ClassroomClassListSkeleton, ClassroomDetailSkeleton, ClassroomSkeleton } from "./Skeleton";
+export {
+  ClassroomClassListSkeleton,
+  ClassroomDetailSkeleton,
+  ClassroomSkeleton,
+  DashboardSkeleton,
+} from "./Skeleton";
 export { ClassroomTabs } from "./Tabs";
 export type { ClassroomTabItem } from "./Tabs";

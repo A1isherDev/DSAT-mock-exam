@@ -25,10 +25,10 @@ export function ClassroomCard({
   return (
     <div
       className={cn(
-        "cr-surface rounded-2xl",
+        "cr-surface rounded-2xl transition-[transform,box-shadow,border-color] duration-200 ease-out",
         pad[padding],
         interactive &&
-          "cursor-pointer transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-indigo-200/70 hover:shadow-lg hover:shadow-indigo-500/5 dark:hover:border-indigo-500/25",
+          "cursor-pointer hover:-translate-y-0.5 hover:border-violet-200/80 hover:shadow-lg hover:shadow-violet-500/8 dark:hover:border-violet-500/30 dark:hover:shadow-violet-500/10",
         className,
       )}
       {...rest}

@@ -9,42 +9,177 @@
   --color-border: var(--border);
   --color-primary: var(--primary);
   --color-primary-hover: var(--primary-hover);
+  --color-ds-primary: var(--ds-primary);
+  --color-ds-secondary: var(--ds-secondary);
+  --color-ds-accent: var(--ds-accent);
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
+/*
+  MasterSAT design system (controlled futuristic SaaS)
+  Primary: violet · Secondary: cyan · Accents: magenta + amber (sparingly)
+  Spacing: 4px base; prefer 8/12/16/24 for layout rhythm
+*/
 :root {
-  --background: #f6f8fc;
-  --foreground: #0f172a;
+  --background: #f4f2fb;
+  --foreground: #0c1222;
   --card: #ffffff;
-  --border: #e5eaf3;
-  --primary: #2563eb;
-  --primary-hover: #1d4ed8;
+  --border: #e2e8f0;
+  --primary: #5b21b6;
+  --primary-hover: #4c1d95;
   --muted: #64748b;
-  --ring: rgba(37, 99, 235, 0.18);
+  --ring: rgba(91, 33, 182, 0.22);
+
+  --ds-primary: #6d28d9;
+  --ds-primary-hover: #5b21b6;
+  --ds-primary-soft: rgba(109, 40, 217, 0.1);
+  --ds-secondary: #0891b2;
+  --ds-secondary-soft: rgba(8, 145, 178, 0.12);
+  --ds-accent: #a21caf;
+  --ds-accent-amber: #d97706;
+  --ds-surface-0: #f4f2fb;
+  --ds-surface-1: #ffffff;
+  --ds-surface-2: #eef2ff;
+  --ds-border-strong: #c7d2fe;
+  --ds-text-muted: #64748b;
+  --ds-radius-sm: 0.5rem;
+  --ds-radius-md: 0.75rem;
+  --ds-radius-lg: 1rem;
+  --ds-radius-xl: 1.25rem;
+  --ds-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --ds-shadow-md: 0 8px 30px rgba(91, 33, 182, 0.08);
+  --ds-shadow-lg: 0 24px 48px rgba(15, 23, 42, 0.08);
+  --ds-transition: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --ds-transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .dark {
-  --background: #020617; /* Slate 950 */
-  --foreground: #f8fafc;
-  --card: #0f172a; /* Slate 900 */
-  --border: #1e293b; /* Slate 800 */
-  --primary: #3b82f6; /* Blue 500 */
-  --primary-hover: #60a5fa; /* Blue 400 */
+  --background: #070b14;
+  --foreground: #f1f5f9;
+  --card: #0f1419;
+  --border: #1e293b;
+  --primary: #a78bfa;
+  --primary-hover: #c4b5fd;
+  --ring: rgba(167, 139, 250, 0.35);
+
+  --ds-primary: #8b5cf6;
+  --ds-primary-hover: #a78bfa;
+  --ds-primary-soft: rgba(139, 92, 246, 0.15);
+  --ds-secondary: #22d3ee;
+  --ds-secondary-soft: rgba(34, 211, 238, 0.12);
+  --ds-accent: #e879f9;
+  --ds-accent-amber: #fbbf24;
+  --ds-surface-0: #070b14;
+  --ds-surface-1: #0f1419;
+  --ds-surface-2: #1a1f2e;
+  --ds-border-strong: rgba(139, 92, 246, 0.35);
+  --ds-text-muted: #94a3b8;
+  --ds-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --ds-shadow-md: 0 12px 40px rgba(0, 0, 0, 0.45);
+  --ds-shadow-lg: 0 24px 56px rgba(0, 0, 0, 0.55);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Inter, "SF Pro Text", "SF Pro Display", system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-  font-size: 17px;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  font-size: 16px;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
+/* Typography scale */
+.ds-title-xl {
+  font-size: clamp(1.875rem, 4vw, 2.75rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  color: var(--foreground);
+}
+
+.ds-section-title {
+  font-size: 0.6875rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ds-text-muted);
+}
+
+.ds-body {
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  color: var(--ds-text-muted);
+}
+
+.ds-caption {
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--ds-text-muted);
+}
+
+/* Focus ring (a11y) */
+.ds-focus {
+  outline: none;
+}
+.ds-focus:focus-visible {
+  box-shadow: 0 0 0 2px var(--background), 0 0 0 4px var(--ds-primary);
+}
+
+@keyframes ds-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes ds-modal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.ds-skeleton {
+  background: linear-gradient(
+    90deg,
+    rgb(226 232 240 / 0.55) 0%,
+    rgb(241 245 249 / 0.95) 50%,
+    rgb(226 232 240 / 0.55) 100%
+  );
+  background-size: 200% 100%;
+  animation: ds-shimmer 1.4s ease-in-out infinite;
+}
+
+.dark .ds-skeleton {
+  background: linear-gradient(
+    90deg,
+    rgb(51 65 85 / 0.35) 0%,
+    rgb(71 85 105 / 0.5) 50%,
+    rgb(51 65 85 / 0.35) 100%
+  );
+  background-size: 200% 100%;
+}
+
 .app-bg {
   background:
-    radial-gradient(1200px 600px at -10% -10%, rgba(37, 99, 235, 0.08), transparent 60%),
-    radial-gradient(1000px 600px at 120% 0%, rgba(59, 130, 246, 0.08), transparent 55%),
+    radial-gradient(1000px 520px at 0% 0%, var(--ds-primary-soft), transparent 55%),
+    radial-gradient(900px 480px at 100% 10%, var(--ds-secondary-soft), transparent 50%),
+    radial-gradient(700px 400px at 50% 100%, rgba(162, 28, 175, 0.06), transparent 45%),
+    var(--background);
+}
+
+.dark .app-bg {
+  background:
+    radial-gradient(900px 480px at 0% 0%, rgba(139, 92, 246, 0.12), transparent 55%),
+    radial-gradient(800px 420px at 100% 0%, rgba(34, 211, 238, 0.08), transparent 50%),
+    radial-gradient(600px 360px at 40% 100%, rgba(232, 121, 249, 0.06), transparent 45%),
     var(--background);
 }
 
@@ -82,15 +217,15 @@ body {
 }
 
 .btn-primary {
-  @apply inline-flex items-center justify-center gap-2.5 rounded-2xl px-5 py-3 text-base font-bold text-white bg-blue-600 hover:bg-blue-700 active:scale-[0.98] transition-all shadow-[0_10px_26px_rgba(37,99,235,0.24)];
+  @apply inline-flex items-center justify-center gap-2.5 rounded-2xl px-5 py-3 text-base font-bold text-white bg-gradient-to-r from-violet-600 to-cyan-600 hover:brightness-110 active:scale-[0.98] transition-all shadow-[0_10px_26px_rgba(109,40,217,0.22)];
 }
 
 .btn-secondary {
-  @apply inline-flex items-center justify-center gap-2.5 rounded-2xl px-5 py-3 text-base font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition-colors;
+  @apply inline-flex items-center justify-center gap-2.5 rounded-2xl px-5 py-3 text-base font-semibold text-slate-700 bg-white border border-slate-200 hover:border-violet-200 hover:bg-violet-50/50 transition-colors dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-violet-500/30;
 }
 
 .input-modern {
-  @apply w-full rounded-2xl border border-slate-200 bg-white px-5 py-3 text-base text-slate-900 placeholder:text-slate-400 outline-none transition-all focus:border-blue-400 focus:ring-4 focus:ring-blue-100;
+  @apply w-full rounded-2xl border border-slate-200 bg-white px-5 py-3 text-base text-slate-900 placeholder:text-slate-400 outline-none transition-all focus:border-violet-400 focus:ring-4 focus:ring-violet-100 dark:focus:ring-violet-900/40;
 }
 
 .title-xl {
@@ -98,7 +233,7 @@ body {
 }
 
 .eyebrow {
-  @apply text-[10px] font-black uppercase tracking-[0.18em] text-blue-600;
+  @apply text-[10px] font-black uppercase tracking-[0.18em] text-violet-600 dark:text-violet-400;
 }
 
 .hero-shell {
