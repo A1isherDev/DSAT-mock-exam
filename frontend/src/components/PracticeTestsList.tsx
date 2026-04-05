@@ -4,15 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { examsApi } from "@/lib/api";
 import {
-  buildCards,
+  buildHomeworkPastpaperCards,
   formatLineDate,
+  isTimedMockSectionRow,
   sharedPastpaperPackTitle,
   singleDisplayTitle,
   sortPastpaperSections,
   subjectLabel,
-  type CardPack,
-  type CardPastpaperPack,
-  type CardSingle,
 } from "@/lib/practiceTestCards";
 import { FileText, Search, X, ArrowRight } from "lucide-react";
 import Cookies from "js-cookie";
@@ -117,7 +115,8 @@ export default function PracticeTestsList({
     const fetchData = async () => {
       try {
         const list = await examsApi.getPracticeTests();
-        setTests(Array.isArray(list) ? list : []);
+        const raw = Array.isArray(list) ? list : [];
+        setTests(raw.filter((t) => !isTimedMockSectionRow(t)));
         if (token) {
           const attemptsData = await examsApi.getAttempts();
           setAttempts(attemptsData);
@@ -129,16 +128,12 @@ export default function PracticeTestsList({
     fetchData();
   }, []);
 
-  const cards = useMemo(() => buildCards(tests), [tests]);
+  const cards = useMemo(() => buildHomeworkPastpaperCards(tests), [tests]);
 
   const filtered = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     if (!q) return cards;
     return cards.filter((c) => {
-      if (c.kind === "pack") {
-        const blob = `${c.mock.title || ""} ${formatLineDate(c.mock.practice_date)} ${c.tests.map((t) => subjectLabel(t.subject)).join(" ")}`.toLowerCase();
-        return blob.includes(q);
-      }
       if (c.kind === "pastpaper_pack") {
         const blob = `${sharedPastpaperPackTitle(c.tests)} ${formatLineDate(c.tests[0]?.practice_date)} ${c.tests.map((t) => subjectLabel(t.subject)).join(" ")}`.toLowerCase();
         return blob.includes(q);
@@ -186,41 +181,6 @@ export default function PracticeTestsList({
         {filtered.map((c) => {
           const cardShell =
             "group bg-white dark:bg-slate-900 rounded-[32px] overflow-hidden flex flex-col border border-slate-200/90 dark:border-slate-700 shadow-[0_4px_24px_-6px_rgba(15,23,42,0.12)] dark:shadow-none hover:shadow-[0_16px_48px_-12px_rgba(91,33,182,0.18)] hover:-translate-y-1 transition-all duration-500";
-
-          if (c.kind === "pack") {
-            const pct = progressPack(c.tests, attempts);
-            return (
-              <div key={`pack-${c.mockKey}`} className={cardShell}>
-                <div className="p-8 pb-4 relative">
-                  <div className="flex items-center justify-between mb-6">
-                    <div className="flex flex-col gap-1">
-                      <span className="text-[10px] font-black uppercase tracking-[0.2em] text-violet-600 dark:text-violet-400">
-                        Practice test
-                      </span>
-                      <span className="text-xs font-bold text-slate-400 dark:text-slate-500">
-                        {formatLineDate(c.mock.practice_date)}
-                      </span>
-                    </div>
-                    <div className="w-12 h-12 rounded-xl bg-violet-100 dark:bg-violet-950/80 flex items-center justify-center text-violet-700 dark:text-violet-300 shadow-sm border border-violet-200/60 dark:border-violet-800/50">
-                      <FileText className="w-6 h-6" />
-                    </div>
-                  </div>
-                  <h3 className="text-2xl font-serif font-bold text-slate-900 dark:text-slate-100 mb-6 tracking-tight leading-snug group-hover:text-violet-800 dark:group-hover:text-violet-300 transition-colors">
-                    {c.mock.title}
-                  </h3>
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 h-[3px] bg-slate-200/90 dark:bg-slate-700 rounded-full overflow-hidden">
-                      <div className="h-full bg-violet-500 transition-all duration-1000" style={{ width: `${pct}%` }} />
-                    </div>
-                    <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider tabular-nums min-w-[2.25rem] text-right">
-                      {pct}%
-                    </span>
-                  </div>
-                </div>
-                <PackSectionFooter tests={c.tests} isLoggedIn={isLoggedIn} router={router} attempts={attempts} />
-              </div>
-            );
-          }
 
           if (c.kind === "pastpaper_pack") {
             const pct = progressPack(c.tests, attempts);

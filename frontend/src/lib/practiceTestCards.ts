@@ -26,12 +26,24 @@ export function sortPastpaperSections(tests: any[]) {
   });
 }
 
+/** Timed mock / midterm sections must not appear on the pastpaper library page. */
+export function isTimedMockSectionRow(t: any): boolean {
+  if (t == null) return false;
+  if (t.mock_exam_id != null && t.mock_exam_id !== undefined) return true;
+  const m = t.mock_exam;
+  if (m == null || m === undefined) return false;
+  if (typeof m === "object" && m.id != null) return true;
+  if (typeof m === "number" && Number.isFinite(m)) return true;
+  return false;
+}
+
 export function buildCards(tests: any[]): PracticeCard[] {
   const byMock = new Map<number, any[]>();
   const byPastpaperPack = new Map<number, { pack: any; tests: any[] }>();
   const looseStandalone: any[] = [];
 
   for (const t of tests) {
+    if (isTimedMockSectionRow(t)) continue;
     const m = t.mock_exam;
     if (m?.id) {
       if (!byMock.has(m.id)) byMock.set(m.id, []);

@@ -59,11 +59,12 @@ class PastpaperPackBriefSerializer(serializers.ModelSerializer):
 
 
 class PracticeTestSerializer(serializers.ModelSerializer):
-    """Student practice library: past papers only (mock_exam is always null for this endpoint)."""
+    """Student practice library: past papers only (mock_exam_id must be null for /exams/ list)."""
 
     modules = ModuleListSerializer(many=True, read_only=True)
     subject = serializers.CharField()
     pastpaper_pack = PastpaperPackBriefSerializer(read_only=True)
+    mock_exam_id = serializers.IntegerField(read_only=True, allow_null=True)
 
     class Meta:
         model = PracticeTest
@@ -77,8 +78,9 @@ class PracticeTestSerializer(serializers.ModelSerializer):
             "modules",
             "created_at",
             "pastpaper_pack",
+            "mock_exam_id",
         ]
-        read_only_fields = ["created_at"]
+        read_only_fields = ["created_at", "mock_exam_id"]
 
 class MockExamSerializer(serializers.ModelSerializer):
     tests = PracticeTestSerializer(many=True, read_only=True)
