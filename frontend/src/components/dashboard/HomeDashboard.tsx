@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Cookies from "js-cookie";
 import { classesApi, examsApi, usersApi } from "@/lib/api";
-import { ArrowRight, BarChart3, Calendar, Flame, Pencil, PlayCircle, Target, TrendingUp } from "lucide-react";
+import { ArrowRight, BarChart3, Calendar, Pencil, PlayCircle, Target, TrendingUp } from "lucide-react";
 import { ClassroomButton } from "@/components/classroom";
 import { DashboardCard, DashboardEyebrow, DashboardTitle } from "./DashboardCard";
 import { LearningRoadmap, type RoadmapStep } from "./LearningRoadmap";
@@ -163,7 +163,7 @@ export function HomeDashboard() {
   if (!hasToken) {
     return (
       <div className="mx-auto max-w-lg px-4 py-16 text-center">
-        <DashboardCard accent="purple" padding="lg">
+        <DashboardCard accent="blue" padding="lg">
           <DashboardEyebrow>MasterSAT</DashboardEyebrow>
           <DashboardTitle className="mt-2">Sign in for your dashboard</DashboardTitle>
           <p className="mt-3 text-sm text-slate-600 dark:text-slate-400">
@@ -204,7 +204,7 @@ export function HomeDashboard() {
         </div>
         <Link
           href="/profile"
-          className="inline-flex items-center gap-2 self-start rounded-xl border border-slate-200/90 bg-white px-3 py-2 text-xs font-bold text-slate-700 shadow-sm transition-all hover:border-fuchsia-300/50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-cyan-500/30"
+          className="inline-flex items-center gap-2 self-start rounded-xl border border-slate-200/90 bg-white px-3 py-2 text-xs font-bold text-slate-700 shadow-sm transition-all hover:border-blue-300 dark:border-white/10 dark:bg-white/5 dark:text-white dark:hover:border-blue-500/50"
         >
           <Pencil className="h-3.5 w-3.5" />
           Edit goals
@@ -213,7 +213,7 @@ export function HomeDashboard() {
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 lg:gap-5">
         {/* Continue learning */}
-        <DashboardCard accent="purple" padding="md" className="lg:col-span-2">
+        <DashboardCard accent="blue" padding="md" className="lg:col-span-2">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0 flex-1">
               <DashboardEyebrow>Resume</DashboardEyebrow>
@@ -245,7 +245,7 @@ export function HomeDashboard() {
                   href={`/exam/${incomplete.id}`}
                   className={cn(
                     "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-white",
-                    "bg-gradient-to-r from-fuchsia-600 to-violet-600 shadow-lg shadow-fuchsia-500/20 transition-all hover:brightness-110",
+                    "bg-blue-600 shadow-lg shadow-blue-600/25 transition-all hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500",
                   )}
                 >
                   <PlayCircle className="h-4 w-4" />
@@ -268,12 +268,12 @@ export function HomeDashboard() {
         <div
           className={cn(
             "relative overflow-hidden rounded-2xl border p-5 md:p-6",
-            "border-fuchsia-500/30 bg-gradient-to-br from-fuchsia-600/90 via-violet-600 to-cyan-600/90 text-white shadow-xl shadow-fuchsia-500/20",
-            "dark:from-[#6b21a8] dark:via-[#5b21b6] dark:to-[#0e7490]",
+            "border-blue-600/40 bg-gradient-to-br from-blue-600 to-blue-800 text-white shadow-xl shadow-blue-900/30",
+            "dark:border-blue-500/50 dark:from-blue-700 dark:to-black",
           )}
         >
           <div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-white/10 blur-2xl" />
-          <div className="pointer-events-none absolute -bottom-10 left-1/4 h-24 w-24 rounded-full bg-cyan-400/20 blur-2xl" />
+          <div className="pointer-events-none absolute -bottom-10 left-1/4 h-24 w-24 rounded-full bg-white/5 blur-2xl" />
           <DashboardEyebrow className="text-white/80">Exam countdown</DashboardEyebrow>
           <div className="relative mt-2 flex items-baseline gap-2">
             <Calendar className="h-5 w-5 shrink-0 opacity-90" />
@@ -297,13 +297,13 @@ export function HomeDashboard() {
         </div>
 
         {/* Performance */}
-        <DashboardCard accent="cyan" padding="md">
+        <DashboardCard accent="blue" padding="md">
           <div className="flex items-start justify-between gap-3">
             <div>
               <DashboardEyebrow>Performance</DashboardEyebrow>
               <DashboardTitle className="mt-1">Last mock vs goal</DashboardTitle>
             </div>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/15 text-cyan-600 dark:text-cyan-400">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/15 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400">
               <BarChart3 className="h-5 w-5" />
             </div>
           </div>
@@ -328,7 +328,7 @@ export function HomeDashboard() {
         </DashboardCard>
 
         {/* Weekly activity */}
-        <DashboardCard accent="purple" padding="md" className="md:col-span-2">
+        <DashboardCard accent="blue" padding="md" className="md:col-span-2">
           <div className="flex items-start justify-between gap-3">
             <div>
               <DashboardEyebrow>Activity</DashboardEyebrow>
@@ -337,7 +337,7 @@ export function HomeDashboard() {
                 Finished practice attempts submitted in the last 7 days
               </p>
             </div>
-            <Flame className="h-5 w-5 text-fuchsia-500 dark:text-fuchsia-400" />
+            <BarChart3 className="h-5 w-5 text-blue-500 dark:text-blue-400" />
           </div>
           <div className="mt-6 flex h-28 items-end justify-between gap-2 border-t border-slate-100 pt-4 dark:border-white/[0.06]">
             {weeklyBuckets.map((d, i) => {
@@ -349,7 +349,7 @@ export function HomeDashboard() {
                       className={cn(
                         "w-full max-w-[2rem] rounded-t-md transition-all duration-300",
                         d.n > 0
-                          ? "bg-gradient-to-t from-fuchsia-600 to-cyan-400 dark:from-fuchsia-500 dark:to-cyan-400"
+                          ? "bg-gradient-to-t from-blue-700 to-blue-500 dark:from-blue-600 dark:to-blue-400"
                           : "bg-slate-100 dark:bg-white/10",
                       )}
                       style={{ height: `${Math.max(8, d.h)}%` }}
