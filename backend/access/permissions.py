@@ -25,6 +25,15 @@ class HasManageUsers(BasePermission):
         return authorize(request.user, constants.PERM_MANAGE_USERS)
 
 
+class HasManageUsersOrAssignTestAccess(BasePermission):
+    """List users for admin UI: full user managers or staff who assign test access (bulk assign)."""
+
+    def has_permission(self, request, view):
+        return authorize(request.user, constants.PERM_MANAGE_USERS) or authorize(
+            request.user, constants.PERM_ASSIGN_TEST_ACCESS
+        )
+
+
 class HasManageRoles(BasePermission):
     def has_permission(self, request, view):
         return authorize(request.user, constants.PERM_MANAGE_ROLES)

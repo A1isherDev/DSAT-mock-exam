@@ -213,9 +213,12 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
                         mock_ids_touched.add(pt.mock_exam_id)
 
             for me in MockExam.objects.filter(pk__in=mock_ids_touched):
-                portal = PortalMockExam.objects.filter(mock_exam=me, is_active=True).first()
-                if portal:
-                    portal.assigned_users.add(*users)
+                me.assigned_users.add(*users)
+                portal, _ = PortalMockExam.objects.get_or_create(
+                    mock_exam=me,
+                    defaults={"is_active": bool(me.is_published)},
+                )
+                portal.assigned_users.add(*users)
 
             if to_remove_subjects:
                 remove_filters = {"mock_exam_id__in": exam_ids, "subject__in": to_remove_subjects}

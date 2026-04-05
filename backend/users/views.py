@@ -8,7 +8,7 @@ from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.db.models import Q
 from .models import User
-from access.permissions import HasManageUsers
+from access.permissions import HasManageUsers, HasManageUsersOrAssignTestAccess
 from access.services import get_effective_permission_codenames
 
 from .serializers import UserSerializer, UserMeSerializer, MyTokenObtainPairSerializer
@@ -57,7 +57,7 @@ class ThrottledTokenObtainPairView(TokenObtainPairView):
 
 class UserListView(generics.ListAPIView):
     serializer_class = UserSerializer
-    permission_classes = [HasManageUsers]
+    permission_classes = [HasManageUsersOrAssignTestAccess]
     queryset = User.objects.select_related("system_role").all().order_by("-date_joined")
 
 class UserCreateView(generics.CreateAPIView):
