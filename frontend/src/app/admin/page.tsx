@@ -436,6 +436,12 @@ export default function AdminPage() {
         [standaloneTests],
     );
 
+    /** Bulk pastpaper assign: only sections on a card (pack); orphans stay off this list. */
+    const pastpaperSectionsOnCard = useMemo(
+        () => standaloneTests.filter((t) => !(t.pastpaper_pack == null && t.pastpaper_pack_id == null)),
+        [standaloneTests],
+    );
+
     const pastpaperDuplicateSignatures = useMemo(() => {
         const counts = new Map<string, number>();
         pastpaperPacks.forEach((p) => {
@@ -2763,7 +2769,7 @@ export default function AdminPage() {
                             <div className="p-6 border-b border-slate-100 flex justify-between items-center">
                                 <div>
                                     <h2 className="text-xl font-bold text-slate-900">Bulk assign — pastpapers</h2>
-                                    <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest mt-1">Practice library sections (cards / orphans) · then students</p>
+                                    <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest mt-1">Sections on a pastpaper card only · then students</p>
                                 </div>
                                 <button type="button" onClick={closeBulkModal} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
                             </div>
@@ -2772,8 +2778,8 @@ export default function AdminPage() {
                                 <div className="border-r border-slate-100 flex flex-col min-h-0">
                                     <div className="p-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center shrink-0">
                                         <span className="text-xs font-extrabold text-slate-500 uppercase">Pastpaper sections ({bulkAssignPracticeTests.length})</span>
-                                        <button type="button" onClick={() => setBulkAssignPracticeTests(bulkAssignPracticeTests.length === standaloneTests.length ? [] : standaloneTests.map((t) => t.id))} className="text-[10px] font-bold text-emerald-700 hover:underline">
-                                            {bulkAssignPracticeTests.length === standaloneTests.length ? 'Deselect All' : 'Select All'}
+                                        <button type="button" onClick={() => setBulkAssignPracticeTests(bulkAssignPracticeTests.length === pastpaperSectionsOnCard.length ? [] : pastpaperSectionsOnCard.map((t) => t.id))} className="text-[10px] font-bold text-emerald-700 hover:underline">
+                                            {bulkAssignPracticeTests.length === pastpaperSectionsOnCard.length ? 'Deselect All' : 'Select All'}
                                         </button>
                                     </div>
                                     <div className="p-3 border-b border-slate-100 bg-white shrink-0">
@@ -2788,10 +2794,12 @@ export default function AdminPage() {
                                         </div>
                                     </div>
                                     <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1">
-                                        {standaloneTests.length === 0 && (
-                                            <p className="text-[11px] text-slate-400 p-2">No pastpaper sections. Add cards and sections on this tab first.</p>
+                                        {pastpaperSectionsOnCard.length === 0 && (
+                                            <p className="text-[11px] text-slate-400 p-2">
+                                                No sections on a card yet. Create a pastpaper card and add sections here, or move orphan sections into a card—only those appear in bulk assign.
+                                            </p>
                                         )}
-                                        {standaloneTests
+                                        {pastpaperSectionsOnCard
                                             .filter((t) => {
                                                 const q = bulkPastpaperSearch.trim().toLowerCase();
                                                 if (!q) return true;
@@ -2863,7 +2871,7 @@ export default function AdminPage() {
 
                             <div className="p-6 bg-white border-t border-slate-100 flex items-center justify-between gap-4 flex-wrap shrink-0">
                                 <p className="text-xs text-slate-500 font-medium">
-                                    Granting <span className="font-bold text-slate-900">{bulkAssignUsers.length}</span> student(s) access to <span className="font-bold text-emerald-800">{bulkAssignPracticeTests.length}</span> pastpaper section(s). Each row is one library section (R&amp;W or Math).
+                                    Granting <span className="font-bold text-slate-900">{bulkAssignUsers.length}</span> student(s) access to <span className="font-bold text-emerald-800">{bulkAssignPracticeTests.length}</span> section(s) on pastpaper cards (R&amp;W or Math per row).
                                 </p>
                                 <div className="flex gap-3">
                                     <button type="button" onClick={closeBulkModal} className={BTN_GHOST}>Cancel</button>
