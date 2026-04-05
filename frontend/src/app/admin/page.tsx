@@ -13,6 +13,12 @@ import {
     canCreateMidtermMock,
     canUseGlobalQuestionsTab,
 } from '@/lib/permissions';
+import {
+    buildHomeworkPastpaperCards,
+    formatLineDate,
+    sharedPastpaperPackTitle,
+    singleDisplayTitle,
+} from '@/lib/practiceTestCards';
 
 const getImageUrl = (path: string | null | undefined) => {
     if (!path) return '';
@@ -441,6 +447,12 @@ export default function AdminPage() {
         [standaloneTests],
     );
 
+    /** Same grouping as /practice-tests so admin “cards” match the student library. */
+    const orphanPastpaperCards = useMemo(
+        () => buildHomeworkPastpaperCards(orphanPastpaperTests),
+        [orphanPastpaperTests],
+    );
+
     const pastpaperDuplicateSignatures = useMemo(() => {
         const counts = new Map<string, number>();
         pastpaperPacks.forEach((p) => {
@@ -507,14 +519,81 @@ export default function AdminPage() {
         return list;
     }, [pastpaperPacks, pastpaperAdminQuery, pastpaperFormFilter, pastpaperSectionFilter, pastpaperSort]);
 
-    const filteredOrphansAdmin = useMemo(() => {
+    const filteredOrphanCardsAdmin = useMemo(() => {
+        let list = [...orphanPastpaperCards];
         const q = pastpaperAdminQuery.trim().toLowerCase();
-        if (!q) return orphanPastpaperTests;
-        return orphanPastpaperTests.filter((t) => {
-            const blob = `${t.id} ${t.title || ""} ${t.label || ""} ${t.subject} ${t.form_type}`.toLowerCase();
-            return blob.includes(q);
-        });
-    }, [orphanPastpaperTests, pastpaperAdminQuery]);
+        if (q) {
+            list = list.filter((card) => {
+                const tests = card.kind === "pastpaper_pack" ? card.tests : [card.test];
+                const heading =
+                    card.kind === "pastpaper_pack"
+                        ? (card.pack?.title && String(card.pack.title).trim()) || sharedPastpaperPackTitle(tests)
+                        : singleDisplayTitle(card.test);
+                const blob = `${heading} ${tests.map((t) => `${t.id} ${t.title || ""} ${t.label || ""} ${t.subject} ${t.practice_date || ""}`).join(" ")}`.toLowerCase();
+                return blob.includes(q);
+            });
+        }
+        if (pastpaperFormFilter !== "ALL") {
+            list = list.filter((card) => {
+                const tests = card.kind === "pastpaper_pack" ? card.tests : [card.test];
+                return tests.some((t) => (t.form_type || "INTERNATIONAL") === pastpaperFormFilter);
+            });
+        }
+        if (pastpaperSectionFilter !== "ALL") {
+            list = list.filter((card) => {
+                const tests = card.kind === "pastpaper_pack" ? card.tests : [card.test];
+                const { hasRw, hasMath, n } = pastpaperSectionSummary(tests);
+                if (pastpaperSectionFilter === "EMPTY") return n === 0;
+                if (pastpaperSectionFilter === "COMPLETE") return hasRw && hasMath;
+                if (pastpaperSectionFilter === "RW_ONLY") return hasRw && !hasMath;
+                if (pastpaperSectionFilter === "MATH_ONLY") return hasMath && !hasRw;
+                return true;
+            });
+        }
+        if (pastpaperSort === "TITLE") {
+            list.sort((a, b) => {
+                const ta = a.kind === "pastpaper_pack" ? a.tests : [a.test];
+                const tb = b.kind === "pastpaper_pack" ? b.tests : [b.test];
+                const ha =
+                    a.kind === "pastpaper_pack"
+                        ? (a.pack?.title && String(a.pack.title).trim()) || sharedPastpaperPackTitle(ta)
+                        : singleDisplayTitle(a.test);
+                const hb =
+                    b.kind === "pastpaper_pack"
+                        ? (b.pack?.title && String(b.pack.title).trim()) || sharedPastpaperPackTitle(tb)
+                        : singleDisplayTitle(b.test);
+                return ha.localeCompare(hb, undefined, { sensitivity: "base" });
+            });
+        } else if (pastpaperSort === "ID") {
+            list.sort((a, b) => {
+                const ida = a.kind === "pastpaper_pack" ? Math.max(...a.tests.map((t: any) => t.id)) : a.test.id;
+                const idb = b.kind === "pastpaper_pack" ? Math.max(...b.tests.map((t: any) => t.id)) : b.test.id;
+                return idb - ida;
+            });
+        } else {
+            list.sort((a, b) => {
+                const da =
+                    a.kind === "pastpaper_pack"
+                        ? a.pack?.practice_date || a.tests[0]?.practice_date || ""
+                        : a.test.practice_date || "";
+                const db =
+                    b.kind === "pastpaper_pack"
+                        ? b.pack?.practice_date || b.tests[0]?.practice_date || ""
+                        : b.test.practice_date || "";
+                if (da !== db) return db.localeCompare(da);
+                const ida = a.kind === "pastpaper_pack" ? Math.max(...a.tests.map((t: any) => t.id)) : a.test.id;
+                const idb = b.kind === "pastpaper_pack" ? Math.max(...b.tests.map((t: any) => t.id)) : b.test.id;
+                return idb - ida;
+            });
+        }
+        return list;
+    }, [
+        orphanPastpaperCards,
+        pastpaperAdminQuery,
+        pastpaperFormFilter,
+        pastpaperSectionFilter,
+        pastpaperSort,
+    ]);
 
     const filteredMockExamsAdmin = useMemo(() => {
         let list = [...mockExams];
@@ -1400,11 +1479,13 @@ export default function AdminPage() {
                                         </div>
                                     </div>
                                     <p className="text-[11px] text-slate-500">
-                                        Showing <strong>{filteredPastpaperPacksAdmin.length}</strong> of {pastpaperPacks.length} cards
+                                        Showing <strong>{filteredPastpaperPacksAdmin.length}</strong> of {pastpaperPacks.length} pastpaper cards
                                         {orphanPastpaperTests.length > 0 ? (
                                             <>
                                                 {" "}
-                                                · <strong>{filteredOrphansAdmin.length}</strong> of {orphanPastpaperTests.length} unassigned sections
+                                                · <strong>{filteredOrphanCardsAdmin.length}</strong> of {orphanPastpaperCards.length} legacy groups (
+                                                {orphanPastpaperTests.length} sections)—same grouping as the student{" "}
+                                                <span className="font-mono text-slate-600">/practice-tests</span> page
                                             </>
                                         ) : null}
                                         . Each card shows a stable numeric <span className="font-mono text-slate-600">#id</span> in lists and dropdowns.
@@ -1545,7 +1626,7 @@ export default function AdminPage() {
                                     )}
                                     {pastpaperPacks.length + orphanPastpaperTests.length > 0 &&
                                         filteredPastpaperPacksAdmin.length === 0 &&
-                                        filteredOrphansAdmin.length === 0 && (
+                                        filteredOrphanCardsAdmin.length === 0 && (
                                             <p className="text-sm text-amber-900 bg-amber-50 rounded-2xl border border-amber-200 p-6">
                                                 No cards match your search or filters. Clear the search box or set filters to &quot;All&quot; / &quot;Any&quot;.
                                             </p>
@@ -1765,81 +1846,187 @@ export default function AdminPage() {
                                             </div>
                                         );
                                     })}
-                                    {filteredOrphansAdmin.length > 0 && (
-                                        <div className="rounded-2xl border border-amber-200 bg-amber-50/40 p-4 space-y-3">
-                                            <p className="text-xs font-bold text-amber-900">
-                                                Unassigned sections (legacy or moved out of a card). Assign each to a card above, or delete.
-                                            </p>
-                                            {filteredOrphansAdmin.map((t) => (
-                                                <div
-                                                    key={t.id}
-                                                    className={`p-3 rounded-xl border border-slate-200 bg-white flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between ${
-                                                        selectedPracticeTestId === t.id ? "ring-2 ring-indigo-500" : ""
-                                                    }`}
-                                                >
-                                                    <button
-                                                        type="button"
-                                                        className="text-left font-bold text-slate-900"
-                                                        onClick={() => {
-                                                            setSelectedPracticeTestId(t.id);
-                                                            setSelectedMockId(null);
-                                                        }}
+                                    {filteredOrphanCardsAdmin.length > 0 && (
+                                        <div className="space-y-4">
+                                            <div className="rounded-2xl border border-amber-200 bg-amber-50/40 p-4">
+                                                <p className="text-xs font-bold text-amber-900">
+                                                    Legacy groups (sections not on a pastpaper card). This list is grouped the same way as the student
+                                                    practice library—one row per visible library card. Move sections into an official card above to
+                                                    consolidate, or delete extras.
+                                                </p>
+                                            </div>
+                                            {filteredOrphanCardsAdmin.map((card) => {
+                                                const tests = card.kind === "pastpaper_pack" ? card.tests : [card.test];
+                                                const heading =
+                                                    card.kind === "pastpaper_pack"
+                                                        ? (card.pack?.title && String(card.pack.title).trim()) || sharedPastpaperPackTitle(tests)
+                                                        : singleDisplayTitle(card.test);
+                                                const lineDate = formatLineDate(
+                                                    card.kind === "pastpaper_pack"
+                                                        ? card.pack?.practice_date || tests[0]?.practice_date
+                                                        : card.test.practice_date || card.test.created_at,
+                                                );
+                                                const hasRw = tests.some((s: any) => s.subject === "READING_WRITING");
+                                                const hasMath = tests.some((s: any) => s.subject === "MATH");
+                                                const groupSelected = tests.some((t: any) => t.id === selectedPracticeTestId);
+                                                const formLine = (tests[0]?.form_type || "INTERNATIONAL") === "US" ? "US" : "International";
+                                                const labelHint = (tests[0]?.label || "").trim();
+                                                const legacyKey =
+                                                    card.kind === "pastpaper_pack" ? card.packKey : `single-${card.test.id}`;
+                                                return (
+                                                    <div
+                                                        key={legacyKey}
+                                                        className={`bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow ${
+                                                            groupSelected ? "ring-2 ring-amber-500" : ""
+                                                        }`}
                                                     >
-                                                        <span className="text-[10px] font-mono text-indigo-600 font-bold">#{t.id}</span>{" "}
-                                                        {t.subject === "MATH" ? "Math" : "Reading & Writing"} ·{" "}
-                                                        {t.form_type === "US" ? "US" : "International"}
-                                                        <span className="block text-[10px] font-bold text-slate-400 uppercase mt-1">
-                                                            {(t.modules?.length ?? 0)} module(s) · orphan (no card)
-                                                        </span>
-                                                    </button>
-                                                    <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
-                                                        {can("edit_test") && (
-                                                            <select
-                                                                className={INPUT + " !py-2 !text-xs min-w-[180px]"}
-                                                                value=""
-                                                                onChange={(e) => {
-                                                                    const v = e.target.value;
-                                                                    if (!v) return;
-                                                                    void handleMoveSectionToPack(t.id, Number(v));
-                                                                    e.target.value = "";
-                                                                }}
-                                                            >
-                                                                <option value="">Move to card…</option>
-                                                                {pastpaperPacks.map((p) => {
-                                                                    const taken = (p.sections || []).some((s: any) => s.subject === t.subject);
-                                                                    return (
-                                                                        <option key={p.id} value={p.id} disabled={taken}>
-                                                                            {formatPastpaperPackAdminLabel(p)}
-                                                                        </option>
-                                                                    );
-                                                                })}
-                                                            </select>
-                                                        )}
-                                                        <div className="flex gap-1">
-                                                            <button
-                                                                type="button"
-                                                                className={BTN_GHOST + " !py-1.5"}
-                                                                onClick={() => {
-                                                                    setActiveTab("questions");
-                                                                    setSelectedPracticeTestId(t.id);
-                                                                    setSelectedMockId(null);
-                                                                }}
-                                                            >
-                                                                Questions
-                                                            </button>
-                                                            {canDeletePracticeTestFromMock(t.subject) && (
-                                                                <button
-                                                                    type="button"
-                                                                    className={BTN_DANGER + " !py-1.5"}
-                                                                    onClick={() => void handleDeletePastpaper(t.id)}
+                                                        <div className="p-5 flex items-start justify-between bg-amber-50/30 border-b border-amber-100/80 gap-3">
+                                                            <div className="min-w-0">
+                                                                <div className="flex flex-wrap items-center gap-2 mb-1">
+                                                                    <span className="text-[10px] font-black uppercase tracking-wider text-amber-900 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-lg">
+                                                                        Legacy · no pack
+                                                                    </span>
+                                                                    {!hasRw || !hasMath ? (
+                                                                        <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-lg">
+                                                                            {tests.length === 0
+                                                                                ? "Empty"
+                                                                                : hasRw && !hasMath
+                                                                                  ? "English only"
+                                                                                  : hasMath && !hasRw
+                                                                                    ? "Math only"
+                                                                                    : ""}
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-lg">
+                                                                            English + Math
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                <p className="font-bold text-base text-slate-900 truncate">{heading}</p>
+                                                                <p className="text-[11px] text-slate-500 font-semibold mt-0.5">
+                                                                    {lineDate}
+                                                                    <span className="text-slate-400 font-mono font-bold">
+                                                                        {" "}
+                                                                        · {tests.map((t: any) => `#${t.id}`).join(" · ")}
+                                                                    </span>
+                                                                </p>
+                                                                <p className="text-[11px] text-slate-400 uppercase tracking-wider font-bold mt-1">
+                                                                    {formLine}
+                                                                    {labelHint ? ` · Letter ${labelHint}` : ""} · {tests.length} section
+                                                                    {tests.length !== 1 ? "s" : ""}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                        <div className="p-4 bg-white grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                            {tests.map((t: any) => (
+                                                                <div
+                                                                    key={t.id}
+                                                                    className={`p-3 rounded-xl border flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between ${
+                                                                        selectedPracticeTestId === t.id
+                                                                            ? "border-amber-200 bg-amber-50/30"
+                                                                            : "border-slate-100 bg-slate-50/50"
+                                                                    }`}
                                                                 >
-                                                                    <Trash2 className="w-3.5 h-3.5" />
-                                                                </button>
-                                                            )}
+                                                                    <button
+                                                                        type="button"
+                                                                        className="text-left flex-1 min-w-0"
+                                                                        onClick={() => {
+                                                                            setSelectedPracticeTestId(t.id);
+                                                                            setSelectedMockId(null);
+                                                                        }}
+                                                                    >
+                                                                        <div className="flex items-center gap-3">
+                                                                            <div
+                                                                                className={`w-2 h-2 rounded-full shrink-0 ${
+                                                                                    t.subject === "MATH"
+                                                                                        ? "bg-emerald-500"
+                                                                                        : "bg-blue-500 shadow-sm shadow-blue-200"
+                                                                                }`}
+                                                                            />
+                                                                            <span className="text-[12px] font-black text-slate-800 uppercase tracking-wider">
+                                                                                {t.subject === "MATH" ? "Mathematics" : "Reading & Writing"}
+                                                                            </span>
+                                                                        </div>
+                                                                        <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest ml-5 block mt-1">
+                                                                            Section #{t.id} · {t.form_type === "US" ? "US Standard" : "International Form"}{" "}
+                                                                            · {(t.modules?.length ?? 0)} module(s)
+                                                                        </span>
+                                                                    </button>
+                                                                    <div className="flex flex-col gap-2 shrink-0 w-full sm:w-auto">
+                                                                        {can("edit_test") && (
+                                                                            <label className="flex flex-col gap-0.5">
+                                                                                <span className="text-[9px] font-bold text-slate-400 uppercase">
+                                                                                    Move to card
+                                                                                </span>
+                                                                                <select
+                                                                                    className={INPUT + " !py-1.5 !text-xs"}
+                                                                                    value=""
+                                                                                    onChange={(e) => {
+                                                                                        const v = e.target.value;
+                                                                                        void handleMoveSectionToPack(t.id, v === "" ? null : Number(v));
+                                                                                    }}
+                                                                                >
+                                                                                    <option value="">Unassigned</option>
+                                                                                    {pastpaperPacks.map((p) => {
+                                                                                        const taken = (p.sections || []).some(
+                                                                                            (s: any) => s.subject === t.subject && s.id !== t.id,
+                                                                                        );
+                                                                                        return (
+                                                                                            <option key={p.id} value={p.id} disabled={taken}>
+                                                                                                {formatPastpaperPackAdminLabel(p)}
+                                                                                            </option>
+                                                                                        );
+                                                                                    })}
+                                                                                </select>
+                                                                            </label>
+                                                                        )}
+                                                                        <div className="flex items-center gap-1 flex-wrap justify-end">
+                                                                            <button
+                                                                                type="button"
+                                                                                className={BTN_GHOST + " !py-1.5"}
+                                                                                onClick={() => {
+                                                                                    setActiveTab("questions");
+                                                                                    setSelectedPracticeTestId(t.id);
+                                                                                    setSelectedMockId(null);
+                                                                                }}
+                                                                            >
+                                                                                Questions
+                                                                            </button>
+                                                                            {can("edit_test") && canEditQuestionsForSubject(t.subject) && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    className={BTN_GHOST + " !py-1.5"}
+                                                                                    onClick={() => {
+                                                                                        setEditingPastpaper(t);
+                                                                                        setPastpaperForm({
+                                                                                            title: t.title || "",
+                                                                                            practice_date: t.practice_date || "",
+                                                                                            subject: t.subject,
+                                                                                            label: t.label || "",
+                                                                                            form_type: t.form_type || "INTERNATIONAL",
+                                                                                        });
+                                                                                    }}
+                                                                                >
+                                                                                    <Pencil className="w-3.5 h-3.5" /> Edit
+                                                                                </button>
+                                                                            )}
+                                                                            {canDeletePracticeTestFromMock(t.subject) && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    className={BTN_DANGER + " !py-1.5"}
+                                                                                    onClick={() => void handleDeletePastpaper(t.id)}
+                                                                                >
+                                                                                    <Trash2 className="w-3.5 h-3.5" /> Delete
+                                                                                </button>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
                                                         </div>
                                                     </div>
-                                                </div>
-                                            ))}
+                                                );
+                                            })}
                                         </div>
                                     )}
                                 </div>
