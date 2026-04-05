@@ -193,6 +193,11 @@ export const examsApi = {
 
 export const classesApi = {
     list: async () => { const r = await api.get('/classes/'); return r.data; },
+    /** Single classroom (member only); 404 if not enrolled or invalid id. */
+    get: async (classId: number) => {
+        const r = await api.get(`/classes/${classId}/`);
+        return r.data;
+    },
     create: async (data: { name: string; subject: 'ENGLISH' | 'MATH'; lesson_days: 'ODD' | 'EVEN'; lesson_time?: string; lesson_hours?: number; start_date?: string; room_number?: string; telegram_chat_id?: string; teacher?: number; max_students?: number; is_active?: boolean }) => {
         const r = await api.post('/classes/', data);
         return r.data;

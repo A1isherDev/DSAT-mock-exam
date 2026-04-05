@@ -1,0 +1,40 @@
+import { cn } from "@/lib/cn";
+import type { ReactNode } from "react";
+
+export function ClassroomPageHeader({
+  eyebrow,
+  title,
+  description,
+  meta,
+  actions,
+  className,
+}: {
+  eyebrow?: string;
+  title: string;
+  description?: string;
+  /** Single line under title (e.g. schedule). */
+  meta?: ReactNode;
+  actions?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "cr-hero flex flex-col gap-6 rounded-2xl border border-slate-200/70 p-6 dark:border-slate-700/70 sm:flex-row sm:items-start sm:justify-between",
+        className,
+      )}
+    >
+      <div className="min-w-0 flex-1">
+        {eyebrow ? (
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-400">{eyebrow}</p>
+        ) : null}
+        <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 dark:text-slate-50 sm:text-3xl">{title}</h1>
+        {meta ? <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">{meta}</div> : null}
+        {description ? (
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-500 dark:text-slate-400">{description}</p>
+        ) : null}
+      </div>
+      {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
+    </div>
+  );
+}

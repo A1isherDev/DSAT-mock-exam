@@ -216,8 +216,9 @@ class ClassroomViewSet(ModelViewSet):
                 Q(practice_test__isnull=False)
                 | Q(pastpaper_pack__isnull=False)
                 | Q(practice_test_ids__isnull=False)
+                | Q(mock_exam__isnull=False)
             )
-            .select_related("practice_test", "pastpaper_pack")
+            .select_related("practice_test", "pastpaper_pack", "mock_exam")
             .order_by("-created_at")
         )
         assign_ids = [a.id for a in practice_assignments]
@@ -363,6 +364,7 @@ class JoinClassView(APIView):
 class ClassPostViewSet(ModelViewSet):
     permission_classes = [IsAuthenticatedAndNotFrozen]
     serializer_class = ClassPostSerializer
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
     def get_classroom(self):
         return get_object_or_404(Classroom, pk=self.kwargs["classroom_pk"])
@@ -382,6 +384,17 @@ class ClassPostViewSet(ModelViewSet):
         serializer.is_valid(raise_exception=True)
         post = serializer.save(classroom=classroom, author=request.user)
         return Response(self.get_serializer(post).data, status=status.HTTP_201_CREATED)
+
+    def perform_update(self, serializer):
+        classroom = serializer.instance.classroom
+        if not classroom.memberships.filter(user=self.request.user, role="ADMIN").exists():
+            raise PermissionDenied("Only class admins can edit announcements.")
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if not instance.classroom.memberships.filter(user=self.request.user, role="ADMIN").exists():
+            raise PermissionDenied("Only class admins can delete announcements.")
+        instance.delete()
 
 
 class AssignmentViewSet(ModelViewSet):
@@ -415,6 +428,21 @@ class AssignmentViewSet(ModelViewSet):
                 AssignmentExtraAttachment.objects.create(assignment=assignment, file=f)
         return Response(self.get_serializer(assignment).data, status=status.HTTP_201_CREATED)
 
+    def update(self, request, *args, **kwargs):
+        super().update(request, *args, **kwargs)
+        assignment = self.get_object()
+        files = request.FILES.getlist("attachment_file")
+        if files:
+            assignment.attachment_file = files[0]
+            assignment.save(update_fields=["attachment_file", "updated_at"])
+            for f in files[1:]:
+                AssignmentExtraAttachment.objects.create(assignment=assignment, file=f)
+        return Response(self.get_serializer(assignment).data)
+
+    def partial_update(self, request, *args, **kwargs):
+        kwargs["partial"] = True
+        return self.update(request, *args, **kwargs)
+
     def perform_destroy(self, instance):
         if not instance.classroom.memberships.filter(user=self.request.user, role="ADMIN").exists():
             raise PermissionDenied("Only class admins can delete assignments.")
@@ -431,11 +459,12 @@ class AssignmentViewSet(ModelViewSet):
         if not classroom.memberships.filter(user=request.user).exists():
             return Response({"detail": "Not a member."}, status=status.HTTP_403_FORBIDDEN)
         assignment = get_object_or_404(Assignment, pk=pk, classroom=classroom)
-        # Editing submission is allowed only before deadline.
-        if assignment.due_at and timezone.now() > assignment.due_at:
-            existing = Submission.objects.filter(assignment=assignment, student=request.user).first()
-            if existing and existing.status == Submission.STATUS_SUBMITTED:
-                return Response({"detail": "Deadline passed. Submission can no longer be edited."}, status=status.HTTP_400_BAD_REQUEST)
+        is_admin = classroom.memberships.filter(user=request.user, role="ADMIN").exists()
+        if assignment.due_at and timezone.now() > assignment.due_at and not is_admin:
+            return Response(
+                {"detail": "The due date has passed. You can no longer change your submission."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         serializer = SubmitSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
@@ -447,10 +476,20 @@ class AssignmentViewSet(ModelViewSet):
             # If upload_file is provided, update it. (Clearing can be added later.)
             sub.upload_file = data.get("upload_file")
 
-        attempt_id = data.get("attempt_id")
-        if attempt_id:
-            att = TestAttempt.objects.filter(id=attempt_id, student=request.user).first()
-            if att:
+        if "attempt_id" in data:
+            attempt_id = data.get("attempt_id")
+            if attempt_id is None:
+                sub.attempt = None
+            else:
+                att = TestAttempt.objects.filter(id=attempt_id, student=request.user).first()
+                if not att:
+                    return Response({"detail": "Invalid attempt id for your account."}, status=status.HTTP_400_BAD_REQUEST)
+                targets = assignment_target_practice_test_ids(assignment)
+                if targets and att.practice_test_id not in targets:
+                    return Response(
+                        {"detail": "That attempt does not belong to a practice test linked to this homework."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
                 sub.attempt = att
 
         if data.get("submit", True):
@@ -481,12 +520,29 @@ class AssignmentViewSet(ModelViewSet):
 
 class SubmissionAdminViewSet(ReadOnlyModelViewSet):
     """
-    Admin-only grading endpoints.
+    Grading: list/retrieve only for submissions in classes where the user is ADMIN.
     """
 
     permission_classes = [IsAuthenticatedAndNotFrozen]
     serializer_class = SubmissionSerializer
-    queryset = Submission.objects.all().select_related("assignment__classroom", "student").select_related("grade")
+
+    def get_queryset(self):
+        user = self.request.user
+        admin_class_ids = ClassroomMembership.objects.filter(
+            user=user, role=ClassroomMembership.ROLE_ADMIN
+        ).values_list("classroom_id", flat=True)
+        return (
+            Submission.objects.filter(assignment__classroom_id__in=admin_class_ids)
+            .select_related("assignment__classroom", "student", "grade")
+            .distinct()
+        )
+
+    def list(self, request, *args, **kwargs):
+        """Avoid accidental bulk export; grading uses per-assignment submissions/ or retrieve by id."""
+        return Response(
+            {"detail": "Listing all submissions is not supported. Use class assignment submissions."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
 
     def get_classroom(self):
         submission = self.get_object()

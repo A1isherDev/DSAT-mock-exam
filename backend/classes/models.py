@@ -172,8 +172,15 @@ class AssignmentExtraAttachment(models.Model):
 
 def assignment_target_practice_test_ids(assignment: Assignment) -> list[int]:
     """
-    Practice test row ids this homework refers to (full pastpaper pack, legacy bundle, or single).
+    Practice test row ids this homework refers to (mock sections, pastpaper pack, legacy bundle, or single).
     """
+    if assignment.mock_exam_id:
+        order = {"READING_WRITING": 0, "MATH": 1}
+        rows = list(
+            PracticeTest.objects.filter(mock_exam_id=assignment.mock_exam_id).values_list("id", "subject")
+        )
+        rows.sort(key=lambda r: (order.get(r[1], 9), r[0]))
+        return [r[0] for r in rows]
     if assignment.pastpaper_pack_id:
         order = {"READING_WRITING": 0, "MATH": 1}
         rows = list(
@@ -184,7 +191,13 @@ def assignment_target_practice_test_ids(assignment: Assignment) -> list[int]:
         rows.sort(key=lambda r: (order.get(r[1], 9), r[0]))
         return [r[0] for r in rows]
     if assignment.practice_test_ids:
-        return [int(x) for x in assignment.practice_test_ids]
+        out: list[int] = []
+        for x in assignment.practice_test_ids:
+            try:
+                out.append(int(x))
+            except (TypeError, ValueError):
+                continue
+        return out
     if assignment.practice_test_id:
         return [assignment.practice_test_id]
     return []

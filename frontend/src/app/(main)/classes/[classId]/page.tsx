@@ -1,44 +1,39 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { classesApi } from "@/lib/api";
 import ClassLeaderboard from "@/components/ClassLeaderboard";
 import CreateAssignmentModal from "@/components/CreateAssignmentModal";
 import {
+  ClassroomAlert,
+  ClassroomButton,
+  ClassroomCard,
+  ClassroomDetailSkeleton,
+  ClassroomEmptyState,
+  ClassroomPageHeader,
+  ClassroomTabs,
+  type ClassroomTabItem,
+} from "@/components/classroom";
+import {
   ClipboardList,
-  Users,
-  Megaphone,
   GraduationCap,
   KeyRound,
-  RefreshCcw,
-  Trophy,
-  Plus,
+  Megaphone,
   Pencil,
+  Plus,
+  RefreshCcw,
   Trash2,
+  Trophy,
+  Users,
 } from "lucide-react";
-
-function TabButton({ active, onClick, icon: Icon, label }: any) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-bold transition-colors ${
-        active ? "bg-blue-50 border-blue-100 text-blue-800" : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
-      }`}
-    >
-      <Icon className="w-4 h-4" />
-      {label}
-    </button>
-  );
-}
 
 export default function ClassDetailPage() {
   const { classId } = useParams();
   const id = Number(classId);
 
-  const [tab, setTab] = useState<"stream" | "classwork" | "people" | "grades" | "leaderboard">("stream");
+  const [tab, setTab] = useState<ClassroomTabItem["id"]>("stream");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [klass, setKlass] = useState<any>(null);
@@ -52,14 +47,25 @@ export default function ClassDetailPage() {
   const [editingAssignment, setEditingAssignment] = useState<any | null>(null);
 
   const [people, setPeople] = useState<any[]>([]);
+  const [codeBusy, setCodeBusy] = useState(false);
+
+  const tabItems = useMemo<ClassroomTabItem[]>(
+    () => [
+      { id: "stream", label: "Stream", icon: Megaphone },
+      { id: "classwork", label: "Classwork", icon: ClipboardList },
+      { id: "people", label: "People", icon: Users },
+      { id: "leaderboard", label: "Leaderboard", icon: Trophy },
+      { id: "grades", label: "Grades", icon: GraduationCap },
+    ],
+    [],
+  );
 
   const refresh = async () => {
     setError(null);
     setLoading(true);
     try {
-      const list = await classesApi.list();
-      const found = Array.isArray(list) ? list.find((c) => Number(c.id) === id) : null;
-      setKlass(found || { id });
+      const k = await classesApi.get(id);
+      setKlass(k);
       const [p, a, pe] = await Promise.all([
         classesApi.listPosts(id),
         classesApi.listAssignments(id),
@@ -68,8 +74,19 @@ export default function ClassDetailPage() {
       setPosts(Array.isArray(p) ? p : []);
       setAssignments(Array.isArray(a) ? a : []);
       setPeople(Array.isArray(pe) ? pe : []);
-    } catch (e: any) {
-      setError(e?.response?.data?.detail || "Could not load class.");
+    } catch (e: unknown) {
+      const ax = e as { response?: { status?: number; data?: { detail?: string } } };
+      const st = ax.response?.status;
+      const detail = ax.response?.data?.detail;
+      if (st === 404) {
+        setError("You don't have access to this group, or it no longer exists.");
+      } else {
+        setError(typeof detail === "string" ? detail : "Could not load class.");
+      }
+      setKlass(null);
+      setPosts([]);
+      setAssignments([]);
+      setPeople([]);
     } finally {
       setLoading(false);
     }
@@ -88,8 +105,9 @@ export default function ClassDetailPage() {
       setPostText("");
       const p = await classesApi.listPosts(id);
       setPosts(Array.isArray(p) ? p : []);
-    } catch (e: any) {
-      setError(e?.response?.data?.detail || "Could not post.");
+    } catch (e: unknown) {
+      const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setError(typeof d === "string" ? d : "Could not post.");
     }
   };
 
@@ -102,270 +120,384 @@ export default function ClassDetailPage() {
     }
   };
 
-  return (
-    <div className="max-w-6xl mx-auto px-8 py-10">
-      <div className="flex items-start justify-between gap-6 mb-8">
-        <div>
-          <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-2">Class</p>
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">{klass?.name || "Group"}</h1>
-          <p className="text-slate-500 mt-2">
-            {(klass?.subject ? klass.subject : "")}
-            {klass?.lesson_days ? ` · ${klass.lesson_days}` : ""}
-            {klass?.lesson_time ? ` · ${klass.lesson_time}` : ""}
-            {klass?.lesson_hours ? ` · ${klass.lesson_hours}h` : ""}
+  const accessDenied = !loading && !klass && !!error;
+
+  if (accessDenied) {
+    return (
+      <div className="relative mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
+        <div className="pointer-events-none absolute inset-0 -z-10 cr-classroom-bg" aria-hidden />
+        <ClassroomPageHeader title="Group" eyebrow="Class" />
+        <div className="mt-6 space-y-4">
+          <ClassroomAlert tone="error">{error}</ClassroomAlert>
+          <p className="text-sm text-slate-600 dark:text-slate-400">
+            If you were removed or the link is wrong, ask your teacher for an updated code.
           </p>
+          <Link href="/classes" className="inline-flex">
+            <ClassroomButton variant="secondary" size="md">
+              Back to groups
+            </ClassroomButton>
+          </Link>
         </div>
-        <button
-          type="button"
-          onClick={refresh}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 font-bold text-sm hover:bg-slate-50"
-        >
-          <RefreshCcw className="w-4 h-4" />
-          Refresh
-        </button>
+      </div>
+    );
+  }
+
+  const metaLine = (
+    <>
+      {klass?.subject ? <span>{klass.subject}</span> : null}
+      {klass?.lesson_days ? <span> · {klass.lesson_days}</span> : null}
+      {klass?.lesson_time ? <span> · {klass.lesson_time}</span> : null}
+      {klass?.lesson_hours ? <span> · {klass.lesson_hours}h</span> : null}
+    </>
+  );
+
+  return (
+    <div className="relative mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
+      <div className="pointer-events-none absolute inset-0 -z-10 cr-classroom-bg" aria-hidden />
+
+      <div className="mb-6">
+        <ClassroomPageHeader
+          eyebrow="Class"
+          title={klass?.name || "Group"}
+          meta={klass ? metaLine : null}
+          actions={
+            <ClassroomButton variant="secondary" size="md" onClick={refresh} disabled={loading}>
+              <RefreshCcw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+              Refresh
+            </ClassroomButton>
+          }
+        />
       </div>
 
-      {error && <div className="mb-6 p-4 rounded-2xl border border-red-200 bg-red-50 text-red-700 font-semibold text-sm">{error}</div>}
+      {error ? (
+        <div className="mb-6">
+          <ClassroomAlert tone="error">{error}</ClassroomAlert>
+        </div>
+      ) : null}
 
-      <div className="flex flex-wrap gap-2 mb-8">
-        <TabButton active={tab === "stream"} onClick={() => setTab("stream")} icon={Megaphone} label="Stream" />
-        <TabButton active={tab === "classwork"} onClick={() => setTab("classwork")} icon={ClipboardList} label="Classwork" />
-        <TabButton active={tab === "people"} onClick={() => setTab("people")} icon={Users} label="People" />
-        <TabButton active={tab === "leaderboard"} onClick={() => setTab("leaderboard")} icon={Trophy} label="Leaderboard" />
-        <TabButton active={tab === "grades"} onClick={() => setTab("grades")} icon={GraduationCap} label="Grades" />
-      </div>
+      <ClassroomTabs items={tabItems} value={tab} onChange={setTab} className="mb-8" />
 
       {loading ? (
-        <div className="bg-white border border-slate-200 rounded-2xl p-10 flex justify-center">
-          <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-        </div>
-      ) : tab === "stream" ? (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 space-y-4">
-            {posts.length === 0 ? (
-              <div className="bg-white border border-slate-200 rounded-2xl p-8 text-slate-600 font-medium">No announcements yet.</div>
-            ) : (
-              posts.map((p) => (
-                <div key={p.id} className="bg-white border border-slate-200 rounded-2xl p-6">
-                  <div className="flex items-center justify-between text-xs text-slate-500 font-bold uppercase tracking-widest mb-3">
-                    <span>{p.author?.first_name || p.author?.email || "Admin"}</span>
-                    <span>{formatDue(p.created_at)}</span>
-                  </div>
-                  <div className="prose prose-slate max-w-none" dangerouslySetInnerHTML={{ __html: p.content }} />
-                </div>
-              ))
-            )}
-          </div>
-
-          <div className="space-y-6">
-            <div className="bg-white border border-slate-200 rounded-2xl p-6">
-              <div className="flex items-center gap-2 mb-3">
-                <KeyRound className="w-4 h-4 text-slate-500" />
-                <p className="text-xs font-black text-slate-500 uppercase tracking-widest">Class code</p>
-              </div>
-              <div className="font-mono text-lg font-black text-slate-900 tracking-wider">{klass?.join_code || "—"}</div>
-              {(klass?.room_number || klass?.start_date || klass?.telegram_chat_id) && (
-                <div className="mt-4 text-sm text-slate-600 space-y-1">
-                  {klass?.room_number ? <p><span className="font-bold">Room:</span> {klass.room_number}</p> : null}
-                  {klass?.start_date ? <p><span className="font-bold">Start:</span> {klass.start_date}</p> : null}
-                  {klass?.telegram_chat_id ? (
-                    <p>
-                      <span className="font-bold">Telegram Chat ID:</span> {klass.telegram_chat_id}
-                    </p>
-                  ) : null}
-                </div>
-              )}
-              {isClassAdmin && (
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const r = await classesApi.regenerateCode(id);
-                    setKlass((k: any) => ({ ...(k || {}), join_code: r?.join_code }));
-                  }}
-                  className="mt-3 text-xs font-bold text-blue-700 hover:underline"
-                >
-                  Regenerate code
-                </button>
-              )}
-            </div>
-
-            {isClassAdmin && (
-              <div className="bg-white border border-slate-200 rounded-2xl p-6">
-                <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">Post announcement</p>
-                <textarea
-                  value={postText}
-                  onChange={(e) => setPostText(e.target.value)}
-                  placeholder="Write an announcement (HTML supported)"
-                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm min-h-[120px]"
-                />
-                <button
-                  type="button"
-                  onClick={handlePost}
-                  disabled={!postText.trim()}
-                  className="w-full mt-3 py-3 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 disabled:opacity-60"
-                >
-                  Post
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      ) : tab === "classwork" ? (
-        <div className="space-y-6">
-          {isClassAdmin ? (
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-extrabold text-slate-900">Classwork</h2>
-                <p className="text-sm text-slate-500 mt-0.5">
-                  Homework for this class. Teachers add assignments from the button — optional mock or full pastpaper test.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingAssignment(null);
-                  setCreateModalOpen(true);
-                }}
-                className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold text-sm shadow-lg shadow-blue-600/25 hover:from-blue-700 hover:to-indigo-700 transition-all shrink-0"
-              >
-                <Plus className="w-5 h-5" />
-                Create assignment
-              </button>
-            </div>
-          ) : (
-            <h2 className="text-lg font-extrabold text-slate-900">Classwork</h2>
-          )}
-
-          <div className="space-y-4">
-            {assignments.length === 0 ? (
-              <div className="bg-white border border-slate-200 rounded-2xl p-8 text-slate-600 font-medium text-center">
-                There are no assignments yet.
-                {isClassAdmin ? " Click the \"Create assignment\" button." : ""}
-              </div>
-            ) : (
-              assignments.map((a) => (
-                <div
-                  key={a.id}
-                  className="flex gap-3 sm:gap-4 items-stretch bg-white border border-slate-200 rounded-2xl p-6 hover:shadow-xl hover:-translate-y-0.5 transition-all"
-                >
-                  <Link href={`/classes/${id}/assignments/${a.id}`} className="flex-1 min-w-0 block">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="text-lg font-extrabold text-slate-900 truncate">{a.title}</p>
-                          {(a.practice_test ||
-                            a.pastpaper_pack ||
-                            (Array.isArray(a.practice_test_ids) && a.practice_test_ids.length > 0) ||
-                            (Array.isArray(a.practice_bundle_tests) && a.practice_bundle_tests.length > 0)) ? (
-                            <span className="shrink-0 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-lg bg-violet-100 text-violet-800">
-                              Pastpaper
-                            </span>
-                          ) : null}
-                          {a.mock_exam ? (
-                            <span className="shrink-0 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-lg bg-sky-100 text-sky-800">
-                              Mock
-                            </span>
-                          ) : null}
-                        </div>
-                        <p className="text-sm text-slate-500 mt-1">{formatDue(a.due_at)}</p>
-                      </div>
-                      <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 shrink-0">
-                        {a.submissions_count ?? 0} submitted
-                      </div>
-                    </div>
-                    {a.instructions ? (
-                      <p className="text-sm text-slate-600 mt-3 line-clamp-2">{a.instructions}</p>
-                    ) : null}
-                  </Link>
-                  {isClassAdmin ? (
-                    <div className="flex flex-col gap-2 shrink-0 border-l border-slate-100 pl-3 sm:pl-4">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingAssignment(a);
-                          setCreateModalOpen(true);
-                        }}
-                        className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-50"
-                        title="Edit assignment"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          if (!confirm(`Delete homework “${a.title}”? Submissions will be removed.`)) return;
-                          try {
-                            await classesApi.deleteAssignment(id, a.id);
-                            const list = await classesApi.listAssignments(id);
-                            setAssignments(Array.isArray(list) ? list : []);
-                          } catch (e: unknown) {
-                            const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-                            alert(typeof msg === "string" ? msg : "Could not delete assignment.");
-                          }
-                        }}
-                        className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-red-200 text-red-700 font-bold text-xs hover:bg-red-50"
-                        title="Delete assignment"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        Delete
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-              ))
-            )}
-          </div>
-
-          <CreateAssignmentModal
-            open={createModalOpen && isClassAdmin}
-            classId={id}
-            editingAssignment={editingAssignment}
-            onClose={() => {
-              setCreateModalOpen(false);
-              setEditingAssignment(null);
-            }}
-            onSuccess={async () => {
-              const a = await classesApi.listAssignments(id);
-              setAssignments(Array.isArray(a) ? a : []);
-              setTab("classwork");
-              setEditingAssignment(null);
-            }}
-          />
-        </div>
-      ) : tab === "people" ? (
-        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
-          <div className="p-5 border-b border-slate-200 font-bold text-slate-900">Members</div>
-          {people.length === 0 ? (
-            <div className="p-6 text-slate-600">No members.</div>
-          ) : (
-            <div className="divide-y divide-slate-100">
-              {people.map((m) => (
-                <div key={m.id} className="p-5 flex items-center justify-between gap-4">
-                  <div className="min-w-0">
-                    <p className="font-bold text-slate-900 truncate">
-                      {m.user?.first_name || m.user?.email} {m.user?.last_name || ""}
-                    </p>
-                    <p className="text-sm text-slate-500 truncate">{m.user?.email}</p>
-                  </div>
-                  <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-full ${m.role === "ADMIN" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
-                    {m.role}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      ) : tab === "leaderboard" ? (
-        <ClassLeaderboard classId={id} />
+        <ClassroomDetailSkeleton />
       ) : (
-        <div className="bg-white border border-slate-200 rounded-2xl p-8 text-slate-600">
-          <p className="font-semibold text-slate-800 mb-2">Grades</p>
-          <p className="text-sm">Open a classwork item to review submissions and enter scores. For pastpaper stats and class
-            averages, use the <strong>Leaderboard</strong> tab.</p>
+        <div
+          role="tabpanel"
+          id={`classroom-panel-${tab}`}
+          aria-labelledby={`classroom-tab-${tab}`}
+          className="transition-opacity duration-200"
+        >
+          {tab === "stream" ? (
+            <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+              <div className="space-y-4 lg:col-span-2">
+                {posts.length === 0 ? (
+                  <ClassroomEmptyState
+                    icon={Megaphone}
+                    title="No announcements yet"
+                    description={
+                      isClassAdmin
+                        ? "Post the first update on the right. Students see it here in real time after refresh."
+                        : "When your teacher posts updates, they will appear here."
+                    }
+                  />
+                ) : (
+                  posts.map((p) => (
+                    <ClassroomCard key={p.id} padding="md" className="border-slate-200/80">
+                      <div className="mb-3 flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                        <span>{p.author?.first_name || p.author?.email || "Admin"}</span>
+                        <span className="tabular-nums text-slate-500">{formatDue(p.created_at)}</span>
+                      </div>
+                      <div className="prose prose-slate max-w-none text-sm dark:prose-invert" dangerouslySetInnerHTML={{ __html: p.content }} />
+                    </ClassroomCard>
+                  ))
+                )}
+              </div>
+
+              <div className="space-y-4">
+                <ClassroomCard padding="md">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+                      <KeyRound className="h-4 w-4" />
+                    </div>
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Join code
+                    </p>
+                  </div>
+                  <p className="mt-3 font-mono text-xl font-bold tracking-wider text-slate-900 dark:text-slate-50">
+                    {klass?.join_code || "—"}
+                  </p>
+                  {(klass?.room_number || klass?.start_date || klass?.telegram_chat_id) && (
+                    <dl className="mt-4 space-y-2 border-t border-slate-200/70 pt-4 text-sm text-slate-600 dark:border-slate-700/70 dark:text-slate-300">
+                      {klass?.room_number ? (
+                        <div className="flex justify-between gap-2">
+                          <dt className="font-semibold text-slate-500 dark:text-slate-400">Room</dt>
+                          <dd>{klass.room_number}</dd>
+                        </div>
+                      ) : null}
+                      {klass?.start_date ? (
+                        <div className="flex justify-between gap-2">
+                          <dt className="font-semibold text-slate-500 dark:text-slate-400">Start</dt>
+                          <dd>{klass.start_date}</dd>
+                        </div>
+                      ) : null}
+                      {klass?.telegram_chat_id ? (
+                        <div className="flex flex-col gap-0.5">
+                          <dt className="font-semibold text-slate-500 dark:text-slate-400">Telegram</dt>
+                          <dd className="break-all font-mono text-xs">{klass.telegram_chat_id}</dd>
+                        </div>
+                      ) : null}
+                    </dl>
+                  )}
+                  {isClassAdmin ? (
+                    <ClassroomButton
+                      variant="ghost"
+                      size="sm"
+                      className="mt-4 w-full justify-center"
+                      disabled={codeBusy}
+                      onClick={async () => {
+                        setError(null);
+                        setCodeBusy(true);
+                        try {
+                          const r = await classesApi.regenerateCode(id);
+                          setKlass((k: any) => ({ ...(k || {}), join_code: r?.join_code }));
+                        } catch (e: unknown) {
+                          const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+                          setError(typeof d === "string" ? d : "Could not regenerate code.");
+                        } finally {
+                          setCodeBusy(false);
+                        }
+                      }}
+                    >
+                      {codeBusy ? "Updating…" : "Regenerate code"}
+                    </ClassroomButton>
+                  ) : null}
+                </ClassroomCard>
+
+                {isClassAdmin ? (
+                  <ClassroomCard padding="md">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      New announcement
+                    </p>
+                    <textarea
+                      value={postText}
+                      onChange={(e) => setPostText(e.target.value)}
+                      placeholder="Write an announcement (HTML supported)"
+                      rows={5}
+                      className="mt-3 w-full resize-y rounded-xl border border-slate-200/90 bg-white/90 px-4 py-3 text-sm text-slate-900 shadow-sm transition-[border-color,box-shadow] duration-200 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-600 dark:bg-slate-900/60 dark:text-slate-100 dark:placeholder:text-slate-500"
+                    />
+                    <ClassroomButton
+                      variant="primary"
+                      size="md"
+                      className="mt-3 w-full"
+                      onClick={handlePost}
+                      disabled={!postText.trim()}
+                    >
+                      Post announcement
+                    </ClassroomButton>
+                  </ClassroomCard>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
+          {tab === "classwork" ? (
+            <div className="space-y-6">
+              {isClassAdmin ? (
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900 dark:text-slate-50">Classwork</h2>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                      Homework, mocks, and pastpapers — students open each item from the list.
+                    </p>
+                  </div>
+                  <ClassroomButton
+                    variant="primary"
+                    size="md"
+                    className="shrink-0"
+                    onClick={() => {
+                      setEditingAssignment(null);
+                      setCreateModalOpen(true);
+                    }}
+                  >
+                    <Plus className="h-4 w-4" />
+                    Create assignment
+                  </ClassroomButton>
+                </div>
+              ) : (
+                <h2 className="text-lg font-bold text-slate-900 dark:text-slate-50">Classwork</h2>
+              )}
+
+              <div className="space-y-4">
+                {assignments.length === 0 ? (
+                  <ClassroomEmptyState
+                    icon={ClipboardList}
+                    title="No assignments yet"
+                    description={
+                      isClassAdmin
+                        ? 'Create the first homework item with the "Create assignment" button.'
+                        : "Your teacher hasn't posted classwork yet."
+                    }
+                    action={
+                      isClassAdmin
+                        ? {
+                            label: "Create assignment",
+                            onClick: () => {
+                              setEditingAssignment(null);
+                              setCreateModalOpen(true);
+                            },
+                          }
+                        : undefined
+                    }
+                  />
+                ) : (
+                  assignments.map((a) => (
+                    <div
+                      key={a.id}
+                      className="cr-surface flex flex-col gap-4 rounded-2xl p-5 transition-all duration-200 hover:border-indigo-200/60 hover:shadow-md dark:hover:border-indigo-500/25 sm:flex-row sm:items-stretch"
+                    >
+                      <Link href={`/classes/${id}/assignments/${a.id}`} className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="truncate text-base font-bold text-slate-900 dark:text-slate-50">{a.title}</p>
+                              {(a.practice_test ||
+                                a.pastpaper_pack ||
+                                (Array.isArray(a.practice_test_ids) && a.practice_test_ids.length > 0) ||
+                                (Array.isArray(a.practice_bundle_tests) && a.practice_bundle_tests.length > 0)) ? (
+                                <span className="shrink-0 rounded-md bg-violet-500/12 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-700 dark:text-violet-300">
+                                  Pastpaper
+                                </span>
+                              ) : null}
+                              {a.mock_exam ? (
+                                <span className="shrink-0 rounded-md bg-sky-500/12 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-800 dark:text-sky-200">
+                                  Mock
+                                </span>
+                              ) : null}
+                            </div>
+                            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{formatDue(a.due_at)}</p>
+                          </div>
+                          <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                            {a.submissions_count ?? 0} submitted
+                          </span>
+                        </div>
+                        {a.instructions ? (
+                          <p className="mt-3 line-clamp-2 text-sm text-slate-600 dark:text-slate-300">{a.instructions}</p>
+                        ) : null}
+                      </Link>
+                      {isClassAdmin ? (
+                        <div className="flex shrink-0 flex-row gap-2 border-t border-slate-200/70 pt-3 sm:flex-col sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0 dark:border-slate-700/70">
+                          <ClassroomButton
+                            variant="secondary"
+                            size="sm"
+                            className="flex-1 sm:flex-none"
+                            onClick={() => {
+                              setEditingAssignment(a);
+                              setCreateModalOpen(true);
+                            }}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                            Edit
+                          </ClassroomButton>
+                          <ClassroomButton
+                            variant="danger"
+                            size="sm"
+                            className="flex-1 sm:flex-none"
+                            onClick={async () => {
+                              if (!confirm(`Delete homework “${a.title}”? Submissions will be removed.`)) return;
+                              try {
+                                await classesApi.deleteAssignment(id, a.id);
+                                const list = await classesApi.listAssignments(id);
+                                setAssignments(Array.isArray(list) ? list : []);
+                              } catch (e: unknown) {
+                                const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+                                alert(typeof msg === "string" ? msg : "Could not delete assignment.");
+                              }
+                            }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Delete
+                          </ClassroomButton>
+                        </div>
+                      ) : null}
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <CreateAssignmentModal
+                open={createModalOpen && isClassAdmin}
+                classId={id}
+                editingAssignment={editingAssignment}
+                onClose={() => {
+                  setCreateModalOpen(false);
+                  setEditingAssignment(null);
+                }}
+                onSuccess={async () => {
+                  const a = await classesApi.listAssignments(id);
+                  setAssignments(Array.isArray(a) ? a : []);
+                  setTab("classwork");
+                  setEditingAssignment(null);
+                }}
+              />
+            </div>
+          ) : null}
+
+          {tab === "people" ? (
+            <ClassroomCard padding="none" className="overflow-hidden">
+              <div className="border-b border-slate-200/70 px-5 py-4 dark:border-slate-700/70">
+                <h2 className="text-base font-bold text-slate-900 dark:text-slate-50">Members</h2>
+                <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">{people.length} people in this group</p>
+              </div>
+              {people.length === 0 ? (
+                <div className="px-5 py-12 text-center text-sm text-slate-500 dark:text-slate-400">No members listed.</div>
+              ) : (
+                <ul className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                  {people.map((m) => (
+                    <li key={m.id} className="flex items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/30">
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-slate-900 dark:text-slate-50">
+                          {m.user?.first_name || m.user?.email} {m.user?.last_name || ""}
+                        </p>
+                        <p className="truncate text-sm text-slate-500 dark:text-slate-400">{m.user?.email}</p>
+                      </div>
+                      <span
+                        className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${
+                          m.role === "ADMIN"
+                            ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
+                            : "bg-slate-500/10 text-slate-600 dark:text-slate-400"
+                        }`}
+                      >
+                        {m.role}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </ClassroomCard>
+          ) : null}
+
+          {tab === "leaderboard" ? <ClassLeaderboard classId={id} /> : null}
+
+          {tab === "grades" ? (
+            <ClassroomCard padding="lg">
+              <h2 className="text-base font-bold text-slate-900 dark:text-slate-50">Grades</h2>
+              <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+                Open a classwork item to review submissions and enter scores. For class averages and rankings on pastpaper
+                homework, use the <strong className="font-semibold text-slate-800 dark:text-slate-100">Leaderboard</strong>{" "}
+                tab.
+              </p>
+            </ClassroomCard>
+          ) : null}
         </div>
       )}
+
+      <div className="mt-10 border-t border-slate-200/70 pt-6 dark:border-slate-700/70">
+        <Link
+          href="/classes"
+          className="text-sm font-semibold text-indigo-600 transition-colors hover:text-indigo-500 dark:text-indigo-400"
+        >
+          ← All groups
+        </Link>
+      </div>
     </div>
   );
 }
-

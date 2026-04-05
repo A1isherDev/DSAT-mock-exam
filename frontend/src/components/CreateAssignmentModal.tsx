@@ -11,7 +11,15 @@ import {
   type CardPastpaperPack,
   type CardSingle,
 } from "@/lib/practiceTestCards";
-import { Loader2, X } from "lucide-react";
+import {
+  ClassroomAlert,
+  ClassroomButton,
+  ClassroomField,
+  ClassroomModal,
+  crInputClass,
+  crSelectClass,
+} from "@/components/classroom";
+import { Loader2 } from "lucide-react";
 
 type AssignmentOptMock = { id: number; title: string; practice_date: string | null; kind: string };
 
@@ -179,7 +187,12 @@ export default function CreateAssignmentModal({
       if (ev.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
   }, [open, onClose]);
 
   const handleSubmit = async () => {
@@ -244,141 +257,105 @@ export default function CreateAssignmentModal({
   };
 
   const cardBase =
-    "text-left rounded-2xl border px-4 py-3 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2";
-  const cardUnsel = "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/80";
-  const cardSel = "border-blue-500 bg-blue-50/90 ring-2 ring-blue-500/40 shadow-sm";
-
-  if (!open) return null;
+    "text-left rounded-xl border px-4 py-3 transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900";
+  const cardUnsel =
+    "border-slate-200/90 bg-white/80 hover:border-indigo-200/60 hover:bg-slate-50/90 dark:border-slate-600 dark:bg-slate-900/40 dark:hover:border-indigo-500/30";
+  const cardSel =
+    "border-indigo-400 bg-indigo-50/90 ring-2 ring-indigo-500/25 shadow-sm dark:border-indigo-500 dark:bg-indigo-950/40 dark:ring-indigo-400/20";
 
   return (
-    <div
-      className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="create-asg-title"
-      onClick={onClose}
+    <ClassroomModal
+      open={open}
+      onClose={onClose}
+      titleId="create-asg-title"
+      eyebrow={editingAssignment ? "Edit assignment" : "New assignment"}
+      title={editingAssignment ? "Update homework" : "Create assignment"}
+      description="Mock is timed diagnostic; pastpaper cards match the student library. Title is required; links are optional."
+      size="lg"
     >
-      <div
-        className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-3xl border border-slate-200 bg-white shadow-2xl shadow-slate-900/20"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="sticky top-0 z-10 flex items-center justify-between gap-4 px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white rounded-t-3xl">
-          <div>
-            <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">
-              {editingAssignment ? "Edit assignment" : "New assignment"}
-            </p>
-            <h2 id="create-asg-title" className="text-xl font-extrabold text-slate-900">
-              {editingAssignment ? "Update homework" : "Create assignment"}
-            </h2>
+      <div className="space-y-4">
+        {formError ? <ClassroomAlert tone="error">{formError}</ClassroomAlert> : null}
+
+        {asgOptionsLoading ? (
+          <div className="flex items-center gap-2 py-3 text-sm text-slate-500 dark:text-slate-400">
+            <Loader2 className="h-5 w-5 animate-spin text-indigo-600 dark:text-indigo-400" />
+            Loading tests…
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
-            aria-label="Close"
+        ) : null}
+        {asgOptionsError ? <ClassroomAlert tone="warning">{asgOptionsError}</ClassroomAlert> : null}
+
+        <ClassroomField label="Title *" htmlFor="asg-title">
+          <input
+            id="asg-title"
+            value={newAsg.title}
+            onChange={(e) => setNewAsg((p) => ({ ...p, title: e.target.value }))}
+            placeholder="e.g. May SAT Reading practice"
+            className={`${crInputClass} font-semibold`}
+          />
+        </ClassroomField>
+
+        <ClassroomField label="Instructions" htmlFor="asg-inst">
+          <textarea
+            id="asg-inst"
+            value={newAsg.instructions}
+            onChange={(e) => setNewAsg((p) => ({ ...p, instructions: e.target.value }))}
+            placeholder="Short directions for students"
+            rows={4}
+            className={crInputClass}
+          />
+        </ClassroomField>
+
+        <ClassroomField label="Due date & time" htmlFor="asg-due" hint="Leave empty for no deadline.">
+          <input
+            id="asg-due"
+            type="datetime-local"
+            value={dueLocal}
+            onChange={(e) => setDueLocal(e.target.value)}
+            className={crInputClass}
+          />
+        </ClassroomField>
+
+        <ClassroomField label="External link (optional)" htmlFor="asg-url">
+          <input
+            id="asg-url"
+            value={newAsg.external_url}
+            onChange={(e) => setNewAsg((p) => ({ ...p, external_url: e.target.value }))}
+            placeholder="https://…"
+            className={crInputClass}
+          />
+        </ClassroomField>
+
+        <ClassroomField label="Mock exam" htmlFor="asg-mock">
+          <select
+            id="asg-mock"
+            value={newAsg.mock_exam}
+            onChange={(e) => setNewAsg((p) => ({ ...p, mock_exam: e.target.value }))}
+            className={crSelectClass}
           >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+            <option value="">— None —</option>
+            {assignmentOptions.mock_exams.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.title}
+                {m.practice_date ? ` · ${m.practice_date}` : ""}
+                {m.kind === "MIDTERM" ? " (midterm)" : ""}
+              </option>
+            ))}
+          </select>
+        </ClassroomField>
 
-        <div className="p-6 space-y-4">
-          {formError ? (
-            <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2">{formError}</div>
-          ) : null}
-
-          {asgOptionsLoading ? (
-            <div className="flex items-center gap-2 text-sm text-slate-500 py-4">
-              <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
-              Loading tests…
-            </div>
-          ) : null}
-          {asgOptionsError ? (
-            <div className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">{asgOptionsError}</div>
-          ) : null}
-
-          <p className="text-xs text-slate-500 leading-relaxed">
-            <strong>Mock</strong> is a timed diagnostic exam. <strong>Pastpaper</strong> matches the practice-test library:
-            one card per full exam (English + Math when both exist). All links are optional; title is required.
-          </p>
-
-          <div>
-            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Title *</label>
-            <input
-              value={newAsg.title}
-              onChange={(e) => setNewAsg((p) => ({ ...p, title: e.target.value }))}
-              placeholder="e.g. May SAT Reading practice"
-              className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Instructions</label>
-            <textarea
-              value={newAsg.instructions}
-              onChange={(e) => setNewAsg((p) => ({ ...p, instructions: e.target.value }))}
-              placeholder="Short directions for students"
-              className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm min-h-[100px] focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Due date &amp; time</label>
-            <input
-              type="datetime-local"
-              value={dueLocal}
-              onChange={(e) => setDueLocal(e.target.value)}
-              className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 outline-none"
-            />
-            <p className="text-[11px] text-slate-400 mt-1">Leave empty for no deadline.</p>
-          </div>
-
-          <div>
-            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">
-              External link (optional)
-            </label>
-            <input
-              value={newAsg.external_url}
-              onChange={(e) => setNewAsg((p) => ({ ...p, external_url: e.target.value }))}
-              placeholder="https://…"
-              className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Mock exam</label>
-            <select
-              value={newAsg.mock_exam}
-              onChange={(e) => setNewAsg((p) => ({ ...p, mock_exam: e.target.value }))}
-              className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium bg-white focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 outline-none"
-            >
-              <option value="">— None —</option>
-              {assignmentOptions.mock_exams.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.title}
-                  {m.practice_date ? ` · ${m.practice_date}` : ""}
-                  {m.kind === "MIDTERM" ? " (midterm)" : ""}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">
-              Pastpaper (full exam card)
-            </label>
-            <p className="text-[11px] text-slate-500 mb-2">
-              Same grouping as the student practice-test page: one card combines Reading &amp; Writing and Math when they
-              share a pastpaper. Students open each section from the assignment.
-            </p>
-            <div className="grid gap-3 sm:grid-cols-2 max-h-[320px] overflow-y-auto pr-1">
+        <ClassroomField
+          label="Pastpaper (full exam card)"
+          hint="One card can combine R&W and Math. Students open each section from the assignment."
+        >
+          <div className="grid max-h-[320px] grid-cols-1 gap-3 overflow-y-auto pr-1 sm:grid-cols-2">
               <button
                 type="button"
                 onClick={() => setPastSel({ mode: "none" })}
                 className={`${cardBase} ${pastSel.mode === "none" ? cardSel : cardUnsel}`}
               >
-                <p className="text-[10px] font-black uppercase tracking-wider text-violet-600">Pastpaper</p>
-                <p className="text-sm font-bold text-slate-800 mt-1">No practice test</p>
-                <p className="text-xs text-slate-500 mt-0.5">Assignment without a linked pastpaper</p>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-violet-600 dark:text-violet-400">Pastpaper</p>
+                <p className="mt-1 text-sm font-bold text-slate-800 dark:text-slate-100">No practice test</p>
+                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">No linked pastpaper</p>
               </button>
               {pastpaperCards.map((c) => {
                 const selected = selectionMatchesCard(pastSel, c);
@@ -400,14 +377,18 @@ export default function CreateAssignmentModal({
                     onClick={() => setPastSel(selectFromCard(c))}
                     className={`${cardBase} ${selected ? cardSel : cardUnsel}`}
                   >
-                    <p className="text-[10px] font-black uppercase tracking-wider text-violet-600">Practice test</p>
-                    <p className="text-xs font-bold text-slate-400 mt-1">{formatLineDate(lineDate)}</p>
-                    <p className="text-sm font-bold text-slate-900 mt-2 line-clamp-2 leading-snug">{heading}</p>
-                    <div className="flex flex-wrap gap-1.5 mt-2">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-violet-600 dark:text-violet-400">
+                      Practice test
+                    </p>
+                    <p className="mt-1 text-xs font-bold text-slate-400">{formatLineDate(lineDate)}</p>
+                    <p className="mt-2 line-clamp-2 text-sm font-bold leading-snug text-slate-900 dark:text-slate-50">
+                      {heading}
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
                       {sectionRows.map((t) => (
                         <span
                           key={t.id}
-                          className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-lg bg-violet-100 text-violet-800"
+                          className="rounded-md bg-violet-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-800 dark:text-violet-200"
                         >
                           {subjectLabel(t.subject)}
                         </span>
@@ -416,57 +397,55 @@ export default function CreateAssignmentModal({
                   </button>
                 );
               })}
-            </div>
           </div>
+        </ClassroomField>
 
-          <div>
-            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">
-              {editingAssignment ? "Attached files" : "Files (optional)"}
-            </label>
-            {editingAssignment ? (
-              <p className="text-xs text-slate-600 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                {Array.isArray(editingAssignment.attachment_urls) && editingAssignment.attachment_urls.length > 0
-                  ? `${editingAssignment.attachment_urls.length} file(s) on this assignment. Editing does not replace files — delete the homework and create a new one if you need different attachments.`
-                  : "No files on this assignment."}
-              </p>
-            ) : (
-              <>
-                <input
-                  type="file"
-                  multiple
-                  onChange={(e) => setAsgFiles(Array.from(e.target.files || []))}
-                  className="w-full text-sm text-slate-600 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                />
-                {asgFiles.length > 0 ? (
-                  <p className="text-[11px] text-slate-500 mt-1">{asgFiles.length} file(s) selected.</p>
-                ) : null}
-              </>
-            )}
-          </div>
+        <ClassroomField label={editingAssignment ? "Attached files" : "Files (optional)"}>
+          {editingAssignment ? (
+            <p className="rounded-xl border border-slate-200/90 bg-slate-50/90 px-3 py-2 text-xs text-slate-600 dark:border-slate-600 dark:bg-slate-800/50 dark:text-slate-300">
+              {Array.isArray(editingAssignment.attachment_urls) && editingAssignment.attachment_urls.length > 0
+                ? `${editingAssignment.attachment_urls.length} file(s) on this assignment. Editing does not replace files — create a new assignment if you need different attachments.`
+                : "No files on this assignment."}
+            </p>
+          ) : (
+            <>
+              <input
+                type="file"
+                multiple
+                onChange={(e) => setAsgFiles(Array.from(e.target.files || []))}
+                className="w-full text-sm text-slate-600 file:mr-3 file:rounded-xl file:border-0 file:bg-indigo-500/10 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-indigo-700 hover:file:bg-indigo-500/15 dark:text-slate-400 dark:file:bg-indigo-500/20 dark:file:text-indigo-200"
+              />
+              {asgFiles.length > 0 ? (
+                <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">{asgFiles.length} file(s) selected.</p>
+              ) : null}
+            </>
+          )}
+        </ClassroomField>
 
-          <div className="flex flex-col-reverse sm:flex-row gap-2 pt-2">
-            <button
-              type="button"
-              onClick={() => {
-                resetForm();
-                onClose();
-              }}
-              className="flex-1 py-3 rounded-xl border border-slate-200 font-bold text-sm text-slate-700 hover:bg-slate-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={!newAsg.title.trim() || creatingAsg}
-              className="flex-1 py-3 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 disabled:opacity-60 inline-flex items-center justify-center gap-2"
-            >
-              {creatingAsg ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-              {editingAssignment ? "Save changes" : "Create"}
-            </button>
-          </div>
+        <div className="flex flex-col-reverse gap-2 border-t border-slate-200/70 pt-4 dark:border-slate-700/70 sm:flex-row">
+          <ClassroomButton
+            type="button"
+            variant="secondary"
+            className="flex-1"
+            onClick={() => {
+              resetForm();
+              onClose();
+            }}
+          >
+            Cancel
+          </ClassroomButton>
+          <ClassroomButton
+            type="button"
+            variant="primary"
+            className="flex-1"
+            onClick={handleSubmit}
+            disabled={!newAsg.title.trim() || creatingAsg}
+          >
+            {creatingAsg ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {editingAssignment ? "Save changes" : "Create"}
+          </ClassroomButton>
         </div>
       </div>
-    </div>
+    </ClassroomModal>
   );
 }

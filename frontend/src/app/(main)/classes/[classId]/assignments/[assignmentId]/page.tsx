@@ -5,14 +5,24 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { classesApi } from "@/lib/api";
 import { subjectLabel } from "@/lib/practiceTestCards";
-import { ArrowLeft, ClipboardCheck, ExternalLink, Save, Send, Trophy } from "lucide-react";
+import {
+  ClassroomAlert,
+  ClassroomButton,
+  ClassroomCard,
+  ClassroomEmptyState,
+  ClassroomField,
+  ClassroomPageHeader,
+  ClassroomSkeleton,
+  crInputClass,
+} from "@/components/classroom";
+import { ArrowLeft, ClipboardCheck, ExternalLink, FileQuestion, Save, Send, Trophy } from "lucide-react";
 
 export default function AssignmentDetailPage() {
   const router = useRouter();
   const { classId, assignmentId } = useParams();
   const cid = Number(classId);
   const aid = Number(assignmentId);
-  const [classMeta, setClassMeta] = useState<{ my_role?: string } | null>(null);
+  const [classMeta, setClassMeta] = useState<{ my_role?: string; name?: string } | null>(null);
   const isClassAdmin = classMeta?.my_role === "ADMIN";
 
   const [loading, setLoading] = useState(true);
@@ -31,13 +41,12 @@ export default function AssignmentDetailPage() {
     setError(null);
     setLoading(true);
     try {
-      const clsList = await classesApi.list();
-      const cls = Array.isArray(clsList) ? clsList.find((c) => Number(c.id) === cid) : null;
-      setClassMeta(cls || {});
+      const cls = await classesApi.get(cid);
+      setClassMeta(cls);
 
       const list = await classesApi.listAssignments(cid);
       const found = Array.isArray(list) ? list.find((a) => Number(a.id) === aid) : null;
-      setAssignment(found || { id: aid });
+      setAssignment(found || null);
       const mine = await classesApi.getMySubmission(cid, aid);
       const sub = mine && typeof mine === "object" && "id" in mine && mine.id != null ? mine : null;
       setMySubmission(sub);
@@ -50,8 +59,10 @@ export default function AssignmentDetailPage() {
       } else {
         setSubmissions([]);
       }
-    } catch (e: any) {
-      setError(e?.response?.data?.detail || "Could not load assignment.");
+    } catch (e: unknown) {
+      const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setError(typeof d === "string" ? d : "Could not load assignment.");
+      setAssignment(null);
     } finally {
       setLoading(false);
     }
@@ -74,8 +85,9 @@ export default function AssignmentDetailPage() {
       if (uploadFile) fd.append("upload_file", uploadFile);
       const res = await classesApi.submitAssignment(cid, aid, fd as any);
       setMySubmission(res);
-    } catch (e: any) {
-      setError(e?.response?.data?.detail || "Could not submit.");
+    } catch (e: unknown) {
+      const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setError(typeof d === "string" ? d : "Could not submit.");
     } finally {
       setSaving(false);
     }
@@ -105,219 +117,264 @@ export default function AssignmentDetailPage() {
     await refresh();
   };
 
-  return (
-    <div className="max-w-6xl mx-auto px-8 py-10">
-      <div className="flex items-center justify-between gap-4 mb-8">
-        <Link href={`/classes/${cid}`} className="inline-flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-slate-900">
-          <ArrowLeft className="w-4 h-4" /> Back to class
-        </Link>
-      </div>
+  const linkBtn =
+    "inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900";
 
-      {error && <div className="mb-6 p-4 rounded-2xl border border-red-200 bg-red-50 text-red-700 font-semibold text-sm">{error}</div>}
+  return (
+    <div className="relative mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
+      <div className="pointer-events-none absolute inset-0 -z-10 cr-classroom-bg" aria-hidden />
+
+      <Link
+        href={`/classes/${cid}`}
+        className="mb-6 inline-flex items-center gap-2 text-sm font-semibold text-indigo-600 transition-colors hover:text-indigo-500 dark:text-indigo-400"
+      >
+        <ArrowLeft className="h-4 w-4" /> Back to class
+      </Link>
+
+      {error ? (
+        <div className="mb-6">
+          <ClassroomAlert tone="error">{error}</ClassroomAlert>
+        </div>
+      ) : null}
 
       {loading ? (
-        <div className="bg-white border border-slate-200 rounded-2xl p-10 flex justify-center">
-          <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+        <div className="space-y-6">
+          <ClassroomSkeleton className="h-24 w-full max-w-xl rounded-2xl" />
+          <ClassroomSkeleton className="h-48 w-full rounded-2xl" />
         </div>
+      ) : !assignment ? (
+        <ClassroomEmptyState
+          icon={FileQuestion}
+          title="Assignment not found"
+          description="It may have been removed or you may not have access."
+          action={{ label: "Back to class", onClick: () => router.push(`/classes/${cid}`) }}
+        />
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 space-y-6">
-            <div className="bg-white border border-slate-200 rounded-2xl p-6">
-              <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-2">Assignment</p>
-              <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">{assignment?.title || "Assignment"}</h1>
-              {assignment?.instructions ? <p className="text-slate-600 mt-3 whitespace-pre-wrap">{assignment.instructions}</p> : null}
-              <div className="mt-5 flex flex-wrap gap-2">
-                {assignment?.mock_exam ? (
-                  <button
-                    type="button"
-                    onClick={() => router.push(`/mock/${assignment.mock_exam}`)}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 font-bold text-sm hover:bg-slate-50"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                    Open mock exam
-                  </button>
-                ) : null}
-                {hasPastpaperBundle
-                  ? bundleTests.map((t) => (
-                      <button
-                        key={t.id}
-                        type="button"
-                        onClick={() => router.push(`/practice-test/${t.id}`)}
-                        className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl border font-bold text-sm text-white ${
-                          t.subject === "MATH"
-                            ? "border-emerald-600 bg-emerald-600 hover:bg-emerald-700"
-                            : "border-blue-600 bg-blue-600 hover:bg-blue-700"
-                        }`}
-                      >
-                        <ExternalLink className="w-4 h-4" />
-                        Open {subjectLabel(t.subject)}
-                      </button>
-                    ))
-                  : null}
-                {!hasPastpaperBundle && legacyPracticeTestId ? (
-                  <button
-                    type="button"
-                    onClick={() => router.push(`/practice-test/${legacyPracticeTestId}`)}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-violet-200 bg-violet-600 text-white font-bold text-sm hover:bg-violet-700"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                    Open practice test
-                  </button>
-                ) : null}
-                {assignment?.external_url ? (
-                  <button
-                    type="button"
-                    onClick={openExternal}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 font-bold text-sm hover:bg-slate-50"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                    Open link
-                  </button>
-                ) : null}
-                {homeworkAttachmentUrls.map((url, i) => (
-                  <button
-                    key={`${url}-${i}`}
-                    type="button"
-                    onClick={() => window.open(url, "_blank", "noopener,noreferrer")}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 font-bold text-sm hover:bg-slate-50"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                    {homeworkAttachmentUrls.length > 1 ? `Open file ${i + 1}` : "Open attached file"}
-                  </button>
-                ))}
-              </div>
-            </div>
+        <>
+          <ClassroomPageHeader
+            eyebrow="Assignment"
+            title={assignment.title || "Homework"}
+            meta={classMeta?.name ? <span>Class: {classMeta.name}</span> : null}
+          />
 
-            {!isClassAdmin && (
-              <div className="bg-white border border-slate-200 rounded-2xl p-6">
-                <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">Your submission</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-1">Attempt ID (optional)</label>
-                    <input
-                      value={attemptId}
-                      onChange={(e) => setAttemptId(e.target.value)}
-                      placeholder="e.g. 123"
-                      className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 bg-white placeholder:text-slate-400"
-                    />
-                    <p className="text-[11px] text-slate-400 mt-1">If you completed an exam attempt, paste its ID.</p>
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-1">Response</label>
-                    <textarea
-                      value={responseText}
-                      onChange={(e) => setResponseText(e.target.value)}
-                      placeholder="Write your response here…"
-                      className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm min-h-[120px] text-slate-900 bg-white placeholder:text-slate-400"
-                    />
-                  </div>
-                </div>
-                <div className="mt-3">
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-1">Upload file (optional)</label>
-                  <input type="file" onChange={(e) => setUploadFile(e.target.files?.[0] || null)} className="w-full text-sm" />
-                  {mySubmission?.upload_file_url && (
-                    <p className="text-[11px] text-slate-500 mt-1">
-                      Existing file:{" "}
-                      <a className="text-blue-700 font-semibold hover:underline" href={mySubmission.upload_file_url} target="_blank" rel="noreferrer">
-                        Open
-                      </a>
-                    </p>
-                  )}
-                </div>
-
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => submit(false)}
-                    disabled={saving}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 font-bold text-sm hover:bg-slate-50 disabled:opacity-60"
-                  >
-                    <Save className="w-4 h-4" />
-                    Save draft
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => submit(true)}
-                    disabled={saving}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 disabled:opacity-60"
-                  >
-                    <Send className="w-4 h-4" />
-                    Submit
-                  </button>
-                </div>
-
-                {mySubmission?.grade ? (
-                  <div className="mt-5 p-4 rounded-2xl border border-emerald-200 bg-emerald-50">
-                    <div className="flex items-center gap-2 text-emerald-800 font-black text-sm">
-                      <Trophy className="w-4 h-4" /> Graded
-                    </div>
-                    <p className="text-emerald-900 font-extrabold text-xl mt-1">
-                      {mySubmission.grade.score ?? "—"}
-                    </p>
-                    {mySubmission.grade.feedback ? <p className="text-emerald-800 mt-2">{mySubmission.grade.feedback}</p> : null}
-                  </div>
-                ) : null}
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-6">
-            <div className="bg-white border border-slate-200 rounded-2xl p-6">
-              <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Status</p>
-              <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 font-bold text-sm">
-                <ClipboardCheck className="w-4 h-4" />
-                {mySubmission?.status || "Not submitted"}
-              </div>
-            </div>
-
-            {isClassAdmin && (
-              <div className="bg-white border border-slate-200 rounded-2xl p-6">
-                <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">Submissions & grading</p>
-                {submissions.length === 0 ? (
-                  <p className="text-slate-600 text-sm">No submissions yet.</p>
+          <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-3">
+            <div className="space-y-6 lg:col-span-2">
+              <ClassroomCard padding="md">
+                {assignment.instructions ? (
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+                    {assignment.instructions}
+                  </p>
                 ) : (
-                  <div className="space-y-4">
-                    {submissions.map((s) => (
-                      <div key={s.id} className="p-4 rounded-2xl border border-slate-200 bg-slate-50">
-                        <p className="font-bold text-slate-900 text-sm">
-                          {s.student?.first_name || s.student?.email} {s.student?.last_name || ""}
-                        </p>
-                        <p className="text-xs text-slate-500 mt-0.5">{s.status}</p>
-                        {s.text_response ? <p className="text-sm text-slate-700 mt-2 whitespace-pre-wrap">{s.text_response}</p> : null}
-                        {s.attempt != null ? (
-                          <p className="text-xs text-indigo-600 font-semibold mt-1">Attempt ID: {s.attempt}</p>
-                        ) : null}
-                        <div className="mt-3 grid grid-cols-2 gap-2">
-                          <input
-                            value={grading[String(s.id)]?.score ?? (s.grade?.score ?? "")}
-                            onChange={(e) => setGrading((p) => ({ ...p, [String(s.id)]: { ...(p[String(s.id)] || {}), score: e.target.value } }))}
-                            placeholder="Score"
-                            className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold bg-white"
-                          />
-                          <input
-                            value={grading[String(s.id)]?.feedback ?? (s.grade?.feedback ?? "")}
-                            onChange={(e) => setGrading((p) => ({ ...p, [String(s.id)]: { ...(p[String(s.id)] || {}), feedback: e.target.value } }))}
-                            placeholder="Feedback"
-                            className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white"
-                          />
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => gradeOne(s.id)}
-                          className="w-full mt-2 py-2.5 rounded-xl bg-slate-900 text-white font-bold text-sm hover:bg-slate-800"
-                        >
-                          Save grade
-                        </button>
-                      </div>
-                    ))}
-                  </div>
+                  <p className="text-sm text-slate-400 dark:text-slate-500">No instructions provided.</p>
                 )}
-              </div>
-            )}
+                <div className="mt-6 flex flex-wrap gap-2">
+                  {assignment?.mock_exam ? (
+                    <button
+                      type="button"
+                      onClick={() => router.push(`/mock/${assignment.mock_exam}`)}
+                      className={`${linkBtn} border-slate-200/90 bg-white/90 text-slate-800 hover:border-indigo-200 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800/60 dark:text-slate-100 dark:hover:border-indigo-500/40`}
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      Open mock exam
+                    </button>
+                  ) : null}
+                  {hasPastpaperBundle
+                    ? bundleTests.map((t) => (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => router.push(`/practice-test/${t.id}`)}
+                          className={`${linkBtn} border-transparent text-white shadow-sm ${
+                            t.subject === "MATH"
+                              ? "bg-emerald-600 hover:bg-emerald-700"
+                              : "bg-indigo-600 hover:bg-indigo-700"
+                          }`}
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                          Open {subjectLabel(t.subject)}
+                        </button>
+                      ))
+                    : null}
+                  {!hasPastpaperBundle && legacyPracticeTestId ? (
+                    <button
+                      type="button"
+                      onClick={() => router.push(`/practice-test/${legacyPracticeTestId}`)}
+                      className={`${linkBtn} border-violet-300/80 bg-violet-600 text-white hover:bg-violet-700 dark:border-violet-600`}
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      Open practice test
+                    </button>
+                  ) : null}
+                  {assignment?.external_url ? (
+                    <button
+                      type="button"
+                      onClick={openExternal}
+                      className={`${linkBtn} border-slate-200/90 bg-white/90 text-slate-800 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800/60 dark:text-slate-100`}
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      Open link
+                    </button>
+                  ) : null}
+                  {homeworkAttachmentUrls.map((url, i) => (
+                    <button
+                      key={`${url}-${i}`}
+                      type="button"
+                      onClick={() => window.open(url, "_blank", "noopener,noreferrer")}
+                      className={`${linkBtn} border-slate-200/90 bg-white/90 text-slate-800 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800/60 dark:text-slate-100`}
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      {homeworkAttachmentUrls.length > 1 ? `File ${i + 1}` : "Attached file"}
+                    </button>
+                  ))}
+                </div>
+              </ClassroomCard>
+
+              {!isClassAdmin && (
+                <ClassroomCard padding="md">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    Your submission
+                  </p>
+                  <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <ClassroomField label="Attempt ID (optional)" htmlFor="attempt-id" hint="If you finished a test, link its attempt ID.">
+                      <input
+                        id="attempt-id"
+                        value={attemptId}
+                        onChange={(e) => setAttemptId(e.target.value)}
+                        placeholder="e.g. 123"
+                        className={`${crInputClass} font-semibold`}
+                      />
+                    </ClassroomField>
+                    <ClassroomField label="Response" htmlFor="response-txt">
+                      <textarea
+                        id="response-txt"
+                        value={responseText}
+                        onChange={(e) => setResponseText(e.target.value)}
+                        placeholder="Write your response…"
+                        rows={5}
+                        className={crInputClass}
+                      />
+                    </ClassroomField>
+                  </div>
+                  <ClassroomField label="Upload file (optional)" htmlFor="sub-file" className="mt-4">
+                    <input
+                      id="sub-file"
+                      type="file"
+                      onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                      className="w-full text-sm text-slate-600 file:mr-3 file:rounded-xl file:border-0 file:bg-indigo-500/10 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-indigo-700 dark:text-slate-400 dark:file:text-indigo-200"
+                    />
+                    {mySubmission?.upload_file_url ? (
+                      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                        Existing:{" "}
+                        <a
+                          className="font-semibold text-indigo-600 hover:underline dark:text-indigo-400"
+                          href={mySubmission.upload_file_url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Open
+                        </a>
+                      </p>
+                    ) : null}
+                  </ClassroomField>
+
+                  <div className="mt-6 flex flex-wrap gap-2">
+                    <ClassroomButton variant="secondary" size="md" onClick={() => submit(false)} disabled={saving}>
+                      <Save className="h-4 w-4" />
+                      Save draft
+                    </ClassroomButton>
+                    <ClassroomButton variant="primary" size="md" onClick={() => submit(true)} disabled={saving}>
+                      <Send className="h-4 w-4" />
+                      Submit
+                    </ClassroomButton>
+                  </div>
+
+                  {mySubmission?.grade ? (
+                    <div className="mt-6 rounded-xl border border-emerald-200/90 bg-emerald-50/90 p-4 dark:border-emerald-900/50 dark:bg-emerald-950/30">
+                      <div className="flex items-center gap-2 text-sm font-bold text-emerald-800 dark:text-emerald-200">
+                        <Trophy className="h-4 w-4" /> Graded
+                      </div>
+                      <p className="mt-2 text-2xl font-extrabold text-emerald-900 dark:text-emerald-100">
+                        {mySubmission.grade.score ?? "—"}
+                      </p>
+                      {mySubmission.grade.feedback ? (
+                        <p className="mt-2 text-sm text-emerald-800 dark:text-emerald-200">{mySubmission.grade.feedback}</p>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </ClassroomCard>
+              )}
+            </div>
+
+            <div className="space-y-6">
+              <ClassroomCard padding="md">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Status</p>
+                <div className="mt-3 inline-flex items-center gap-2 rounded-xl border border-slate-200/80 bg-slate-50/90 px-3 py-2 text-sm font-semibold text-slate-800 dark:border-slate-600 dark:bg-slate-800/50 dark:text-slate-100">
+                  <ClipboardCheck className="h-4 w-4 text-indigo-500" />
+                  {mySubmission?.status || "Not submitted"}
+                </div>
+              </ClassroomCard>
+
+              {isClassAdmin && (
+                <ClassroomCard padding="md">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    Submissions & grading
+                  </p>
+                  {submissions.length === 0 ? (
+                    <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">No submissions yet.</p>
+                  ) : (
+                    <ul className="mt-4 space-y-4">
+                      {submissions.map((s) => (
+                        <li
+                          key={s.id}
+                          className="rounded-xl border border-slate-200/80 bg-slate-50/60 p-4 dark:border-slate-600/80 dark:bg-slate-800/40"
+                        >
+                          <p className="text-sm font-bold text-slate-900 dark:text-slate-50">
+                            {s.student?.first_name || s.student?.email} {s.student?.last_name || ""}
+                          </p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">{s.status}</p>
+                          {s.text_response ? (
+                            <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-300">{s.text_response}</p>
+                          ) : null}
+                          {s.attempt != null ? (
+                            <p className="mt-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400">Attempt ID: {s.attempt}</p>
+                          ) : null}
+                          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                            <input
+                              value={grading[String(s.id)]?.score ?? (s.grade?.score ?? "")}
+                              onChange={(e) =>
+                                setGrading((p) => ({
+                                  ...p,
+                                  [String(s.id)]: { ...(p[String(s.id)] || {}), score: e.target.value },
+                                }))
+                              }
+                              placeholder="Score"
+                              className={crInputClass}
+                            />
+                            <input
+                              value={grading[String(s.id)]?.feedback ?? (s.grade?.feedback ?? "")}
+                              onChange={(e) =>
+                                setGrading((p) => ({
+                                  ...p,
+                                  [String(s.id)]: { ...(p[String(s.id)] || {}), feedback: e.target.value },
+                                }))
+                              }
+                              placeholder="Feedback"
+                              className={crInputClass}
+                            />
+                          </div>
+                          <ClassroomButton variant="primary" size="sm" className="mt-3 w-full" onClick={() => gradeOne(s.id)}>
+                            Save grade
+                          </ClassroomButton>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </ClassroomCard>
+              )}
+            </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );
 }
-

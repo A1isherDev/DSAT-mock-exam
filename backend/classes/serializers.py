@@ -67,6 +67,24 @@ class ClassroomSerializer(serializers.ModelSerializer):
 
 
 class ClassroomCreateSerializer(serializers.ModelSerializer):
+    def validate_name(self, value):
+        value = (value or "").strip()
+        if not value:
+            raise serializers.ValidationError("Name is required.")
+        if len(value) > 120:
+            raise serializers.ValidationError("Name must be at most 120 characters.")
+        return value
+
+    def validate_max_students(self, value):
+        if value is not None and value < 1:
+            raise serializers.ValidationError("max_students must be at least 1.")
+        return value
+
+    def validate_lesson_hours(self, value):
+        if value is not None and value < 1:
+            raise serializers.ValidationError("lesson_hours must be at least 1.")
+        return value
+
     def validate_teacher(self, value):
         from access import constants as acc_const
         from access.services import authorize
@@ -125,11 +143,18 @@ class ClassroomMembershipSerializer(serializers.ModelSerializer):
 
 class ClassPostSerializer(serializers.ModelSerializer):
     author = serializers.SerializerMethodField()
+    content = serializers.CharField(max_length=50_000, trim_whitespace=False)
 
     class Meta:
         model = ClassPost
         fields = ["id", "content", "created_at", "author"]
         read_only_fields = ["id", "created_at", "author"]
+
+    def validate_content(self, value):
+        text = (value or "").strip()
+        if not text:
+            raise serializers.ValidationError("Announcement content cannot be empty.")
+        return value
 
     def get_author(self, obj):
         u = obj.author
@@ -143,6 +168,8 @@ class ClassPostSerializer(serializers.ModelSerializer):
 
 
 class AssignmentSerializer(serializers.ModelSerializer):
+    title = serializers.CharField(max_length=200)
+
     created_by = serializers.SerializerMethodField()
     submissions_count = serializers.IntegerField(read_only=True)
     attachment_file_url = serializers.SerializerMethodField(read_only=True)
@@ -232,6 +259,12 @@ class AssignmentSerializer(serializers.ModelSerializer):
             {"id": p.id, "title": (p.title or "").strip(), "subject": p.subject}
             for p in pts
         ]
+
+    def validate_title(self, value):
+        text = (value or "").strip()
+        if not text:
+            raise serializers.ValidationError("Title is required.")
+        return text
 
     def validate_practice_test_ids(self, value):
         if value is None:
@@ -349,9 +382,9 @@ class SubmissionSerializer(serializers.ModelSerializer):
 
 
 class SubmitSerializer(serializers.Serializer):
-    text_response = serializers.CharField(required=False, allow_blank=True)
+    text_response = serializers.CharField(required=False, allow_blank=True, max_length=100_000)
     upload_file = serializers.FileField(required=False, allow_null=True)
-    attempt_id = serializers.IntegerField(required=False)
+    attempt_id = serializers.IntegerField(required=False, allow_null=True)
     submit = serializers.BooleanField(required=False, default=True)
 
 
