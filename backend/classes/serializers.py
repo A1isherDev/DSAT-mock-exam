@@ -14,6 +14,8 @@ from .models import (
     Submission,
     Grade,
     assignment_target_practice_test_ids,
+    filter_practice_targets_by_scope,
+    raw_target_practice_test_ids_from_fks,
 )
 
 
@@ -185,6 +187,11 @@ class AssignmentSerializer(serializers.ModelSerializer):
         queryset=PastpaperPack.objects.all(), required=False, allow_null=True
     )
     practice_test_ids = serializers.JSONField(required=False, allow_null=True)
+    practice_scope = serializers.ChoiceField(
+        choices=Assignment.PRACTICE_SCOPE_CHOICES,
+        required=False,
+        default=Assignment.PRACTICE_SCOPE_BOTH,
+    )
     practice_bundle_tests = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
@@ -198,6 +205,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "practice_test",
             "pastpaper_pack",
             "practice_test_ids",
+            "practice_scope",
             "practice_bundle_tests",
             "module",
             "external_url",
@@ -284,7 +292,9 @@ class AssignmentSerializer(serializers.ModelSerializer):
         return out
 
     def validate(self, attrs):
-        if self.instance is not None:
+        inst = self.instance
+
+        if inst is not None:
             for fk in ("mock_exam", "practice_test", "pastpaper_pack"):
                 if fk in attrs and attrs[fk] == "":
                     attrs[fk] = None
@@ -292,33 +302,75 @@ class AssignmentSerializer(serializers.ModelSerializer):
                 v = attrs["practice_test_ids"]
                 if v in (None, "", []):
                     attrs["practice_test_ids"] = None
-            return super().validate(attrs)
-
-        pp = attrs.get("pastpaper_pack")
-        pids = attrs.get("practice_test_ids")
-        pt = attrs.get("practice_test")
-
-        if pp == "":
-            pp = None
-        if pt == "":
-            pt = None
-
-        if pp is not None:
-            attrs["pastpaper_pack"] = pp
-            attrs["practice_test"] = None
-            attrs["practice_test_ids"] = None
-        elif pids:
-            attrs["pastpaper_pack"] = None
-            attrs["practice_test_ids"] = pids
-            if len(pids) == 1:
-                attrs["practice_test"] = PracticeTest.objects.filter(pk=pids[0], mock_exam__isnull=True).first()
-            else:
-                attrs["practice_test"] = None
         else:
-            attrs["pastpaper_pack"] = None
-            attrs["practice_test_ids"] = None
+            pp = attrs.get("pastpaper_pack")
+            pids = attrs.get("practice_test_ids")
+            pt = attrs.get("practice_test")
 
-        return super().validate(attrs)
+            if pp == "":
+                pp = None
+            if pt == "":
+                pt = None
+
+            if pp is not None:
+                attrs["pastpaper_pack"] = pp
+                attrs["practice_test"] = None
+                attrs["practice_test_ids"] = None
+            elif pids:
+                attrs["pastpaper_pack"] = None
+                attrs["practice_test_ids"] = pids
+                if len(pids) == 1:
+                    attrs["practice_test"] = PracticeTest.objects.filter(pk=pids[0], mock_exam__isnull=True).first()
+                else:
+                    attrs["practice_test"] = None
+            else:
+                attrs["pastpaper_pack"] = None
+                attrs["practice_test_ids"] = None
+
+        attrs = super().validate(attrs)
+
+        mock_id = None
+        if "mock_exam" in attrs:
+            m = attrs["mock_exam"]
+            mock_id = m.pk if m else None
+        elif inst is not None:
+            mock_id = inst.mock_exam_id
+
+        pp_id = None
+        if "pastpaper_pack" in attrs:
+            p = attrs["pastpaper_pack"]
+            pp_id = p.pk if p else None
+        elif inst is not None:
+            pp_id = inst.pastpaper_pack_id
+
+        pt_id = None
+        if "practice_test" in attrs:
+            t = attrs["practice_test"]
+            pt_id = t.pk if t else None
+        elif inst is not None:
+            pt_id = inst.practice_test_id
+
+        pids = attrs["practice_test_ids"] if "practice_test_ids" in attrs else (
+            inst.practice_test_ids if inst is not None else None
+        )
+
+        scope = attrs.get("practice_scope")
+        if scope is None:
+            scope = inst.practice_scope if inst is not None else Assignment.PRACTICE_SCOPE_BOTH
+        if not scope:
+            scope = Assignment.PRACTICE_SCOPE_BOTH
+        attrs["practice_scope"] = scope
+
+        raw = raw_target_practice_test_ids_from_fks(mock_id, pp_id, pids, pt_id)
+        filtered = filter_practice_targets_by_scope(raw, scope)
+        if scope != Assignment.PRACTICE_SCOPE_BOTH and raw and not filtered:
+            raise serializers.ValidationError(
+                {
+                    "practice_scope": "No section matches this choice for the selected mock or pastpaper (e.g. Math-only choice on an English-only test)."
+                }
+            )
+
+        return attrs
 
     def validate_external_url(self, value):
         """

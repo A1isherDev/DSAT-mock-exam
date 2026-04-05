@@ -117,6 +117,15 @@ class ClassPost(models.Model):
 
 
 class Assignment(models.Model):
+    PRACTICE_SCOPE_BOTH = "BOTH"
+    PRACTICE_SCOPE_ENGLISH = "ENGLISH"
+    PRACTICE_SCOPE_MATH = "MATH"
+    PRACTICE_SCOPE_CHOICES = [
+        (PRACTICE_SCOPE_BOTH, "Both (English & Math)"),
+        (PRACTICE_SCOPE_ENGLISH, "English (Reading & Writing) only"),
+        (PRACTICE_SCOPE_MATH, "Math only"),
+    ]
+
     classroom = models.ForeignKey(
         Classroom, on_delete=models.CASCADE, related_name="assignments"
     )
@@ -147,6 +156,12 @@ class Assignment(models.Model):
     )
     external_url = models.URLField(blank=True)
     attachment_file = models.FileField(upload_to="homework_files/", null=True, blank=True)
+    practice_scope = models.CharField(
+        max_length=20,
+        choices=PRACTICE_SCOPE_CHOICES,
+        default=PRACTICE_SCOPE_BOTH,
+        help_text="For mock or pastpaper with multiple sections: assign all, English only, or Math only.",
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -170,37 +185,71 @@ class AssignmentExtraAttachment(models.Model):
         ordering = ["id"]
 
 
-def assignment_target_practice_test_ids(assignment: Assignment) -> list[int]:
+def raw_target_practice_test_ids_from_fks(
+    mock_exam_id: int | None,
+    pastpaper_pack_id: int | None,
+    practice_test_ids: list | None,
+    practice_test_id: int | None,
+) -> list[int]:
     """
-    Practice test row ids this homework refers to (mock sections, pastpaper pack, legacy bundle, or single).
+    Practice test row ids before practice_scope filtering (mock, pack, legacy bundle, or single).
     """
-    if assignment.mock_exam_id:
+    if mock_exam_id:
         order = {"READING_WRITING": 0, "MATH": 1}
         rows = list(
-            PracticeTest.objects.filter(mock_exam_id=assignment.mock_exam_id).values_list("id", "subject")
+            PracticeTest.objects.filter(mock_exam_id=mock_exam_id).values_list("id", "subject")
         )
         rows.sort(key=lambda r: (order.get(r[1], 9), r[0]))
         return [r[0] for r in rows]
-    if assignment.pastpaper_pack_id:
+    if pastpaper_pack_id:
         order = {"READING_WRITING": 0, "MATH": 1}
         rows = list(
-            PracticeTest.objects.filter(pastpaper_pack_id=assignment.pastpaper_pack_id).values_list(
+            PracticeTest.objects.filter(pastpaper_pack_id=pastpaper_pack_id).values_list(
                 "id", "subject"
             )
         )
         rows.sort(key=lambda r: (order.get(r[1], 9), r[0]))
         return [r[0] for r in rows]
-    if assignment.practice_test_ids:
+    if practice_test_ids:
         out: list[int] = []
-        for x in assignment.practice_test_ids:
+        for x in practice_test_ids:
             try:
                 out.append(int(x))
             except (TypeError, ValueError):
                 continue
         return out
-    if assignment.practice_test_id:
-        return [assignment.practice_test_id]
+    if practice_test_id:
+        return [practice_test_id]
     return []
+
+
+def filter_practice_targets_by_scope(raw_ids: list[int], scope: str) -> list[int]:
+    """Keep only Reading & Writing or Math rows when scope is not BOTH."""
+    if not raw_ids or scope == Assignment.PRACTICE_SCOPE_BOTH:
+        return raw_ids
+    subs = dict(PracticeTest.objects.filter(id__in=raw_ids).values_list("id", "subject"))
+    out: list[int] = []
+    for pk in raw_ids:
+        subj = subs.get(pk)
+        if subj is None:
+            continue
+        if scope == Assignment.PRACTICE_SCOPE_ENGLISH and subj == "READING_WRITING":
+            out.append(pk)
+        elif scope == Assignment.PRACTICE_SCOPE_MATH and subj == "MATH":
+            out.append(pk)
+    return out
+
+
+def assignment_target_practice_test_ids(assignment: Assignment) -> list[int]:
+    """Practice test ids linked to this homework, after applying practice_scope."""
+    raw = raw_target_practice_test_ids_from_fks(
+        assignment.mock_exam_id,
+        assignment.pastpaper_pack_id,
+        assignment.practice_test_ids,
+        assignment.practice_test_id,
+    )
+    scope = assignment.practice_scope or Assignment.PRACTICE_SCOPE_BOTH
+    return filter_practice_targets_by_scope(raw, scope)
 
 
 class Submission(models.Model):

@@ -35,6 +35,8 @@ type PastSelection =
   | { mode: "pack_db"; packId: number }
   | { mode: "pack_legacy"; testIds: number[] };
 
+type PracticeScope = "BOTH" | "ENGLISH" | "MATH";
+
 type Props = {
   open: boolean;
   classId: number;
@@ -80,6 +82,7 @@ export default function CreateAssignmentModal({
   const [pastSel, setPastSel] = useState<PastSelection>({ mode: "none" });
   const [dueLocal, setDueLocal] = useState("");
   const [asgFiles, setAsgFiles] = useState<File[]>([]);
+  const [practiceScope, setPracticeScope] = useState<PracticeScope>("BOTH");
   const [assignmentOptions, setAssignmentOptions] = useState<{
     mock_exams: AssignmentOptMock[];
     practice_tests: PastpaperRow[];
@@ -104,6 +107,7 @@ export default function CreateAssignmentModal({
     setPastSel({ mode: "none" });
     setDueLocal("");
     setAsgFiles([]);
+    setPracticeScope("BOTH");
     setFormError(null);
   };
 
@@ -177,6 +181,9 @@ export default function CreateAssignmentModal({
     } else {
       setPastSel({ mode: "none" });
     }
+    const ps = editingAssignment.practice_scope;
+    if (ps === "ENGLISH" || ps === "MATH" || ps === "BOTH") setPracticeScope(ps);
+    else setPracticeScope("BOTH");
     setAsgFiles([]);
     setFormError(null);
   }, [open, editingAssignment]);
@@ -219,6 +226,8 @@ export default function CreateAssignmentModal({
         else if (pastSel.mode === "pack_legacy") body.practice_test_ids = pastSel.testIds;
         else if (pastSel.mode === "single") body.practice_test = pastSel.testId;
 
+        body.practice_scope = practiceScope;
+
         await classesApi.updateAssignment(classId, editId, body);
         resetForm();
         await onSuccess();
@@ -239,6 +248,8 @@ export default function CreateAssignmentModal({
       if (pastSel.mode === "pack_db") fd.append("pastpaper_pack", String(pastSel.packId));
       else if (pastSel.mode === "pack_legacy") fd.append("practice_test_ids", JSON.stringify(pastSel.testIds));
       else if (pastSel.mode === "single") fd.append("practice_test", String(pastSel.testId));
+
+      fd.append("practice_scope", practiceScope);
 
       for (const f of asgFiles) {
         fd.append("attachment_file", f);
@@ -400,7 +411,37 @@ export default function CreateAssignmentModal({
           </div>
         </ClassroomField>
 
-        <ClassroomField label={editingAssignment ? "Attached files" : "Files (optional)"}>
+        {newAsg.mock_exam || pastSel.mode !== "none" ? (
+          <ClassroomField
+            label="Sections to assign"
+            hint="Applies to the linked mock or pastpaper. Students only see the sections you choose."
+          >
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              {(
+                [
+                  { value: "BOTH" as const, title: "Both", sub: "R&W and Math" },
+                  { value: "ENGLISH" as const, title: "English only", sub: "Reading & Writing" },
+                  { value: "MATH" as const, title: "Math only", sub: "Math section" },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setPracticeScope(opt.value)}
+                  className={`${cardBase} text-left ${practiceScope === opt.value ? cardSel : cardUnsel}`}
+                >
+                  <p className="text-sm font-bold text-slate-800 dark:text-slate-100">{opt.title}</p>
+                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{opt.sub}</p>
+                </button>
+              ))}
+            </div>
+          </ClassroomField>
+        ) : null}
+
+        <ClassroomField
+          label={editingAssignment ? "Attached files" : "Files (optional)"}
+          hint={editingAssignment ? undefined : "You can select multiple files at once (Ctrl/Cmd+click or Shift+click)."}
+        >
           {editingAssignment ? (
             <p className="rounded-xl border border-slate-200/90 bg-slate-50/90 px-3 py-2 text-xs text-slate-600 dark:border-slate-600 dark:bg-slate-800/50 dark:text-slate-300">
               {Array.isArray(editingAssignment.attachment_urls) && editingAssignment.attachment_urls.length > 0
@@ -410,13 +451,21 @@ export default function CreateAssignmentModal({
           ) : (
             <>
               <input
+                id="asg-files"
+                name="attachment_file"
                 type="file"
                 multiple
                 onChange={(e) => setAsgFiles(Array.from(e.target.files || []))}
                 className="w-full text-sm text-slate-600 file:mr-3 file:rounded-xl file:border-0 file:bg-indigo-500/10 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-indigo-700 hover:file:bg-indigo-500/15 dark:text-slate-400 dark:file:bg-indigo-500/20 dark:file:text-indigo-200"
               />
               {asgFiles.length > 0 ? (
-                <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">{asgFiles.length} file(s) selected.</p>
+                <ul className="mt-2 max-h-28 list-inside list-disc space-y-0.5 overflow-y-auto text-[11px] text-slate-600 dark:text-slate-400">
+                  {asgFiles.map((f) => (
+                    <li key={`${f.name}-${f.size}-${f.lastModified}`} className="truncate">
+                      {f.name}
+                    </li>
+                  ))}
+                </ul>
               ) : null}
             </>
           )}

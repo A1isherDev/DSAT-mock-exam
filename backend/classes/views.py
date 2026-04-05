@@ -420,7 +420,11 @@ class AssignmentViewSet(ModelViewSet):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         assignment = serializer.save(classroom=classroom, created_by=request.user)
-        files = request.FILES.getlist("attachment_file")
+        files = list(request.FILES.getlist("attachment_file"))
+        if not files:
+            files = list(request.FILES.getlist("attachment_files"))
+        if not files:
+            files = list(request.FILES.getlist("attachment_file[]"))
         if files:
             assignment.attachment_file = files[0]
             assignment.save(update_fields=["attachment_file", "updated_at"])
@@ -431,7 +435,11 @@ class AssignmentViewSet(ModelViewSet):
     def update(self, request, *args, **kwargs):
         super().update(request, *args, **kwargs)
         assignment = self.get_object()
-        files = request.FILES.getlist("attachment_file")
+        files = list(request.FILES.getlist("attachment_file"))
+        if not files:
+            files = list(request.FILES.getlist("attachment_files"))
+        if not files:
+            files = list(request.FILES.getlist("attachment_file[]"))
         if files:
             assignment.attachment_file = files[0]
             assignment.save(update_fields=["attachment_file", "updated_at"])
