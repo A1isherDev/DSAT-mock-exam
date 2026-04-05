@@ -364,7 +364,7 @@ export default function CreateAssignmentModal({
                 onClick={() => setPastSel({ mode: "none" })}
                 className={`${cardBase} ${pastSel.mode === "none" ? cardSel : cardUnsel}`}
               >
-                <p className="text-[10px] font-bold uppercase tracking-wider text-violet-600 dark:text-violet-400">Pastpaper</p>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">Pastpaper</p>
                 <p className="mt-1 text-sm font-bold text-slate-800 dark:text-slate-100">No practice test</p>
                 <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">No linked pastpaper</p>
               </button>
@@ -388,7 +388,7 @@ export default function CreateAssignmentModal({
                     onClick={() => setPastSel(selectFromCard(c))}
                     className={`${cardBase} ${selected ? cardSel : cardUnsel}`}
                   >
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-violet-600 dark:text-violet-400">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">
                       Practice test
                     </p>
                     <p className="mt-1 text-xs font-bold text-slate-400">{formatLineDate(lineDate)}</p>
@@ -399,7 +399,7 @@ export default function CreateAssignmentModal({
                       {sectionRows.map((t) => (
                         <span
                           key={t.id}
-                          className="rounded-md bg-violet-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-800 dark:text-violet-200"
+                          className="rounded-md bg-blue-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-blue-800 dark:text-blue-200"
                         >
                           {subjectLabel(t.subject)}
                         </span>

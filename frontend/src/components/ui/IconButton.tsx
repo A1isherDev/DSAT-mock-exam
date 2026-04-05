@@ -5,7 +5,7 @@ export type IconButtonVariant = "default" | "ghost" | "muted";
 
 const variantClass: Record<IconButtonVariant, string> = {
   default:
-    "border border-slate-200/90 bg-white/90 text-slate-700 shadow-sm hover:border-violet-200 hover:bg-violet-50/50 dark:border-slate-600 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:border-violet-500/30 dark:hover:bg-violet-500/10",
+    "border border-slate-200/90 bg-white/90 text-slate-700 shadow-sm hover:border-blue-200 hover:bg-blue-50/60 dark:border-slate-600 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:border-blue-500/30 dark:hover:bg-blue-500/10",
   ghost:
     "border border-transparent text-slate-600 hover:bg-slate-100/90 dark:text-slate-400 dark:hover:bg-slate-800/80",
   muted:
@@ -29,7 +29,7 @@ export function IconButton({
       type="button"
       className={cn(
         "inline-flex items-center justify-center transition-all duration-200 ease-out",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--background)] dark:focus-visible:ring-offset-slate-950",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--background)] dark:focus-visible:ring-offset-slate-950",
         "disabled:pointer-events-none disabled:opacity-40",
         "active:scale-[0.96]",
         sizeCls,

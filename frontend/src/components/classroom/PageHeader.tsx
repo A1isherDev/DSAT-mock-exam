@@ -20,13 +20,13 @@ export function ClassroomPageHeader({
   return (
     <div
       className={cn(
-        "cr-hero flex flex-col gap-6 rounded-2xl border border-slate-200/70 p-6 shadow-sm shadow-violet-500/5 dark:border-slate-700/70 sm:flex-row sm:items-start sm:justify-between",
+        "cr-hero flex flex-col gap-6 rounded-2xl border border-slate-200/70 p-6 shadow-sm shadow-blue-500/5 dark:border-slate-700/70 sm:flex-row sm:items-start sm:justify-between",
         className,
       )}
     >
       <div className="min-w-0 flex-1">
         {eyebrow ? (
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-violet-600 dark:text-violet-400">{eyebrow}</p>
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-blue-600 dark:text-blue-400">{eyebrow}</p>
         ) : null}
         <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 dark:text-slate-50 sm:text-3xl">{title}</h1>
         {meta ? <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">{meta}</div> : null}

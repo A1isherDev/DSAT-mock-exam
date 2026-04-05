@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import Cookies from "js-cookie";
@@ -21,6 +21,9 @@ import {
   X,
   Search,
   Zap,
+  ChevronLeft,
+  ChevronRight,
+  Bell,
 } from "lucide-react";
 import AuthGuard from "@/components/AuthGuard";
 import { Badge } from "@/components/ui/Badge";
@@ -28,6 +31,8 @@ import { IconButton } from "@/components/ui/IconButton";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { ClassroomButton } from "@/components/classroom";
 import { cn } from "@/lib/cn";
+
+const SIDEBAR_COLLAPSED_KEY = "mastersat.sidebarCollapsed";
 
 const nav = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, tip: "Your goals and latest mock" },
@@ -64,6 +69,20 @@ export default function StudentShell({ children }: { children: React.ReactNode }
   const [mounted, setMounted] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [navQuery, setNavQuery] = useState("");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [headerSearch, setHeaderSearch] = useState("");
+  const [headerSearchOpen, setHeaderSearchOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const headerSearchRef = useRef<HTMLDivElement>(null);
+  const notifRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    try {
+      setSidebarCollapsed(localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1");
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   useEffect(() => {
     setMounted(true);
@@ -74,6 +93,28 @@ export default function StudentShell({ children }: { children: React.ReactNode }
     setMobileOpen(false);
   }, [pathname]);
 
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (headerSearchRef.current && !headerSearchRef.current.contains(t)) setHeaderSearchOpen(false);
+      if (notifRef.current && !notifRef.current.contains(t)) setNotifOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
+
+  const toggleSidebarCollapsed = () => {
+    setSidebarCollapsed((c) => {
+      const n = !c;
+      try {
+        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, n ? "1" : "0");
+      } catch {
+        /* ignore */
+      }
+      return n;
+    });
+  };
+
   const filteredNav = useMemo(() => {
     const q = navQuery.trim().toLowerCase();
     if (!q) return nav;
@@ -82,12 +123,22 @@ export default function StudentShell({ children }: { children: React.ReactNode }
 
   const title = pageTitle(pathname);
 
+  const commandResults = useMemo(() => {
+    const q = headerSearch.trim().toLowerCase();
+    const fromNav = nav.map((n) => ({ href: n.href, label: n.label }));
+    const fromQuick = quickLinks.map((q) => ({ href: q.href, label: q.label }));
+    const merged = [...fromNav, ...fromQuick.filter((q) => !fromNav.some((n) => n.href === q.href))];
+    if (!q) return merged.slice(0, 6);
+    return merged.filter((x) => x.label.toLowerCase().includes(q)).slice(0, 8);
+  }, [headerSearch]);
+
   const navLinkClass = (active: boolean) =>
     cn(
       "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all duration-200",
+      sidebarCollapsed && "md:justify-center md:px-2",
       active
-        ? "bg-gradient-to-r from-violet-600/12 to-cyan-600/8 text-violet-900 ring-1 ring-violet-200/80 dark:from-violet-500/15 dark:to-cyan-500/8 dark:text-violet-100 dark:ring-violet-500/25"
-        : "text-slate-600 hover:bg-white/70 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-slate-100",
+        ? "bg-gradient-to-r from-blue-600/12 to-sky-500/10 text-blue-950 ring-1 ring-blue-200/90 dark:from-fuchsia-600/20 dark:to-cyan-600/15 dark:text-white dark:ring-fuchsia-500/35"
+        : "text-slate-600 hover:bg-white/70 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-white/[0.06] dark:hover:text-slate-100",
     );
 
   return (
@@ -106,33 +157,50 @@ export default function StudentShell({ children }: { children: React.ReactNode }
         {/* Sidebar */}
         <aside
           className={cn(
-            "fixed inset-y-0 left-0 z-[100] flex w-[min(100%,280px)] flex-col border-r border-slate-200/80 bg-white/85 shadow-xl shadow-violet-500/5 backdrop-blur-xl transition-transform duration-200 ease-out dark:border-slate-800 dark:bg-slate-950/90 dark:shadow-black/40 md:static md:z-auto md:h-screen md:w-72 md:translate-x-0 md:shadow-none",
+            "fixed inset-y-0 left-0 z-[100] flex h-[100dvh] w-[min(100%,280px)] shrink-0 flex-col border-r border-slate-200/80 bg-white/90 shadow-xl shadow-blue-500/5 backdrop-blur-xl transition-[transform,width,padding] duration-200 ease-out dark:border-slate-800 dark:bg-[#0c0e14]/95 dark:shadow-black/50 md:static md:z-30 md:h-screen md:min-h-0 md:translate-x-0 md:shadow-none",
+            sidebarCollapsed ? "md:w-[4.25rem] md:px-0" : "md:w-72",
             mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
           )}
         >
-          <div className="flex items-center justify-between gap-2 border-b border-slate-100/90 p-4 dark:border-slate-800/80 md:p-6">
-            <div className="flex min-w-0 items-center gap-3">
+          <div
+            className={cn(
+              "flex items-center justify-between gap-2 border-b border-slate-100/90 p-4 dark:border-slate-800/80 md:p-5",
+              sidebarCollapsed && "md:flex-col md:gap-3 md:py-4",
+            )}
+          >
+            <div className={cn("flex min-w-0 items-center gap-3", sidebarCollapsed && "md:w-full md:justify-center")}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/images/logo.png" alt="" className="h-10 w-10 shrink-0 object-contain" />
-              <div className="min-w-0">
+              <div className={cn("min-w-0", sidebarCollapsed && "md:hidden")}>
                 <span className="block truncate text-base font-extrabold tracking-tight text-slate-900 dark:text-white">
                   MasterSAT
                 </span>
-                <span className="ds-section-title mt-0.5 block text-[10px]">Learning OS</span>
+                <span className="ds-section-title mt-0.5 block text-[10px] dark:text-cyan-400/80">Learning OS</span>
               </div>
             </div>
-            <IconButton
-              variant="ghost"
-              size="sm"
-              className="md:hidden"
-              onClick={() => setMobileOpen(false)}
-              aria-label="Close navigation"
-            >
-              <X className="h-4 w-4" />
-            </IconButton>
+            <div className="flex items-center gap-1">
+              <IconButton
+                variant="ghost"
+                size="sm"
+                className="hidden md:flex"
+                onClick={toggleSidebarCollapsed}
+                aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              >
+                {sidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+              </IconButton>
+              <IconButton
+                variant="ghost"
+                size="sm"
+                className="md:hidden"
+                onClick={() => setMobileOpen(false)}
+                aria-label="Close navigation"
+              >
+                <X className="h-4 w-4" />
+              </IconButton>
+            </div>
           </div>
 
-          <div className="px-4 pt-4 md:px-5">
+          <div className={cn("px-4 pt-4 md:px-5", sidebarCollapsed && "md:hidden")}>
             <label className="sr-only" htmlFor="nav-search">
               Filter navigation
             </label>
@@ -143,15 +211,21 @@ export default function StudentShell({ children }: { children: React.ReactNode }
                 value={navQuery}
                 onChange={(e) => setNavQuery(e.target.value)}
                 placeholder="Jump to section…"
-                className="w-full rounded-xl border border-slate-200/90 bg-white/90 py-2 pl-9 pr-3 text-sm text-slate-900 shadow-sm transition-all placeholder:text-slate-400 focus:border-violet-400 focus:outline-none focus:ring-2 focus:ring-violet-500/20 dark:border-slate-600 dark:bg-slate-900/50 dark:text-slate-100"
+                className="w-full rounded-xl border border-slate-200/90 bg-white/90 py-2 pl-9 pr-3 text-sm text-slate-900 shadow-sm transition-all placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-white/10 dark:bg-slate-900/50 dark:text-slate-100"
               />
             </div>
           </div>
 
-          <div className="px-4 pt-3 md:px-5">
-            <p className="ds-section-title py-2 text-[10px]">Navigate</p>
+          <div className={cn("px-4 pt-3 md:px-5", sidebarCollapsed && "md:hidden")}>
+            <p className="ds-section-title py-2 text-[10px] dark:text-cyan-400/70">Navigate</p>
           </div>
-          <nav className="flex-1 space-y-1 overflow-y-auto px-3 pb-6 md:px-4" aria-label="Main">
+          <nav
+            className={cn(
+              "flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain px-3 pb-4 md:px-4",
+              sidebarCollapsed && "md:items-center md:px-2",
+            )}
+            aria-label="Main"
+          >
             {filteredNav.length === 0 ? (
               <p className="px-2 py-6 text-center text-sm text-slate-500">No sections match “{navQuery}”.</p>
             ) : (
@@ -163,7 +237,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
                       ? pathname === "/practice-tests" || pathname.startsWith("/practice-test/")
                       : pathname.startsWith(href);
                 return (
-                  <Tooltip key={href} content={tip} side="right" className="block w-full">
+                  <Tooltip key={href} content={tip} side="right">
                     <Link
                       href={href}
                       className={cn(navLinkClass(active), "w-full")}
@@ -173,13 +247,13 @@ export default function StudentShell({ children }: { children: React.ReactNode }
                         className={cn(
                           "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors duration-200",
                           active
-                            ? "bg-violet-600/15 text-violet-700 dark:bg-violet-500/20 dark:text-violet-200"
-                            : "bg-slate-100/80 text-slate-500 group-hover:bg-white dark:bg-slate-800/80 dark:text-slate-400 dark:group-hover:bg-slate-800",
+                            ? "bg-blue-600/15 text-blue-800 dark:bg-fuchsia-500/20 dark:text-cyan-200"
+                            : "bg-slate-100/80 text-slate-500 group-hover:bg-white dark:bg-white/5 dark:text-slate-400 dark:group-hover:bg-white/10",
                         )}
                       >
                         <Icon className="h-[18px] w-[18px]" strokeWidth={2} />
                       </span>
-                      <span className="leading-snug">{label}</span>
+                      <span className={cn("leading-snug", sidebarCollapsed && "md:sr-only")}>{label}</span>
                     </Link>
                   </Tooltip>
                 );
@@ -187,19 +261,21 @@ export default function StudentShell({ children }: { children: React.ReactNode }
             )}
           </nav>
 
-          <div className="mt-auto border-t border-slate-100/90 p-4 dark:border-slate-800/80">
-            <div className="flex flex-wrap gap-2">
+          <div className={cn("mt-auto border-t border-slate-100/90 p-4 dark:border-slate-800/80", sidebarCollapsed && "md:px-2")}>
+            <div className={cn("flex flex-wrap gap-2", sidebarCollapsed && "md:justify-center")}>
               <Badge variant="brand" dot={isLoggedIn}>
-                {isLoggedIn ? "Signed in" : "Guest"}
+                <span className={cn(sidebarCollapsed && "md:sr-only")}>{isLoggedIn ? "Signed in" : "Guest"}</span>
               </Badge>
             </div>
-            <p className="ds-caption mt-2 text-[11px]">Tip: use the search box to filter long menus.</p>
+            <p className={cn("ds-caption mt-2 text-[11px]", sidebarCollapsed && "md:hidden")}>
+              Tip: use the search box to filter long menus.
+            </p>
           </div>
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col md:min-h-screen">
           {/* Top bar (mobile + desktop) */}
-          <header className="sticky top-0 z-40 flex h-[60px] shrink-0 items-center gap-3 border-b border-slate-200/80 bg-white/80 px-3 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/75 md:h-[72px] md:px-6">
+          <header className="sticky top-0 z-40 flex h-[60px] shrink-0 items-center gap-2 border-b border-slate-200/80 bg-white/80 px-2 backdrop-blur-xl dark:border-slate-800/80 dark:bg-[#0c0e14]/90 md:h-[72px] md:gap-3 md:px-6">
             <IconButton
               variant="ghost"
               className="md:hidden"
@@ -209,32 +285,97 @@ export default function StudentShell({ children }: { children: React.ReactNode }
               <Menu className="h-5 w-5" />
             </IconButton>
 
-            <div className="min-w-0 flex-1 md:flex md:items-center md:gap-6">
-              <div className="min-w-0">
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+              <div ref={headerSearchRef} className="relative hidden min-w-0 max-w-xl flex-1 md:block">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={headerSearch}
+                  onChange={(e) => {
+                    setHeaderSearch(e.target.value);
+                    setHeaderSearchOpen(true);
+                  }}
+                  onFocus={() => setHeaderSearchOpen(true)}
+                  placeholder="Search pages…"
+                  className="w-full rounded-xl border border-slate-200/90 bg-slate-50/80 py-2 pl-9 pr-3 text-sm text-slate-900 transition-all placeholder:text-slate-400 focus:border-fuchsia-400/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 dark:border-white/10 dark:bg-white/5 dark:text-slate-100"
+                  aria-label="Search pages and quick links"
+                  aria-expanded={headerSearchOpen}
+                  aria-controls="header-search-results"
+                />
+                {headerSearchOpen && commandResults.length > 0 ? (
+                  <ul
+                    id="header-search-results"
+                    className="absolute left-0 right-0 top-[calc(100%+6px)] z-50 max-h-72 overflow-auto rounded-xl border border-slate-200/90 bg-white py-1 shadow-xl dark:border-white/10 dark:bg-[#13151f]"
+                    role="listbox"
+                  >
+                    {commandResults.map((r) => (
+                      <li key={r.href + r.label} role="option">
+                        <Link
+                          href={r.href}
+                          className="block px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-white/10"
+                          onClick={() => {
+                            setHeaderSearchOpen(false);
+                            setHeaderSearch("");
+                          }}
+                        >
+                          {r.label}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+
+              <div className="min-w-0 max-w-[min(100%,200px)] flex-1 sm:max-w-xs md:max-w-[240px] lg:max-w-xs">
                 <p className="truncate text-sm font-bold tracking-tight text-slate-900 dark:text-slate-50 md:text-lg">
                   {title}
                 </p>
-                <p className="hidden text-xs text-slate-500 dark:text-slate-400 sm:block">
-                  MasterSAT · SAT prep workspace
+                <p className="hidden text-xs text-slate-500 dark:text-slate-400 sm:block md:hidden lg:block">
+                  MasterSAT
                 </p>
               </div>
+            </div>
 
-              <div className="ml-auto hidden items-center gap-2 md:flex">
-                <span className="ds-section-title mr-1 text-[9px]">Quick</span>
+            <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+              <div className="hidden items-center gap-2 lg:flex">
+                <span className="ds-section-title text-[9px] dark:text-cyan-400/80">Quick</span>
                 {quickLinks.map((q) => (
                   <Link
                     key={q.href}
                     href={q.href}
-                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200/80 bg-white/80 px-2.5 py-1.5 text-xs font-bold text-violet-700 shadow-sm transition-all hover:border-violet-200 hover:bg-violet-50/80 dark:border-slate-600 dark:bg-slate-900/50 dark:text-violet-300 dark:hover:border-violet-500/30 dark:hover:bg-violet-500/10"
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200/80 bg-white/80 px-2.5 py-1.5 text-xs font-bold text-blue-700 shadow-sm transition-all duration-200 hover:border-fuchsia-300/50 hover:bg-fuchsia-50/30 dark:border-white/10 dark:bg-white/5 dark:text-cyan-200 dark:hover:border-cyan-500/30 dark:hover:bg-cyan-500/10"
                   >
                     <Zap className="h-3 w-3 opacity-80" />
                     {q.label}
                   </Link>
                 ))}
               </div>
-            </div>
 
-            <div className="flex shrink-0 items-center gap-1.5">
+              <div className="relative" ref={notifRef}>
+                <Tooltip content="Notifications" side="bottom">
+                  <IconButton
+                    variant="ghost"
+                    aria-label="Notifications"
+                    aria-expanded={notifOpen}
+                    onClick={() => setNotifOpen((o) => !o)}
+                    className="relative"
+                  >
+                    <Bell className="h-5 w-5" />
+                    <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-cyan-400 opacity-40" aria-hidden />
+                  </IconButton>
+                </Tooltip>
+                {notifOpen ? (
+                  <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-72 rounded-xl border border-slate-200/90 bg-white p-4 shadow-xl dark:border-white/10 dark:bg-[#13151f]">
+                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-cyan-400/80">
+                      Notifications
+                    </p>
+                    <p className="mt-3 text-sm text-slate-600 dark:text-slate-400">You&apos;re all caught up.</p>
+                    <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+                      Grades and assignments will appear here when available.
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+
               {mounted && (
                 <Tooltip content={theme === "dark" ? "Light mode" : "Dark mode"} side="bottom">
                   <IconButton
@@ -262,7 +403,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
                 <button
                   type="button"
                   onClick={() => router.push("/login")}
-                  className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-cyan-600 px-3 py-2 text-xs font-bold text-white shadow-md shadow-violet-500/20 transition-all hover:brightness-110 active:scale-[0.98] md:px-4 md:text-sm"
+                  className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-sky-500 px-3 py-2 text-xs font-bold text-white shadow-md shadow-blue-500/25 transition-all hover:brightness-110 active:scale-[0.98] md:px-4 md:text-sm"
                 >
                   <LogIn className="h-4 w-4" />
                   <span className="hidden sm:inline">Sign in</span>

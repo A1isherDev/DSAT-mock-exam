@@ -99,7 +99,7 @@ export default function ClassLeaderboard({ classId }: Props) {
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-24 gap-4 rounded-3xl border border-slate-200/80 bg-white/60 backdrop-blur-sm">
-        <Loader2 className="w-10 h-10 animate-spin text-indigo-600" />
+        <Loader2 className="w-10 h-10 animate-spin text-blue-600" />
         <p className="text-sm font-semibold text-slate-500">Loading leaderboard…</p>
       </div>
     );
@@ -118,24 +118,24 @@ export default function ClassLeaderboard({ classId }: Props) {
   return (
     <div className="space-y-10">
       {/* Hero */}
-      <div className="relative overflow-hidden rounded-3xl border border-indigo-200/60 bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-600 p-8 md:p-10 text-white shadow-[0_24px_80px_-12px_rgba(79,70,229,0.45)]">
+      <div className="relative overflow-hidden rounded-3xl border border-blue-300/50 bg-gradient-to-br from-blue-600 via-blue-500 to-sky-500 p-8 md:p-10 text-white shadow-[0_24px_80px_-12px_rgba(37,99,235,0.4)]">
         <div className="absolute inset-0 opacity-[0.15] bg-[radial-gradient(circle_at_20%_20%,white,transparent_50%),radial-gradient(circle_at_80%_80%,white,transparent_45%)]" />
         <div className="relative flex flex-col lg:flex-row lg:items-end lg:justify-between gap-8">
           <div>
-            <p className="text-indigo-100 text-xs font-black uppercase tracking-[0.2em] mb-2">Pastpaper leaderboard</p>
+            <p className="text-blue-100 text-xs font-black uppercase tracking-[0.2em] mb-2">Pastpaper leaderboard</p>
             <h2 className="text-3xl md:text-4xl font-black tracking-tight">{data.classroom_name}</h2>
-            <p className="mt-2 text-indigo-100/90 text-sm md:text-base max-w-xl leading-relaxed">
+            <p className="mt-2 text-blue-100/90 text-sm md:text-base max-w-xl leading-relaxed">
               Rankings from completed practice tests linked to homework. Group means show how the class performed on each
               assigned pastpaper.
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
             <div className="rounded-2xl bg-white/15 backdrop-blur-md border border-white/20 px-5 py-3 min-w-[120px]">
-              <p className="text-[10px] font-black uppercase tracking-widest text-indigo-100/80">Students</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-blue-100/80">Students</p>
               <p className="text-2xl font-black tabular-nums">{data.student_count}</p>
             </div>
             <div className="rounded-2xl bg-white/15 backdrop-blur-md border border-white/20 px-5 py-3 min-w-[120px]">
-              <p className="text-[10px] font-black uppercase tracking-widest text-indigo-100/80">Practice HW</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-blue-100/80">Practice HW</p>
               <p className="text-2xl font-black tabular-nums">{data.practice_assignment_count}</p>
             </div>
           </div>
@@ -158,8 +158,8 @@ export default function ClassLeaderboard({ classId }: Props) {
         </div>
         <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm hover:shadow-md transition-shadow">
           <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center">
-              <BarChart3 className="w-5 h-5 text-violet-600" />
+            <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center">
+              <BarChart3 className="w-5 h-5 text-white" />
             </div>
             <p className="text-[11px] font-black text-slate-500 uppercase tracking-widest">Mean of HW means</p>
           </div>
@@ -203,14 +203,14 @@ export default function ClassLeaderboard({ classId }: Props) {
         <>
           <section>
             <div className="flex items-center gap-2 mb-4">
-              <BarChart3 className="w-5 h-5 text-indigo-600" />
+              <BarChart3 className="w-5 h-5 text-blue-600" />
               <h3 className="text-lg font-black text-slate-900 tracking-tight">Group mean by homework</h3>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {data.assignments_summary.map((a) => (
                 <div
                   key={a.assignment_id}
-                  className="group rounded-2xl border border-slate-200/90 bg-white p-5 shadow-sm hover:border-indigo-200 hover:shadow-lg transition-all"
+                  className="group rounded-2xl border border-slate-200/90 bg-white p-5 shadow-sm hover:border-blue-200 hover:shadow-lg transition-all"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -224,7 +224,7 @@ export default function ClassLeaderboard({ classId }: Props) {
                     </div>
                     <div className="text-right shrink-0">
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Group mean</p>
-                      <p className="text-2xl font-black text-indigo-600 tabular-nums">
+                      <p className="text-2xl font-black text-blue-600 tabular-nums">
                         {a.group_mean_score != null ? a.group_mean_score : "—"}
                       </p>
                     </div>
@@ -238,7 +238,7 @@ export default function ClassLeaderboard({ classId }: Props) {
                     </div>
                     <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
                       <div
-                        className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 transition-all duration-500"
+                        className="h-full rounded-full bg-gradient-to-r from-blue-400 to-sky-300 transition-all duration-500"
                         style={{ width: `${Math.min(100, a.completion_rate_pct)}%` }}
                       />
                     </div>
@@ -289,8 +289,8 @@ export default function ClassLeaderboard({ classId }: Props) {
                       </div>
                     </div>
                     <div className="flex flex-col sm:flex-row sm:items-center gap-3 md:shrink-0">
-                      <div className="rounded-xl border border-indigo-100 bg-indigo-50/80 px-4 py-3 min-w-[200px]">
-                        <p className="text-[10px] font-black uppercase tracking-widest text-indigo-600/80">
+                      <div className="rounded-xl border border-blue-100 bg-blue-50/80 px-4 py-3 min-w-[200px]">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-blue-600/80">
                           Latest assigned pastpaper
                         </p>
                         {s.latest_practice ? (
@@ -299,7 +299,7 @@ export default function ClassLeaderboard({ classId }: Props) {
                               {s.latest_practice.assignment_title}
                             </p>
                             <div className="flex items-baseline gap-2 mt-2">
-                              <span className="text-2xl font-black text-indigo-700 tabular-nums">
+                              <span className="text-2xl font-black text-blue-700 tabular-nums">
                                 {s.latest_practice.score != null ? s.latest_practice.score : s.latest_practice.in_progress ? "…" : "—"}
                               </span>
                               <span className="text-xs font-semibold text-slate-500">

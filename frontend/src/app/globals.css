@@ -16,38 +16,37 @@
 }
 
 /*
-  MasterSAT design system (controlled futuristic SaaS)
-  Primary: violet · Secondary: cyan · Accents: magenta + amber (sparingly)
-  Spacing: 4px base; prefer 8/12/16/24 for layout rhythm
+  MasterSAT design system
+  Primary: blue · Secondary: cyan/sky · Accents: amber (status only)
 */
 :root {
-  --background: #f4f2fb;
+  --background: #f3f6fc;
   --foreground: #0c1222;
   --card: #ffffff;
   --border: #e2e8f0;
-  --primary: #5b21b6;
-  --primary-hover: #4c1d95;
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
   --muted: #64748b;
-  --ring: rgba(91, 33, 182, 0.22);
+  --ring: rgba(37, 99, 235, 0.22);
 
-  --ds-primary: #6d28d9;
-  --ds-primary-hover: #5b21b6;
-  --ds-primary-soft: rgba(109, 40, 217, 0.1);
-  --ds-secondary: #0891b2;
-  --ds-secondary-soft: rgba(8, 145, 178, 0.12);
-  --ds-accent: #a21caf;
+  --ds-primary: #2563eb;
+  --ds-primary-hover: #1d4ed8;
+  --ds-primary-soft: rgba(37, 99, 235, 0.1);
+  --ds-secondary: #0ea5e9;
+  --ds-secondary-soft: rgba(14, 165, 233, 0.12);
+  --ds-accent: #0284c7;
   --ds-accent-amber: #d97706;
-  --ds-surface-0: #f4f2fb;
+  --ds-surface-0: #f3f6fc;
   --ds-surface-1: #ffffff;
-  --ds-surface-2: #eef2ff;
-  --ds-border-strong: #c7d2fe;
+  --ds-surface-2: #eff6ff;
+  --ds-border-strong: #bfdbfe;
   --ds-text-muted: #64748b;
   --ds-radius-sm: 0.5rem;
   --ds-radius-md: 0.75rem;
   --ds-radius-lg: 1rem;
   --ds-radius-xl: 1.25rem;
   --ds-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
-  --ds-shadow-md: 0 8px 30px rgba(91, 33, 182, 0.08);
+  --ds-shadow-md: 0 8px 30px rgba(37, 99, 235, 0.08);
   --ds-shadow-lg: 0 24px 48px rgba(15, 23, 42, 0.08);
   --ds-transition: 200ms cubic-bezier(0.4, 0, 0.2, 1);
   --ds-transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
@@ -58,21 +57,21 @@
   --foreground: #f1f5f9;
   --card: #0f1419;
   --border: #1e293b;
-  --primary: #a78bfa;
-  --primary-hover: #c4b5fd;
-  --ring: rgba(167, 139, 250, 0.35);
+  --primary: #60a5fa;
+  --primary-hover: #93c5fd;
+  --ring: rgba(96, 165, 250, 0.35);
 
-  --ds-primary: #8b5cf6;
-  --ds-primary-hover: #a78bfa;
-  --ds-primary-soft: rgba(139, 92, 246, 0.15);
-  --ds-secondary: #22d3ee;
-  --ds-secondary-soft: rgba(34, 211, 238, 0.12);
-  --ds-accent: #e879f9;
+  --ds-primary: #3b82f6;
+  --ds-primary-hover: #60a5fa;
+  --ds-primary-soft: rgba(59, 130, 246, 0.15);
+  --ds-secondary: #38bdf8;
+  --ds-secondary-soft: rgba(56, 189, 248, 0.12);
+  --ds-accent: #0ea5e9;
   --ds-accent-amber: #fbbf24;
   --ds-surface-0: #070b14;
   --ds-surface-1: #0f1419;
-  --ds-surface-2: #1a1f2e;
-  --ds-border-strong: rgba(139, 92, 246, 0.35);
+  --ds-surface-2: #172554;
+  --ds-border-strong: rgba(59, 130, 246, 0.35);
   --ds-text-muted: #94a3b8;
   --ds-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
   --ds-shadow-md: 0 12px 40px rgba(0, 0, 0, 0.45);
@@ -171,15 +170,15 @@ body {
   background:
     radial-gradient(1000px 520px at 0% 0%, var(--ds-primary-soft), transparent 55%),
     radial-gradient(900px 480px at 100% 10%, var(--ds-secondary-soft), transparent 50%),
-    radial-gradient(700px 400px at 50% 100%, rgba(162, 28, 175, 0.06), transparent 45%),
+    radial-gradient(700px 400px at 50% 100%, rgba(37, 99, 235, 0.05), transparent 45%),
     var(--background);
 }
 
 .dark .app-bg {
   background:
-    radial-gradient(900px 480px at 0% 0%, rgba(139, 92, 246, 0.12), transparent 55%),
-    radial-gradient(800px 420px at 100% 0%, rgba(34, 211, 238, 0.08), transparent 50%),
-    radial-gradient(600px 360px at 40% 100%, rgba(232, 121, 249, 0.06), transparent 45%),
+    radial-gradient(900px 480px at 0% 0%, rgba(59, 130, 246, 0.12), transparent 55%),
+    radial-gradient(800px 420px at 100% 0%, rgba(56, 189, 248, 0.08), transparent 50%),
+    radial-gradient(600px 360px at 40% 100%, rgba(14, 165, 233, 0.06), transparent 45%),
     var(--background);
 }
 
@@ -217,15 +216,15 @@ body {
 }
 
 .btn-primary {
-  @apply inline-flex items-center justify-center gap-2.5 rounded-2xl px-5 py-3 text-base font-bold text-white bg-gradient-to-r from-violet-600 to-cyan-600 hover:brightness-110 active:scale-[0.98] transition-all shadow-[0_10px_26px_rgba(109,40,217,0.22)];
+  @apply inline-flex items-center justify-center gap-2.5 rounded-2xl px-5 py-3 text-base font-bold text-white bg-gradient-to-r from-blue-600 to-sky-500 hover:brightness-110 active:scale-[0.98] transition-all shadow-[0_10px_26px_rgba(37,99,235,0.22)];
 }
 
 .btn-secondary {
-  @apply inline-flex items-center justify-center gap-2.5 rounded-2xl px-5 py-3 text-base font-semibold text-slate-700 bg-white border border-slate-200 hover:border-violet-200 hover:bg-violet-50/50 transition-colors dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-violet-500/30;
+  @apply inline-flex items-center justify-center gap-2.5 rounded-2xl px-5 py-3 text-base font-semibold text-slate-700 bg-white border border-slate-200 hover:border-blue-200 hover:bg-blue-50/60 transition-colors dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-blue-500/35;
 }
 
 .input-modern {
-  @apply w-full rounded-2xl border border-slate-200 bg-white px-5 py-3 text-base text-slate-900 placeholder:text-slate-400 outline-none transition-all focus:border-violet-400 focus:ring-4 focus:ring-violet-100 dark:focus:ring-violet-900/40;
+  @apply w-full rounded-2xl border border-slate-200 bg-white px-5 py-3 text-base text-slate-900 placeholder:text-slate-400 outline-none transition-all focus:border-blue-500 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-950/50;
 }
 
 .title-xl {
@@ -233,7 +232,7 @@ body {
 }
 
 .eyebrow {
-  @apply text-[10px] font-black uppercase tracking-[0.18em] text-violet-600 dark:text-violet-400;
+  @apply text-[10px] font-black uppercase tracking-[0.18em] text-blue-600 dark:text-blue-400;
 }
 
 .hero-shell {
@@ -346,7 +345,7 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-/* ─── Classroom module: glass surfaces + soft hero (indigo / cyan accent) ─── */
+/* ─── Classroom module: glass surfaces + soft hero (blue / cyan accent) ─── */
 .cr-surface {
   border-radius: 1rem;
   border: 1px solid rgb(226 232 240 / 0.85);
@@ -363,44 +362,44 @@ body {
   background: rgb(15 23 42 / 0.72);
   box-shadow:
     0 1px 2px rgb(0 0 0 / 0.2),
-    0 12px 32px rgb(99 102 241 / 0.08);
+    0 12px 32px rgb(37 99 235 / 0.08);
 }
 
 .cr-hero {
   background:
-    linear-gradient(125deg, rgb(255 255 255 / 0.95) 0%, rgb(248 250 252 / 0.9) 45%, rgb(238 242 255 / 0.5) 100%),
-    radial-gradient(800px 400px at 95% -30%, rgb(99 102 241 / 0.09), transparent 55%),
+    linear-gradient(125deg, rgb(255 255 255 / 0.95) 0%, rgb(248 250 252 / 0.9) 45%, rgb(239 246 255 / 0.55) 100%),
+    radial-gradient(800px 400px at 95% -30%, rgb(37 99 235 / 0.09), transparent 55%),
     radial-gradient(600px 320px at -10% 80%, rgb(14 165 233 / 0.07), transparent 50%);
 }
 
 .dark .cr-hero {
   background:
-    linear-gradient(125deg, rgb(15 23 42 / 0.92) 0%, rgb(2 6 23 / 0.88) 50%, rgb(30 27 75 / 0.35) 100%),
-    radial-gradient(800px 400px at 95% -30%, rgb(99 102 241 / 0.14), transparent 55%),
+    linear-gradient(125deg, rgb(15 23 42 / 0.92) 0%, rgb(2 6 23 / 0.88) 50%, rgb(23 37 84 / 0.4) 100%),
+    radial-gradient(800px 400px at 95% -30%, rgb(37 99 235 / 0.14), transparent 55%),
     radial-gradient(600px 320px at -10% 80%, rgb(14 165 233 / 0.1), transparent 50%);
 }
 
 .cr-modal-header {
   background:
     linear-gradient(180deg, rgb(248 250 252 / 0.95), rgb(255 255 255 / 0.88)),
-    radial-gradient(500px 200px at 100% 0%, rgb(99 102 241 / 0.06), transparent 60%);
+    radial-gradient(500px 200px at 100% 0%, rgb(37 99 235 / 0.06), transparent 60%);
 }
 
 .dark .cr-modal-header {
   background:
     linear-gradient(180deg, rgb(15 23 42 / 0.98), rgb(2 6 23 / 0.92)),
-    radial-gradient(500px 200px at 100% 0%, rgb(99 102 241 / 0.12), transparent 60%);
+    radial-gradient(500px 200px at 100% 0%, rgb(37 99 235 / 0.12), transparent 60%);
 }
 
 .cr-classroom-bg {
   background:
-    radial-gradient(900px 480px at 100% -15%, rgb(99 102 241 / 0.07), transparent 58%),
+    radial-gradient(900px 480px at 100% -15%, rgb(37 99 235 / 0.07), transparent 58%),
     radial-gradient(720px 420px at -15% 35%, rgb(14 165 233 / 0.05), transparent 52%);
 }
 
 .dark .cr-classroom-bg {
   background:
-    radial-gradient(900px 480px at 100% -15%, rgb(99 102 241 / 0.11), transparent 58%),
+    radial-gradient(900px 480px at 100% -15%, rgb(37 99 235 / 0.11), transparent 58%),
     radial-gradient(720px 420px at -15% 35%, rgb(14 165 233 / 0.07), transparent 52%);
 }
 

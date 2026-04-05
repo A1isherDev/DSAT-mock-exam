@@ -27,12 +27,12 @@ export function Tooltip({
   className?: string;
 }) {
   return (
-    <span className={cn("group/ds-tip relative inline-flex", className)}>
+    <span className={cn("group/ds-tip relative flex w-full max-w-full min-w-0", className)}>
       {children}
       <span
         role="tooltip"
         className={cn(
-          "pointer-events-none absolute z-[300] max-w-[220px] rounded-lg border border-slate-200/90 bg-white/95 px-2.5 py-1.5 text-center text-[11px] font-semibold leading-snug text-slate-700 shadow-lg opacity-0 shadow-violet-500/5 transition-opacity duration-200",
+          "pointer-events-none absolute z-[300] max-w-[220px] rounded-lg border border-slate-200/90 bg-white/95 px-2.5 py-1.5 text-center text-[11px] font-semibold leading-snug text-slate-700 shadow-lg opacity-0 shadow-blue-500/10 transition-opacity duration-200",
           "invisible group-hover/ds-tip:visible group-hover/ds-tip:opacity-100",
           "group-focus-within/ds-tip:visible group-focus-within/ds-tip:opacity-100",
           "dark:border-slate-600 dark:bg-slate-900/95 dark:text-slate-200",

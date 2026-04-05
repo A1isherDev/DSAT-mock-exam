@@ -24,7 +24,7 @@ export function ClassroomEmptyState({
       )}
     >
       {Icon ? (
-        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500/15 via-white/40 to-cyan-500/15 text-violet-600 ring-1 ring-violet-200/50 dark:from-violet-500/20 dark:via-slate-900/20 dark:to-cyan-500/15 dark:text-violet-300 dark:ring-violet-500/25">
+        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500/15 via-white/40 to-sky-500/15 text-blue-600 ring-1 ring-blue-200/50 dark:from-blue-500/20 dark:via-slate-900/20 dark:to-sky-500/15 dark:text-blue-300 dark:ring-blue-500/25">
           <Icon className="h-8 w-8 opacity-95" strokeWidth={1.5} />
         </div>
       ) : null}

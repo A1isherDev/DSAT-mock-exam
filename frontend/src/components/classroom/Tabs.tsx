@@ -42,9 +42,9 @@ export function ClassroomTabs({
             onClick={() => onChange(id)}
             className={cn(
               "inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold transition-all duration-200 ease-out",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-50 dark:focus-visible:ring-offset-slate-900",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-50 dark:focus-visible:ring-offset-slate-900",
               active
-                ? "bg-white text-violet-800 shadow-sm dark:bg-slate-800 dark:text-violet-200"
+                ? "bg-white text-blue-900 shadow-sm dark:bg-slate-800 dark:text-blue-200"
                 : "text-slate-600 hover:bg-white/70 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-slate-100",
             )}
           >

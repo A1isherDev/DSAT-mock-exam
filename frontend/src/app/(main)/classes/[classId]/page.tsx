@@ -363,7 +363,7 @@ export default function ClassDetailPage() {
                                 a.pastpaper_pack ||
                                 (Array.isArray(a.practice_test_ids) && a.practice_test_ids.length > 0) ||
                                 (Array.isArray(a.practice_bundle_tests) && a.practice_bundle_tests.length > 0)) ? (
-                                <span className="shrink-0 rounded-md bg-violet-500/12 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-700 dark:text-violet-300">
+                                <span className="shrink-0 rounded-md bg-blue-500/12 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-blue-700 dark:text-blue-300">
                                   Pastpaper
                                 </span>
                               ) : null}

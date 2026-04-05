@@ -199,7 +199,7 @@ export default function AssignmentDetailPage() {
                     <button
                       type="button"
                       onClick={() => router.push(`/practice-test/${legacyPracticeTestId}`)}
-                      className={`${linkBtn} border-violet-300/80 bg-violet-600 text-white hover:bg-violet-700 dark:border-violet-600`}
+                      className={`${linkBtn} border-blue-400/80 bg-blue-600 text-white hover:bg-blue-700 dark:border-blue-600`}
                     >
                       <ExternalLink className="h-4 w-4" />
                       Open practice test

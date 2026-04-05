@@ -148,8 +148,8 @@ export default function PracticeTestsList({
     <div className="max-w-7xl mx-auto px-8 py-12">
       <div className="mb-12">
         <div className="flex items-center gap-2 mb-3">
-          <span className="h-1 w-12 bg-violet-600 rounded-full" />
-          <span className="text-[10px] font-bold text-violet-600 uppercase tracking-widest block">{eyebrow}</span>
+          <span className="h-1 w-12 bg-blue-600 rounded-full" />
+          <span className="text-[10px] font-bold text-blue-600 uppercase tracking-widest block">{eyebrow}</span>
         </div>
         <h2 className="text-4xl font-extrabold text-slate-900 dark:text-slate-100 tracking-tight mb-4">{title}</h2>
         {description ? (
@@ -158,13 +158,13 @@ export default function PracticeTestsList({
       </div>
 
       <div className="relative w-full max-w-md mb-10 group">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-violet-600 transition-colors" />
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-600 transition-colors" />
         <input
           type="text"
           placeholder="Search practice packs and tests..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full pl-11 pr-10 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-[18px] text-sm font-medium focus:outline-none focus:ring-4 focus:ring-violet-100 dark:focus:ring-violet-900/40 transition-all shadow-sm"
+          className="w-full pl-11 pr-10 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-[18px] text-sm font-medium focus:outline-none focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/40 transition-all shadow-sm"
         />
         {searchQuery && (
           <button
@@ -191,21 +191,21 @@ export default function PracticeTestsList({
                 <div className="p-8 pb-4 relative">
                   <div className="flex items-center justify-between mb-6">
                     <div className="flex flex-col gap-1">
-                      <span className="text-[10px] font-black uppercase tracking-[0.2em] text-violet-600 dark:text-violet-400">
+                      <span className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-600 dark:text-blue-400">
                         Practice test
                       </span>
                       <span className="text-xs font-bold text-slate-400 dark:text-slate-500">{formatLineDate(lineDate)}</span>
                     </div>
-                    <div className="w-12 h-12 rounded-xl bg-violet-100 dark:bg-violet-950/80 flex items-center justify-center text-violet-700 dark:text-violet-300 shadow-sm border border-violet-200/60 dark:border-violet-800/50">
+                    <div className="w-12 h-12 rounded-xl bg-blue-100 dark:bg-blue-950/80 flex items-center justify-center text-blue-700 dark:text-blue-300 shadow-sm border border-blue-200/60 dark:border-blue-800/50">
                       <FileText className="w-6 h-6" />
                     </div>
                   </div>
-                  <h3 className="text-2xl font-serif font-bold text-slate-900 dark:text-slate-100 mb-6 tracking-tight leading-snug group-hover:text-violet-800 dark:group-hover:text-violet-300 transition-colors">
+                  <h3 className="text-2xl font-serif font-bold text-slate-900 dark:text-slate-100 mb-6 tracking-tight leading-snug group-hover:text-blue-800 dark:group-hover:text-blue-300 transition-colors">
                     {heading}
                   </h3>
                   <div className="flex items-center gap-2">
                     <div className="flex-1 h-[3px] bg-slate-200/90 dark:bg-slate-700 rounded-full overflow-hidden">
-                      <div className="h-full bg-violet-500 transition-all duration-1000" style={{ width: `${pct}%` }} />
+                      <div className="h-full bg-blue-500 transition-all duration-1000" style={{ width: `${pct}%` }} />
                     </div>
                     <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider tabular-nums min-w-[2.25rem] text-right">
                       {pct}%
@@ -229,23 +229,23 @@ export default function PracticeTestsList({
               <div className="p-8 pb-4 relative">
                 <div className="flex items-center justify-between mb-6">
                   <div className="flex flex-col gap-1">
-                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-violet-600 dark:text-violet-400">
+                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-600 dark:text-blue-400">
                       Practice test
                     </span>
                     <span className="text-xs font-bold text-slate-400 dark:text-slate-500">
                       {formatLineDate(t.practice_date || t.created_at)}
                     </span>
                   </div>
-                  <div className="w-12 h-12 rounded-xl bg-violet-100 dark:bg-violet-950/80 flex items-center justify-center text-violet-700 dark:text-violet-300 shadow-sm border border-violet-200/60 dark:border-violet-800/50">
+                  <div className="w-12 h-12 rounded-xl bg-blue-100 dark:bg-blue-950/80 flex items-center justify-center text-blue-700 dark:text-blue-300 shadow-sm border border-blue-200/60 dark:border-blue-800/50">
                     <FileText className="w-6 h-6" />
                   </div>
                 </div>
-                <h3 className="text-2xl font-serif font-bold text-slate-900 dark:text-slate-100 mb-6 tracking-tight leading-snug group-hover:text-violet-800 dark:group-hover:text-violet-300 transition-colors">
+                <h3 className="text-2xl font-serif font-bold text-slate-900 dark:text-slate-100 mb-6 tracking-tight leading-snug group-hover:text-blue-800 dark:group-hover:text-blue-300 transition-colors">
                   {singleDisplayTitle(t)}
                 </h3>
                 <div className="flex items-center gap-2">
                   <div className="flex-1 h-[3px] bg-slate-200/90 dark:bg-slate-700 rounded-full overflow-hidden">
-                    <div className="h-full bg-violet-500 transition-all duration-1000" style={{ width: `${pct}%` }} />
+                    <div className="h-full bg-blue-500 transition-all duration-1000" style={{ width: `${pct}%` }} />
                   </div>
                   <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider tabular-nums min-w-[2.25rem] text-right">
                     {pct}%
@@ -267,7 +267,7 @@ export default function PracticeTestsList({
                     }
                     router.push(`/practice-test/${t.id}`);
                   }}
-                  className="group/btn w-full flex items-center justify-center gap-3 font-black py-4 px-6 rounded-2xl transition-all text-sm uppercase tracking-widest bg-[#0f172a] dark:bg-slate-950 text-white hover:bg-violet-700 dark:hover:bg-violet-700 shadow-lg shadow-slate-900/10 active:scale-[0.98]"
+                  className="group/btn w-full flex items-center justify-center gap-3 font-black py-4 px-6 rounded-2xl transition-all text-sm uppercase tracking-widest bg-[#0f172a] dark:bg-slate-950 text-white hover:bg-blue-700 dark:hover:bg-blue-700 shadow-lg shadow-slate-900/10 active:scale-[0.98]"
                 >
                   Enter practice test
                   <ArrowRight className="w-5 h-5 group-hover/btn:translate-x-1 transition-transform" />

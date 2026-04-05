@@ -39,7 +39,7 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
     cn(
       "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all duration-200",
       active
-        ? "bg-gradient-to-r from-violet-600/12 to-cyan-600/8 text-violet-900 ring-1 ring-violet-200/80 dark:from-violet-500/15 dark:to-cyan-500/8 dark:text-violet-100 dark:ring-violet-500/25"
+        ? "bg-gradient-to-r from-blue-600/12 to-sky-500/10 text-blue-950 ring-1 ring-blue-200/90 dark:from-blue-500/18 dark:to-sky-500/10 dark:text-blue-100 dark:ring-blue-500/30"
         : "text-slate-600 hover:bg-white/70 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-slate-100",
     );
 
@@ -57,7 +57,7 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
 
         <aside
           className={cn(
-            "fixed inset-y-0 left-0 z-[100] flex w-[min(100%,272px)] flex-col border-r border-slate-200/80 bg-white/90 shadow-xl backdrop-blur-xl transition-transform duration-200 dark:border-slate-800 dark:bg-slate-950/90 md:static md:translate-x-0 md:shadow-none",
+            "fixed inset-y-0 left-0 z-[100] flex h-[100dvh] w-[min(100%,272px)] shrink-0 flex-col border-r border-slate-200/80 bg-white/90 shadow-xl backdrop-blur-xl transition-transform duration-200 dark:border-slate-800 dark:bg-slate-950/90 md:static md:h-screen md:min-h-0 md:translate-x-0 md:shadow-none",
             mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
           )}
         >
@@ -84,16 +84,16 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="Filter…"
-                className="w-full rounded-xl border border-slate-200/90 bg-white/90 py-2 pl-9 pr-3 text-sm focus:border-violet-400 focus:outline-none focus:ring-2 focus:ring-violet-500/20 dark:border-slate-600 dark:bg-slate-900/50 dark:text-slate-100"
+                className="w-full rounded-xl border border-slate-200/90 bg-white/90 py-2 pl-9 pr-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-slate-600 dark:bg-slate-900/50 dark:text-slate-100"
               />
             </div>
           </div>
 
-          <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4 md:px-4" aria-label="Teacher">
+          <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain px-3 py-4 md:px-4" aria-label="Teacher">
             {filtered.map(({ href, label, icon: Icon, tip }) => {
               const active = href === "/teacher" ? pathname === "/teacher" : pathname.startsWith(href);
               return (
-                <Tooltip key={href} content={tip} side="right" className="block w-full">
+                <Tooltip key={href} content={tip} side="right">
                   <Link
                     href={href}
                     className={cn(linkCls(active), "w-full")}
@@ -103,7 +103,7 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
                       className={cn(
                         "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
                         active
-                          ? "bg-violet-600/15 text-violet-700 dark:bg-violet-500/20 dark:text-violet-200"
+                          ? "bg-blue-600/15 text-blue-800 dark:bg-blue-500/20 dark:text-blue-200"
                           : "bg-slate-100/80 text-slate-500 dark:bg-slate-800/80 dark:text-slate-400",
                       )}
                     >

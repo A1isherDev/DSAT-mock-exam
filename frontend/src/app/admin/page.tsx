@@ -2015,7 +2015,7 @@ export default function AdminPage() {
                                                         <span
                                                             className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-lg border ${
                                                                 mock.kind === "MIDTERM"
-                                                                    ? "text-violet-800 bg-violet-50 border-violet-200"
+                                                                    ? "text-blue-800 bg-blue-50 border-blue-200"
                                                                     : "text-sky-800 bg-sky-50 border-sky-200"
                                                             }`}
                                                         >

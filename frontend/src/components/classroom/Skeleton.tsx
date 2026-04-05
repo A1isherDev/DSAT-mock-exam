@@ -60,7 +60,7 @@ export function ClassroomDetailSkeleton() {
         ))}
       </div>
       <div className="cr-surface rounded-2xl p-10 flex justify-center">
-        <div className="h-10 w-10 rounded-full border-2 border-violet-500 border-t-transparent animate-spin" />
+        <div className="h-10 w-10 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
       </div>
     </div>
   );

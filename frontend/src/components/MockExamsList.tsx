@@ -191,7 +191,7 @@ export default function MockExamsList({
               <div className="p-8 pb-4 relative">
                 <div className="flex items-center justify-between mb-6">
                   <div className="flex flex-col gap-1">
-                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-violet-600">
+                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-600">
                       {group.kind === "MIDTERM" ? "Midterm" : "Timed SAT mock"}
                     </span>
                     <span className="text-xs font-bold text-slate-400">{formatDate(group.practice_date)}</span>
