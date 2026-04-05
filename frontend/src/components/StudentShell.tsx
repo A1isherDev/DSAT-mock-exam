@@ -405,7 +405,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
                 <button
                   type="button"
                   onClick={() => router.push("/login")}
-                  className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-amber-600 px-3 py-2 text-xs font-bold text-white shadow-md shadow-blue-900/25 shadow-amber-900/20 transition-all hover:brightness-110 active:scale-[0.98] md:px-4 md:text-sm dark:from-blue-600 dark:to-amber-500 dark:hover:brightness-110"
+                  className="ms-btn-primary inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-amber-600 px-3 py-2 text-xs font-bold text-white shadow-md shadow-blue-900/25 shadow-amber-900/20 md:px-4 md:text-sm dark:from-blue-600 dark:to-amber-500"
                 >
                   <LogIn className="h-4 w-4" />
                   <span className="hidden sm:inline">Sign in</span>

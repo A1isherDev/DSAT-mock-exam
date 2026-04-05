@@ -244,8 +244,8 @@ export function HomeDashboard() {
                 <Link
                   href={`/exam/${incomplete.id}`}
                   className={cn(
-                    "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-white ring-1 ring-amber-400/35",
-                    "bg-gradient-to-r from-blue-600 to-blue-700 shadow-lg shadow-blue-600/20 transition-all hover:brightness-110 dark:from-blue-600 dark:to-amber-600 dark:shadow-amber-900/25",
+                    "ms-btn-primary inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-white ring-1 ring-amber-400/35",
+                    "bg-gradient-to-r from-blue-600 to-blue-700 shadow-lg shadow-blue-600/20 dark:from-blue-600 dark:to-amber-600 dark:shadow-amber-900/25",
                   )}
                 >
                   <PlayCircle className="h-4 w-4" />
@@ -254,7 +254,7 @@ export function HomeDashboard() {
               ) : (
                 <Link
                   href="/practice-tests"
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200/90 px-4 py-2.5 text-sm font-bold text-slate-800 transition-all hover:bg-slate-50 dark:border-white/10 dark:text-white dark:hover:bg-white/5"
+                  className="ms-btn-secondary inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200/90 bg-white/90 px-4 py-2.5 text-sm font-bold text-slate-800 hover:border-blue-300/70 dark:border-white/10 dark:bg-white/[0.04] dark:text-white"
                 >
                   Browse tests
                   <ArrowRight className="h-4 w-4" />
@@ -317,7 +317,7 @@ export function HomeDashboard() {
           <div
             className={cn(
               "mt-3 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold",
-              trend.up === true && "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
+              trend.up === true && "bg-blue-500/12 text-blue-800 ring-1 ring-blue-500/15 dark:bg-blue-500/15 dark:text-blue-200 dark:ring-blue-400/20",
               trend.up === false && "bg-amber-500/15 text-amber-800 dark:text-amber-200",
               trend.up === null && "bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-slate-300",
             )}

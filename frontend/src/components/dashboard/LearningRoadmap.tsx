@@ -24,7 +24,7 @@ export function LearningRoadmap({ steps }: { steps: RoadmapStep[] }) {
             <Link
               href={s.href}
               className={cn(
-                "group flex h-full flex-col rounded-xl border p-4 transition-all duration-200",
+                "group flex h-full flex-col rounded-xl border p-4 transition-[transform,box-shadow,border-color,background-color] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
                 "border-slate-200/90 bg-slate-50/50 hover:border-amber-300/70 hover:bg-white",
                 "dark:border-white/10 dark:bg-white/[0.03] dark:hover:border-amber-500/35 dark:hover:bg-white/[0.06]",
               )}
@@ -34,7 +34,7 @@ export function LearningRoadmap({ steps }: { steps: RoadmapStep[] }) {
                   {i + 1}
                 </span>
                 {s.done ? (
-                  <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                  <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
                     <Check className="h-3.5 w-3.5" />
                     Done
                   </span>

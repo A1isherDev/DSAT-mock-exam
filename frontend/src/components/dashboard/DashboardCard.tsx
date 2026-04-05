@@ -34,7 +34,7 @@ export function DashboardCard({
         "rounded-2xl border bg-white shadow-md shadow-slate-900/[0.04]",
         accent === "gold" ? "border-amber-200/55 dark:border-amber-500/25" : "border-slate-200/90 dark:border-white/10",
         "dark:bg-neutral-950 dark:shadow-black/60",
-        "transition-all duration-200 ease-out",
+        "transition-[transform,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
         interactive &&
           "cursor-pointer hover:-translate-y-0.5 hover:border-slate-300/90 hover:shadow-lg dark:hover:-translate-y-0.5",
         interactive && glow,

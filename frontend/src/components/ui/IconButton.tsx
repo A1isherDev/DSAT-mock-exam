@@ -5,11 +5,11 @@ export type IconButtonVariant = "default" | "ghost" | "muted";
 
 const variantClass: Record<IconButtonVariant, string> = {
   default:
-    "border border-slate-200/90 bg-white/90 text-slate-700 shadow-sm hover:border-blue-200 hover:bg-blue-50/60 dark:border-slate-600 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:border-blue-500/30 dark:hover:bg-blue-500/10",
+    "ms-icon-btn border border-slate-200/90 bg-white/90 text-slate-700 shadow-sm hover:border-blue-300/80 hover:bg-gradient-to-br hover:from-white hover:to-amber-50/30 dark:border-white/10 dark:bg-white/[0.06] dark:text-slate-200 dark:hover:border-amber-500/35 dark:hover:from-white/[0.08] dark:hover:to-amber-500/10",
   ghost:
-    "border border-transparent text-slate-600 hover:bg-slate-100/90 dark:text-slate-400 dark:hover:bg-slate-800/80",
+    "ms-icon-btn-ghost border border-transparent text-slate-600 hover:bg-slate-100/90 dark:text-slate-400 dark:hover:bg-white/[0.06]",
   muted:
-    "border border-transparent text-slate-500 hover:bg-slate-100/80 dark:text-slate-500 dark:hover:bg-slate-800/60",
+    "ms-icon-btn-ghost border border-transparent text-slate-500 hover:bg-slate-100/80 dark:text-slate-500 dark:hover:bg-white/[0.05]",
 };
 
 export function IconButton({
@@ -28,10 +28,9 @@ export function IconButton({
     <button
       type="button"
       className={cn(
-        "inline-flex items-center justify-center transition-all duration-200 ease-out",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--background)] dark:focus-visible:ring-offset-slate-950",
+        "inline-flex items-center justify-center",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/90 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--background)] dark:focus-visible:ring-amber-400/55 dark:focus-visible:ring-offset-black",
         "disabled:pointer-events-none disabled:opacity-40",
-        "active:scale-[0.96]",
         sizeCls,
         variantClass[variant],
         className,

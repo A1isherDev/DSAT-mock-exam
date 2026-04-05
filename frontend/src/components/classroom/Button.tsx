@@ -15,13 +15,13 @@ export type ClassroomButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 
 const variantClass: Record<ClassroomButtonVariant, string> = {
   primary:
-    "border border-transparent bg-gradient-to-r from-blue-600 via-blue-600 to-amber-600 text-white shadow-md shadow-blue-500/20 shadow-amber-900/15 hover:brightness-110 dark:shadow-blue-950/35 dark:shadow-amber-950/25",
+    "ms-btn-primary border border-transparent bg-gradient-to-r from-blue-600 via-blue-600 to-amber-600 text-white shadow-md shadow-blue-500/20 shadow-amber-900/15 dark:shadow-blue-950/35 dark:shadow-amber-950/25",
   secondary:
-    "border border-slate-200/90 bg-white/90 text-slate-800 shadow-sm hover:border-blue-200/80 hover:bg-blue-50/50 dark:border-slate-600 dark:bg-slate-800/80 dark:text-slate-100 dark:hover:border-blue-500/30 dark:hover:bg-slate-800",
+    "ms-btn-secondary border border-slate-200/90 bg-white/90 text-slate-800 shadow-sm hover:border-blue-300/70 hover:bg-gradient-to-br hover:from-white hover:to-amber-50/25 dark:border-white/10 dark:bg-neutral-950/90 dark:text-slate-100 dark:hover:border-amber-500/35 dark:hover:from-neutral-950 dark:hover:to-amber-950/15",
   ghost:
-    "border border-transparent text-slate-600 hover:bg-slate-100/90 dark:text-slate-300 dark:hover:bg-slate-800/70",
+    "ms-btn-ghost border border-transparent text-slate-600 hover:bg-slate-100/90 dark:text-slate-300 dark:hover:bg-white/[0.06]",
   danger:
-    "border border-red-200/90 bg-red-50 text-red-800 hover:bg-red-100/90 dark:border-red-900/50 dark:bg-red-950/35 dark:text-red-200 dark:hover:bg-red-950/55",
+    "ms-btn-destructive border border-amber-600/45 bg-neutral-950 text-amber-50 shadow-sm hover:border-amber-400/70 hover:bg-black hover:text-white dark:border-amber-500/40 dark:bg-black dark:text-amber-100 dark:hover:border-amber-300/55 dark:hover:bg-neutral-950",
 };
 
 const sizeClass: Record<ClassroomButtonSize, string> = {
@@ -45,11 +45,10 @@ export function ClassroomButton({
       type={type ?? "button"}
       disabled={!!isBusy}
       className={cn(
-        "inline-flex items-center justify-center font-semibold transition-all duration-200 ease-out",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--background)] dark:focus-visible:ring-offset-slate-950",
+        "inline-flex items-center justify-center font-semibold",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/90 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--background)] dark:focus-visible:ring-amber-400/60 dark:focus-visible:ring-offset-black",
         "disabled:pointer-events-none disabled:opacity-45",
         loading && "relative",
-        "active:scale-[0.98]",
         sizeClass[size],
         variantClass[variant],
         className,
