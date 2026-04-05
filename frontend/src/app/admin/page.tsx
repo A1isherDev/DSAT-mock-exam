@@ -322,8 +322,10 @@ export default function AdminPage() {
     const [bulkAssignUsers, setBulkAssignUsers] = useState<number[]>([]);
     const [bulkAssignType, setBulkAssignType] = useState<string>('FULL');
     const [bulkAssignFormType, setBulkAssignFormType] = useState<string>(''); // empty means all
-    const [showBulkModal, setShowBulkModal] = useState(false);
-    const [bulkTestSearch, setBulkTestSearch] = useState('');
+    /** Bulk assign: one modal for timed mocks, a separate modal for pastpaper library sections. */
+    const [bulkModalKind, setBulkModalKind] = useState<null | 'mocks' | 'pastpapers'>(null);
+    const [bulkMockSearch, setBulkMockSearch] = useState('');
+    const [bulkPastpaperSearch, setBulkPastpaperSearch] = useState('');
     const [bulkUserSearch, setBulkUserSearch] = useState('');
 
     // New Test Creation State (per mock id)
@@ -1078,14 +1080,37 @@ export default function AdminPage() {
     };
 
     const closeBulkModal = () => {
-        setShowBulkModal(false);
+        setBulkModalKind(null);
         setBulkAssignExams([]);
         setBulkAssignPracticeTests([]);
         setBulkAssignUsers([]);
         setBulkAssignType('FULL');
         setBulkAssignFormType('');
-        setBulkTestSearch('');
+        setBulkMockSearch('');
+        setBulkPastpaperSearch('');
         setBulkUserSearch('');
+    };
+
+    const openBulkModalMocks = () => {
+        setBulkAssignPracticeTests([]);
+        setBulkAssignExams([]);
+        setBulkAssignUsers([]);
+        setBulkAssignType('FULL');
+        setBulkAssignFormType('');
+        setBulkMockSearch('');
+        setBulkPastpaperSearch('');
+        setBulkUserSearch('');
+        setBulkModalKind('mocks');
+    };
+
+    const openBulkModalPastpapers = () => {
+        setBulkAssignExams([]);
+        setBulkAssignPracticeTests([]);
+        setBulkAssignUsers([]);
+        setBulkMockSearch('');
+        setBulkPastpaperSearch('');
+        setBulkUserSearch('');
+        setBulkModalKind('pastpapers');
     };
 
     const handleBulkAssign = async () => {
@@ -1093,21 +1118,31 @@ export default function AdminPage() {
             showToast("Select at least one user");
             return;
         }
-        if (bulkAssignExams.length === 0 && bulkAssignPracticeTests.length === 0) {
-            showToast("Select at least one mock exam or pastpaper test");
+        if (bulkModalKind === 'mocks') {
+            if (bulkAssignExams.length === 0) {
+                showToast("Select at least one mock exam");
+                return;
+            }
+        } else if (bulkModalKind === 'pastpapers') {
+            if (bulkAssignPracticeTests.length === 0) {
+                showToast("Select at least one pastpaper section");
+                return;
+            }
+        } else {
             return;
         }
         setSaving(true);
         try {
+            const isMocks = bulkModalKind === 'mocks';
             await adminApi.bulkAssignStudents(
-                bulkAssignExams,
+                isMocks ? bulkAssignExams : [],
                 bulkAssignUsers,
-                bulkAssignType,
-                bulkAssignFormType || undefined,
-                bulkAssignPracticeTests.length ? bulkAssignPracticeTests : undefined
+                isMocks ? bulkAssignType : 'FULL',
+                isMocks ? bulkAssignFormType || undefined : undefined,
+                !isMocks && bulkAssignPracticeTests.length ? bulkAssignPracticeTests : undefined
             );
             showToast(`Assigned access to ${bulkAssignUsers.length} user(s).`);
-            if (bulkAssignExams.length) setSelectedMockId(bulkAssignExams[0]);
+            if (isMocks && bulkAssignExams.length) setSelectedMockId(bulkAssignExams[0]);
             closeBulkModal();
             fetchMockExams();
             fetchStandaloneTests();
@@ -1234,8 +1269,8 @@ export default function AdminPage() {
                                     </div>
                                     <div className="flex gap-2 shrink-0">
                                         {can('assign_test_access') && (
-                                            <button className={BTN_GHOST} onClick={() => setShowBulkModal(true)}>
-                                                <Users className="w-4 h-4" /> Bulk assign
+                                            <button className={BTN_GHOST} onClick={openBulkModalPastpapers}>
+                                                <Users className="w-4 h-4" /> Bulk assign pastpapers
                                             </button>
                                         )}
                                         {can('create_test') && (
@@ -1771,8 +1806,8 @@ export default function AdminPage() {
                                     </div>
                                     <div className="flex gap-2">
                                         {can('assign_test_access') && (
-                                            <button className={BTN_GHOST} onClick={() => setShowBulkModal(true)}>
-                                                <Users className="w-4 h-4" /> Bulk assign
+                                            <button className={BTN_GHOST} onClick={openBulkModalMocks}>
+                                                <Users className="w-4 h-4" /> Bulk assign mocks
                                             </button>
                                         )}
                                         {canManageMockExamShell() && (
@@ -2558,129 +2593,91 @@ export default function AdminPage() {
                         )}
                     </main>
                 </div>
-                {/* Bulk Assignment Modal */}
-                {showBulkModal && (
+                {/* Bulk assign: separate modals for timed mocks vs pastpaper library */}
+                {bulkModalKind === 'mocks' && (
                     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
                         <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden border border-slate-200">
                             <div className="p-6 border-b border-slate-100 flex justify-between items-center">
                                 <div>
-                                    <h2 className="text-xl font-bold text-slate-900">Bulk Assign Students</h2>
-                                    <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest mt-1">Mock exams and/or pastpaper tests + students</p>
+                                    <h2 className="text-xl font-bold text-slate-900">Bulk assign — timed mocks</h2>
+                                    <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest mt-1">Mock exams only · then students</p>
                                 </div>
-                                <button onClick={closeBulkModal} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
+                                <button type="button" onClick={closeBulkModal} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
                             </div>
-                            
-                            <div className="flex-1 overflow-hidden grid grid-cols-2">
-                                <div className="border-r border-slate-100 flex flex-col">
-                                    <div className="p-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
+
+                            <div className="flex-1 min-h-0 overflow-hidden grid grid-cols-2">
+                                <div className="border-r border-slate-100 flex flex-col min-h-0">
+                                    <div className="p-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center shrink-0">
                                         <span className="text-xs font-extrabold text-slate-500 uppercase">Mock exams ({bulkAssignExams.length})</span>
                                         <button type="button" onClick={() => setBulkAssignExams(bulkAssignExams.length === mockExams.length ? [] : mockExams.map(m => m.id))} className="text-[10px] font-bold text-blue-600 hover:underline">
                                             {bulkAssignExams.length === mockExams.length ? 'Deselect All' : 'Select All'}
                                         </button>
                                     </div>
-                                    <div className="p-3 border-b border-slate-100 bg-white">
+                                    <div className="p-3 border-b border-slate-100 bg-white shrink-0">
                                         <div className="relative">
                                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-                                            <input 
-                                                className={INPUT + ' pl-9 !py-1.5 !text-[11px]'} 
-                                                placeholder="Search by title, #id, type…" 
-                                                value={bulkTestSearch}
-                                                onChange={e => setBulkTestSearch(e.target.value)}
+                                            <input
+                                                className={INPUT + ' pl-9 !py-1.5 !text-[11px]'}
+                                                placeholder="Search mocks by title, #id, type…"
+                                                value={bulkMockSearch}
+                                                onChange={(e) => setBulkMockSearch(e.target.value)}
                                             />
                                         </div>
                                     </div>
-                                    <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                                    <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1">
                                         {mockExams
                                             .filter((m) => {
-                                                const q = bulkTestSearch.trim().toLowerCase();
+                                                const q = bulkMockSearch.trim().toLowerCase();
                                                 if (!q) return true;
                                                 const blob = `${m.id} ${m.title || ""} ${m.kind || ""} ${formatMockExamAdminLabel(m)}`.toLowerCase();
                                                 return blob.includes(q);
                                             })
                                             .map((mock) => (
-                                            <label key={mock.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-blue-50/50 cursor-pointer transition-colors border border-transparent hover:border-blue-100">
-                                                <input 
-                                                    type="checkbox" 
-                                                    className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" 
-                                                    checked={bulkAssignExams.includes(mock.id)}
-                                                    onChange={e => {
-                                                        if (e.target.checked) setBulkAssignExams([...bulkAssignExams, mock.id]);
-                                                        else setBulkAssignExams(bulkAssignExams.filter(id => id !== mock.id));
-                                                    }}
-                                                />
-                                                <div className="min-w-0">
-                                                    <p className="text-sm font-bold text-slate-800 truncate">{mock.title || `Untitled #${mock.id}`}</p>
-                                                    <p className="text-[10px] text-slate-500 font-mono truncate">{formatMockExamAdminLabel(mock)}</p>
-                                                </div>
-                                            </label>
-                                        ))}
-                                    </div>
-                                    <div className="p-3 bg-slate-100/90 border-y border-slate-200 flex justify-between items-center shrink-0">
-                                        <span className="text-xs font-extrabold text-slate-500 uppercase">Pastpaper tests ({bulkAssignPracticeTests.length})</span>
-                                        <button type="button" onClick={() => setBulkAssignPracticeTests(bulkAssignPracticeTests.length === standaloneTests.length ? [] : standaloneTests.map((t) => t.id))} className="text-[10px] font-bold text-blue-600 hover:underline">
-                                            {bulkAssignPracticeTests.length === standaloneTests.length ? 'Deselect All' : 'Select All'}
-                                        </button>
-                                    </div>
-                                    <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1">
-                                        {standaloneTests.length === 0 && (
-                                            <p className="text-[11px] text-slate-400 p-2">No pastpaper tests.</p>
-                                        )}
-                                        {standaloneTests
-                                            .filter((t) => {
-                                                const q = bulkTestSearch.trim().toLowerCase();
-                                                if (!q) return true;
-                                                const line = formatPastpaperSectionForAssign(t).toLowerCase();
-                                                return line.includes(q) || String(t.id).includes(q);
-                                            })
-                                            .map((t) => (
-                                            <label key={t.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-emerald-50/50 cursor-pointer transition-colors border border-transparent hover:border-emerald-100">
-                                                <input
-                                                    type="checkbox"
-                                                    className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                                                    checked={bulkAssignPracticeTests.includes(t.id)}
-                                                    onChange={(e) => {
-                                                        if (e.target.checked) setBulkAssignPracticeTests([...bulkAssignPracticeTests, t.id]);
-                                                        else setBulkAssignPracticeTests(bulkAssignPracticeTests.filter((id) => id !== t.id));
-                                                    }}
-                                                />
-                                                <div className="min-w-0">
-                                                    <p className="text-sm font-bold text-slate-800 truncate">{formatPastpaperSectionForAssign(t)}</p>
-                                                    <p className="text-[10px] text-slate-400 font-bold uppercase">
-                                                        {t.form_type === "US" ? "US" : "International"}
-                                                        {t.label ? ` · ${t.label}` : ""}
-                                                    </p>
-                                                </div>
-                                            </label>
-                                        ))}
+                                                <label key={mock.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-blue-50/50 cursor-pointer transition-colors border border-transparent hover:border-blue-100">
+                                                    <input
+                                                        type="checkbox"
+                                                        className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                                        checked={bulkAssignExams.includes(mock.id)}
+                                                        onChange={(e) => {
+                                                            if (e.target.checked) setBulkAssignExams([...bulkAssignExams, mock.id]);
+                                                            else setBulkAssignExams(bulkAssignExams.filter((id) => id !== mock.id));
+                                                        }}
+                                                    />
+                                                    <div className="min-w-0">
+                                                        <p className="text-sm font-bold text-slate-800 truncate">{mock.title || `Untitled #${mock.id}`}</p>
+                                                        <p className="text-[10px] text-slate-500 font-mono truncate">{formatMockExamAdminLabel(mock)}</p>
+                                                    </div>
+                                                </label>
+                                            ))}
                                     </div>
                                 </div>
-                                
-                                <div className="flex flex-col bg-slate-50/30">
-                                    <div className="p-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
-                                        <span className="text-xs font-extrabold text-slate-500 uppercase">Step 2: Users ({bulkAssignUsers.length})</span>
-                                        <button onClick={() => setBulkAssignUsers(bulkAssignUsers.length === users.filter(u => u.role === 'STUDENT').length ? [] : users.filter(u => u.role === 'STUDENT').map(u => u.id))} className="text-[10px] font-bold text-blue-600 hover:underline">
+
+                                <div className="flex flex-col bg-slate-50/30 min-h-0">
+                                    <div className="p-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center shrink-0">
+                                        <span className="text-xs font-extrabold text-slate-500 uppercase">Students ({bulkAssignUsers.length})</span>
+                                        <button type="button" onClick={() => setBulkAssignUsers(bulkAssignUsers.length === users.filter(u => u.role === 'STUDENT').length ? [] : users.filter(u => u.role === 'STUDENT').map(u => u.id))} className="text-[10px] font-bold text-blue-600 hover:underline">
                                             {bulkAssignUsers.length === users.filter(u => u.role === 'STUDENT').length ? 'Deselect All' : 'Select All'}
                                         </button>
                                     </div>
-                                    <div className="p-3 border-b border-slate-100 bg-white">
+                                    <div className="p-3 border-b border-slate-100 bg-white shrink-0">
                                         <div className="relative">
                                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-                                            <input 
-                                                className={INPUT + ' pl-9 !py-1.5 !text-[11px]'} 
-                                                placeholder="Search students..." 
+                                            <input
+                                                className={INPUT + ' pl-9 !py-1.5 !text-[11px]'}
+                                                placeholder="Search students…"
                                                 value={bulkUserSearch}
-                                                onChange={e => setBulkUserSearch(e.target.value)}
+                                                onChange={(e) => setBulkUserSearch(e.target.value)}
                                             />
                                         </div>
                                     </div>
-                                    <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                                    <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1">
                                         {users.filter(u => u.role === 'STUDENT' && (u.first_name + ' ' + u.last_name + ' ' + u.username).toLowerCase().includes(bulkUserSearch.toLowerCase())).map(user => (
                                             <label key={user.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-indigo-50/50 cursor-pointer transition-colors border border-transparent hover:border-indigo-100">
-                                                <input 
-                                                    type="checkbox" 
-                                                    className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" 
+                                                <input
+                                                    type="checkbox"
+                                                    className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                                                     checked={bulkAssignUsers.includes(user.id)}
-                                                    onChange={e => {
+                                                    onChange={(e) => {
                                                         if (e.target.checked) setBulkAssignUsers([...bulkAssignUsers, user.id]);
                                                         else setBulkAssignUsers(bulkAssignUsers.filter(id => id !== user.id));
                                                     }}
@@ -2694,19 +2691,20 @@ export default function AdminPage() {
                                     </div>
                                 </div>
                             </div>
-                            
-                            <div className="p-8 bg-white border-t border-slate-100 flex flex-col gap-8">
+
+                            <div className="p-8 bg-white border-t border-slate-100 flex flex-col gap-8 shrink-0">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                     <div className="flex flex-col">
-                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Mock sections: assignment type</span>
+                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Sections to assign</span>
                                         <div className="flex bg-slate-100 p-1 rounded-2xl">
                                             {[
                                                 { id: 'FULL', label: 'Full Exam' },
                                                 { id: 'MATH', label: 'Math Only' },
-                                                { id: 'ENGLISH', label: 'English Only' }
+                                                { id: 'ENGLISH', label: 'English Only' },
                                             ].map(t => (
-                                                <button 
+                                                <button
                                                     key={t.id}
+                                                    type="button"
                                                     onClick={() => setBulkAssignType(t.id)}
                                                     className={`flex-1 py-3 px-4 rounded-xl text-xs font-black transition-all ${bulkAssignType === t.id ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                                                 >
@@ -2715,17 +2713,17 @@ export default function AdminPage() {
                                             ))}
                                         </div>
                                     </div>
-
                                     <div className="flex flex-col">
-                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Mock sections: form filter</span>
+                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Form filter</span>
                                         <div className="flex bg-slate-100 p-1 rounded-2xl">
                                             {[
                                                 { id: '', label: 'All Forms' },
                                                 { id: 'INTERNATIONAL', label: 'Intl' },
-                                                { id: 'US', label: 'US' }
+                                                { id: 'US', label: 'US' },
                                             ].map(t => (
-                                                <button 
-                                                    key={t.id}
+                                                <button
+                                                    key={t.id || 'all'}
+                                                    type="button"
                                                     onClick={() => setBulkAssignFormType(t.id)}
                                                     className={`flex-1 py-3 px-4 rounded-xl text-xs font-black transition-all ${bulkAssignFormType === t.id ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                                                 >
@@ -2735,25 +2733,151 @@ export default function AdminPage() {
                                         </div>
                                     </div>
                                 </div>
-                                
-                                <div className="flex items-center justify-between pt-4 border-t border-slate-50">
-                                    <div className="text-xs text-slate-500 font-medium">
-                                        Granting <span className="font-bold text-slate-900">{bulkAssignUsers.length}</span> students access to <span className="font-bold text-slate-900">{bulkAssignExams.length}</span> mock(s) and <span className="font-bold text-slate-900">{bulkAssignPracticeTests.length}</span> pastpaper test(s). Mock options: <span className="font-bold text-blue-600">{bulkAssignType}</span>{bulkAssignFormType ? <span className="text-indigo-600"> ({bulkAssignFormType})</span> : null}.
-                                    </div>
+                                <div className="flex items-center justify-between pt-4 border-t border-slate-50 gap-4 flex-wrap">
+                                    <p className="text-xs text-slate-500 font-medium">
+                                        Granting <span className="font-bold text-slate-900">{bulkAssignUsers.length}</span> student(s) access to <span className="font-bold text-slate-900">{bulkAssignExams.length}</span> mock(s).
+                                        Sections: <span className="font-bold text-blue-600">{bulkAssignType}</span>
+                                        {bulkAssignFormType ? <span className="text-indigo-600"> ({bulkAssignFormType})</span> : null}.
+                                    </p>
                                     <div className="flex gap-3">
-                                        <button onClick={closeBulkModal} className={BTN_GHOST}>Cancel</button>
-                                        <button 
-                                            onClick={handleBulkAssign} 
-                                            disabled={saving || (!bulkAssignExams.length && !bulkAssignPracticeTests.length) || !bulkAssignUsers.length}
+                                        <button type="button" onClick={closeBulkModal} className={BTN_GHOST}>Cancel</button>
+                                        <button
+                                            type="button"
+                                            onClick={handleBulkAssign}
+                                            disabled={saving || !bulkAssignExams.length || !bulkAssignUsers.length}
                                             className={`${BTN_PRIMARY} !px-8 !py-3 !text-sm h-12 shadow-xl shadow-blue-200/50 disabled:opacity-50 disabled:shadow-none`}
                                         >
                                             {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <ShieldCheck className="w-5 h-5" />}
-                                            {saving ? 'Processing...' : 'Confirm Bulk Assignment'}
+                                            {saving ? 'Processing…' : 'Confirm mock assignment'}
                                         </button>
                                     </div>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                )}
 
+                {bulkModalKind === 'pastpapers' && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+                        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden border border-slate-200">
+                            <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+                                <div>
+                                    <h2 className="text-xl font-bold text-slate-900">Bulk assign — pastpapers</h2>
+                                    <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest mt-1">Practice library sections (cards / orphans) · then students</p>
+                                </div>
+                                <button type="button" onClick={closeBulkModal} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
+                            </div>
+
+                            <div className="flex-1 min-h-0 overflow-hidden grid grid-cols-2">
+                                <div className="border-r border-slate-100 flex flex-col min-h-0">
+                                    <div className="p-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center shrink-0">
+                                        <span className="text-xs font-extrabold text-slate-500 uppercase">Pastpaper sections ({bulkAssignPracticeTests.length})</span>
+                                        <button type="button" onClick={() => setBulkAssignPracticeTests(bulkAssignPracticeTests.length === standaloneTests.length ? [] : standaloneTests.map((t) => t.id))} className="text-[10px] font-bold text-emerald-700 hover:underline">
+                                            {bulkAssignPracticeTests.length === standaloneTests.length ? 'Deselect All' : 'Select All'}
+                                        </button>
+                                    </div>
+                                    <div className="p-3 border-b border-slate-100 bg-white shrink-0">
+                                        <div className="relative">
+                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                                            <input
+                                                className={INPUT + ' pl-9 !py-1.5 !text-[11px]'}
+                                                placeholder="Search sections by card, label, #id…"
+                                                value={bulkPastpaperSearch}
+                                                onChange={(e) => setBulkPastpaperSearch(e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1">
+                                        {standaloneTests.length === 0 && (
+                                            <p className="text-[11px] text-slate-400 p-2">No pastpaper sections. Add cards and sections on this tab first.</p>
+                                        )}
+                                        {standaloneTests
+                                            .filter((t) => {
+                                                const q = bulkPastpaperSearch.trim().toLowerCase();
+                                                if (!q) return true;
+                                                const line = formatPastpaperSectionForAssign(t).toLowerCase();
+                                                return line.includes(q) || String(t.id).includes(q);
+                                            })
+                                            .map((t) => (
+                                                <label key={t.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-emerald-50/50 cursor-pointer transition-colors border border-transparent hover:border-emerald-100">
+                                                    <input
+                                                        type="checkbox"
+                                                        className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                                        checked={bulkAssignPracticeTests.includes(t.id)}
+                                                        onChange={(e) => {
+                                                            if (e.target.checked) setBulkAssignPracticeTests([...bulkAssignPracticeTests, t.id]);
+                                                            else setBulkAssignPracticeTests(bulkAssignPracticeTests.filter((id) => id !== t.id));
+                                                        }}
+                                                    />
+                                                    <div className="min-w-0">
+                                                        <p className="text-sm font-bold text-slate-800 truncate">{formatPastpaperSectionForAssign(t)}</p>
+                                                        <p className="text-[10px] text-slate-400 font-bold uppercase">
+                                                            {t.form_type === 'US' ? 'US' : 'International'}
+                                                            {t.label ? ` · ${t.label}` : ''}
+                                                        </p>
+                                                    </div>
+                                                </label>
+                                            ))}
+                                    </div>
+                                </div>
+
+                                <div className="flex flex-col bg-slate-50/30 min-h-0">
+                                    <div className="p-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center shrink-0">
+                                        <span className="text-xs font-extrabold text-slate-500 uppercase">Students ({bulkAssignUsers.length})</span>
+                                        <button type="button" onClick={() => setBulkAssignUsers(bulkAssignUsers.length === users.filter(u => u.role === 'STUDENT').length ? [] : users.filter(u => u.role === 'STUDENT').map(u => u.id))} className="text-[10px] font-bold text-blue-600 hover:underline">
+                                            {bulkAssignUsers.length === users.filter(u => u.role === 'STUDENT').length ? 'Deselect All' : 'Select All'}
+                                        </button>
+                                    </div>
+                                    <div className="p-3 border-b border-slate-100 bg-white shrink-0">
+                                        <div className="relative">
+                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                                            <input
+                                                className={INPUT + ' pl-9 !py-1.5 !text-[11px]'}
+                                                placeholder="Search students…"
+                                                value={bulkUserSearch}
+                                                onChange={(e) => setBulkUserSearch(e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1">
+                                        {users.filter(u => u.role === 'STUDENT' && (u.first_name + ' ' + u.last_name + ' ' + u.username).toLowerCase().includes(bulkUserSearch.toLowerCase())).map(user => (
+                                            <label key={user.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-indigo-50/50 cursor-pointer transition-colors border border-transparent hover:border-indigo-100">
+                                                <input
+                                                    type="checkbox"
+                                                    className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                                    checked={bulkAssignUsers.includes(user.id)}
+                                                    onChange={(e) => {
+                                                        if (e.target.checked) setBulkAssignUsers([...bulkAssignUsers, user.id]);
+                                                        else setBulkAssignUsers(bulkAssignUsers.filter(id => id !== user.id));
+                                                    }}
+                                                />
+                                                <div>
+                                                    <p className="text-sm font-bold text-slate-800">{user.first_name} {user.last_name}</p>
+                                                    <p className="text-[10px] text-slate-400 font-medium">@{user.username}</p>
+                                                </div>
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="p-6 bg-white border-t border-slate-100 flex items-center justify-between gap-4 flex-wrap shrink-0">
+                                <p className="text-xs text-slate-500 font-medium">
+                                    Granting <span className="font-bold text-slate-900">{bulkAssignUsers.length}</span> student(s) access to <span className="font-bold text-emerald-800">{bulkAssignPracticeTests.length}</span> pastpaper section(s). Each row is one library section (R&amp;W or Math).
+                                </p>
+                                <div className="flex gap-3">
+                                    <button type="button" onClick={closeBulkModal} className={BTN_GHOST}>Cancel</button>
+                                    <button
+                                        type="button"
+                                        onClick={handleBulkAssign}
+                                        disabled={saving || !bulkAssignPracticeTests.length || !bulkAssignUsers.length}
+                                        className={`${BTN_PRIMARY} !px-8 !py-3 !text-sm h-12 shadow-xl shadow-emerald-200/50 disabled:opacity-50 disabled:shadow-none`}
+                                    >
+                                        {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <ShieldCheck className="w-5 h-5" />}
+                                        {saving ? 'Processing…' : 'Confirm pastpaper assignment'}
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 )}
