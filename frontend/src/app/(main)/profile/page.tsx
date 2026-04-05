@@ -401,7 +401,7 @@ export default function ProfilePage() {
   if (loading || !me) {
     return (
       <div className="max-w-xl mx-auto px-8 py-20 flex justify-center">
-        <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+        <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -413,8 +413,8 @@ export default function ProfilePage() {
         <div className="flex items-start justify-between gap-6">
           <div className="max-w-2xl">
             <p className="eyebrow mb-2">Profile</p>
-            <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-slate-900">Futuristic profile dashboard</h1>
-            <p className="text-slate-600 mt-3 max-w-2xl text-base">
+            <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-foreground">Futuristic profile dashboard</h1>
+            <p className="text-muted-foreground mt-3 max-w-2xl text-base">
               Your goals, readiness, and identity — presented like a modern SaaS command center.
             </p>
           </div>
@@ -452,18 +452,18 @@ export default function ProfilePage() {
         {/* Avatar inside cover */}
         <div className="absolute bottom-6 left-8 sm:left-10">
           <div className="relative">
-            <div className="w-28 h-28 rounded-full overflow-hidden border-[3px] border-white/80 bg-white/20 shadow-[0_18px_48px_rgba(37,99,235,0.25)]">
+            <div className="w-28 h-28 rounded-full overflow-hidden border-[3px] border-border bg-card/20 shadow-[0_18px_48px_color-mix(in_oklab,var(--primary)_28%,transparent)]">
               {me.profile_image_url ? (
                 /* eslint-disable-next-line @next/next/no-img-element */
                 <img src={me.profile_image_url} alt={`${me.first_name} ${me.last_name}`} className="w-full h-full object-cover" />
               ) : (
-                <div className="w-full h-full flex items-center justify-center bg-white/10">
-                  <UserCircle className="w-16 h-16 text-slate-300" />
+                <div className="w-full h-full flex items-center justify-center bg-card/10">
+                  <UserCircle className="w-16 h-16 text-label-foreground" />
                 </div>
               )}
             </div>
-            <div className="absolute -bottom-1 -right-1 w-10 h-10 rounded-full glass flex items-center justify-center border border-blue-100/60 shadow-sm">
-              <Sparkles className="w-4 h-4 text-blue-600" />
+            <div className="absolute -bottom-1 -right-1 w-10 h-10 rounded-full glass flex items-center justify-center border border-border shadow-sm">
+              <Sparkles className="w-4 h-4 text-primary" />
             </div>
           </div>
         </div>
@@ -473,19 +473,19 @@ export default function ProfilePage() {
           <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
             <div>
               <div className="flex items-center gap-3">
-                <div className="text-2xl font-extrabold text-slate-900">{me.first_name} {me.last_name}</div>
+                <div className="text-2xl font-extrabold text-foreground">{me.first_name} {me.last_name}</div>
                 <div className="neo-chip">Student</div>
               </div>
-              <div className="text-slate-500 mt-1 text-base">@{me.username}</div>
+              <div className="text-muted-foreground mt-1 text-base">@{me.username}</div>
               {me.phone_number?.trim() ? (
-                <div className="flex items-center gap-2 text-slate-600 mt-2 text-sm font-semibold">
-                  <Phone className="w-4 h-4 text-blue-600 shrink-0" />
+                <div className="flex items-center gap-2 text-muted-foreground mt-2 text-sm font-semibold">
+                  <Phone className="w-4 h-4 text-primary shrink-0" />
                   <span>{me.phone_number}</span>
                 </div>
               ) : null}
               {me.telegram_linked ? (
-                <div className="flex items-center gap-2 text-slate-600 mt-2 text-sm font-semibold">
-                  <MessageCircle className="w-4 h-4 text-sky-600 shrink-0" />
+                <div className="flex items-center gap-2 text-muted-foreground mt-2 text-sm font-semibold">
+                  <MessageCircle className="w-4 h-4 text-accent-cyan shrink-0" />
                   <span>Telegram connected</span>
                 </div>
               ) : null}
@@ -499,19 +499,19 @@ export default function ProfilePage() {
       </div>
 
       {!loading && telegramCfg?.enabled && !me.telegram_linked && telegramCfg.bot_username ? (
-        <div className="mt-10 rounded-2xl border border-sky-200/80 bg-gradient-to-br from-sky-50/90 to-white p-6 md:p-8 shadow-sm">
+        <div className="mt-10 rounded-2xl border border-border bg-gradient-to-br from-accent-cyan/12 via-card to-surface-2 p-6 md:p-8 shadow-sm backdrop-blur-sm">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
             <div className="max-w-xl">
-              <p className="text-xs font-black uppercase tracking-widest text-sky-700 mb-1">Telegram</p>
-              <h2 className="text-xl font-extrabold text-slate-900">Connect your Telegram</h2>
-              <p className="text-slate-600 text-sm mt-2 leading-relaxed">
+              <p className="text-xs font-black uppercase tracking-widest text-accent-cyan mb-1">Telegram</p>
+              <h2 className="text-xl font-extrabold text-foreground">Connect your Telegram</h2>
+              <p className="text-muted-foreground text-sm mt-2 leading-relaxed">
                 Link Telegram to sign in with one tap next time. If you approve phone access in Telegram, we can sync your
                 verified number to your profile.
               </p>
             </div>
             <div className="flex flex-col items-center gap-2 shrink-0">
               {telegramLinkBusy ? (
-                <Loader2 className="w-8 h-8 animate-spin text-sky-600" />
+                <Loader2 className="w-8 h-8 animate-spin text-accent-cyan" />
               ) : (
                 <TelegramLoginButton botUsername={telegramCfg.bot_username} onAuth={handleTelegramLink} />
               )}
@@ -525,27 +525,27 @@ export default function ProfilePage() {
         <div className="metric-tile p-6">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-xs font-black uppercase tracking-widest text-slate-500">Progress</p>
+              <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Progress</p>
               <div className="mt-2 flex items-end gap-2">
-                <p className="text-3xl font-extrabold text-slate-900">{completion}%</p>
-                <p className="text-sm font-semibold text-slate-500 mb-1">complete</p>
+                <p className="text-3xl font-extrabold text-foreground">{completion}%</p>
+                <p className="text-sm font-semibold text-muted-foreground mb-1">complete</p>
               </div>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
-              <Target className="w-5 h-5 text-blue-600" />
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+              <Target className="w-5 h-5 text-primary" />
             </div>
           </div>
 
           <div className="mt-4">
-            <div className="h-2 rounded-full bg-slate-100 overflow-hidden border border-slate-200">
+            <div className="h-2 rounded-full bg-surface-2 overflow-hidden border border-border">
               <div
-                className="h-full bg-blue-600 rounded-full transition-[width] duration-500"
+                className="h-full bg-primary rounded-full transition-[width] duration-500"
                 style={{ width: `${completion}%` }}
               />
             </div>
           </div>
 
-          <p className="mt-3 text-xs text-slate-600">
+          <p className="mt-3 text-xs text-muted-foreground">
             Fill your profile + goals to unlock smoother preparation.
           </p>
         </div>
@@ -553,29 +553,29 @@ export default function ProfilePage() {
         <div className="metric-tile p-6">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-xs font-black uppercase tracking-widest text-slate-500">Score</p>
+              <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Score</p>
               <div className="mt-2 flex items-end gap-2">
-                <p className="text-3xl font-extrabold text-slate-900">
+                <p className="text-3xl font-extrabold text-foreground">
                   {targetScore != null ? targetScore : "—"}
                 </p>
-                <p className="text-sm font-semibold text-slate-500 mb-1">/ 1600</p>
+                <p className="text-sm font-semibold text-muted-foreground mb-1">/ 1600</p>
               </div>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
-              <Trophy className="w-5 h-5 text-blue-600" />
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+              <Trophy className="w-5 h-5 text-primary" />
             </div>
           </div>
 
           <div className="mt-4">
-            <div className="h-2 rounded-full bg-slate-100 overflow-hidden border border-slate-200">
+            <div className="h-2 rounded-full bg-surface-2 overflow-hidden border border-border">
               <div
-                className="h-full bg-blue-600 rounded-full transition-[width] duration-500"
+                className="h-full bg-primary rounded-full transition-[width] duration-500"
                 style={{ width: `${targetScore != null ? Math.round((targetScore / 1600) * 100) : 0}%` }}
               />
             </div>
           </div>
 
-          <p className="mt-3 text-xs text-slate-600">
+          <p className="mt-3 text-xs text-muted-foreground">
             Your target score guides practice focus.
           </p>
         </div>
@@ -583,22 +583,22 @@ export default function ProfilePage() {
         <div className="metric-tile p-6">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-xs font-black uppercase tracking-widest text-slate-500">Activity</p>
+              <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Activity</p>
               <div className="mt-2 flex items-end gap-2">
-                <p className="text-3xl font-extrabold text-slate-900">
+                <p className="text-3xl font-extrabold text-foreground">
                   {nextDays == null ? "—" : nextDays < 0 ? "Done" : nextDays}
                 </p>
-                <p className="text-sm font-semibold text-slate-500 mb-1">
+                <p className="text-sm font-semibold text-muted-foreground mb-1">
                   {nextDays == null ? "" : nextDays < 0 ? "days" : "days"}
                 </p>
               </div>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
-              <CalendarClock className="w-5 h-5 text-blue-600" />
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+              <CalendarClock className="w-5 h-5 text-primary" />
             </div>
           </div>
 
-          <p className="mt-3 text-xs text-slate-600">
+          <p className="mt-3 text-xs text-muted-foreground">
             {me.sat_exam_date
               ? `Next milestone: ${formatDate(me.sat_exam_date)}`
               : "Set your exam date to get a live countdown."}
@@ -611,16 +611,16 @@ export default function ProfilePage() {
         <div className="metric-tile p-6">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-xs font-black uppercase tracking-widest text-slate-500">Last practice test</p>
-              <p className="text-3xl font-extrabold text-slate-900 mt-2">
+              <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Last practice test</p>
+              <p className="text-3xl font-extrabold text-foreground mt-2">
                 {lastPracticeResult?.score != null ? lastPracticeResult.score : "—"}
               </p>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
-              <BookOpen className="w-5 h-5 text-blue-600" />
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+              <BookOpen className="w-5 h-5 text-primary" />
             </div>
           </div>
-          <p className="mt-3 text-xs text-slate-600">
+          <p className="mt-3 text-xs text-muted-foreground">
             {lastPracticeResult
               ? `${formatSubject(lastPracticeResult.practice_test_details?.subject)} · ${lastPracticeResult.submitted_at ? formatDate(lastPracticeResult.submitted_at) : "Completed"}`
               : analyticsLoading
@@ -632,16 +632,16 @@ export default function ProfilePage() {
         <div className="metric-tile p-6">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-xs font-black uppercase tracking-widest text-slate-500">Last mock result</p>
-              <p className="text-3xl font-extrabold text-slate-900 mt-2">
+              <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Last mock result</p>
+              <p className="text-3xl font-extrabold text-foreground mt-2">
                 {lastMockResult?.score != null ? lastMockResult.score : "—"}
               </p>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
-              <Trophy className="w-5 h-5 text-blue-600" />
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+              <Trophy className="w-5 h-5 text-primary" />
             </div>
           </div>
-          <p className="mt-3 text-xs text-slate-600">
+          <p className="mt-3 text-xs text-muted-foreground">
             {lastMockResult
               ? `${lastMockResult.mock_exam_title || "Mock exam"} · ${lastMockResult.completed_at ? formatDate(lastMockResult.completed_at) : "Completed"}`
               : analyticsLoading
@@ -653,24 +653,24 @@ export default function ProfilePage() {
         <div className="metric-tile p-6">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-xs font-black uppercase tracking-widest text-slate-500">Homework progress</p>
-              <p className="text-3xl font-extrabold text-slate-900 mt-2">
+              <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Homework progress</p>
+              <p className="text-3xl font-extrabold text-foreground mt-2">
                 {analyticsLoading ? "..." : `${homeworkCompletion}%`}
               </p>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
-              <FileText className="w-5 h-5 text-blue-600" />
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+              <FileText className="w-5 h-5 text-primary" />
             </div>
           </div>
           <div className="mt-4">
-            <div className="h-2 rounded-full bg-slate-100 overflow-hidden border border-slate-200">
+            <div className="h-2 rounded-full bg-surface-2 overflow-hidden border border-border">
               <div
-                className="h-full bg-blue-600 rounded-full transition-[width] duration-500"
+                className="h-full bg-primary rounded-full transition-[width] duration-500"
                 style={{ width: `${homeworkCompletion}%` }}
               />
             </div>
           </div>
-          <p className="mt-3 text-xs text-slate-600">
+          <p className="mt-3 text-xs text-muted-foreground">
             {analyticsLoading
               ? "Calculating homework status..."
               : `${homeworkProgress.submitted}/${homeworkProgress.total} submitted · ${homeworkProgress.pending} pending · ${homeworkProgress.overdue} overdue`}
@@ -683,8 +683,8 @@ export default function ProfilePage() {
         <div className="metric-tile p-6 xl:col-span-2">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-xs font-black uppercase tracking-widest text-slate-500">Enrolled classes</p>
-              <h3 className="text-xl font-extrabold text-slate-900 mt-1">Your class ecosystem</h3>
+              <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Enrolled classes</p>
+              <h3 className="text-xl font-extrabold text-foreground mt-1">Your class ecosystem</h3>
             </div>
             <div className="neo-chip">
               <School className="w-3.5 h-3.5" />
@@ -694,28 +694,28 @@ export default function ProfilePage() {
 
           <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="panel-soft p-4">
-              <p className="text-[11px] uppercase tracking-widest font-black text-slate-500">Total classes</p>
-              <p className="text-2xl font-extrabold text-slate-900 mt-2">{enrolledClasses.length}</p>
+              <p className="text-[11px] uppercase tracking-widest font-black text-muted-foreground">Total classes</p>
+              <p className="text-2xl font-extrabold text-foreground mt-2">{enrolledClasses.length}</p>
             </div>
             <div className="panel-soft p-4">
-              <p className="text-[11px] uppercase tracking-widest font-black text-slate-500">Students around you</p>
-              <p className="text-2xl font-extrabold text-slate-900 mt-2">{totalPeers}</p>
+              <p className="text-[11px] uppercase tracking-widest font-black text-muted-foreground">Students around you</p>
+              <p className="text-2xl font-extrabold text-foreground mt-2">{totalPeers}</p>
             </div>
             <div className="panel-soft p-4">
-              <p className="text-[11px] uppercase tracking-widest font-black text-slate-500">Active view</p>
-              <p className="text-sm font-bold text-slate-900 mt-2 line-clamp-2">{selectedClass?.name || "Select class"}</p>
+              <p className="text-[11px] uppercase tracking-widest font-black text-muted-foreground">Active view</p>
+              <p className="text-sm font-bold text-foreground mt-2 line-clamp-2">{selectedClass?.name || "Select class"}</p>
             </div>
           </div>
 
           <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
             {classesLoading ? (
               <div className="panel-soft p-6 col-span-full flex items-center justify-center">
-                <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+                <Loader2 className="w-5 h-5 animate-spin text-primary" />
               </div>
             ) : enrolledClasses.length === 0 ? (
               <div className="panel-soft p-6 col-span-full">
-                <p className="font-bold text-slate-800">No classes yet</p>
-                <p className="text-sm text-slate-500 mt-1">Join a class to see students and learning activity here.</p>
+                <p className="font-bold text-foreground">No classes yet</p>
+                <p className="text-sm text-muted-foreground mt-1">Join a class to see students and learning activity here.</p>
               </div>
             ) : (
               enrolledClasses.map((c) => (
@@ -724,17 +724,17 @@ export default function ProfilePage() {
                   key={c.id}
                   onClick={() => setSelectedClassId(c.id)}
                   className={`text-left panel-soft p-4 transition-all hover:-translate-y-0.5 hover:shadow-md ${
-                    selectedClassId === c.id ? "ring-2 ring-blue-400 border-blue-200" : ""
+                    selectedClassId === c.id ? "ring-2 ring-primary/45 border-primary/25" : ""
                   }`}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="font-extrabold text-slate-900">{c.name}</p>
-                      <p className="text-xs text-slate-500 mt-1">{formatSubject(c.subject)} · {c.lesson_days || "—"} {c.lesson_time || ""}</p>
+                      <p className="font-extrabold text-foreground">{c.name}</p>
+                      <p className="text-xs text-muted-foreground mt-1">{formatSubject(c.subject)} · {c.lesson_days || "—"} {c.lesson_time || ""}</p>
                     </div>
-                    <BookOpen className="w-4 h-4 text-blue-600" />
+                    <BookOpen className="w-4 h-4 text-primary" />
                   </div>
-                  <div className="mt-3 pt-3 border-t border-slate-200/70 text-xs text-slate-600 font-semibold space-y-1">
+                  <div className="mt-3 pt-3 border-t border-border/70 text-xs text-muted-foreground font-semibold space-y-1">
                     <p>Teacher: {c.teacher_details?.first_name || c.teacher_details?.username || "—"} {c.teacher_details?.last_name || ""}</p>
                     <p>Room: {c.room_number || "—"} · Students: {c.members_count || 0}</p>
                   </div>
@@ -747,15 +747,15 @@ export default function ProfilePage() {
         <div className="metric-tile p-6">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-xs font-black uppercase tracking-widest text-slate-500">Students information</p>
-              <h3 className="text-lg font-extrabold text-slate-900 mt-1">Classmates</h3>
+              <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Students information</p>
+              <h3 className="text-lg font-extrabold text-foreground mt-1">Classmates</h3>
             </div>
-            <Users className="w-4 h-4 text-blue-600" />
+            <Users className="w-4 h-4 text-primary" />
           </div>
 
           <div className="mt-3 panel-soft p-3">
-            <p className="text-sm font-bold text-slate-900 line-clamp-2">{selectedClass?.name || "No class selected"}</p>
-            <p className="text-xs text-slate-500 mt-1">
+            <p className="text-sm font-bold text-foreground line-clamp-2">{selectedClass?.name || "No class selected"}</p>
+            <p className="text-xs text-muted-foreground mt-1">
               {selectedClass?.start_date ? `Started ${formatDate(selectedClass.start_date)}` : "No start date"}
             </p>
           </div>
@@ -763,21 +763,21 @@ export default function ProfilePage() {
           <div className="mt-4 space-y-2 max-h-[320px] overflow-auto pr-1">
             {peopleLoading ? (
               <div className="flex items-center justify-center py-8">
-                <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+                <Loader2 className="w-5 h-5 animate-spin text-primary" />
               </div>
             ) : selectedStudents.length === 0 ? (
-              <p className="text-sm text-slate-500 py-4">No student data available for this class yet.</p>
+              <p className="text-sm text-muted-foreground py-4">No student data available for this class yet.</p>
             ) : (
               selectedStudents.slice(0, 12).map((p) => (
                 <div key={p.id} className="panel-soft p-2.5 flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-700 flex items-center justify-center font-bold text-xs">
+                  <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">
                     {(p.user.first_name?.[0] || p.user.username?.[0] || "?").toUpperCase()}
                   </div>
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold text-slate-900 truncate">
+                    <p className="text-sm font-semibold text-foreground truncate">
                       {p.user.first_name || ""} {p.user.last_name || ""}
                     </p>
-                    <p className="text-xs text-slate-500 truncate">@{p.user.username || "user"}</p>
+                    <p className="text-xs text-muted-foreground truncate">@{p.user.username || "user"}</p>
                   </div>
                 </div>
               ))
@@ -785,7 +785,7 @@ export default function ProfilePage() {
           </div>
 
           {selectedStudents.length > 12 && (
-            <p className="text-xs text-slate-500 mt-3">
+            <p className="text-xs text-muted-foreground mt-3">
               +{selectedStudents.length - 12} more students
             </p>
           )}
@@ -793,7 +793,7 @@ export default function ProfilePage() {
       </div>
 
       {message && (
-        <div className="mt-5 p-4 rounded-2xl border border-blue-100 bg-blue-50/50 text-blue-700 text-sm font-semibold">
+        <div className="mt-5 p-4 rounded-2xl border border-primary/20 bg-primary/10 text-foreground text-sm font-semibold">
           {message}
         </div>
       )}
@@ -802,7 +802,7 @@ export default function ProfilePage() {
       {editOpen && draft && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
           <div
-            className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm"
+            className="absolute inset-0 bg-[var(--overlay-scrim)] backdrop-blur-sm"
             onClick={handleCloseEdit}
             aria-hidden="true"
           />
@@ -812,8 +812,8 @@ export default function ProfilePage() {
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="eyebrow mb-2">Edit profile</p>
-                  <h2 className="text-xl md:text-2xl font-extrabold text-slate-900">Update your identity & goals</h2>
-                  <p className="text-slate-600 text-sm mt-2">
+                  <h2 className="text-xl md:text-2xl font-extrabold text-foreground">Update your identity & goals</h2>
+                  <p className="text-muted-foreground text-sm mt-2">
                     Photo updates are instant. Other fields save when you confirm.
                   </p>
                 </div>
@@ -829,18 +829,18 @@ export default function ProfilePage() {
 
               <form onSubmit={handleSubmit} className="mt-6 space-y-6">
                 <div className="flex flex-col items-center gap-3">
-                  <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-white/70 bg-white/10 shadow-[0_18px_48px_rgba(37,99,235,0.25)]">
+                  <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-border bg-card/10 shadow-[0_18px_48px_color-mix(in_oklab,var(--primary)_28%,transparent)]">
                     {previewUrl ? (
                       /* eslint-disable-next-line @next/next/no-img-element */
                       <img src={previewUrl} alt="" className="w-full h-full object-cover" />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center bg-white/10">
-                        <UserCircle className="w-14 h-14 text-slate-300" />
+                      <div className="w-full h-full flex items-center justify-center bg-card/10">
+                        <UserCircle className="w-14 h-14 text-label-foreground" />
                       </div>
                     )}
                   </div>
 
-                  <label className="text-sm font-semibold text-blue-700 cursor-pointer hover:underline transition-colors">
+                  <label className="text-sm font-semibold text-primary cursor-pointer hover:underline transition-colors">
                     Choose photo
                     <input
                       type="file"
@@ -855,7 +855,7 @@ export default function ProfilePage() {
                   </label>
 
                   {draft.profile_image_url && (
-                    <label className="flex items-center gap-2 text-xs text-slate-700 bg-white/20 px-3 py-1.5 rounded-full border border-blue-100/60">
+                    <label className="flex items-center gap-2 text-xs text-foreground bg-card/20 px-3 py-1.5 rounded-full border border-border">
                       <input
                         type="checkbox"
                         checked={clearPhoto}
@@ -871,7 +871,7 @@ export default function ProfilePage() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Username</label>
+                    <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">Username</label>
                     <input
                       className="input-modern"
                       value={draft.username}
@@ -881,7 +881,7 @@ export default function ProfilePage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Email</label>
+                    <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">Email</label>
                     <input
                       type="email"
                       className="input-modern"
@@ -891,8 +891,8 @@ export default function ProfilePage() {
                     />
                   </div>
                   <div className="md:col-span-2">
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
-                      Phone <span className="font-normal normal-case text-slate-400">(optional)</span>
+                    <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">
+                      Phone <span className="font-normal normal-case text-label-foreground">(optional)</span>
                     </label>
                     <input
                       type="tel"
@@ -903,13 +903,13 @@ export default function ProfilePage() {
                       value={draft.phone_number}
                       onChange={(e) => setDraft({ ...draft, phone_number: e.target.value })}
                     />
-                    <p className="text-[11px] text-slate-500 mt-1">
+                    <p className="text-[11px] text-muted-foreground mt-1">
                       Optional. If you approve phone access when signing in with Telegram, it can be filled in
                       automatically—you can still edit it here anytime.
                     </p>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">First name</label>
+                    <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">First name</label>
                     <input
                       className="input-modern"
                       value={draft.first_name}
@@ -917,7 +917,7 @@ export default function ProfilePage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Last name</label>
+                    <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">Last name</label>
                     <input
                       className="input-modern"
                       value={draft.last_name}
@@ -925,7 +925,7 @@ export default function ProfilePage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">SAT exam date</label>
+                    <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">SAT exam date</label>
                     <input
                       type="date"
                       className="input-modern"
@@ -934,7 +934,7 @@ export default function ProfilePage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Target score (400–1600)</label>
+                    <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">Target score (400–1600)</label>
                     <input
                       type="number"
                       min={400}
@@ -947,7 +947,7 @@ export default function ProfilePage() {
                   </div>
                 </div>
 
-                {message && <p className="text-sm text-slate-700">{message}</p>}
+                {message && <p className="text-sm text-foreground">{message}</p>}
 
                 <div className="flex items-center justify-between gap-3">
                   <button type="button" onClick={handleCloseEdit} className="btn-secondary" disabled={saving}>

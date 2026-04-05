@@ -24,12 +24,12 @@ export function ClassroomEmptyState({
       )}
     >
       {Icon ? (
-        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500/15 via-white/40 to-sky-500/15 text-blue-600 ring-1 ring-blue-200/50 dark:from-blue-500/20 dark:via-slate-900/20 dark:to-sky-500/15 dark:text-blue-300 dark:ring-blue-500/25">
+        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/15 via-card/60 to-accent-cyan/12 text-primary ring-1 ring-border">
           <Icon className="h-8 w-8 opacity-95" strokeWidth={1.5} />
         </div>
       ) : null}
-      <h3 className="text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100">{title}</h3>
-      <p className="mt-2 max-w-sm text-sm leading-relaxed text-slate-500 dark:text-slate-400">{description}</p>
+      <h3 className="text-lg font-bold tracking-tight text-foreground">{title}</h3>
+      <p className="mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">{description}</p>
       {action ? (
         <ClassroomButton variant="primary" size="md" className="mt-6" onClick={action.onClick}>
           {action.label}

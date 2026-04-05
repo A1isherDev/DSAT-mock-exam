@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { examsApi } from "@/lib/api";
 import { FileText, Search, X, ArrowRight } from "lucide-react";
 import Cookies from "js-cookie";
-
 type ExamKindFilter = "ALL" | "MOCK_SAT" | "MIDTERM";
 
 type MockExamsListProps = {
@@ -16,7 +15,6 @@ type MockExamsListProps = {
   examKindFilter?: ExamKindFilter;
 };
 
-/** Student API returns portal rows (mock_exam_id, section_test_ids). Staff may get full MockExam with tests. */
 function routeMockId(group: any) {
   return group.mock_exam_id ?? group.id;
 }
@@ -119,26 +117,29 @@ export default function MockExamsList({
       (group: any) => !dateFilter || (group.practice_date && group.practice_date.startsWith(dateFilter))
     );
 
+  const cardShell =
+    "ui-card group flex flex-col overflow-hidden rounded-[32px] hover:-translate-y-1";
+
   return (
-    <div className="max-w-7xl mx-auto px-8 py-12">
+    <div className="mx-auto max-w-7xl px-8 py-12">
       <div className="mb-12">
-        <div className="flex items-center gap-2 mb-3">
-          <span className="h-1 w-12 bg-indigo-600 rounded-full" />
-          <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest block">{eyebrow}</span>
+        <div className="mb-3 flex items-center gap-2">
+          <span className="h-1 w-12 rounded-full bg-primary" />
+          <span className="block text-[10px] font-bold uppercase tracking-widest text-primary">{eyebrow}</span>
         </div>
-        <h2 className="text-4xl font-extrabold text-slate-900 tracking-tight mb-4">{title}</h2>
+        <h2 className="mb-4 text-4xl font-extrabold tracking-tight text-foreground">{title}</h2>
         {description ? (
-          <p className="text-slate-500 font-medium max-w-2xl leading-relaxed text-lg">{description}</p>
+          <p className="max-w-2xl text-lg font-medium leading-relaxed text-muted-foreground">{description}</p>
         ) : null}
       </div>
 
-      <div className="flex flex-col md:flex-row items-center justify-between gap-6 mb-10">
-        <div className="w-full md:w-auto relative group flex items-center gap-2">
+      <div className="mb-10 flex flex-col items-center justify-between gap-6 md:flex-row">
+        <div className="group relative flex w-full items-center gap-2 md:w-auto">
           <div className="relative flex-1 md:w-64">
             <select
               value={dateFilter}
               onChange={(e) => setDateFilter(e.target.value)}
-              className="w-full px-4 py-3 bg-white border border-slate-200 rounded-[18px] text-sm font-medium focus:outline-none focus:ring-4 focus:ring-indigo-100 appearance-none cursor-pointer shadow-sm"
+              className="ui-input w-full cursor-pointer appearance-none rounded-[18px] px-4 py-3 text-sm font-medium shadow-sm"
             >
               <option value="">All Available Dates</option>
               {getAvailableDates().map((dateStr) => (
@@ -148,69 +149,68 @@ export default function MockExamsList({
               ))}
             </select>
           </div>
-          {dateFilter && (
+          {dateFilter ? (
             <button
               type="button"
               onClick={() => setDateFilter("")}
-              className="p-3 text-slate-400 hover:text-slate-600 bg-white border border-slate-200 rounded-[14px] shadow-sm"
+              className="rounded-[14px] border border-border bg-card p-3 text-label-foreground shadow-sm hover:text-foreground"
+              aria-label="Clear date filter"
             >
-              <X className="w-4 h-4" />
+              <X className="h-4 w-4" />
             </button>
-          )}
+          ) : null}
         </div>
-        <div className="relative w-full md:w-96 group">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-indigo-600" />
+        <div className="group relative w-full md:w-96">
+          <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-label-foreground group-focus-within:text-primary" />
           <input
             type="text"
             placeholder="Search mock exams..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-11 pr-10 py-3 bg-white border border-slate-200 rounded-[18px] text-sm font-medium focus:outline-none focus:ring-4 focus:ring-indigo-100 shadow-sm"
+            className="ui-input w-full rounded-[18px] py-3 pl-11 pr-10 text-sm font-medium shadow-sm"
           />
-          {searchQuery && (
+          {searchQuery ? (
             <button
               type="button"
               onClick={() => setSearchQuery("")}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-label-foreground hover:text-foreground"
+              aria-label="Clear search"
             >
-              <X className="w-4 h-4" />
+              <X className="h-4 w-4" />
             </button>
-          )}
+          ) : null}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3">
         {filtered.map((group: any) => {
           const pct = progressForGroup(group);
           const mid = routeMockId(group);
           return (
-            <div
-              key={group.id ?? mid}
-              className="group bg-white rounded-[32px] shadow-sm overflow-hidden flex flex-col border border-slate-200 hover:shadow-2xl hover:shadow-indigo-500/10 hover:-translate-y-1 transition-all duration-500"
-            >
-              <div className="p-8 pb-4 relative">
-                <div className="flex items-center justify-between mb-6">
+            <div key={group.id ?? mid} className={cardShell}>
+              <div className="relative p-8 pb-4">
+                <div className="mb-6 flex items-center justify-between">
                   <div className="flex flex-col gap-1">
-                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-600">
+                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">
                       {group.kind === "MIDTERM" ? "Midterm" : "Timed SAT mock"}
                     </span>
-                    <span className="text-xs font-bold text-slate-400">{formatDate(group.practice_date)}</span>
+                    <span className="text-xs font-bold text-label-foreground">{formatDate(group.practice_date)}</span>
                   </div>
-                  <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-all duration-500 shadow-sm">
-                    <FileText className="w-6 h-6" />
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-primary/20 bg-primary/10 text-primary shadow-sm transition-all duration-300 group-hover:bg-primary group-hover:text-white">
+                    <FileText className="h-6 w-6" />
                   </div>
                 </div>
-                <h3 className="text-2xl font-serif font-bold text-slate-900 mb-3 tracking-tight group-hover:text-indigo-700 transition-colors">
+                <h3 className="mb-3 font-serif text-2xl font-bold tracking-tight text-foreground transition-colors group-hover:text-primary">
                   {group.title}
                 </h3>
-                <div className="flex items-center gap-2 mb-6">
-                  <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-indigo-500 transition-all duration-1000" style={{ width: `${pct}%` }} />
+                <div className="mb-6 flex items-center gap-2">
+                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-2">
+                    <div className="h-full bg-primary transition-all duration-1000" style={{ width: `${pct}%` }} />
                   </div>
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">{pct}%</span>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-label-foreground">{pct}%</span>
                 </div>
               </div>
-              <div className="p-6 pt-0 mt-auto">
+              <div className="mt-auto p-6 pt-0">
                 <button
                   type="button"
                   onClick={() => {
@@ -220,30 +220,30 @@ export default function MockExamsList({
                     }
                     router.push(`/mock/${mid}${mockQuerySuffix}`);
                   }}
-                  className="group/btn w-full flex items-center justify-center gap-3 font-black py-4 px-6 rounded-2xl transition-all text-sm uppercase tracking-widest bg-slate-900 text-white hover:bg-indigo-600 shadow-xl shadow-slate-200 hover:shadow-indigo-200 active:scale-[0.98]"
+                  className="ms-btn-primary ms-cta-fill group/btn flex w-full items-center justify-center gap-3 rounded-2xl py-4 text-sm font-black uppercase tracking-widest active:scale-[0.98]"
                 >
                   Enter timed mock
-                  <ArrowRight className="w-5 h-5 group-hover/btn:translate-x-1 transition-transform" />
+                  <ArrowRight className="h-5 w-5 transition-transform group-hover/btn:translate-x-1" />
                 </button>
               </div>
             </div>
           );
         })}
 
-        {groupedExams.length === 0 && (
-          <div className="col-span-full py-24 text-center rounded-[40px] border-2 border-dashed border-slate-200 bg-white/60 max-w-2xl mx-auto px-8">
-            <FileText className="w-12 h-12 text-slate-200 mx-auto mb-4" />
-            <p className="text-slate-600 font-bold text-sm uppercase tracking-widest">No mock exams here yet</p>
-            <p className="text-slate-400 text-sm mt-3 leading-relaxed">
-              Nothing is listed until an admin publishes a <strong>timed mock</strong> and assigns you on the portal. These
-              exams are authored for assessment only—not linked to pastpaper practice tests. Practice real released forms
-              under <strong>Pastpaper tests</strong> first.
+        {groupedExams.length === 0 ? (
+          <div className="col-span-full mx-auto max-w-2xl rounded-[40px] border-2 border-dashed border-border bg-card/60 px-8 py-24 text-center backdrop-blur-sm">
+            <FileText className="mx-auto mb-4 h-12 w-12 text-label-foreground/40" />
+            <p className="text-sm font-bold uppercase tracking-widest text-muted-foreground">No mock exams here yet</p>
+            <p className="mt-3 text-sm leading-relaxed text-label-foreground">
+              Nothing is listed until an admin publishes a <strong className="text-foreground">timed mock</strong> and assigns you on the portal.
+              These exams are authored for assessment only—not linked to pastpaper practice tests. Practice real released forms under{" "}
+              <strong className="text-foreground">Pastpaper tests</strong> first.
             </p>
           </div>
-        )}
-        {groupedExams.length > 0 && filtered.length === 0 && (
-          <div className="col-span-full py-16 text-center text-slate-400 text-sm font-medium">No matches for your filters.</div>
-        )}
+        ) : null}
+        {groupedExams.length > 0 && filtered.length === 0 ? (
+          <div className="col-span-full py-16 text-center text-sm font-medium text-muted-foreground">No matches for your filters.</div>
+        ) : null}
       </div>
     </div>
   );

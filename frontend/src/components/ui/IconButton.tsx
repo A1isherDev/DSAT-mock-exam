@@ -5,11 +5,11 @@ export type IconButtonVariant = "default" | "ghost" | "muted";
 
 const variantClass: Record<IconButtonVariant, string> = {
   default:
-    "ms-icon-btn border border-slate-200/90 bg-white/90 text-slate-700 shadow-sm hover:border-blue-300/80 hover:bg-gradient-to-br hover:from-white hover:to-amber-50/30 dark:border-white/10 dark:bg-white/[0.06] dark:text-slate-200 dark:hover:border-amber-500/35 dark:hover:from-white/[0.08] dark:hover:to-amber-500/10",
+    "ms-icon-btn border border-border bg-card text-foreground shadow-sm hover:border-primary/30 hover:bg-surface-2",
   ghost:
-    "ms-icon-btn-ghost border border-transparent text-slate-600 hover:bg-slate-100/90 dark:text-slate-400 dark:hover:bg-white/[0.06]",
+    "ms-icon-btn-ghost border border-transparent text-muted-foreground hover:bg-surface-2",
   muted:
-    "ms-icon-btn-ghost border border-transparent text-slate-500 hover:bg-slate-100/80 dark:text-slate-500 dark:hover:bg-white/[0.05]",
+    "ms-icon-btn-ghost border border-transparent text-label-foreground hover:bg-surface-2/80",
 };
 
 export function IconButton({

@@ -163,7 +163,7 @@ export default function LoginPage() {
                                         type="checkbox"
                                         checked={rememberMe}
                                         onChange={(e) => setRememberMe(e.target.checked)}
-                                        className="rounded border-slate-300 dark:border-slate-700 text-blue-600 dark:text-blue-500 focus:ring-blue-500 bg-white dark:bg-slate-900"
+                                        className="rounded border-border text-primary focus:ring-primary bg-card"
                                     />
                                     Remember me for 1 week
                                 </label>
@@ -249,7 +249,7 @@ export default function LoginPage() {
                     </form>
                     <div className="mt-5 text-center">
                         <span className="text-sm text-slate-500 dark:text-slate-400 font-medium">Don't have an account? </span>
-                        <Link href="/register" className="text-sm font-bold text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors">
+                        <Link href="/register" className="text-sm font-bold text-primary hover:opacity-90 transition-opacity">
                             Register Now
                         </Link>
                     </div>

@@ -51,28 +51,28 @@ export default function TeacherStudentsPage() {
   return (
     <div className="max-w-6xl mx-auto px-8 py-12">
       <div className="mb-8">
-        <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-2">Students</p>
-        <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Students</h1>
-        <p className="text-slate-500 mt-2">View students in your groups.</p>
+        <p className="text-[10px] font-bold text-primary uppercase tracking-widest mb-2">Students</p>
+        <h1 className="text-3xl font-extrabold text-foreground tracking-tight">Students</h1>
+        <p className="text-muted-foreground mt-2">View students in your groups.</p>
       </div>
 
       {error && <div className="mb-6 p-4 rounded-2xl border border-red-200 bg-red-50 text-red-700 font-semibold text-sm">{error}</div>}
 
       {loading ? (
-        <div className="bg-white border border-slate-200 rounded-2xl p-10 flex justify-center">
-          <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+        <div className="rounded-2xl border border-border bg-card p-10 flex justify-center">
+          <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
         </div>
       ) : (
-        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
-          <div className="p-5 border-b border-slate-200 flex items-center justify-between gap-4">
+        <div className="overflow-hidden rounded-2xl border border-border bg-card">
+          <div className="flex items-center justify-between gap-4 border-b border-border p-5">
             <div className="flex items-center gap-2">
-              <Users className="w-4 h-4 text-slate-500" />
-              <p className="font-bold text-slate-900">Group</p>
+              <Users className="h-4 w-4 text-muted-foreground" />
+              <p className="font-bold text-foreground">Group</p>
             </div>
             <select
               value={selectedGroupId ?? ""}
               onChange={(e) => setSelectedGroupId(Number(e.target.value))}
-              className="border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold bg-white"
+              className="ui-input rounded-xl px-3 py-2 text-sm font-semibold"
             >
               <option value="">Select group</option>
               {groups.map((g) => (
@@ -82,27 +82,27 @@ export default function TeacherStudentsPage() {
               ))}
             </select>
             {selectedGroupId ? (
-              <Link href={`/classes/${selectedGroupId}`} className="text-sm font-bold text-blue-700 hover:underline">
+              <Link href={`/classes/${selectedGroupId}`} className="text-sm font-bold text-primary hover:underline">
                 Open group
               </Link>
             ) : null}
           </div>
 
           {people.length === 0 ? (
-            <div className="p-6 text-slate-600">No students yet.</div>
+            <div className="p-6 text-muted-foreground">No students yet.</div>
           ) : (
-            <div className="divide-y divide-slate-100">
+            <div className="divide-y divide-border">
               {people
                 .filter((m) => m.role === "STUDENT")
                 .map((m) => (
                   <div key={m.id} className="p-5 flex items-center justify-between gap-4">
                     <div className="min-w-0">
-                      <p className="font-bold text-slate-900 truncate">
+                      <p className="truncate font-bold text-foreground">
                         {m.user?.first_name || m.user?.email} {m.user?.last_name || ""}
                       </p>
-                      <p className="text-sm text-slate-500 truncate">{m.user?.email}</p>
+                      <p className="truncate text-sm text-muted-foreground">{m.user?.email}</p>
                     </div>
-                    <span className="text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-full bg-slate-100 text-slate-600">
+                    <span className="rounded-full bg-surface-2 px-2 py-1 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
                       STUDENT
                     </span>
                   </div>

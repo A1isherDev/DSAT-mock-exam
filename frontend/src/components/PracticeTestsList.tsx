@@ -14,6 +14,7 @@ import {
 } from "@/lib/practiceTestCards";
 import { FileText, Search, X, ArrowRight } from "lucide-react";
 import Cookies from "js-cookie";
+import { cn } from "@/lib/cn";
 
 type PracticeTestsListProps = {
   eyebrow?: string;
@@ -66,11 +67,11 @@ function PackSectionFooter({
         return (
           <div
             key={t.id}
-            className="flex flex-col sm:flex-row sm:items-center gap-2 rounded-2xl border border-slate-200/80 dark:border-slate-600 bg-slate-50/80 dark:bg-slate-800/40 p-3"
+            className="flex flex-col gap-2 rounded-2xl border border-border bg-surface-2/80 p-3 sm:flex-row sm:items-center"
           >
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-black text-slate-900 dark:text-slate-100">{subjectLabel(t.subject)}</p>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-black text-foreground">{subjectLabel(t.subject)}</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-label-foreground">
                 {(t.modules?.length ?? 0)} modules · {pct}%{completed ? " · Done" : ""}
               </p>
             </div>
@@ -83,12 +84,13 @@ function PackSectionFooter({
                 }
                 router.push(`/practice-test/${t.id}`);
               }}
-              className={`shrink-0 flex items-center justify-center gap-2 font-black py-3 px-4 rounded-xl text-[10px] uppercase tracking-widest text-white ${
-                isMath ? "bg-emerald-600 hover:bg-emerald-700" : "bg-blue-600 hover:bg-blue-700"
-              }`}
+              className={cn(
+                "ms-btn-primary shrink-0 flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-[10px] font-black uppercase tracking-widest",
+                isMath ? "ms-cta-math" : "ms-cta-fill",
+              )}
             >
               Open
-              <ArrowRight className="w-4 h-4" />
+              <ArrowRight className="h-4 w-4" />
             </button>
           </div>
         );
@@ -144,70 +146,69 @@ export default function PracticeTestsList({
     });
   }, [cards, searchQuery]);
 
+  const cardShell =
+    "ui-card group flex flex-col overflow-hidden rounded-[32px] hover:-translate-y-1";
+
   return (
-    <div className="max-w-7xl mx-auto px-8 py-12">
+    <div className="mx-auto max-w-7xl px-8 py-12">
       <div className="mb-12">
-        <div className="flex items-center gap-2 mb-3">
-          <span className="h-1 w-12 bg-blue-600 rounded-full" />
-          <span className="text-[10px] font-bold text-blue-600 uppercase tracking-widest block">{eyebrow}</span>
+        <div className="mb-3 flex items-center gap-2">
+          <span className="h-1 w-12 rounded-full bg-primary" />
+          <span className="block text-[10px] font-bold uppercase tracking-widest text-primary">{eyebrow}</span>
         </div>
-        <h2 className="text-4xl font-extrabold text-slate-900 dark:text-slate-100 tracking-tight mb-4">{title}</h2>
+        <h2 className="mb-4 text-4xl font-extrabold tracking-tight text-foreground">{title}</h2>
         {description ? (
-          <p className="text-slate-500 dark:text-slate-400 font-medium max-w-2xl leading-relaxed text-lg">{description}</p>
+          <p className="max-w-2xl text-lg font-medium leading-relaxed text-muted-foreground">{description}</p>
         ) : null}
       </div>
 
-      <div className="relative w-full max-w-md mb-10 group">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-600 transition-colors" />
+      <div className="group relative mb-10 w-full max-w-md">
+        <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-label-foreground transition-colors group-focus-within:text-primary" />
         <input
           type="text"
           placeholder="Search practice packs and tests..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full pl-11 pr-10 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-[18px] text-sm font-medium focus:outline-none focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/40 transition-all shadow-sm"
+          className="ui-input w-full rounded-[18px] py-3 pl-11 pr-10 text-sm font-medium shadow-sm transition-all"
         />
-        {searchQuery && (
+        {searchQuery ? (
           <button
             type="button"
             onClick={() => setSearchQuery("")}
-            className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+            className="absolute right-4 top-1/2 -translate-y-1/2 text-label-foreground hover:text-foreground"
+            aria-label="Clear search"
           >
-            <X className="w-4 h-4" />
+            <X className="h-4 w-4" />
           </button>
-        )}
+        ) : null}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3">
         {filtered.map((c) => {
-          const cardShell =
-            "group bg-white dark:bg-slate-900 rounded-[32px] overflow-hidden flex flex-col border border-slate-200/90 dark:border-slate-700 shadow-[0_4px_24px_-6px_rgba(15,23,42,0.12)] dark:shadow-none hover:shadow-[0_16px_48px_-12px_rgba(91,33,182,0.18)] hover:-translate-y-1 transition-all duration-500";
-
           if (c.kind === "pastpaper_pack") {
             const pct = progressPack(c.tests, attempts);
             const lineDate = c.pack?.practice_date || c.tests[0]?.practice_date || c.tests[0]?.created_at;
             const heading = (c.pack?.title && String(c.pack.title).trim()) || sharedPastpaperPackTitle(c.tests);
             return (
               <div key={`pastpaper-pack-${c.packKey}`} className={cardShell}>
-                <div className="p-8 pb-4 relative">
-                  <div className="flex items-center justify-between mb-6">
+                <div className="relative p-8 pb-4">
+                  <div className="mb-6 flex items-center justify-between">
                     <div className="flex flex-col gap-1">
-                      <span className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-600 dark:text-blue-400">
-                        Practice test
-                      </span>
-                      <span className="text-xs font-bold text-slate-400 dark:text-slate-500">{formatLineDate(lineDate)}</span>
+                      <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Practice test</span>
+                      <span className="text-xs font-bold text-label-foreground">{formatLineDate(lineDate)}</span>
                     </div>
-                    <div className="w-12 h-12 rounded-xl bg-blue-100 dark:bg-blue-950/80 flex items-center justify-center text-blue-700 dark:text-blue-300 shadow-sm border border-blue-200/60 dark:border-blue-800/50">
-                      <FileText className="w-6 h-6" />
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary shadow-sm">
+                      <FileText className="h-6 w-6" />
                     </div>
                   </div>
-                  <h3 className="text-2xl font-serif font-bold text-slate-900 dark:text-slate-100 mb-6 tracking-tight leading-snug group-hover:text-blue-800 dark:group-hover:text-blue-300 transition-colors">
+                  <h3 className="mb-6 font-serif text-2xl font-bold leading-snug tracking-tight text-foreground transition-colors group-hover:text-primary">
                     {heading}
                   </h3>
                   <div className="flex items-center gap-2">
-                    <div className="flex-1 h-[3px] bg-slate-200/90 dark:bg-slate-700 rounded-full overflow-hidden">
-                      <div className="h-full bg-blue-500 transition-all duration-1000" style={{ width: `${pct}%` }} />
+                    <div className="h-[3px] flex-1 overflow-hidden rounded-full bg-surface-2">
+                      <div className="h-full bg-primary transition-all duration-1000" style={{ width: `${pct}%` }} />
                     </div>
-                    <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider tabular-nums min-w-[2.25rem] text-right">
+                    <span className="min-w-[2.25rem] text-right text-[10px] font-black uppercase tracking-wider text-label-foreground tabular-nums">
                       {pct}%
                     </span>
                   </div>
@@ -226,38 +227,34 @@ export default function PracticeTestsList({
 
           return (
             <div key={`single-${t.id}`} className={cardShell}>
-              <div className="p-8 pb-4 relative">
-                <div className="flex items-center justify-between mb-6">
+              <div className="relative p-8 pb-4">
+                <div className="mb-6 flex items-center justify-between">
                   <div className="flex flex-col gap-1">
-                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-600 dark:text-blue-400">
-                      Practice test
-                    </span>
-                    <span className="text-xs font-bold text-slate-400 dark:text-slate-500">
+                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Practice test</span>
+                    <span className="text-xs font-bold text-label-foreground">
                       {formatLineDate(t.practice_date || t.created_at)}
                     </span>
                   </div>
-                  <div className="w-12 h-12 rounded-xl bg-blue-100 dark:bg-blue-950/80 flex items-center justify-center text-blue-700 dark:text-blue-300 shadow-sm border border-blue-200/60 dark:border-blue-800/50">
-                    <FileText className="w-6 h-6" />
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary shadow-sm">
+                    <FileText className="h-6 w-6" />
                   </div>
                 </div>
-                <h3 className="text-2xl font-serif font-bold text-slate-900 dark:text-slate-100 mb-6 tracking-tight leading-snug group-hover:text-blue-800 dark:group-hover:text-blue-300 transition-colors">
+                <h3 className="mb-6 font-serif text-2xl font-bold leading-snug tracking-tight text-foreground transition-colors group-hover:text-primary">
                   {singleDisplayTitle(t)}
                 </h3>
                 <div className="flex items-center gap-2">
-                  <div className="flex-1 h-[3px] bg-slate-200/90 dark:bg-slate-700 rounded-full overflow-hidden">
-                    <div className="h-full bg-blue-500 transition-all duration-1000" style={{ width: `${pct}%` }} />
+                  <div className="h-[3px] flex-1 overflow-hidden rounded-full bg-surface-2">
+                    <div className="h-full bg-primary transition-all duration-1000" style={{ width: `${pct}%` }} />
                   </div>
-                  <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider tabular-nums min-w-[2.25rem] text-right">
+                  <span className="min-w-[2.25rem] text-right text-[10px] font-black uppercase tracking-wider text-label-foreground tabular-nums">
                     {pct}%
                   </span>
                 </div>
-                {completed && (
-                  <p className="mt-4 text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">
-                    Completed
-                  </p>
-                )}
+                {completed ? (
+                  <p className="mt-4 text-[10px] font-black uppercase tracking-widest text-primary">Completed</p>
+                ) : null}
               </div>
-              <div className="p-6 pt-2 mt-auto">
+              <div className="mt-auto p-6 pt-2">
                 <button
                   type="button"
                   onClick={() => {
@@ -267,24 +264,22 @@ export default function PracticeTestsList({
                     }
                     router.push(`/practice-test/${t.id}`);
                   }}
-                  className="group/btn w-full flex items-center justify-center gap-3 font-black py-4 px-6 rounded-2xl transition-all text-sm uppercase tracking-widest bg-[#0f172a] dark:bg-slate-950 text-white hover:bg-blue-700 dark:hover:bg-blue-700 shadow-lg shadow-slate-900/10 active:scale-[0.98]"
+                  className="ms-btn-primary ms-cta-fill group/btn flex w-full items-center justify-center gap-3 rounded-2xl py-4 text-sm font-black uppercase tracking-widest active:scale-[0.98]"
                 >
                   Enter practice test
-                  <ArrowRight className="w-5 h-5 group-hover/btn:translate-x-1 transition-transform" />
+                  <ArrowRight className="h-5 w-5 transition-transform group-hover/btn:translate-x-1" />
                 </button>
               </div>
             </div>
           );
         })}
 
-        {filtered.length === 0 && (
-          <div className="col-span-full py-32 text-center rounded-[40px] border-2 border-dashed border-slate-200 dark:border-slate-700 bg-white/50 dark:bg-slate-900/50">
-            <FileText className="w-12 h-12 text-slate-200 dark:text-slate-700 mx-auto mb-4" />
-            <p className="text-slate-500 dark:text-slate-400 font-bold text-sm uppercase tracking-widest">
-              No practice tests assigned yet
-            </p>
+        {filtered.length === 0 ? (
+          <div className="col-span-full rounded-[40px] border-2 border-dashed border-border bg-card/50 py-32 text-center backdrop-blur-sm">
+            <FileText className="mx-auto mb-4 h-12 w-12 text-label-foreground/40" />
+            <p className="text-sm font-bold uppercase tracking-widest text-muted-foreground">No practice tests assigned yet</p>
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );

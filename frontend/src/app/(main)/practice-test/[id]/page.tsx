@@ -115,7 +115,9 @@ function PracticeTestDetailInner() {
           <div className="max-w-xl">
             <div
               className={`group p-6 rounded-[32px] border-2 transition-all duration-500 ${
-                isRW ? "border-blue-50 bg-white dark:bg-slate-900 dark:border-blue-900/40" : "border-emerald-50 bg-white dark:bg-slate-900 dark:border-emerald-900/40"
+                isRW
+                  ? "border-primary/15 bg-card dark:border-primary/25"
+                  : "border-emerald-500/20 bg-card dark:border-emerald-500/25"
               } shadow-sm flex flex-col gap-6`}
             >
               {isCompleted && (
@@ -133,13 +135,13 @@ function PracticeTestDetailInner() {
                   <Icon className="w-9 h-9" />
                 </div>
                 <div>
-                  <h2 className="text-2xl font-black text-slate-900 dark:text-slate-100">{label}</h2>
+                  <h2 className="text-2xl font-black text-foreground">{label}</h2>
                   {test.label && (
-                    <span className="inline-block mt-2 bg-slate-900 text-white text-[9px] font-black px-2 py-1 rounded-lg uppercase">
+                    <span className="mt-2 inline-block rounded-lg bg-foreground px-2 py-1 text-[9px] font-black uppercase text-background">
                       {test.label}
                     </span>
                   )}
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2">
+                  <p className="mt-2 text-[10px] font-bold uppercase tracking-widest text-label-foreground">
                     {test.form_type === "US" ? "US Form" : "International"} · {modules.length} modules ·{" "}
                     {modules.reduce((acc: number, m: any) => acc + m.time_limit_minutes, 0)} min
                   </p>
@@ -150,7 +152,7 @@ function PracticeTestDetailInner() {
                   <button
                     type="button"
                     onClick={() => router.push(`/review/${attempt.id}`)}
-                    className="w-full flex items-center justify-center gap-3 bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-[18px] font-black text-[10px] uppercase tracking-widest"
+                    className="flex w-full items-center justify-center gap-3 rounded-[18px] bg-foreground py-4 text-[10px] font-black uppercase tracking-widest text-background hover:opacity-90"
                   >
                     <Eye className="w-4 h-4" /> Review
                   </button>
@@ -159,10 +161,8 @@ function PracticeTestDetailInner() {
                     type="button"
                     onClick={() => handleStartModule(modules[0]?.id)}
                     disabled={startingModuleId !== null || !modules[0]?.id}
-                    className={`w-full flex items-center justify-center gap-4 py-5 rounded-[18px] font-black text-xs uppercase tracking-widest shadow-xl ${
-                      isRW
-                        ? "bg-blue-600 hover:bg-blue-700 text-white"
-                        : "bg-emerald-600 hover:bg-emerald-700 text-white"
+                    className={`ms-btn-primary flex w-full items-center justify-center gap-4 rounded-[18px] py-5 text-xs font-black uppercase tracking-widest shadow-xl ${
+                      isRW ? "ms-cta-fill text-white" : "bg-emerald-600 text-white hover:bg-emerald-700"
                     }`}
                   >
                     {startingModuleId === modules[0]?.id ? (

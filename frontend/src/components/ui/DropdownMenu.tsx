@@ -93,7 +93,7 @@ export function DropdownMenuItem({
         "flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm font-semibold transition-colors duration-150",
         destructive
           ? "text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
-          : "text-slate-700 hover:bg-blue-50/80 dark:text-slate-200 dark:hover:bg-blue-500/10",
+          : "text-foreground hover:bg-primary/10",
         disabled && "pointer-events-none opacity-40",
       )}
       onClick={() => {

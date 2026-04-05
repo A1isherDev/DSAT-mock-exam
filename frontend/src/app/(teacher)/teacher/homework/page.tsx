@@ -62,26 +62,26 @@ export default function TeacherHomeworkPage() {
   return (
     <div className="max-w-6xl mx-auto px-8 py-12">
       <div className="mb-8">
-        <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-2">Homework</p>
-        <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Homework management</h1>
-        <p className="text-slate-500 mt-2">Create, edit, and track homework submissions.</p>
+        <p className="text-[10px] font-bold text-primary uppercase tracking-widest mb-2">Homework</p>
+        <h1 className="text-3xl font-extrabold text-foreground tracking-tight">Homework management</h1>
+        <p className="text-muted-foreground mt-2">Create, edit, and track homework submissions.</p>
       </div>
 
       {error && <div className="mb-6 p-4 rounded-2xl border border-red-200 bg-red-50 text-red-700 font-semibold text-sm">{error}</div>}
 
       {loading ? (
-        <div className="bg-white border border-slate-200 rounded-2xl p-10 flex justify-center">
-          <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+        <div className="rounded-2xl border border-border bg-card p-10 flex justify-center">
+          <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
         </div>
       ) : (
         <div className="space-y-4 max-w-3xl">
-            <div className="bg-white border border-slate-200 rounded-2xl p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="rounded-2xl border border-border bg-card p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-1">Class</p>
+                <p className="text-xs font-black text-muted-foreground uppercase tracking-widest mb-1">Class</p>
                 <select
                   value={selectedGroupId ?? ""}
                   onChange={(e) => setSelectedGroupId(Number(e.target.value))}
-                  className="w-full sm:w-auto min-w-[200px] border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold bg-white"
+                  className="ui-input w-full sm:w-auto min-w-[200px] rounded-xl px-3 py-2 text-sm font-semibold"
                 >
                   <option value="">Select a class</option>
                   {groups.map((g) => (
@@ -100,14 +100,14 @@ export default function TeacherHomeworkPage() {
                         setEditingAssignment(null);
                         setCreateOpen(true);
                       }}
-                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700"
+                      className="ms-btn-primary ms-cta-fill inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold"
                     >
                       <Plus className="w-4 h-4" />
                       Create assignment
                     </button>
                     <Link
                       href={`/classes/${selectedGroupId}`}
-                      className="inline-flex items-center px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 hover:bg-slate-50"
+                      className="inline-flex items-center rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-bold text-foreground hover:bg-surface-2"
                     >
                       Class page
                     </Link>
@@ -116,17 +116,17 @@ export default function TeacherHomeworkPage() {
               </div>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
-              <div className="p-5 border-b border-slate-200 font-bold text-slate-900">Assignments</div>
+            <div className="overflow-hidden rounded-2xl border border-border bg-card">
+              <div className="border-b border-border p-5 font-bold text-foreground">Assignments</div>
               {assignments.length === 0 ? (
-                <div className="p-6 text-slate-600">No homework yet. Use “Create assignment” above.</div>
+                <div className="p-6 text-muted-foreground">No homework yet. Use “Create assignment” above.</div>
               ) : (
-                <div className="divide-y divide-slate-100">
+                <div className="divide-y divide-border">
                   {assignments.map((a) => (
                     <div key={a.id} className="p-5 flex flex-wrap items-center justify-between gap-3">
                       <div className="min-w-0 flex-1">
-                        <p className="font-extrabold text-slate-900 truncate">{a.title}</p>
-                        <p className="text-sm text-slate-500 mt-1 inline-flex items-center gap-2">
+                        <p className="truncate font-extrabold text-foreground">{a.title}</p>
+                        <p className="mt-1 inline-flex items-center gap-2 text-sm text-muted-foreground">
                           <Calendar className="w-4 h-4" /> {formatDue(a.due_at)}
                         </p>
                       </div>
@@ -137,7 +137,7 @@ export default function TeacherHomeworkPage() {
                             setEditingAssignment(a);
                             setCreateOpen(true);
                           }}
-                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 font-bold text-sm hover:bg-slate-50"
+                          className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold text-foreground hover:bg-surface-2"
                         >
                           <Pencil className="w-4 h-4" />
                           Edit
@@ -161,7 +161,7 @@ export default function TeacherHomeworkPage() {
                         </button>
                         <Link
                           href={`/classes/${selectedGroupId}/assignments/${a.id}`}
-                          className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 font-bold text-sm hover:bg-slate-50"
+                          className="rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold text-foreground hover:bg-surface-2"
                         >
                           View
                         </Link>

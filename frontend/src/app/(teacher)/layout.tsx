@@ -39,17 +39,17 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
     cn(
       "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all duration-200",
       active
-        ? "bg-gradient-to-r from-blue-600/12 to-sky-500/10 text-blue-950 ring-1 ring-blue-200/90 dark:from-blue-500/18 dark:to-sky-500/10 dark:text-blue-100 dark:ring-blue-500/30"
-        : "text-slate-600 hover:bg-white/70 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-slate-100",
+        ? "bg-gradient-to-r from-primary/12 via-accent-cyan/8 to-primary/8 text-foreground ring-1 ring-primary/25"
+        : "text-muted-foreground hover:bg-surface-2 hover:text-foreground",
     );
 
   return (
     <AuthGuard adminOnly>
-      <div className="app-bg flex min-h-screen flex-col text-slate-900 dark:text-slate-100 md:flex-row">
+      <div className="app-bg flex min-h-screen flex-col text-foreground md:flex-row">
         {mobileOpen ? (
           <button
             type="button"
-            className="fixed inset-0 z-[90] bg-slate-950/50 backdrop-blur-sm md:hidden"
+            className="fixed inset-0 z-[90] bg-[var(--overlay-scrim)] backdrop-blur-sm md:hidden"
             aria-label="Close menu"
             onClick={() => setMobileOpen(false)}
           />
@@ -57,16 +57,16 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
 
         <aside
           className={cn(
-            "fixed inset-y-0 left-0 z-[100] flex h-[100dvh] w-[min(100%,272px)] shrink-0 flex-col border-r border-slate-200/80 bg-white/90 shadow-xl backdrop-blur-xl transition-transform duration-200 dark:border-slate-800 dark:bg-slate-950/90 md:static md:h-screen md:min-h-0 md:translate-x-0 md:shadow-none",
+            "fixed inset-y-0 left-0 z-[100] flex h-[100dvh] w-[min(100%,272px)] shrink-0 flex-col border-r border-border bg-card shadow-xl shadow-primary/5 backdrop-blur-xl transition-transform duration-200 md:static md:h-screen md:min-h-0 md:translate-x-0 md:shadow-none",
             mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
           )}
         >
-          <div className="flex items-center justify-between gap-2 border-b border-slate-100 p-4 dark:border-slate-800 md:p-6">
+          <div className="flex items-center justify-between gap-2 border-b border-border p-4 md:p-6">
             <div className="flex items-center gap-3">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/images/logo.png" alt="" className="h-10 w-10 object-contain" />
               <div>
-                <p className="text-base font-extrabold tracking-tight text-slate-900 dark:text-white">Teacher</p>
+                <p className="text-base font-extrabold tracking-tight text-foreground">Teacher</p>
                 <Badge variant="brand" className="mt-1">
                   MasterSAT
                 </Badge>
@@ -79,12 +79,12 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
 
           <div className="px-4 pt-4 md:px-5">
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-label-foreground" />
               <input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="Filter…"
-                className="w-full rounded-xl border border-slate-200/90 bg-white/90 py-2 pl-9 pr-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-slate-600 dark:bg-slate-900/50 dark:text-slate-100"
+                className="ui-input w-full rounded-xl py-2 pl-9 pr-3 text-sm shadow-sm"
               />
             </div>
           </div>
@@ -103,8 +103,8 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
                       className={cn(
                         "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
                         active
-                          ? "bg-blue-600/15 text-blue-800 dark:bg-blue-500/20 dark:text-blue-200"
-                          : "bg-slate-100/80 text-slate-500 dark:bg-slate-800/80 dark:text-slate-400",
+                          ? "bg-gradient-to-br from-primary/15 to-ds-gold/10 text-foreground ring-1 ring-primary/20"
+                          : "bg-surface-2 text-label-foreground group-hover:bg-card",
                       )}
                     >
                       <Icon className="h-[18px] w-[18px]" />
@@ -118,11 +118,11 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-40 flex h-[56px] items-center gap-3 border-b border-slate-200/80 bg-white/80 px-3 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/75 md:h-[64px] md:px-6">
+          <header className="sticky top-0 z-40 flex h-[56px] items-center gap-3 border-b border-border bg-card px-3 backdrop-blur-xl md:h-[64px] md:px-6">
             <IconButton variant="ghost" className="md:hidden" aria-label="Open menu" onClick={() => setMobileOpen(true)}>
               <Menu className="h-5 w-5" />
             </IconButton>
-            <h1 className="min-w-0 flex-1 truncate text-base font-bold text-slate-900 dark:text-slate-50 md:text-lg">{title}</h1>
+            <h1 className="min-w-0 flex-1 truncate text-base font-bold text-foreground md:text-lg">{title}</h1>
           </header>
           <main className="flex-1 px-2 py-3 md:px-4 lg:px-6">{children}</main>
         </div>

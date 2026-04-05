@@ -154,9 +154,11 @@ function MockExamDetailInner() {
     return (
       <div
         key={test.id}
-        className={`group p-6 rounded-[32px] border-2 transition-all duration-500 ${
-          isRW ? "border-blue-50 bg-white hover:border-blue-400" : "border-emerald-50 bg-white hover:border-emerald-400"
-        } shadow-sm hover:shadow-2xl hover:shadow-slate-200/50 relative overflow-hidden flex flex-col gap-6`}
+        className={`group relative flex flex-col gap-6 overflow-hidden rounded-[32px] border-2 p-6 shadow-sm transition-all duration-500 hover:shadow-2xl hover:shadow-primary/10 ${
+          isRW
+            ? "border-primary/15 bg-card hover:border-primary/35"
+            : "border-emerald-500/20 bg-card hover:border-emerald-500/45"
+        }`}
       >
         {isCompleted && (
           <div className="absolute top-5 right-5 flex items-center gap-2 px-3 py-1.5 bg-[#10b981] text-white rounded-xl shadow-lg shadow-emerald-100/50 z-20">
@@ -167,21 +169,21 @@ function MockExamDetailInner() {
 
         <div className="flex items-start gap-5">
           <div
-            className={`p-5 rounded-[24px] transition-all duration-500 shrink-0 bg-white shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-slate-100/50 group-hover:shadow-xl group-hover:-translate-y-1 ${
-              isRW ? "text-blue-600" : "text-emerald-600"
+            className={`shrink-0 rounded-[24px] border border-border bg-card p-5 shadow-sm transition-all duration-500 group-hover:-translate-y-1 group-hover:shadow-xl ${
+              isRW ? "text-primary" : "text-emerald-600"
             } relative`}
           >
             <Icon className="w-9 h-9 relative z-10" />
           </div>
 
           <div className="flex flex-col gap-2.5 pt-1 min-w-0 pr-10">
-            <h3 className="text-2xl font-black text-slate-900 tracking-tight leading-none break-words">{label}</h3>
+            <h3 className="break-words text-2xl font-black leading-none tracking-tight text-foreground">{label}</h3>
             {test.label && (
-              <span className="bg-slate-900 text-white text-[9px] font-black px-2 py-1 rounded-lg uppercase tracking-widest w-fit">
+              <span className="w-fit rounded-lg bg-foreground px-2 py-1 text-[9px] font-black uppercase tracking-widest text-background">
                 {test.label}
               </span>
             )}
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+            <div className="text-[10px] font-bold uppercase tracking-widest text-label-foreground">
               {modules.length} Modules • {modules.reduce((acc: number, m: any) => acc + m.time_limit_minutes, 0)}m
             </div>
           </div>
@@ -192,7 +194,7 @@ function MockExamDetailInner() {
             <button
               type="button"
               onClick={() => router.push(`/review/${attempt.id}`)}
-              className="w-full flex items-center justify-center gap-3 bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-[18px] font-black transition-all duration-300 shadow-xl shadow-slate-200 active:scale-[0.98] uppercase tracking-widest text-[10px]"
+              className="flex w-full items-center justify-center gap-3 rounded-[18px] bg-foreground py-4 text-[10px] font-black uppercase tracking-widest text-background shadow-xl transition-all duration-300 hover:opacity-90 active:scale-[0.98]"
             >
               <Eye className="w-4 h-4" /> REVIEW
             </button>
@@ -201,10 +203,8 @@ function MockExamDetailInner() {
               type="button"
               onClick={() => handleStartModule(test.id, modules[0]?.id, "?midterm=1")}
               disabled={startingModuleId !== null}
-              className={`w-full flex items-center justify-center gap-4 py-5 rounded-[18px] font-black transition-all duration-300 shadow-xl active:scale-[0.98] ${
-                isRW
-                  ? "bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200"
-                  : "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200"
+              className={`ms-btn-primary flex w-full items-center justify-center gap-4 rounded-[18px] py-5 font-black transition-all duration-300 shadow-xl active:scale-[0.98] ${
+                isRW ? "ms-cta-fill text-white" : "bg-emerald-600 text-white shadow-emerald-200 hover:bg-emerald-700"
               }`}
             >
               {startingModuleId === modules[0]?.id ? (
@@ -227,16 +227,16 @@ function MockExamDetailInner() {
   if (loading)
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+        <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
       </div>
     );
 
   return (
     <AuthGuard>
-      <div className="min-h-screen bg-[#f8f9fb]">
+      <div className="min-h-screen bg-background">
         {showReadyOverlay && (
           <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center bg-slate-950 text-white p-8">
-            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-300 mb-4">Mock exam</p>
+            <p className="mb-4 text-[10px] font-black uppercase tracking-[0.3em] text-accent-cyan">Mock exam</p>
             <h2 className="text-3xl md:text-4xl font-black text-center mb-4 tracking-tight">Are you ready?</h2>
             <p className="text-slate-400 text-center max-w-md mb-10 font-medium leading-relaxed">
               {examIsMidterm
@@ -255,25 +255,25 @@ function MockExamDetailInner() {
                 type="button"
                 onClick={() => confirmReadyAndStart()}
                 disabled={startingModuleId !== null}
-                className="flex-1 py-4 rounded-2xl bg-indigo-500 hover:bg-indigo-400 font-black text-sm uppercase tracking-widest disabled:opacity-50"
+                className="ms-btn-primary ms-cta-fill flex-1 rounded-2xl py-4 text-sm font-black uppercase tracking-widest disabled:opacity-50"
               >
                 Yes, start
               </button>
             </div>
           </div>
         )}
-        <header className="bg-white border-b border-slate-200 sticky top-0 z-50">
-          <div className="max-w-5xl mx-auto px-6 h-20 flex items-center justify-between">
+        <header className="sticky top-0 z-50 border-b border-border bg-card backdrop-blur-xl">
+          <div className="mx-auto flex h-20 max-w-5xl items-center justify-between px-6">
             <button
               type="button"
               onClick={() => router.push(backHref)}
-              className="flex items-center gap-2 text-slate-500 hover:text-slate-900 font-bold transition-colors"
+              className="flex items-center gap-2 font-bold text-muted-foreground transition-colors hover:text-foreground"
             >
               <ArrowLeft className="w-5 h-5" /> Back
             </button>
             <div className="text-right">
-              <h1 className="text-xl font-black text-slate-900 tracking-tight">{mockExam?.title}</h1>
-              <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">
+              <h1 className="text-xl font-black tracking-tight text-foreground">{mockExam?.title}</h1>
+              <p className="text-[11px] font-black uppercase tracking-widest text-label-foreground">
                 {examIsMidterm ? "Midterm" : "Full mock SAT"}
               </p>
             </div>
@@ -284,8 +284,8 @@ function MockExamDetailInner() {
           {!examIsMidterm && rwTest && mathTest ? (
             <div className="space-y-8">
               <div>
-                <h2 className="text-4xl font-black text-slate-900 mb-4 tracking-tight">Full mock exam</h2>
-                <p className="text-slate-500 font-medium text-lg max-w-2xl">
+                <h2 className="mb-4 text-4xl font-black tracking-tight text-foreground">Full mock exam</h2>
+                <p className="max-w-2xl text-lg font-medium text-muted-foreground">
                   This is the <strong>one full mock</strong> (not separate sectional runs). Reading &amp; Writing first, then a
                   required 10-minute break, then Math—no pause. Total score out of 1600. To practice R&amp;W or Math alone with
                   pause, use <strong>Practice Tests</strong>.
@@ -293,10 +293,10 @@ function MockExamDetailInner() {
               </div>
 
               {mathDone ? (
-                <div className="bg-white rounded-3xl border border-slate-200 p-10 shadow-sm text-center">
-                  <Trophy className="w-14 h-14 text-amber-500 mx-auto mb-4" />
-                  <h3 className="text-2xl font-black text-slate-900 mb-2">Mock complete</h3>
-                  <p className="text-slate-600 mb-8">View your combined Reading &amp; Writing and Math scores.</p>
+                <div className="rounded-3xl border border-border bg-card p-10 text-center shadow-sm">
+                  <Trophy className="mx-auto mb-4 h-14 w-14 text-ds-gold" />
+                  <h3 className="mb-2 text-2xl font-black text-foreground">Mock complete</h3>
+                  <p className="mb-8 text-muted-foreground">View your combined Reading &amp; Writing and Math scores.</p>
                   <button
                     type="button"
                     onClick={() =>
@@ -304,15 +304,15 @@ function MockExamDetailInner() {
                         `/mock/${mockIdStr}/results?rwAttempt=${rwAttempt?.id || ""}&mathAttempt=${mathAttempt?.id || ""}`
                       )
                     }
-                    className="inline-flex items-center justify-center gap-2 bg-slate-900 text-white font-black px-8 py-4 rounded-2xl text-sm uppercase tracking-widest hover:bg-indigo-600 transition-colors"
+                    className="ms-btn-primary ms-cta-fill inline-flex items-center justify-center gap-2 rounded-2xl px-8 py-4 text-sm font-black uppercase tracking-widest"
                   >
                     See results (1600 scale)
                   </button>
                 </div>
               ) : !rwDone ? (
-                <div className="bg-white rounded-3xl border-2 border-indigo-100 p-10 shadow-sm">
-                  <h3 className="text-2xl font-black text-slate-900 mb-2">Full mock exam</h3>
-                  <p className="text-slate-500 font-medium mb-8 max-w-2xl">
+                <div className="rounded-3xl border-2 border-primary/20 bg-card p-10 shadow-sm">
+                  <h3 className="mb-2 text-2xl font-black text-foreground">Full mock exam</h3>
+                  <p className="mb-8 max-w-2xl font-medium text-muted-foreground">
                     One continuous run: English (both modules) → 10-minute break → Math (both modules). No pause. When you are
                     ready, you will see a full-screen confirmation before the timer starts.
                   </p>
@@ -323,7 +323,7 @@ function MockExamDetailInner() {
                       else setShowReadyOverlay(true);
                     }}
                     disabled={startingModuleId !== null}
-                    className="inline-flex items-center justify-center gap-3 bg-slate-900 hover:bg-indigo-600 text-white font-black px-10 py-5 rounded-2xl text-xs uppercase tracking-widest shadow-xl disabled:opacity-60"
+                    className="ms-btn-primary ms-cta-fill inline-flex items-center justify-center gap-3 rounded-2xl px-10 py-5 text-xs font-black uppercase tracking-widest shadow-xl disabled:opacity-60"
                   >
                     {startingModuleId !== null ? (
                       <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -350,12 +350,12 @@ function MockExamDetailInner() {
                   </button>
                 </div>
               ) : (
-                <div className="bg-white rounded-3xl border-2 border-emerald-100 p-10 shadow-sm">
+                <div className="rounded-3xl border-2 border-emerald-200/60 bg-card p-10 shadow-sm dark:border-emerald-500/25">
                   <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
                     <div>
                       <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-2">Step 2</p>
-                      <h3 className="text-2xl font-black text-slate-900">Mathematics</h3>
-                      <p className="text-slate-500 mt-2">
+                      <h3 className="text-2xl font-black text-foreground">Mathematics</h3>
+                      <p className="mt-2 text-muted-foreground">
                         Opens automatically when the break timer ends. Use the button only if it did not open. Pause is not
                         available.
                       </p>
@@ -382,8 +382,8 @@ function MockExamDetailInner() {
           ) : (
             <>
               <div className="mb-12">
-                <h2 className="text-4xl font-black text-slate-900 mb-4 tracking-tight">Midterm</h2>
-                <p className="text-slate-500 font-medium text-lg max-w-2xl">
+                <h2 className="mb-4 text-4xl font-black tracking-tight text-foreground">Midterm</h2>
+                <p className="max-w-2xl text-lg font-medium text-muted-foreground">
                   Calculator and reference sheet are hidden. Start from the button below; confirm on the full-screen prompt.
                 </p>
                 {midtermTest && !midtermDone ? (
@@ -397,7 +397,7 @@ function MockExamDetailInner() {
                       }
                     }}
                     disabled={startingModuleId !== null}
-                    className="mt-6 inline-flex items-center gap-3 bg-slate-900 hover:bg-indigo-600 text-white font-black px-8 py-4 rounded-2xl text-xs uppercase tracking-widest disabled:opacity-60"
+                    className="ms-btn-primary ms-cta-fill mt-6 inline-flex items-center gap-3 rounded-2xl px-8 py-4 text-xs font-black uppercase tracking-widest disabled:opacity-60"
                   >
                     <Play className="w-5 h-5 fill-current" />
                     {midtermAttempt?.started_at && !midtermAttempt?.is_completed ? "Resume midterm" : "Start midterm exam"}
@@ -410,8 +410,8 @@ function MockExamDetailInner() {
                   .sort((a: any, b: any) => (a.subject === "READING_WRITING" ? -1 : 1))
                   .map((test: any) => renderTestCard(test))}
                 {(!mockExam?.tests || mockExam.tests.length === 0) && (
-                  <div className="col-span-full py-20 bg-white rounded-3xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center">
-                    <p className="text-slate-400 font-bold">No sections available yet.</p>
+                  <div className="col-span-full flex flex-col items-center justify-center rounded-3xl border-2 border-dashed border-border bg-card py-20">
+                    <p className="font-bold text-muted-foreground">No sections available yet.</p>
                   </div>
                 )}
               </div>
@@ -427,8 +427,8 @@ export default function MockExamDetailPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen flex items-center justify-center bg-[#f8f9fb]">
-          <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+        <div className="flex min-h-screen items-center justify-center bg-background">
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-primary border-t-transparent" />
         </div>
       }
     >

@@ -8,7 +8,8 @@ const toneClass: Record<ClassroomAlertTone, string> = {
     "border-red-200/90 bg-gradient-to-r from-red-50 to-orange-50/30 text-red-900 dark:border-red-900/50 dark:from-red-950/40 dark:to-red-950/20 dark:text-red-100",
   warning:
     "border-amber-200/90 bg-gradient-to-r from-amber-50 to-yellow-50/20 text-amber-950 dark:border-amber-900/40 dark:from-amber-950/30 dark:to-amber-950/15 dark:text-amber-100",
-  info: "border-blue-200/80 bg-gradient-to-r from-blue-50/90 to-sky-50/40 text-slate-800 dark:border-blue-500/25 dark:from-blue-950/30 dark:to-sky-950/20 dark:text-slate-200",
+  info:
+    "border-primary/25 bg-gradient-to-r from-primary/8 via-card to-accent-cyan/10 text-foreground dark:border-primary/30 dark:from-primary/12 dark:to-accent-cyan/8",
 };
 
 export function ClassroomAlert({

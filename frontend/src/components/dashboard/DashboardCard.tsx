@@ -23,20 +23,19 @@ export function DashboardCard({
 }) {
   const glow =
     accent === "blue"
-      ? "dark:hover:shadow-[0_20px_48px_-12px_rgba(59,130,246,0.18),0_16px_40px_-14px_rgba(245,158,11,0.12)] dark:hover:border-blue-500/35"
+      ? "hover:shadow-[0_0_28px_color-mix(in_srgb,var(--primary)_14%,transparent)] hover:border-primary/25"
       : accent === "gold"
-        ? "dark:hover:shadow-[0_20px_48px_-12px_rgba(245,158,11,0.15)] dark:hover:border-amber-500/35"
-        : "dark:hover:border-white/15";
+        ? "hover:shadow-[0_0_24px_color-mix(in_srgb,var(--ds-gold)_12%,transparent)] hover:border-amber-500/35"
+        : "hover:border-border hover:shadow-[0_12px_40px_-12px_color-mix(in_srgb,var(--foreground)_8%,transparent)]";
 
   return (
     <div
       className={cn(
-        "rounded-2xl border bg-white shadow-md shadow-slate-900/[0.04]",
-        accent === "gold" ? "border-amber-200/55 dark:border-amber-500/25" : "border-slate-200/90 dark:border-white/10",
-        "dark:bg-neutral-950 dark:shadow-black/60",
+        "rounded-2xl border border-border bg-card shadow-md backdrop-blur-sm",
+        accent === "gold" ? "border-amber-500/30" : "",
+        "shadow-[0_4px_24px_-4px_color-mix(in_srgb,var(--foreground)_6%,transparent)] dark:shadow-[0_8px_32px_-8px_color-mix(in_srgb,var(--primary)_14%,transparent)]",
         "transition-[transform,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
-        interactive &&
-          "cursor-pointer hover:-translate-y-0.5 hover:border-slate-300/90 hover:shadow-lg dark:hover:-translate-y-0.5",
+        interactive && "cursor-pointer hover:-translate-y-0.5 hover:shadow-lg",
         interactive && glow,
         padMap[padding],
         className,
@@ -63,7 +62,7 @@ export function DashboardEyebrow({ children, className }: { children: ReactNode;
 
 export function DashboardTitle({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <h2 className={cn("text-lg font-bold tracking-tight text-slate-900 dark:text-white md:text-xl", className)}>
+    <h2 className={cn("text-lg font-bold tracking-tight text-foreground md:text-xl", className)}>
       {children}
     </h2>
   );

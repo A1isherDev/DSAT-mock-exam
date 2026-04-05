@@ -118,7 +118,7 @@ export default function AssignmentDetailPage() {
   };
 
   const linkBtn =
-    "inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900";
+    "inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
   return (
     <div className="relative mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
@@ -126,7 +126,7 @@ export default function AssignmentDetailPage() {
 
       <Link
         href={`/classes/${cid}`}
-        className="mb-6 inline-flex items-center gap-2 text-sm font-semibold text-indigo-600 transition-colors hover:text-indigo-500 dark:text-indigo-400"
+        className="mb-6 inline-flex items-center gap-2 text-sm font-semibold text-primary transition-colors hover:opacity-90"
       >
         <ArrowLeft className="h-4 w-4" /> Back to class
       </Link>
@@ -161,18 +161,18 @@ export default function AssignmentDetailPage() {
             <div className="space-y-6 lg:col-span-2">
               <ClassroomCard padding="md">
                 {assignment.instructions ? (
-                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
                     {assignment.instructions}
                   </p>
                 ) : (
-                  <p className="text-sm text-slate-400 dark:text-slate-500">No instructions provided.</p>
+                  <p className="text-sm text-label-foreground">No instructions provided.</p>
                 )}
                 <div className="mt-6 flex flex-wrap gap-2">
                   {assignment?.mock_exam ? (
                     <button
                       type="button"
                       onClick={() => router.push(`/mock/${assignment.mock_exam}`)}
-                      className={`${linkBtn} border-slate-200/90 bg-white/90 text-slate-800 hover:border-indigo-200 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800/60 dark:text-slate-100 dark:hover:border-indigo-500/40`}
+                      className={`${linkBtn} border-border bg-card text-foreground hover:border-primary/30 hover:bg-surface-2`}
                     >
                       <ExternalLink className="h-4 w-4" />
                       Open mock exam
@@ -184,10 +184,8 @@ export default function AssignmentDetailPage() {
                           key={t.id}
                           type="button"
                           onClick={() => router.push(`/practice-test/${t.id}`)}
-                          className={`${linkBtn} border-transparent text-white shadow-sm ${
-                            t.subject === "MATH"
-                              ? "bg-emerald-600 hover:bg-emerald-700"
-                              : "bg-indigo-600 hover:bg-indigo-700"
+                          className={`${linkBtn} ms-btn-primary border-transparent shadow-sm ${
+                            t.subject === "MATH" ? "ms-cta-math text-white" : "ms-cta-fill text-white"
                           }`}
                         >
                           <ExternalLink className="h-4 w-4" />
@@ -199,7 +197,7 @@ export default function AssignmentDetailPage() {
                     <button
                       type="button"
                       onClick={() => router.push(`/practice-test/${legacyPracticeTestId}`)}
-                      className={`${linkBtn} border-blue-400/80 bg-blue-600 text-white hover:bg-blue-700 dark:border-blue-600`}
+                      className={`${linkBtn} ms-btn-primary ms-cta-fill border-transparent text-white`}
                     >
                       <ExternalLink className="h-4 w-4" />
                       Open practice test
@@ -209,7 +207,7 @@ export default function AssignmentDetailPage() {
                     <button
                       type="button"
                       onClick={openExternal}
-                      className={`${linkBtn} border-slate-200/90 bg-white/90 text-slate-800 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800/60 dark:text-slate-100`}
+                      className={`${linkBtn} border-border bg-card text-foreground hover:bg-surface-2`}
                     >
                       <ExternalLink className="h-4 w-4" />
                       Open link
@@ -220,7 +218,7 @@ export default function AssignmentDetailPage() {
                       key={`${url}-${i}`}
                       type="button"
                       onClick={() => window.open(url, "_blank", "noopener,noreferrer")}
-                      className={`${linkBtn} border-slate-200/90 bg-white/90 text-slate-800 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800/60 dark:text-slate-100`}
+                      className={`${linkBtn} border-border bg-card text-foreground hover:bg-surface-2`}
                     >
                       <ExternalLink className="h-4 w-4" />
                       {homeworkAttachmentUrls.length > 1 ? `File ${i + 1}` : "Attached file"}

@@ -137,18 +137,18 @@ export default function StudentShell({ children }: { children: React.ReactNode }
       "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all duration-200",
       sidebarCollapsed && "md:justify-center md:px-2",
       active
-        ? "bg-gradient-to-r from-blue-600/12 via-amber-500/6 to-blue-500/8 text-blue-950 ring-1 ring-blue-200/90 ring-offset-0 dark:from-blue-600/22 dark:via-amber-500/10 dark:to-blue-500/12 dark:text-white dark:ring-amber-400/35"
-        : "text-slate-600 hover:bg-white/70 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-white/[0.06] dark:hover:text-white",
+        ? "bg-gradient-to-r from-primary/12 via-amber-500/6 to-primary/8 text-foreground ring-1 ring-primary/30 ring-offset-0"
+        : "text-muted-foreground hover:bg-surface-2 hover:text-foreground",
     );
 
   return (
     <AuthGuard isOptional>
-      <div className="app-bg flex min-h-screen flex-col text-slate-900 transition-colors duration-300 dark:text-slate-100 md:h-[100dvh] md:max-h-[100dvh] md:flex-row md:overflow-hidden">
+      <div className="app-bg flex min-h-screen flex-col text-foreground transition-colors duration-300 md:h-[100dvh] md:max-h-[100dvh] md:flex-row md:overflow-hidden">
         {/* Mobile drawer overlay */}
         {mobileOpen ? (
           <button
             type="button"
-            className="fixed inset-0 z-[90] bg-slate-950/50 backdrop-blur-sm md:hidden"
+            className="fixed inset-0 z-[90] bg-foreground/30 backdrop-blur-sm md:hidden"
             aria-label="Close menu"
             onClick={() => setMobileOpen(false)}
           />
@@ -157,14 +157,14 @@ export default function StudentShell({ children }: { children: React.ReactNode }
         {/* Sidebar */}
         <aside
           className={cn(
-            "fixed inset-y-0 left-0 z-[100] flex h-[100dvh] w-[min(100%,280px)] shrink-0 flex-col overflow-hidden border-r border-slate-200/80 bg-white shadow-xl shadow-blue-500/5 shadow-amber-500/5 backdrop-blur-xl transition-[transform,width,padding] duration-200 ease-out dark:border-slate-800 dark:bg-black md:relative md:z-30 md:h-full md:max-h-full md:min-h-0 md:translate-x-0 md:shadow-none",
+            "fixed inset-y-0 left-0 z-[100] flex h-[100dvh] w-[min(100%,280px)] shrink-0 flex-col overflow-hidden border-r border-border bg-card shadow-xl shadow-primary/5 backdrop-blur-xl transition-[transform,width,padding] duration-200 ease-out md:relative md:z-30 md:h-full md:max-h-full md:min-h-0 md:translate-x-0 md:shadow-none",
             sidebarCollapsed ? "md:w-[4.25rem] md:px-0" : "md:w-72",
             mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
           )}
         >
           <div
             className={cn(
-              "flex items-center justify-between gap-2 border-b border-slate-100/90 p-4 dark:border-slate-800/80 md:p-5",
+              "flex items-center justify-between gap-2 border-b border-border p-4 md:p-5",
               sidebarCollapsed && "md:flex-col md:gap-3 md:py-4",
             )}
           >
@@ -172,10 +172,10 @@ export default function StudentShell({ children }: { children: React.ReactNode }
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/images/logo.png" alt="" className="h-10 w-10 shrink-0 object-contain" />
               <div className={cn("min-w-0", sidebarCollapsed && "md:hidden")}>
-                <span className="block truncate text-base font-extrabold tracking-tight text-slate-900 dark:text-white">
+                <span className="block truncate text-base font-extrabold tracking-tight text-foreground">
                   MasterSAT
                 </span>
-                <span className="mt-0.5 block text-[10px] font-extrabold uppercase tracking-[0.12em] text-amber-700/90 dark:text-amber-400/90">
+                <span className="mt-0.5 block text-[10px] font-extrabold uppercase tracking-[0.12em] text-ds-gold">
                   Learning OS
                 </span>
               </div>
@@ -207,19 +207,19 @@ export default function StudentShell({ children }: { children: React.ReactNode }
               Filter navigation
             </label>
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-label-foreground" />
               <input
                 id="nav-search"
                 value={navQuery}
                 onChange={(e) => setNavQuery(e.target.value)}
                 placeholder="Jump to section…"
-                className="w-full rounded-xl border border-slate-200/90 bg-white/90 py-2 pl-9 pr-3 text-sm text-slate-900 shadow-sm transition-all placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:ring-offset-0 dark:border-white/10 dark:bg-slate-900/50 dark:text-slate-100 dark:focus:ring-amber-500/15"
+                className="ui-input w-full rounded-xl py-2 pl-9 pr-3 text-sm shadow-sm"
               />
             </div>
           </div>
 
           <div className={cn("px-4 pt-3 md:px-5", sidebarCollapsed && "md:hidden")}>
-            <p className="ds-section-title py-2 text-[10px] dark:text-slate-500">Navigate</p>
+            <p className="ds-section-title py-2 text-[10px]">Navigate</p>
           </div>
           <nav
             className={cn(
@@ -229,7 +229,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
             aria-label="Main"
           >
             {filteredNav.length === 0 ? (
-              <p className="px-2 py-6 text-center text-sm text-slate-500">No sections match “{navQuery}”.</p>
+              <p className="px-2 py-6 text-center text-sm text-muted-foreground">No sections match “{navQuery}”.</p>
             ) : (
               filteredNav.map(({ href, label, icon: Icon, tip }) => {
                 const active =
@@ -249,8 +249,8 @@ export default function StudentShell({ children }: { children: React.ReactNode }
                         className={cn(
                           "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors duration-200",
                           active
-                            ? "bg-gradient-to-br from-blue-600/15 to-amber-500/10 text-blue-900 ring-1 ring-amber-500/15 dark:from-blue-500/25 dark:to-amber-500/15 dark:text-white dark:ring-amber-400/20"
-                            : "bg-slate-100/80 text-slate-500 group-hover:bg-white dark:bg-white/5 dark:text-slate-400 dark:group-hover:bg-white/10",
+                            ? "bg-gradient-to-br from-primary/15 to-amber-500/10 text-foreground ring-1 ring-amber-500/15"
+                            : "bg-surface-2 text-label-foreground group-hover:bg-card",
                         )}
                       >
                         <Icon className="h-[18px] w-[18px]" strokeWidth={2} />
@@ -263,7 +263,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
             )}
           </nav>
 
-          <div className={cn("mt-auto border-t border-slate-100/90 p-4 dark:border-slate-800/80", sidebarCollapsed && "md:px-2")}>
+          <div className={cn("mt-auto border-t border-border p-4", sidebarCollapsed && "md:px-2")}>
             <div className={cn("flex flex-wrap gap-2", sidebarCollapsed && "md:justify-center")}>
               <Badge variant="brand" dot={isLoggedIn}>
                 <span className={cn(sidebarCollapsed && "md:sr-only")}>{isLoggedIn ? "Signed in" : "Guest"}</span>
@@ -277,7 +277,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col md:overflow-hidden">
           {/* Top bar (mobile + desktop) */}
-          <header className="sticky top-0 z-40 flex h-[60px] shrink-0 items-center gap-2 border-b border-slate-200/80 bg-white px-2 backdrop-blur-xl dark:border-slate-800 dark:bg-black md:h-[72px] md:gap-3 md:px-6">
+          <header className="sticky top-0 z-40 flex h-[60px] shrink-0 items-center gap-2 border-b border-border bg-card px-2 backdrop-blur-xl md:h-[72px] md:gap-3 md:px-6">
             <IconButton
               variant="ghost"
               className="md:hidden"
@@ -289,7 +289,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
 
             <div className="flex min-w-0 flex-1 items-center gap-3">
               <div ref={headerSearchRef} className="relative hidden min-w-0 max-w-xl flex-1 md:block">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-label-foreground" />
                 <input
                   value={headerSearch}
                   onChange={(e) => {
@@ -298,7 +298,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
                   }}
                   onFocus={() => setHeaderSearchOpen(true)}
                   placeholder="Search pages…"
-                  className="w-full rounded-xl border border-slate-200/90 bg-slate-50 py-2 pl-9 pr-3 text-sm text-slate-900 transition-all placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-white/15 dark:bg-white/5 dark:text-white dark:focus:ring-amber-500/20"
+                  className="ui-input w-full rounded-xl border border-border bg-surface-2/80 py-2 pl-9 pr-3 text-sm transition-all"
                   aria-label="Search pages and quick links"
                   aria-expanded={headerSearchOpen}
                   aria-controls="header-search-results"
@@ -306,14 +306,14 @@ export default function StudentShell({ children }: { children: React.ReactNode }
                 {headerSearchOpen && commandResults.length > 0 ? (
                   <ul
                     id="header-search-results"
-                    className="absolute left-0 right-0 top-[calc(100%+6px)] z-50 max-h-72 overflow-auto rounded-xl border border-slate-200/90 bg-white py-1 shadow-xl dark:border-white/10 dark:bg-black"
+                    className="absolute left-0 right-0 top-[calc(100%+6px)] z-50 max-h-72 overflow-auto rounded-xl border border-border bg-card py-1 shadow-xl backdrop-blur-xl"
                     role="listbox"
                   >
                     {commandResults.map((r) => (
                       <li key={r.href + r.label} role="option">
                         <Link
                           href={r.href}
-                          className="block px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-white/10"
+                          className="block px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-surface-2"
                           onClick={() => {
                             setHeaderSearchOpen(false);
                             setHeaderSearch("");
@@ -328,10 +328,10 @@ export default function StudentShell({ children }: { children: React.ReactNode }
               </div>
 
               <div className="min-w-0 max-w-[min(100%,200px)] flex-1 sm:max-w-xs md:max-w-[240px] lg:max-w-xs">
-                <p className="truncate text-sm font-bold tracking-tight text-slate-900 dark:text-slate-50 md:text-lg">
+                <p className="truncate text-sm font-bold tracking-tight text-foreground md:text-lg">
                   {title}
                 </p>
-                <p className="hidden text-xs text-slate-500 dark:text-slate-400 sm:block md:hidden lg:block">
+                <p className="hidden text-xs text-muted-foreground sm:block md:hidden lg:block">
                   MasterSAT
                 </p>
               </div>
@@ -339,12 +339,12 @@ export default function StudentShell({ children }: { children: React.ReactNode }
 
             <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
               <div className="hidden items-center gap-2 lg:flex">
-                <span className="ds-section-title text-[9px] dark:text-slate-500">Quick</span>
+                <span className="ds-section-title text-[9px]">Quick</span>
                 {quickLinks.map((q) => (
                   <Link
                     key={q.href}
                     href={q.href}
-                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200/80 bg-white px-2.5 py-1.5 text-xs font-bold text-blue-700 shadow-sm transition-all duration-200 hover:border-amber-400/60 hover:bg-blue-50/80 dark:border-white/15 dark:bg-white/5 dark:text-blue-300 dark:hover:border-amber-400/45 dark:hover:bg-amber-500/10"
+                    className="inline-flex items-center gap-1 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-bold text-primary shadow-sm transition-all duration-200 hover:border-primary/35 hover:bg-primary/5"
                   >
                     <Zap className="h-3 w-3 opacity-80" />
                     {q.label}
@@ -366,12 +366,12 @@ export default function StudentShell({ children }: { children: React.ReactNode }
                   </IconButton>
                 </Tooltip>
                 {notifOpen ? (
-                  <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-72 rounded-xl border border-slate-200/90 bg-white p-4 shadow-xl dark:border-white/10 dark:bg-black">
-                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-72 rounded-xl border border-border bg-card p-4 shadow-xl backdrop-blur-xl">
+                    <p className="text-xs font-bold uppercase tracking-wider text-label-foreground">
                       Notifications
                     </p>
-                    <p className="mt-3 text-sm text-slate-600 dark:text-slate-400">You&apos;re all caught up.</p>
-                    <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+                    <p className="mt-3 text-sm text-muted-foreground">You&apos;re all caught up.</p>
+                    <p className="mt-2 text-xs text-label-foreground">
                       Grades and assignments will appear here when available.
                     </p>
                   </div>
@@ -405,7 +405,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
                 <button
                   type="button"
                   onClick={() => router.push("/login")}
-                  className="ms-btn-primary inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-amber-600 px-3 py-2 text-xs font-bold text-white shadow-md shadow-blue-900/25 shadow-amber-900/20 md:px-4 md:text-sm dark:from-blue-600 dark:to-amber-500"
+                  className="ms-btn-primary ms-cta-fill inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold md:px-4 md:text-sm"
                 >
                   <LogIn className="h-4 w-4" />
                   <span className="hidden sm:inline">Sign in</span>

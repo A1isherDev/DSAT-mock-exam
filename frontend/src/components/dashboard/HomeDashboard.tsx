@@ -166,7 +166,7 @@ export function HomeDashboard() {
         <DashboardCard accent="gold" padding="lg">
           <DashboardEyebrow>MasterSAT</DashboardEyebrow>
           <DashboardTitle className="mt-2">Sign in for your dashboard</DashboardTitle>
-          <p className="mt-3 text-sm text-slate-600 dark:text-slate-400">
+          <p className="mt-3 text-sm text-muted-foreground">
             Track countdown, resume tests, and see weekly activity in one place.
           </p>
           <ClassroomButton variant="primary" size="md" className="mt-6 w-full" onClick={() => router.push("/login")}>
@@ -195,16 +195,16 @@ export function HomeDashboard() {
       <header className="mb-8 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-sm font-semibold text-amber-800/90 dark:text-amber-400/90">Overview</p>
-          <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white md:text-3xl">
+          <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-foreground md:text-3xl">
             Hi, {firstName}
           </h1>
-          <p className="mt-2 max-w-xl text-sm text-slate-600 dark:text-slate-400">
+          <p className="mt-2 max-w-xl text-sm text-muted-foreground">
             Resume where you left off, watch the countdown, and follow the roadmap—no clutter, just signal.
           </p>
         </div>
         <Link
           href="/profile"
-          className="inline-flex items-center gap-2 self-start rounded-xl border border-slate-200/90 bg-white px-3 py-2 text-xs font-bold text-slate-700 shadow-sm transition-all hover:border-amber-400/70 dark:border-white/10 dark:bg-white/5 dark:text-white dark:hover:border-amber-400/45"
+          className="inline-flex items-center gap-2 self-start rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold text-foreground shadow-sm transition-all hover:border-primary/30"
         >
           <Pencil className="h-3.5 w-3.5" />
           Edit goals
@@ -220,10 +220,10 @@ export function HomeDashboard() {
               <DashboardTitle className="mt-1">Continue learning</DashboardTitle>
               {incomplete ? (
                 <>
-                  <p className="mt-2 truncate text-sm font-medium text-slate-700 dark:text-slate-200">
+                  <p className="mt-2 truncate text-sm font-medium text-foreground">
                     {incomplete.practice_test_details?.title || "Practice test"}
                   </p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                  <p className="text-xs text-muted-foreground">
                     {incomplete.practice_test_details?.subject === "MATH"
                       ? "Math"
                       : incomplete.practice_test_details?.subject === "READING_WRITING"
@@ -234,7 +234,7 @@ export function HomeDashboard() {
                   </p>
                 </>
               ) : (
-                <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+                <p className="mt-2 text-sm text-muted-foreground">
                   No active attempt. Start a pastpaper or mock when you&apos;re ready.
                 </p>
               )}
@@ -243,10 +243,7 @@ export function HomeDashboard() {
               {incomplete ? (
                 <Link
                   href={`/exam/${incomplete.id}`}
-                  className={cn(
-                    "ms-btn-primary inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-white ring-1 ring-amber-400/35",
-                    "bg-gradient-to-r from-blue-600 to-blue-700 shadow-lg shadow-blue-600/20 dark:from-blue-600 dark:to-amber-600 dark:shadow-amber-900/25",
-                  )}
+                  className="ms-btn-primary ms-cta-fill inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold ring-1 ring-ds-gold/35"
                 >
                   <PlayCircle className="h-4 w-4" />
                   Resume
@@ -254,7 +251,7 @@ export function HomeDashboard() {
               ) : (
                 <Link
                   href="/practice-tests"
-                  className="ms-btn-secondary inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200/90 bg-white/90 px-4 py-2.5 text-sm font-bold text-slate-800 hover:border-blue-300/70 dark:border-white/10 dark:bg-white/[0.04] dark:text-white"
+                  className="ms-btn-secondary inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-bold text-foreground hover:border-primary/30"
                 >
                   Browse tests
                   <ArrowRight className="h-4 w-4" />
@@ -267,13 +264,13 @@ export function HomeDashboard() {
         {/* Exam countdown — highlight */}
         <div
           className={cn(
-            "relative overflow-hidden rounded-2xl border p-5 md:p-6",
-            "border-blue-500/45 bg-gradient-to-br from-blue-600 via-blue-800 to-amber-900 text-white shadow-xl shadow-blue-900/25 shadow-amber-950/20",
-            "dark:border-amber-500/35 dark:from-blue-700 dark:via-slate-950 dark:to-amber-950/90",
+            "relative overflow-hidden rounded-2xl border p-5 md:p-6 text-white shadow-xl",
+            "border-primary/40 bg-gradient-to-br from-primary via-[color-mix(in_srgb,var(--primary)_55%,var(--surface-2))] to-[color-mix(in_srgb,var(--ds-gold-bright)_45%,var(--primary))]",
+            "shadow-[0_24px_48px_-12px_color-mix(in_oklab,var(--primary)_28%,transparent)]",
           )}
         >
           <div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-amber-400/15 blur-2xl" />
-          <div className="pointer-events-none absolute -bottom-10 left-1/4 h-24 w-24 rounded-full bg-white/5 blur-2xl" />
+          <div className="pointer-events-none absolute -bottom-10 left-1/4 h-24 w-24 rounded-full bg-primary/8 blur-2xl" />
           <DashboardEyebrow className="text-white/80">Exam countdown</DashboardEyebrow>
           <div className="relative mt-2 flex items-baseline gap-2">
             <Calendar className="h-5 w-5 shrink-0 opacity-90" />
@@ -303,23 +300,23 @@ export function HomeDashboard() {
               <DashboardEyebrow>Performance</DashboardEyebrow>
               <DashboardTitle className="mt-1">Last mock vs goal</DashboardTitle>
             </div>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500/15 to-amber-500/15 text-blue-700 ring-1 ring-amber-500/20 dark:from-blue-500/20 dark:to-amber-500/15 dark:text-blue-300">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary/15 to-ds-gold/15 text-primary ring-1 ring-ds-gold/25">
               <BarChart3 className="h-5 w-5" />
             </div>
           </div>
           <div className="mt-4 flex flex-wrap items-end gap-3">
-            <span className="text-3xl font-black tabular-nums text-slate-900 dark:text-white">
+            <span className="text-3xl font-black tabular-nums text-foreground">
               {mockScore != null ? mockScore : "—"}
             </span>
-            <span className="pb-1 text-sm font-semibold text-slate-400">/ {target ?? "—"}</span>
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">target</span>
+            <span className="pb-1 text-sm font-semibold text-label-foreground">/ {target ?? "—"}</span>
+            <span className="text-xs font-bold text-muted-foreground">target</span>
           </div>
           <div
             className={cn(
               "mt-3 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold",
-              trend.up === true && "bg-blue-500/12 text-blue-800 ring-1 ring-blue-500/15 dark:bg-blue-500/15 dark:text-blue-200 dark:ring-blue-400/20",
+              trend.up === true && "bg-primary/12 text-primary ring-1 ring-primary/20",
               trend.up === false && "bg-amber-500/15 text-amber-800 dark:text-amber-200",
-              trend.up === null && "bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-slate-300",
+              trend.up === null && "bg-surface-2 text-muted-foreground",
             )}
           >
             {trend.up === true ? <TrendingUp className="h-3.5 w-3.5" /> : <Target className="h-3.5 w-3.5" />}
@@ -333,13 +330,13 @@ export function HomeDashboard() {
             <div>
               <DashboardEyebrow>Activity</DashboardEyebrow>
               <DashboardTitle className="mt-1">Weekly completions</DashboardTitle>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              <p className="mt-1 text-xs text-muted-foreground">
                 Finished practice attempts submitted in the last 7 days
               </p>
             </div>
-            <BarChart3 className="h-5 w-5 text-blue-600 dark:text-amber-400" />
+            <BarChart3 className="h-5 w-5 text-primary" />
           </div>
-          <div className="mt-6 flex h-28 items-end justify-between gap-2 border-t border-slate-100 pt-4 dark:border-white/[0.06]">
+          <div className="mt-6 flex h-28 items-end justify-between gap-2 border-t border-border pt-4">
             {weeklyBuckets.map((d, i) => {
               const labels = ["-6d", "-5d", "-4d", "-3d", "-2d", "-1d", "Today"];
               return (
@@ -349,13 +346,13 @@ export function HomeDashboard() {
                       className={cn(
                         "w-full max-w-[2rem] rounded-t-md transition-all duration-300",
                         d.n > 0
-                          ? "bg-gradient-to-t from-blue-800 via-blue-600 to-amber-500 dark:from-blue-700 dark:via-blue-500 dark:to-amber-400"
-                          : "bg-slate-100 dark:bg-white/10",
+                          ? "bg-gradient-to-t from-[color-mix(in_srgb,var(--primary)_35%,var(--surface-2))] via-primary to-ds-gold"
+                          : "bg-surface-2",
                       )}
                       style={{ height: `${Math.max(8, d.h)}%` }}
                     />
                   </div>
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-label-foreground">
                     {labels[i]}
                   </span>
                 </div>

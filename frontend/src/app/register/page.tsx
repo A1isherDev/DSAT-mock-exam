@@ -256,7 +256,7 @@ export default function RegisterPage() {
                     
                     <div className="mt-5 text-center">
                         <span className="text-sm text-slate-500 dark:text-slate-400 font-medium">Already have an account? </span>
-                        <Link href="/login" className="text-sm font-bold text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors">
+                        <Link href="/login" className="text-sm font-bold text-primary hover:opacity-90 transition-opacity">
                             Sign In
                         </Link>
                     </div>

@@ -5,15 +5,14 @@ export type BadgeVariant = "brand" | "neutral" | "success" | "warning" | "live";
 
 const variantClass: Record<BadgeVariant, string> = {
   brand:
-    "border-blue-200/80 bg-gradient-to-r from-blue-600/10 via-blue-500/8 to-amber-500/15 text-blue-900 dark:border-amber-500/25 dark:from-blue-500/15 dark:via-blue-500/10 dark:to-amber-500/20 dark:text-blue-100",
-  neutral:
-    "border-slate-200/90 bg-slate-100/90 text-slate-700 dark:border-slate-600 dark:bg-slate-800/80 dark:text-slate-200",
+    "border-primary/30 bg-gradient-to-r from-primary/12 via-primary/8 to-amber-500/15 text-foreground",
+  neutral: "border-border bg-surface-2 text-muted-foreground",
   success:
-    "border-emerald-200/80 bg-emerald-50/95 text-emerald-900 dark:border-emerald-800/50 dark:bg-emerald-950/40 dark:text-emerald-200",
+    "border-emerald-500/35 bg-emerald-500/10 text-foreground dark:border-emerald-400/30 dark:bg-emerald-500/15 dark:text-emerald-100",
   warning:
-    "border-amber-200/80 bg-amber-50/95 text-amber-950 dark:border-amber-800/40 dark:bg-amber-950/30 dark:text-amber-100",
+    "border-amber-500/35 bg-amber-500/10 text-foreground dark:border-amber-400/28 dark:bg-amber-500/12 dark:text-amber-100",
   live:
-    "border-sky-200/70 bg-sky-50/90 text-sky-950 dark:border-sky-800/40 dark:bg-sky-950/35 dark:text-sky-200",
+    "border-accent-cyan/35 bg-accent-cyan/10 text-foreground dark:border-accent-cyan/30 dark:bg-accent-cyan/12 dark:text-accent-cyan",
 };
 
 export function Badge({
@@ -40,7 +39,7 @@ export function Badge({
       {dot ? (
         <span className="relative flex h-1.5 w-1.5">
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-50" />
-          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-blue-500 dark:bg-amber-400" />
+          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
         </span>
       ) : null}
       {children}

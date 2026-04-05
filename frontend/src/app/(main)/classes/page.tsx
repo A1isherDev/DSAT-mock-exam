@@ -65,10 +65,10 @@ function parseApiError(e: unknown, fallback: string): string {
 }
 
 const groupTileClass =
-  "group relative w-full overflow-hidden text-left transition-all duration-200 ease-out hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--background)] dark:focus-visible:ring-offset-slate-950";
+  "group relative w-full overflow-hidden text-left transition-all duration-200 ease-out hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
 const groupTileAccent =
-  "pointer-events-none absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-blue-600 via-sky-500 to-cyan-500 opacity-90";
+  "pointer-events-none absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-primary via-accent-cyan to-accent-cyan opacity-90";
 
 export default function ClassesPage() {
   const router = useRouter();
@@ -295,7 +295,7 @@ export default function ClassesPage() {
         />
         <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center lg:w-auto lg:shrink-0">
           <div className="relative min-w-[200px] flex-1 lg:max-w-xs">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-label-foreground" />
             <input
               value={classFilter}
               onChange={(e) => setClassFilter(e.target.value)}
@@ -368,23 +368,23 @@ export default function ClassesPage() {
                   ) : null}
                   <div className="relative flex items-start justify-between gap-4 pl-2 pr-10">
                     <div className="min-w-0">
-                      <p className="truncate text-lg font-bold text-slate-900 dark:text-slate-50">{c.name}</p>
-                      <p className="mt-1 truncate text-sm text-slate-500 dark:text-slate-400">
+                      <p className="truncate text-lg font-bold text-foreground">{c.name}</p>
+                      <p className="mt-1 truncate text-sm text-muted-foreground">
                         {c.subject || "—"}
                         {c.lesson_days ? ` · ${c.lesson_days}` : ""}
                         {c.lesson_time ? ` · ${c.lesson_time}` : ""}
                       </p>
                     </div>
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600 transition-transform duration-200 group-hover:scale-105 dark:text-blue-400">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary transition-transform duration-200 group-hover:scale-105">
                       <Users className="h-5 w-5" />
                     </div>
                   </div>
-                  <div className="relative mt-5 flex items-center justify-between border-t border-slate-200/70 pt-4 pl-2 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:border-slate-700/70 dark:text-slate-400">
+                  <div className="relative mt-5 flex items-center justify-between border-t border-border pt-4 pl-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     <span>
                       {c.members_count ?? 0} members
                       {c.max_students ? ` / ${c.max_students} max` : ""}
                     </span>
-                    <span className="inline-flex items-center gap-1 text-blue-600 transition-transform duration-200 group-hover:translate-x-0.5 dark:text-blue-400">
+                    <span className="inline-flex items-center gap-1 text-primary transition-transform duration-200 group-hover:translate-x-0.5">
                       Open
                       <ArrowRight className="h-4 w-4" />
                     </span>
@@ -397,8 +397,8 @@ export default function ClassesPage() {
 
         <div className="space-y-4 lg:sticky lg:top-24 lg:self-start">
           <ClassroomCard padding="md">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Join a group</p>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Paste the code your teacher shared.</p>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Join a group</p>
+            <p className="mt-1 text-sm text-muted-foreground">Paste the code your teacher shared.</p>
             <input
               value={joinCode}
               onChange={(e) => setJoinCode(e.target.value)}
@@ -418,16 +418,16 @@ export default function ClassesPage() {
           </ClassroomCard>
 
           {isAdmin ? (
-            <ClassroomCard padding="md" className="border-blue-200/50 dark:border-blue-500/20">
+            <ClassroomCard padding="md" className="border-primary/20">
               <div className="flex items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
                   <Plus className="h-4 w-4" />
                 </div>
                 <div>
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
                     Teacher
                   </p>
-                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Create a group</p>
+                  <p className="text-sm font-semibold text-foreground">Create a group</p>
                 </div>
               </div>
               <ClassroomButton variant="primary" size="md" className="mt-4 w-full" onClick={() => setCreateOpen(true)}>
