@@ -163,7 +163,7 @@ export function HomeDashboard() {
   if (!hasToken) {
     return (
       <div className="mx-auto max-w-lg px-4 py-16 text-center">
-        <DashboardCard accent="blue" padding="lg">
+        <DashboardCard accent="gold" padding="lg">
           <DashboardEyebrow>MasterSAT</DashboardEyebrow>
           <DashboardTitle className="mt-2">Sign in for your dashboard</DashboardTitle>
           <p className="mt-3 text-sm text-slate-600 dark:text-slate-400">
@@ -194,7 +194,7 @@ export function HomeDashboard() {
     <div className="mx-auto max-w-6xl px-3 py-6 md:px-4 lg:px-6">
       <header className="mb-8 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Overview</p>
+          <p className="text-sm font-semibold text-amber-800/90 dark:text-amber-400/90">Overview</p>
           <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white md:text-3xl">
             Hi, {firstName}
           </h1>
@@ -204,7 +204,7 @@ export function HomeDashboard() {
         </div>
         <Link
           href="/profile"
-          className="inline-flex items-center gap-2 self-start rounded-xl border border-slate-200/90 bg-white px-3 py-2 text-xs font-bold text-slate-700 shadow-sm transition-all hover:border-blue-300 dark:border-white/10 dark:bg-white/5 dark:text-white dark:hover:border-blue-500/50"
+          className="inline-flex items-center gap-2 self-start rounded-xl border border-slate-200/90 bg-white px-3 py-2 text-xs font-bold text-slate-700 shadow-sm transition-all hover:border-amber-400/70 dark:border-white/10 dark:bg-white/5 dark:text-white dark:hover:border-amber-400/45"
         >
           <Pencil className="h-3.5 w-3.5" />
           Edit goals
@@ -244,8 +244,8 @@ export function HomeDashboard() {
                 <Link
                   href={`/exam/${incomplete.id}`}
                   className={cn(
-                    "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-white",
-                    "bg-blue-600 shadow-lg shadow-blue-600/25 transition-all hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500",
+                    "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-white ring-1 ring-amber-400/35",
+                    "bg-gradient-to-r from-blue-600 to-blue-700 shadow-lg shadow-blue-600/20 transition-all hover:brightness-110 dark:from-blue-600 dark:to-amber-600 dark:shadow-amber-900/25",
                   )}
                 >
                   <PlayCircle className="h-4 w-4" />
@@ -268,11 +268,11 @@ export function HomeDashboard() {
         <div
           className={cn(
             "relative overflow-hidden rounded-2xl border p-5 md:p-6",
-            "border-blue-600/40 bg-gradient-to-br from-blue-600 to-blue-800 text-white shadow-xl shadow-blue-900/30",
-            "dark:border-blue-500/50 dark:from-blue-700 dark:to-black",
+            "border-blue-500/45 bg-gradient-to-br from-blue-600 via-blue-800 to-amber-900 text-white shadow-xl shadow-blue-900/25 shadow-amber-950/20",
+            "dark:border-amber-500/35 dark:from-blue-700 dark:via-slate-950 dark:to-amber-950/90",
           )}
         >
-          <div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-white/10 blur-2xl" />
+          <div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-amber-400/15 blur-2xl" />
           <div className="pointer-events-none absolute -bottom-10 left-1/4 h-24 w-24 rounded-full bg-white/5 blur-2xl" />
           <DashboardEyebrow className="text-white/80">Exam countdown</DashboardEyebrow>
           <div className="relative mt-2 flex items-baseline gap-2">
@@ -303,7 +303,7 @@ export function HomeDashboard() {
               <DashboardEyebrow>Performance</DashboardEyebrow>
               <DashboardTitle className="mt-1">Last mock vs goal</DashboardTitle>
             </div>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/15 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500/15 to-amber-500/15 text-blue-700 ring-1 ring-amber-500/20 dark:from-blue-500/20 dark:to-amber-500/15 dark:text-blue-300">
               <BarChart3 className="h-5 w-5" />
             </div>
           </div>
@@ -337,7 +337,7 @@ export function HomeDashboard() {
                 Finished practice attempts submitted in the last 7 days
               </p>
             </div>
-            <BarChart3 className="h-5 w-5 text-blue-500 dark:text-blue-400" />
+            <BarChart3 className="h-5 w-5 text-blue-600 dark:text-amber-400" />
           </div>
           <div className="mt-6 flex h-28 items-end justify-between gap-2 border-t border-slate-100 pt-4 dark:border-white/[0.06]">
             {weeklyBuckets.map((d, i) => {
@@ -349,7 +349,7 @@ export function HomeDashboard() {
                       className={cn(
                         "w-full max-w-[2rem] rounded-t-md transition-all duration-300",
                         d.n > 0
-                          ? "bg-gradient-to-t from-blue-700 to-blue-500 dark:from-blue-600 dark:to-blue-400"
+                          ? "bg-gradient-to-t from-blue-800 via-blue-600 to-amber-500 dark:from-blue-700 dark:via-blue-500 dark:to-amber-400"
                           : "bg-slate-100 dark:bg-white/10",
                       )}
                       style={{ height: `${Math.max(8, d.h)}%` }}

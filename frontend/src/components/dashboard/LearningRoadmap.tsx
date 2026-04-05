@@ -15,7 +15,7 @@ export type RoadmapStep = {
 
 export function LearningRoadmap({ steps }: { steps: RoadmapStep[] }) {
   return (
-    <DashboardCard accent="neutral" padding="md" className="md:col-span-2 lg:col-span-3">
+    <DashboardCard accent="gold" padding="md" className="md:col-span-2 lg:col-span-3">
       <DashboardEyebrow className="mb-1">Your path</DashboardEyebrow>
       <h2 className="mb-6 text-lg font-bold tracking-tight text-slate-900 dark:text-white">Learning roadmap</h2>
       <ol className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -25,12 +25,12 @@ export function LearningRoadmap({ steps }: { steps: RoadmapStep[] }) {
               href={s.href}
               className={cn(
                 "group flex h-full flex-col rounded-xl border p-4 transition-all duration-200",
-                "border-slate-200/90 bg-slate-50/50 hover:border-blue-200 hover:bg-white",
-                "dark:border-white/10 dark:bg-white/[0.03] dark:hover:border-blue-500/40 dark:hover:bg-white/[0.06]",
+                "border-slate-200/90 bg-slate-50/50 hover:border-amber-300/70 hover:bg-white",
+                "dark:border-white/10 dark:bg-white/[0.03] dark:hover:border-amber-500/35 dark:hover:bg-white/[0.06]",
               )}
             >
               <div className="mb-3 flex items-center justify-between gap-2">
-                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-200/80 text-xs font-black text-slate-600 dark:bg-blue-500/20 dark:text-blue-200">
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-200/80 text-xs font-black text-slate-600 ring-1 ring-amber-200/40 dark:bg-blue-500/15 dark:text-amber-200 dark:ring-amber-500/25">
                   {i + 1}
                 </span>
                 {s.done ? (
@@ -47,7 +47,7 @@ export function LearningRoadmap({ steps }: { steps: RoadmapStep[] }) {
               </div>
               <p className="font-semibold text-slate-900 dark:text-white">{s.label}</p>
               <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">{s.description}</p>
-              <span className="mt-3 text-[11px] font-bold text-blue-600 opacity-0 transition-opacity group-hover:opacity-100 dark:text-blue-400">
+              <span className="mt-3 text-[11px] font-bold text-amber-700 opacity-0 transition-opacity group-hover:opacity-100 dark:text-amber-400">
                 Open →
               </span>
             </Link>

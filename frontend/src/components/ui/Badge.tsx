@@ -5,7 +5,7 @@ export type BadgeVariant = "brand" | "neutral" | "success" | "warning" | "live";
 
 const variantClass: Record<BadgeVariant, string> = {
   brand:
-    "border-blue-200/80 bg-gradient-to-r from-blue-600/10 to-sky-500/10 text-blue-900 dark:border-blue-500/30 dark:from-blue-500/15 dark:to-sky-500/10 dark:text-blue-200",
+    "border-blue-200/80 bg-gradient-to-r from-blue-600/10 via-blue-500/8 to-amber-500/15 text-blue-900 dark:border-amber-500/25 dark:from-blue-500/15 dark:via-blue-500/10 dark:to-amber-500/20 dark:text-blue-100",
   neutral:
     "border-slate-200/90 bg-slate-100/90 text-slate-700 dark:border-slate-600 dark:bg-slate-800/80 dark:text-slate-200",
   success:

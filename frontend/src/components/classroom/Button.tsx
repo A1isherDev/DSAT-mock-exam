@@ -15,7 +15,7 @@ export type ClassroomButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 
 const variantClass: Record<ClassroomButtonVariant, string> = {
   primary:
-    "border border-transparent bg-gradient-to-r from-blue-600 via-blue-500 to-sky-500 text-white shadow-md shadow-blue-500/20 hover:brightness-110 dark:shadow-blue-950/40",
+    "border border-transparent bg-gradient-to-r from-blue-600 via-blue-600 to-amber-600 text-white shadow-md shadow-blue-500/20 shadow-amber-900/15 hover:brightness-110 dark:shadow-blue-950/35 dark:shadow-amber-950/25",
   secondary:
     "border border-slate-200/90 bg-white/90 text-slate-800 shadow-sm hover:border-blue-200/80 hover:bg-blue-50/50 dark:border-slate-600 dark:bg-slate-800/80 dark:text-slate-100 dark:hover:border-blue-500/30 dark:hover:bg-slate-800",
   ghost:

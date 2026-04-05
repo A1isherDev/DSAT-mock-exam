@@ -12,12 +12,13 @@
   --color-ds-primary: var(--ds-primary);
   --color-ds-secondary: var(--ds-secondary);
   --color-ds-accent: var(--ds-accent);
+  --color-ds-gold: var(--ds-gold);
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
 /*
   MasterSAT design system
-  Primary: blue · Secondary: cyan/sky · Accents: amber (status only)
+  Core: blue · white · black · premium gold (amber) accents
 */
 :root {
   --background: #f3f6fc;
@@ -32,9 +33,12 @@
   --ds-primary: #2563eb;
   --ds-primary-hover: #1d4ed8;
   --ds-primary-soft: rgba(37, 99, 235, 0.1);
-  --ds-secondary: #0ea5e9;
-  --ds-secondary-soft: rgba(14, 165, 233, 0.12);
-  --ds-accent: #0284c7;
+  --ds-gold: #b45309;
+  --ds-gold-bright: #d97706;
+  --ds-gold-soft: rgba(180, 83, 9, 0.1);
+  --ds-secondary: #b45309;
+  --ds-secondary-soft: rgba(180, 83, 9, 0.12);
+  --ds-accent: #2563eb;
   --ds-accent-amber: #d97706;
   --ds-surface-0: #f3f6fc;
   --ds-surface-1: #ffffff;
@@ -46,7 +50,7 @@
   --ds-radius-lg: 1rem;
   --ds-radius-xl: 1.25rem;
   --ds-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
-  --ds-shadow-md: 0 8px 30px rgba(37, 99, 235, 0.08);
+  --ds-shadow-md: 0 8px 30px rgba(37, 99, 235, 0.06), 0 12px 40px rgba(180, 83, 9, 0.05);
   --ds-shadow-lg: 0 24px 48px rgba(15, 23, 42, 0.08);
   --ds-transition: 200ms cubic-bezier(0.4, 0, 0.2, 1);
   --ds-transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
@@ -64,14 +68,17 @@
   --ds-primary: #3b82f6;
   --ds-primary-hover: #60a5fa;
   --ds-primary-soft: rgba(59, 130, 246, 0.15);
-  --ds-secondary: #38bdf8;
-  --ds-secondary-soft: rgba(56, 189, 248, 0.12);
-  --ds-accent: #0ea5e9;
+  --ds-gold: #fbbf24;
+  --ds-gold-bright: #fcd34d;
+  --ds-gold-soft: rgba(251, 191, 36, 0.12);
+  --ds-secondary: #f59e0b;
+  --ds-secondary-soft: rgba(245, 158, 11, 0.14);
+  --ds-accent: #60a5fa;
   --ds-accent-amber: #fbbf24;
   --ds-surface-0: #070b14;
   --ds-surface-1: #0f1419;
   --ds-surface-2: #172554;
-  --ds-border-strong: rgba(59, 130, 246, 0.35);
+  --ds-border-strong: rgba(96, 165, 250, 0.32);
   --ds-text-muted: #94a3b8;
   --ds-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
   --ds-shadow-md: 0 12px 40px rgba(0, 0, 0, 0.45);
@@ -169,16 +176,17 @@ body {
 .app-bg {
   background:
     radial-gradient(1000px 520px at 0% 0%, var(--ds-primary-soft), transparent 55%),
-    radial-gradient(900px 480px at 100% 10%, var(--ds-secondary-soft), transparent 50%),
-    radial-gradient(700px 400px at 50% 100%, rgba(37, 99, 235, 0.05), transparent 45%),
+    radial-gradient(900px 480px at 100% 8%, var(--ds-secondary-soft), transparent 48%),
+    radial-gradient(700px 400px at 50% 100%, rgba(37, 99, 235, 0.04), transparent 45%),
+    radial-gradient(520px 320px at 92% 92%, var(--ds-gold-soft), transparent 55%),
     var(--background);
 }
 
 .dark .app-bg {
   background:
     radial-gradient(900px 480px at 0% 0%, rgba(59, 130, 246, 0.12), transparent 55%),
-    radial-gradient(800px 420px at 100% 0%, rgba(56, 189, 248, 0.08), transparent 50%),
-    radial-gradient(600px 360px at 40% 100%, rgba(14, 165, 233, 0.06), transparent 45%),
+    radial-gradient(780px 400px at 100% 0%, rgba(245, 158, 11, 0.1), transparent 48%),
+    radial-gradient(600px 360px at 40% 100%, rgba(251, 191, 36, 0.06), transparent 45%),
     var(--background);
 }
 
@@ -216,7 +224,7 @@ body {
 }
 
 .btn-primary {
-  @apply inline-flex items-center justify-center gap-2.5 rounded-2xl px-5 py-3 text-base font-bold text-white bg-gradient-to-r from-blue-600 to-sky-500 hover:brightness-110 active:scale-[0.98] transition-all shadow-[0_10px_26px_rgba(37,99,235,0.22)];
+  @apply inline-flex items-center justify-center gap-2.5 rounded-2xl px-5 py-3 text-base font-bold text-white bg-gradient-to-r from-blue-600 via-blue-600 to-amber-600 hover:brightness-110 active:scale-[0.98] transition-all shadow-[0_10px_28px_rgba(37,99,235,0.2),0_8px_24px_rgba(180,83,9,0.12)];
 }
 
 .btn-secondary {
@@ -232,7 +240,7 @@ body {
 }
 
 .eyebrow {
-  @apply text-[10px] font-black uppercase tracking-[0.18em] text-blue-600 dark:text-blue-400;
+  @apply text-[10px] font-black uppercase tracking-[0.18em] text-blue-700 dark:text-amber-400/95;
 }
 
 .hero-shell {
@@ -241,9 +249,10 @@ body {
   border-radius: 1.5rem;
   background:
     linear-gradient(120deg, rgba(255, 255, 255, 0.9), rgba(248, 250, 255, 0.75)),
-    radial-gradient(700px 320px at 85% -10%, rgba(37, 99, 235, 0.16), transparent 60%),
-    radial-gradient(500px 260px at -10% 110%, rgba(14, 165, 233, 0.12), transparent 60%);
-  border: 1px solid rgba(191, 219, 254, 0.55);
+    radial-gradient(700px 320px at 85% -10%, rgba(37, 99, 235, 0.14), transparent 60%),
+    radial-gradient(500px 260px at -10% 110%, rgba(217, 119, 6, 0.1), transparent 58%);
+  border: 1px solid rgba(191, 219, 254, 0.5);
+  box-shadow: inset 0 1px 0 rgba(251, 191, 36, 0.12);
 }
 
 .hero-shell::before {
@@ -259,9 +268,10 @@ body {
 .dark .hero-shell {
   background:
     linear-gradient(120deg, rgba(2, 6, 23, 0.75), rgba(15, 23, 42, 0.6)),
-    radial-gradient(700px 320px at 85% -10%, rgba(37, 99, 235, 0.22), transparent 60%),
-    radial-gradient(500px 260px at -10% 110%, rgba(14, 165, 233, 0.16), transparent 60%);
-  border: 1px solid rgba(59, 130, 246, 0.25);
+    radial-gradient(700px 320px at 85% -10%, rgba(37, 99, 235, 0.2), transparent 60%),
+    radial-gradient(500px 260px at -10% 110%, rgba(245, 158, 11, 0.14), transparent 58%);
+  border: 1px solid rgba(59, 130, 246, 0.22);
+  box-shadow: inset 0 1px 0 rgba(251, 191, 36, 0.08);
 }
 
 .dark .hero-shell::before {

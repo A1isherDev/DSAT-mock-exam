@@ -3,10 +3,10 @@ import type { HTMLAttributes, ReactNode } from "react";
 
 const padMap = { none: "", sm: "p-4", md: "p-5 md:p-6", lg: "p-7 md:p-8" };
 
-export type DashboardAccent = "blue" | "neutral";
+export type DashboardAccent = "blue" | "neutral" | "gold";
 
 /**
- * Dashboard card: blue/white/black system; subtle lift + blue glow on hover (dark).
+ * Dashboard card: blue / white / black + optional gold premium hover.
  */
 export function DashboardCard({
   children,
@@ -23,14 +23,17 @@ export function DashboardCard({
 }) {
   const glow =
     accent === "blue"
-      ? "dark:hover:shadow-[0_20px_48px_-12px_rgba(59,130,246,0.2)] dark:hover:border-blue-500/35"
-      : "dark:hover:border-white/15";
+      ? "dark:hover:shadow-[0_20px_48px_-12px_rgba(59,130,246,0.18),0_16px_40px_-14px_rgba(245,158,11,0.12)] dark:hover:border-blue-500/35"
+      : accent === "gold"
+        ? "dark:hover:shadow-[0_20px_48px_-12px_rgba(245,158,11,0.15)] dark:hover:border-amber-500/35"
+        : "dark:hover:border-white/15";
 
   return (
     <div
       className={cn(
-        "rounded-2xl border border-slate-200/90 bg-white shadow-md shadow-slate-900/[0.04]",
-        "dark:border-white/10 dark:bg-neutral-950 dark:shadow-black/60",
+        "rounded-2xl border bg-white shadow-md shadow-slate-900/[0.04]",
+        accent === "gold" ? "border-amber-200/55 dark:border-amber-500/25" : "border-slate-200/90 dark:border-white/10",
+        "dark:bg-neutral-950 dark:shadow-black/60",
         "transition-all duration-200 ease-out",
         interactive &&
           "cursor-pointer hover:-translate-y-0.5 hover:border-slate-300/90 hover:shadow-lg dark:hover:-translate-y-0.5",
@@ -49,7 +52,7 @@ export function DashboardEyebrow({ children, className }: { children: ReactNode;
   return (
     <p
       className={cn(
-        "text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500 dark:text-blue-400/90",
+        "text-[10px] font-bold uppercase tracking-[0.2em] text-amber-800/90 dark:text-amber-400/90",
         className,
       )}
     >

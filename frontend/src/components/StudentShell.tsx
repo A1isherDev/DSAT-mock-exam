@@ -137,7 +137,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
       "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all duration-200",
       sidebarCollapsed && "md:justify-center md:px-2",
       active
-        ? "bg-gradient-to-r from-blue-600/12 to-blue-500/8 text-blue-950 ring-1 ring-blue-200/90 dark:from-blue-600/25 dark:to-blue-500/15 dark:text-white dark:ring-blue-500/40"
+        ? "bg-gradient-to-r from-blue-600/12 via-amber-500/6 to-blue-500/8 text-blue-950 ring-1 ring-blue-200/90 ring-offset-0 dark:from-blue-600/22 dark:via-amber-500/10 dark:to-blue-500/12 dark:text-white dark:ring-amber-400/35"
         : "text-slate-600 hover:bg-white/70 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-white/[0.06] dark:hover:text-white",
     );
 
@@ -157,7 +157,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
         {/* Sidebar */}
         <aside
           className={cn(
-            "fixed inset-y-0 left-0 z-[100] flex h-[100dvh] w-[min(100%,280px)] shrink-0 flex-col overflow-hidden border-r border-slate-200/80 bg-white shadow-xl shadow-blue-500/5 backdrop-blur-xl transition-[transform,width,padding] duration-200 ease-out dark:border-slate-800 dark:bg-black md:relative md:z-30 md:h-full md:max-h-full md:min-h-0 md:translate-x-0 md:shadow-none",
+            "fixed inset-y-0 left-0 z-[100] flex h-[100dvh] w-[min(100%,280px)] shrink-0 flex-col overflow-hidden border-r border-slate-200/80 bg-white shadow-xl shadow-blue-500/5 shadow-amber-500/5 backdrop-blur-xl transition-[transform,width,padding] duration-200 ease-out dark:border-slate-800 dark:bg-black md:relative md:z-30 md:h-full md:max-h-full md:min-h-0 md:translate-x-0 md:shadow-none",
             sidebarCollapsed ? "md:w-[4.25rem] md:px-0" : "md:w-72",
             mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
           )}
@@ -175,7 +175,9 @@ export default function StudentShell({ children }: { children: React.ReactNode }
                 <span className="block truncate text-base font-extrabold tracking-tight text-slate-900 dark:text-white">
                   MasterSAT
                 </span>
-                <span className="ds-section-title mt-0.5 block text-[10px] dark:text-slate-400">Learning OS</span>
+                <span className="mt-0.5 block text-[10px] font-extrabold uppercase tracking-[0.12em] text-amber-700/90 dark:text-amber-400/90">
+                  Learning OS
+                </span>
               </div>
             </div>
             <div className="flex items-center gap-1">
@@ -211,7 +213,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
                 value={navQuery}
                 onChange={(e) => setNavQuery(e.target.value)}
                 placeholder="Jump to section…"
-                className="w-full rounded-xl border border-slate-200/90 bg-white/90 py-2 pl-9 pr-3 text-sm text-slate-900 shadow-sm transition-all placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-white/10 dark:bg-slate-900/50 dark:text-slate-100"
+                className="w-full rounded-xl border border-slate-200/90 bg-white/90 py-2 pl-9 pr-3 text-sm text-slate-900 shadow-sm transition-all placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:ring-offset-0 dark:border-white/10 dark:bg-slate-900/50 dark:text-slate-100 dark:focus:ring-amber-500/15"
               />
             </div>
           </div>
@@ -247,7 +249,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
                         className={cn(
                           "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors duration-200",
                           active
-                            ? "bg-blue-600/15 text-blue-800 dark:bg-blue-500/25 dark:text-white"
+                            ? "bg-gradient-to-br from-blue-600/15 to-amber-500/10 text-blue-900 ring-1 ring-amber-500/15 dark:from-blue-500/25 dark:to-amber-500/15 dark:text-white dark:ring-amber-400/20"
                             : "bg-slate-100/80 text-slate-500 group-hover:bg-white dark:bg-white/5 dark:text-slate-400 dark:group-hover:bg-white/10",
                         )}
                       >
@@ -296,7 +298,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
                   }}
                   onFocus={() => setHeaderSearchOpen(true)}
                   placeholder="Search pages…"
-                  className="w-full rounded-xl border border-slate-200/90 bg-slate-50 py-2 pl-9 pr-3 text-sm text-slate-900 transition-all placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-white/15 dark:bg-white/5 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200/90 bg-slate-50 py-2 pl-9 pr-3 text-sm text-slate-900 transition-all placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-white/15 dark:bg-white/5 dark:text-white dark:focus:ring-amber-500/20"
                   aria-label="Search pages and quick links"
                   aria-expanded={headerSearchOpen}
                   aria-controls="header-search-results"
@@ -342,7 +344,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
                   <Link
                     key={q.href}
                     href={q.href}
-                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200/80 bg-white px-2.5 py-1.5 text-xs font-bold text-blue-700 shadow-sm transition-all duration-200 hover:border-blue-300 hover:bg-blue-50 dark:border-white/15 dark:bg-white/5 dark:text-blue-300 dark:hover:border-blue-500/50 dark:hover:bg-blue-500/15"
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200/80 bg-white px-2.5 py-1.5 text-xs font-bold text-blue-700 shadow-sm transition-all duration-200 hover:border-amber-400/60 hover:bg-blue-50/80 dark:border-white/15 dark:bg-white/5 dark:text-blue-300 dark:hover:border-amber-400/45 dark:hover:bg-amber-500/10"
                   >
                     <Zap className="h-3 w-3 opacity-80" />
                     {q.label}
@@ -360,7 +362,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
                     className="relative"
                   >
                     <Bell className="h-5 w-5" />
-                    <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-blue-500 opacity-50" aria-hidden />
+                    <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-amber-500 opacity-80 shadow-sm shadow-amber-500/40" aria-hidden />
                   </IconButton>
                 </Tooltip>
                 {notifOpen ? (
@@ -403,7 +405,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
                 <button
                   type="button"
                   onClick={() => router.push("/login")}
-                  className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white shadow-md shadow-blue-900/20 transition-all hover:bg-blue-700 active:scale-[0.98] md:px-4 md:text-sm dark:bg-blue-600 dark:hover:bg-blue-500"
+                  className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-amber-600 px-3 py-2 text-xs font-bold text-white shadow-md shadow-blue-900/25 shadow-amber-900/20 transition-all hover:brightness-110 active:scale-[0.98] md:px-4 md:text-sm dark:from-blue-600 dark:to-amber-500 dark:hover:brightness-110"
                 >
                   <LogIn className="h-4 w-4" />
                   <span className="hidden sm:inline">Sign in</span>
