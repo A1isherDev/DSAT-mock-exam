@@ -15,6 +15,8 @@ import {
   RefreshCcw,
   Trophy,
   Plus,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 
 function TabButton({ active, onClick, icon: Icon, label }: any) {
@@ -47,6 +49,7 @@ export default function ClassDetailPage() {
 
   const [assignments, setAssignments] = useState<any[]>([]);
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [editingAssignment, setEditingAssignment] = useState<any | null>(null);
 
   const [people, setPeople] = useState<any[]>([]);
 
@@ -219,7 +222,10 @@ export default function ClassDetailPage() {
               </div>
               <button
                 type="button"
-                onClick={() => setCreateModalOpen(true)}
+                onClick={() => {
+                  setEditingAssignment(null);
+                  setCreateModalOpen(true);
+                }}
                 className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold text-sm shadow-lg shadow-blue-600/25 hover:from-blue-700 hover:to-indigo-700 transition-all shrink-0"
               >
                 <Plus className="w-5 h-5" />
@@ -238,39 +244,75 @@ export default function ClassDetailPage() {
               </div>
             ) : (
               assignments.map((a) => (
-                <Link
+                <div
                   key={a.id}
-                  href={`/classes/${id}/assignments/${a.id}`}
-                  className="block bg-white border border-slate-200 rounded-2xl p-6 hover:shadow-xl hover:-translate-y-0.5 transition-all"
+                  className="flex gap-3 sm:gap-4 items-stretch bg-white border border-slate-200 rounded-2xl p-6 hover:shadow-xl hover:-translate-y-0.5 transition-all"
                 >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-lg font-extrabold text-slate-900 truncate">{a.title}</p>
-                        {(a.practice_test ||
-                          a.pastpaper_pack ||
-                          (Array.isArray(a.practice_test_ids) && a.practice_test_ids.length > 0) ||
-                          (Array.isArray(a.practice_bundle_tests) && a.practice_bundle_tests.length > 0)) ? (
-                          <span className="shrink-0 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-lg bg-violet-100 text-violet-800">
-                            Pastpaper
-                          </span>
-                        ) : null}
-                        {a.mock_exam ? (
-                          <span className="shrink-0 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-lg bg-sky-100 text-sky-800">
-                            Mock
-                          </span>
-                        ) : null}
+                  <Link href={`/classes/${id}/assignments/${a.id}`} className="flex-1 min-w-0 block">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-lg font-extrabold text-slate-900 truncate">{a.title}</p>
+                          {(a.practice_test ||
+                            a.pastpaper_pack ||
+                            (Array.isArray(a.practice_test_ids) && a.practice_test_ids.length > 0) ||
+                            (Array.isArray(a.practice_bundle_tests) && a.practice_bundle_tests.length > 0)) ? (
+                            <span className="shrink-0 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-lg bg-violet-100 text-violet-800">
+                              Pastpaper
+                            </span>
+                          ) : null}
+                          {a.mock_exam ? (
+                            <span className="shrink-0 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-lg bg-sky-100 text-sky-800">
+                              Mock
+                            </span>
+                          ) : null}
+                        </div>
+                        <p className="text-sm text-slate-500 mt-1">{formatDue(a.due_at)}</p>
                       </div>
-                      <p className="text-sm text-slate-500 mt-1">{formatDue(a.due_at)}</p>
+                      <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 shrink-0">
+                        {a.submissions_count ?? 0} submitted
+                      </div>
                     </div>
-                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">
-                      {a.submissions_count ?? 0} submitted
+                    {a.instructions ? (
+                      <p className="text-sm text-slate-600 mt-3 line-clamp-2">{a.instructions}</p>
+                    ) : null}
+                  </Link>
+                  {isClassAdmin ? (
+                    <div className="flex flex-col gap-2 shrink-0 border-l border-slate-100 pl-3 sm:pl-4">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingAssignment(a);
+                          setCreateModalOpen(true);
+                        }}
+                        className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-50"
+                        title="Edit assignment"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!confirm(`Delete homework “${a.title}”? Submissions will be removed.`)) return;
+                          try {
+                            await classesApi.deleteAssignment(id, a.id);
+                            const list = await classesApi.listAssignments(id);
+                            setAssignments(Array.isArray(list) ? list : []);
+                          } catch (e: unknown) {
+                            const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+                            alert(typeof msg === "string" ? msg : "Could not delete assignment.");
+                          }
+                        }}
+                        className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-red-200 text-red-700 font-bold text-xs hover:bg-red-50"
+                        title="Delete assignment"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Delete
+                      </button>
                     </div>
-                  </div>
-                  {a.instructions ? (
-                    <p className="text-sm text-slate-600 mt-3 line-clamp-2">{a.instructions}</p>
                   ) : null}
-                </Link>
+                </div>
               ))
             )}
           </div>
@@ -278,11 +320,16 @@ export default function ClassDetailPage() {
           <CreateAssignmentModal
             open={createModalOpen && isClassAdmin}
             classId={id}
-            onClose={() => setCreateModalOpen(false)}
+            editingAssignment={editingAssignment}
+            onClose={() => {
+              setCreateModalOpen(false);
+              setEditingAssignment(null);
+            }}
             onSuccess={async () => {
               const a = await classesApi.listAssignments(id);
               setAssignments(Array.isArray(a) ? a : []);
               setTab("classwork");
+              setEditingAssignment(null);
             }}
           />
         </div>

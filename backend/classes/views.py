@@ -5,6 +5,7 @@ from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -23,6 +24,7 @@ from .models import (
     ClassroomMembership,
     ClassPost,
     Assignment,
+    AssignmentExtraAttachment,
     Submission,
     Grade,
     assignment_target_practice_test_ids,
@@ -396,7 +398,7 @@ class AssignmentViewSet(ModelViewSet):
             return Assignment.objects.none()
         return Assignment.objects.filter(classroom=classroom).select_related(
             "created_by", "mock_exam", "practice_test", "pastpaper_pack", "module"
-        ).annotate(submissions_count=Count("submissions"))
+        ).prefetch_related("extra_attachments").annotate(submissions_count=Count("submissions"))
 
     def create(self, request, *args, **kwargs):
         classroom = self.get_classroom()
@@ -404,8 +406,24 @@ class AssignmentViewSet(ModelViewSet):
             return Response({"detail": "Only class admins can create assignments."}, status=status.HTTP_403_FORBIDDEN)
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        a = serializer.save(classroom=classroom, created_by=request.user)
-        return Response(self.get_serializer(a).data, status=status.HTTP_201_CREATED)
+        assignment = serializer.save(classroom=classroom, created_by=request.user)
+        files = request.FILES.getlist("attachment_file")
+        if files:
+            assignment.attachment_file = files[0]
+            assignment.save(update_fields=["attachment_file", "updated_at"])
+            for f in files[1:]:
+                AssignmentExtraAttachment.objects.create(assignment=assignment, file=f)
+        return Response(self.get_serializer(assignment).data, status=status.HTTP_201_CREATED)
+
+    def perform_destroy(self, instance):
+        if not instance.classroom.memberships.filter(user=self.request.user, role="ADMIN").exists():
+            raise PermissionDenied("Only class admins can delete assignments.")
+        instance.delete()
+
+    def perform_update(self, serializer):
+        if not serializer.instance.classroom.memberships.filter(user=self.request.user, role="ADMIN").exists():
+            raise PermissionDenied("Only class admins can edit assignments.")
+        serializer.save()
 
     @action(detail=True, methods=["post"], url_path="submit")
     def submit(self, request, classroom_pk=None, pk=None):

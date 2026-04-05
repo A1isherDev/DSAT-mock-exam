@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { classesApi } from "@/lib/api";
 import CreateAssignmentModal from "@/components/CreateAssignmentModal";
-import { Plus, Calendar } from "lucide-react";
+import { Plus, Calendar, Pencil, Trash2 } from "lucide-react";
 
 export default function TeacherHomeworkPage() {
   const [loading, setLoading] = useState(true);
@@ -13,6 +13,7 @@ export default function TeacherHomeworkPage() {
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
   const [assignments, setAssignments] = useState<any[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
+  const [editingAssignment, setEditingAssignment] = useState<Record<string, unknown> | null>(null);
 
   const refreshGroups = async () => {
     const all = await classesApi.list();
@@ -95,7 +96,10 @@ export default function TeacherHomeworkPage() {
                   <>
                     <button
                       type="button"
-                      onClick={() => setCreateOpen(true)}
+                      onClick={() => {
+                        setEditingAssignment(null);
+                        setCreateOpen(true);
+                      }}
                       className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700"
                     >
                       <Plus className="w-4 h-4" />
@@ -119,19 +123,49 @@ export default function TeacherHomeworkPage() {
               ) : (
                 <div className="divide-y divide-slate-100">
                   {assignments.map((a) => (
-                    <div key={a.id} className="p-5 flex items-center justify-between gap-4">
-                      <div className="min-w-0">
+                    <div key={a.id} className="p-5 flex flex-wrap items-center justify-between gap-3">
+                      <div className="min-w-0 flex-1">
                         <p className="font-extrabold text-slate-900 truncate">{a.title}</p>
                         <p className="text-sm text-slate-500 mt-1 inline-flex items-center gap-2">
                           <Calendar className="w-4 h-4" /> {formatDue(a.due_at)}
                         </p>
                       </div>
-                      <Link
-                        href={`/classes/${selectedGroupId}/assignments/${a.id}`}
-                        className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 font-bold text-sm hover:bg-slate-50"
-                      >
-                        View submissions
-                      </Link>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingAssignment(a);
+                            setCreateOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 font-bold text-sm hover:bg-slate-50"
+                        >
+                          <Pencil className="w-4 h-4" />
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!selectedGroupId || !confirm(`Delete “${a.title}”?`)) return;
+                            try {
+                              await classesApi.deleteAssignment(selectedGroupId, a.id);
+                              await refreshAssignments(selectedGroupId);
+                            } catch (e: unknown) {
+                              const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+                              alert(typeof msg === "string" ? msg : "Could not delete.");
+                            }
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-red-200 text-red-700 font-bold text-sm hover:bg-red-50"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          Delete
+                        </button>
+                        <Link
+                          href={`/classes/${selectedGroupId}/assignments/${a.id}`}
+                          className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 font-bold text-sm hover:bg-slate-50"
+                        >
+                          View
+                        </Link>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -144,9 +178,14 @@ export default function TeacherHomeworkPage() {
         <CreateAssignmentModal
           open={createOpen}
           classId={selectedGroupId}
-          onClose={() => setCreateOpen(false)}
+          editingAssignment={editingAssignment}
+          onClose={() => {
+            setCreateOpen(false);
+            setEditingAssignment(null);
+          }}
           onSuccess={async () => {
             await refreshAssignments(selectedGroupId);
+            setEditingAssignment(null);
           }}
         />
       ) : null}

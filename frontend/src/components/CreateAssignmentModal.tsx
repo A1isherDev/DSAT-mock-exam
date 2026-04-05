@@ -30,6 +30,8 @@ type PastSelection =
 type Props = {
   open: boolean;
   classId: number;
+  /** When set, modal edits this assignment (JSON PATCH; files stay as-is). */
+  editingAssignment?: Record<string, unknown> | null;
   onClose: () => void;
   onSuccess: () => void | Promise<void>;
 };
@@ -54,7 +56,13 @@ function selectFromCard(c: CardPastpaperPack | CardSingle): PastSelection {
   return { mode: "pack_legacy", testIds: c.tests.map((t) => t.id) };
 }
 
-export default function CreateAssignmentModal({ open, classId, onClose, onSuccess }: Props) {
+export default function CreateAssignmentModal({
+  open,
+  classId,
+  editingAssignment = null,
+  onClose,
+  onSuccess,
+}: Props) {
   const [newAsg, setNewAsg] = useState({
     title: "",
     instructions: "",
@@ -63,7 +71,7 @@ export default function CreateAssignmentModal({ open, classId, onClose, onSucces
   });
   const [pastSel, setPastSel] = useState<PastSelection>({ mode: "none" });
   const [dueLocal, setDueLocal] = useState("");
-  const [asgFile, setAsgFile] = useState<File | null>(null);
+  const [asgFiles, setAsgFiles] = useState<File[]>([]);
   const [assignmentOptions, setAssignmentOptions] = useState<{
     mock_exams: AssignmentOptMock[];
     practice_tests: PastpaperRow[];
@@ -87,7 +95,7 @@ export default function CreateAssignmentModal({ open, classId, onClose, onSucces
     });
     setPastSel({ mode: "none" });
     setDueLocal("");
-    setAsgFile(null);
+    setAsgFiles([]);
     setFormError(null);
   };
 
@@ -122,6 +130,51 @@ export default function CreateAssignmentModal({ open, classId, onClose, onSucces
 
   useEffect(() => {
     if (!open) return;
+    if (!editingAssignment) {
+      resetForm();
+      return;
+    }
+    setNewAsg({
+      title: String(editingAssignment.title ?? ""),
+      instructions: String(editingAssignment.instructions ?? ""),
+      external_url: String(editingAssignment.external_url ?? ""),
+      mock_exam:
+        editingAssignment.mock_exam != null ? String((editingAssignment.mock_exam as { id?: number }).id ?? editingAssignment.mock_exam) : "",
+    });
+    const due = editingAssignment.due_at;
+    if (due && typeof due === "string") {
+      const d = new Date(due);
+      if (!Number.isNaN(d.getTime())) {
+        const pad = (n: number) => String(n).padStart(2, "0");
+        setDueLocal(
+          `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+        );
+      } else setDueLocal("");
+    } else setDueLocal("");
+    const pp = editingAssignment.pastpaper_pack;
+    if (pp != null) {
+      const packId = typeof pp === "object" && pp != null && "id" in pp ? Number((pp as { id: number }).id) : Number(pp);
+      if (Number.isFinite(packId)) setPastSel({ mode: "pack_db", packId });
+      else setPastSel({ mode: "none" });
+    } else if (Array.isArray(editingAssignment.practice_test_ids) && editingAssignment.practice_test_ids.length > 0) {
+      setPastSel({
+        mode: "pack_legacy",
+        testIds: (editingAssignment.practice_test_ids as unknown[]).map((x) => Number(x)),
+      });
+    } else if (editingAssignment.practice_test != null) {
+      const pt = editingAssignment.practice_test;
+      const tid = typeof pt === "object" && pt != null && "id" in pt ? Number((pt as { id: number }).id) : Number(pt);
+      if (Number.isFinite(tid)) setPastSel({ mode: "single", testId: tid });
+      else setPastSel({ mode: "none" });
+    } else {
+      setPastSel({ mode: "none" });
+    }
+    setAsgFiles([]);
+    setFormError(null);
+  }, [open, editingAssignment]);
+
+  useEffect(() => {
+    if (!open) return;
     const onKey = (ev: KeyboardEvent) => {
       if (ev.key === "Escape") onClose();
     };
@@ -129,10 +182,37 @@ export default function CreateAssignmentModal({ open, classId, onClose, onSucces
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  const handleCreate = async () => {
+  const handleSubmit = async () => {
     setFormError(null);
     setCreatingAsg(true);
     try {
+      const editId = editingAssignment != null ? Number(editingAssignment.id) : NaN;
+      if (Number.isFinite(editId)) {
+        const body: Record<string, unknown> = {
+          title: newAsg.title.trim(),
+          instructions: newAsg.instructions,
+          external_url: newAsg.external_url.trim() || "",
+          due_at: null as string | null,
+          mock_exam: newAsg.mock_exam ? Number(newAsg.mock_exam) : null,
+          pastpaper_pack: null,
+          practice_test: null,
+          practice_test_ids: null,
+        };
+        if (dueLocal.trim()) {
+          const t = new Date(dueLocal);
+          if (!Number.isNaN(t.getTime())) body.due_at = t.toISOString();
+        }
+        if (pastSel.mode === "pack_db") body.pastpaper_pack = pastSel.packId;
+        else if (pastSel.mode === "pack_legacy") body.practice_test_ids = pastSel.testIds;
+        else if (pastSel.mode === "single") body.practice_test = pastSel.testId;
+
+        await classesApi.updateAssignment(classId, editId, body);
+        resetForm();
+        await onSuccess();
+        onClose();
+        return;
+      }
+
       const fd = new FormData();
       fd.append("title", newAsg.title.trim());
       fd.append("instructions", newAsg.instructions);
@@ -147,7 +227,9 @@ export default function CreateAssignmentModal({ open, classId, onClose, onSucces
       else if (pastSel.mode === "pack_legacy") fd.append("practice_test_ids", JSON.stringify(pastSel.testIds));
       else if (pastSel.mode === "single") fd.append("practice_test", String(pastSel.testId));
 
-      if (asgFile) fd.append("attachment_file", asgFile);
+      for (const f of asgFiles) {
+        fd.append("attachment_file", f);
+      }
 
       await classesApi.createAssignment(classId, fd, true);
       resetForm();
@@ -155,7 +237,7 @@ export default function CreateAssignmentModal({ open, classId, onClose, onSucces
       onClose();
     } catch (e: unknown) {
       const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      setFormError(typeof d === "string" ? d : "Could not create assignment.");
+      setFormError(typeof d === "string" ? d : editingAssignment ? "Could not save assignment." : "Could not create assignment.");
     } finally {
       setCreatingAsg(false);
     }
@@ -182,9 +264,11 @@ export default function CreateAssignmentModal({ open, classId, onClose, onSucces
       >
         <div className="sticky top-0 z-10 flex items-center justify-between gap-4 px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white rounded-t-3xl">
           <div>
-            <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">New assignment</p>
+            <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">
+              {editingAssignment ? "Edit assignment" : "New assignment"}
+            </p>
             <h2 id="create-asg-title" className="text-xl font-extrabold text-slate-900">
-              Create assignment
+              {editingAssignment ? "Update homework" : "Create assignment"}
             </h2>
           </div>
           <button
@@ -336,12 +420,28 @@ export default function CreateAssignmentModal({ open, classId, onClose, onSucces
           </div>
 
           <div>
-            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">File (optional)</label>
-            <input
-              type="file"
-              onChange={(e) => setAsgFile(e.target.files?.[0] || null)}
-              className="w-full text-sm text-slate-600 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-            />
+            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">
+              {editingAssignment ? "Attached files" : "Files (optional)"}
+            </label>
+            {editingAssignment ? (
+              <p className="text-xs text-slate-600 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                {Array.isArray(editingAssignment.attachment_urls) && editingAssignment.attachment_urls.length > 0
+                  ? `${editingAssignment.attachment_urls.length} file(s) on this assignment. Editing does not replace files — delete the homework and create a new one if you need different attachments.`
+                  : "No files on this assignment."}
+              </p>
+            ) : (
+              <>
+                <input
+                  type="file"
+                  multiple
+                  onChange={(e) => setAsgFiles(Array.from(e.target.files || []))}
+                  className="w-full text-sm text-slate-600 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                />
+                {asgFiles.length > 0 ? (
+                  <p className="text-[11px] text-slate-500 mt-1">{asgFiles.length} file(s) selected.</p>
+                ) : null}
+              </>
+            )}
           </div>
 
           <div className="flex flex-col-reverse sm:flex-row gap-2 pt-2">
@@ -357,12 +457,12 @@ export default function CreateAssignmentModal({ open, classId, onClose, onSucces
             </button>
             <button
               type="button"
-              onClick={handleCreate}
+              onClick={handleSubmit}
               disabled={!newAsg.title.trim() || creatingAsg}
               className="flex-1 py-3 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 disabled:opacity-60 inline-flex items-center justify-center gap-2"
             >
               {creatingAsg ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-              Create
+              {editingAssignment ? "Save changes" : "Create"}
             </button>
           </div>
         </div>

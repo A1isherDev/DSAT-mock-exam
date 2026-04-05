@@ -81,17 +81,17 @@ export default function AssignmentDetailPage() {
     }
   };
 
-  const openExternalOrFile = () => {
-    if (!assignment) return;
-    if (assignment.external_url) {
-      const url = /^https?:\/\//i.test(assignment.external_url) ? assignment.external_url : `https://${assignment.external_url}`;
-      window.open(url, "_blank", "noopener,noreferrer");
-      return;
-    }
-    if (assignment.attachment_file_url) {
-      window.open(assignment.attachment_file_url, "_blank", "noopener,noreferrer");
-    }
+  const openExternal = () => {
+    if (!assignment?.external_url) return;
+    const url = /^https?:\/\//i.test(assignment.external_url) ? assignment.external_url : `https://${assignment.external_url}`;
+    window.open(url, "_blank", "noopener,noreferrer");
   };
+
+  const homeworkAttachmentUrls: string[] = Array.isArray(assignment?.attachment_urls)
+    ? assignment.attachment_urls.filter((u: unknown) => typeof u === "string")
+    : assignment?.attachment_file_url
+      ? [assignment.attachment_file_url]
+      : [];
 
   const bundleTests: { id: number; subject: string; title?: string }[] = Array.isArray(assignment?.practice_bundle_tests)
     ? assignment.practice_bundle_tests
@@ -164,16 +164,27 @@ export default function AssignmentDetailPage() {
                     Open practice test
                   </button>
                 ) : null}
-                {assignment?.external_url || assignment?.attachment_file_url ? (
+                {assignment?.external_url ? (
                   <button
                     type="button"
-                    onClick={openExternalOrFile}
+                    onClick={openExternal}
                     className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 font-bold text-sm hover:bg-slate-50"
                   >
                     <ExternalLink className="w-4 h-4" />
-                    {assignment?.external_url ? "Open link" : "Open attached file"}
+                    Open link
                   </button>
                 ) : null}
+                {homeworkAttachmentUrls.map((url, i) => (
+                  <button
+                    key={`${url}-${i}`}
+                    type="button"
+                    onClick={() => window.open(url, "_blank", "noopener,noreferrer")}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 font-bold text-sm hover:bg-slate-50"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    {homeworkAttachmentUrls.length > 1 ? `Open file ${i + 1}` : "Open attached file"}
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -187,7 +198,7 @@ export default function AssignmentDetailPage() {
                       value={attemptId}
                       onChange={(e) => setAttemptId(e.target.value)}
                       placeholder="e.g. 123"
-                      className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold"
+                      className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 bg-white placeholder:text-slate-400"
                     />
                     <p className="text-[11px] text-slate-400 mt-1">If you completed an exam attempt, paste its ID.</p>
                   </div>
@@ -196,8 +207,8 @@ export default function AssignmentDetailPage() {
                     <textarea
                       value={responseText}
                       onChange={(e) => setResponseText(e.target.value)}
-                      placeholder="Optional response text"
-                      className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm min-h-[90px]"
+                      placeholder="Write your response here…"
+                      className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm min-h-[120px] text-slate-900 bg-white placeholder:text-slate-400"
                     />
                   </div>
                 </div>

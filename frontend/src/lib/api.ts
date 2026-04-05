@@ -240,6 +240,13 @@ export const classesApi = {
         const r = await api.post(`/classes/${classId}/assignments/`, data, isFormData ? {} : {});
         return r.data;
     },
+    updateAssignment: async (classId: number, assignmentId: number, data: Record<string, unknown>) => {
+        const r = await api.patch(`/classes/${classId}/assignments/${assignmentId}/`, data);
+        return r.data;
+    },
+    deleteAssignment: async (classId: number, assignmentId: number) => {
+        await api.delete(`/classes/${classId}/assignments/${assignmentId}/`);
+    },
     submitAssignment: async (classId: number, assignmentId: number, payload: any, isFormData = true) => {
         const r = await api.post(`/classes/${classId}/assignments/${assignmentId}/submit/`, payload, isFormData ? {} : {});
         return r.data;

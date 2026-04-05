@@ -156,6 +156,20 @@ class Assignment(models.Model):
         ordering = ["-created_at"]
 
 
+class AssignmentExtraAttachment(models.Model):
+    """Additional homework files beyond the primary ``Assignment.attachment_file``."""
+
+    assignment = models.ForeignKey(
+        Assignment, on_delete=models.CASCADE, related_name="extra_attachments"
+    )
+    file = models.FileField(upload_to="homework_files/")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "class_assignment_extra_attachments"
+        ordering = ["id"]
+
+
 def assignment_target_practice_test_ids(assignment: Assignment) -> list[int]:
     """
     Practice test row ids this homework refers to (full pastpaper pack, legacy bundle, or single).

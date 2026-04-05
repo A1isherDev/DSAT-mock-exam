@@ -4,7 +4,7 @@ from rest_framework import serializers
 from urllib.parse import urlparse
 from django.core.validators import URLValidator
 
-from exams.models import PastpaperPack, PracticeTest
+from exams.models import MockExam, PastpaperPack, PracticeTest
 
 from .models import (
     Classroom,
@@ -146,7 +146,14 @@ class AssignmentSerializer(serializers.ModelSerializer):
     created_by = serializers.SerializerMethodField()
     submissions_count = serializers.IntegerField(read_only=True)
     attachment_file_url = serializers.SerializerMethodField(read_only=True)
+    attachment_urls = serializers.SerializerMethodField(read_only=True)
     external_url = serializers.CharField(required=False, allow_blank=True)
+    mock_exam = serializers.PrimaryKeyRelatedField(
+        queryset=MockExam.objects.all(), required=False, allow_null=True
+    )
+    practice_test = serializers.PrimaryKeyRelatedField(
+        queryset=PracticeTest.objects.all(), required=False, allow_null=True
+    )
     pastpaper_pack = serializers.PrimaryKeyRelatedField(
         queryset=PastpaperPack.objects.all(), required=False, allow_null=True
     )
@@ -169,11 +176,19 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "external_url",
             "attachment_file",
             "attachment_file_url",
+            "attachment_urls",
             "created_at",
             "created_by",
             "submissions_count",
         ]
-        read_only_fields = ["id", "created_at", "created_by", "submissions_count", "practice_bundle_tests"]
+        read_only_fields = [
+            "id",
+            "created_at",
+            "created_by",
+            "submissions_count",
+            "practice_bundle_tests",
+            "attachment_urls",
+        ]
 
     def get_created_by(self, obj):
         u = obj.created_by
@@ -193,6 +208,18 @@ class AssignmentSerializer(serializers.ModelSerializer):
         if request:
             return request.build_absolute_uri(url)
         return url
+
+    def get_attachment_urls(self, obj):
+        """Primary file first, then extra attachments (same order as upload)."""
+        request = self.context.get("request")
+        urls = []
+        if obj.attachment_file:
+            u = obj.attachment_file.url
+            urls.append(request.build_absolute_uri(u) if request else u)
+        for ex in obj.extra_attachments.all():
+            u = ex.file.url
+            urls.append(request.build_absolute_uri(u) if request else u)
+        return urls
 
     def get_practice_bundle_tests(self, obj):
         ids = assignment_target_practice_test_ids(obj)
@@ -225,6 +252,13 @@ class AssignmentSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         if self.instance is not None:
+            for fk in ("mock_exam", "practice_test", "pastpaper_pack"):
+                if fk in attrs and attrs[fk] == "":
+                    attrs[fk] = None
+            if "practice_test_ids" in attrs:
+                v = attrs["practice_test_ids"]
+                if v in (None, "", []):
+                    attrs["practice_test_ids"] = None
             return super().validate(attrs)
 
         pp = attrs.get("pastpaper_pack")
