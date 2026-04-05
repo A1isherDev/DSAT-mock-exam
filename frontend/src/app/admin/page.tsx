@@ -347,6 +347,11 @@ export default function AdminPage() {
         form_type: 'INTERNATIONAL',
     });
     const [bulkAssignPracticeTests, setBulkAssignPracticeTests] = useState<number[]>([]);
+    /** Bulk pastpaper modal: selected cards (pack ids); sections are derived + filtered by subject. */
+    const [bulkAssignPastpaperPackIds, setBulkAssignPastpaperPackIds] = useState<number[]>([]);
+    const [bulkPastpaperSubjectScope, setBulkPastpaperSubjectScope] = useState<
+        'BOTH' | 'READING_WRITING' | 'MATH'
+    >('BOTH');
 
     /** Pastpaper list: search + filters (admin UX). */
     const [pastpaperAdminQuery, setPastpaperAdminQuery] = useState("");
@@ -433,12 +438,6 @@ export default function AdminPage() {
 
     const orphanPastpaperTests = useMemo(
         () => standaloneTests.filter((t) => t.pastpaper_pack == null && t.pastpaper_pack_id == null),
-        [standaloneTests],
-    );
-
-    /** Bulk pastpaper assign: only sections on a card (pack); orphans stay off this list. */
-    const pastpaperSectionsOnCard = useMemo(
-        () => standaloneTests.filter((t) => !(t.pastpaper_pack == null && t.pastpaper_pack_id == null)),
         [standaloneTests],
     );
 
@@ -1085,10 +1084,46 @@ export default function AdminPage() {
         await fetchQuestions(); showToast('Question deleted');
     };
 
+    const bulkPastpaperResolvedSectionIds = useMemo(() => {
+        const ids: number[] = [];
+        for (const packId of bulkAssignPastpaperPackIds) {
+            const pack = pastpaperPacks.find((p) => p.id === packId);
+            const sections = pack?.sections || [];
+            for (const s of sections) {
+                if (bulkPastpaperSubjectScope === 'BOTH') {
+                    ids.push(s.id);
+                } else if (bulkPastpaperSubjectScope === 'MATH' && s.subject === 'MATH') {
+                    ids.push(s.id);
+                } else if (
+                    bulkPastpaperSubjectScope === 'READING_WRITING' &&
+                    s.subject === 'READING_WRITING'
+                ) {
+                    ids.push(s.id);
+                }
+            }
+        }
+        return ids;
+    }, [bulkAssignPastpaperPackIds, bulkPastpaperSubjectScope, pastpaperPacks]);
+
+    const filteredBulkPastpaperPacks = useMemo(() => {
+        const q = bulkPastpaperSearch.trim().toLowerCase();
+        if (!q) return pastpaperPacks;
+        return pastpaperPacks.filter((p) => {
+            if (formatPastpaperPackAdminLabel(p).toLowerCase().includes(q)) return true;
+            const secBlob = (p.sections || [])
+                .map((s: any) => `${s.id} ${s.title || ""} ${s.subject || ""}`)
+                .join(" ")
+                .toLowerCase();
+            return secBlob.includes(q);
+        });
+    }, [pastpaperPacks, bulkPastpaperSearch]);
+
     const closeBulkModal = () => {
         setBulkModalKind(null);
         setBulkAssignExams([]);
         setBulkAssignPracticeTests([]);
+        setBulkAssignPastpaperPackIds([]);
+        setBulkPastpaperSubjectScope('BOTH');
         setBulkAssignUsers([]);
         setBulkAssignType('FULL');
         setBulkAssignFormType('');
@@ -1099,6 +1134,8 @@ export default function AdminPage() {
 
     const openBulkModalMocks = () => {
         setBulkAssignPracticeTests([]);
+        setBulkAssignPastpaperPackIds([]);
+        setBulkPastpaperSubjectScope('BOTH');
         setBulkAssignExams([]);
         setBulkAssignUsers([]);
         setBulkAssignType('FULL');
@@ -1112,6 +1149,8 @@ export default function AdminPage() {
     const openBulkModalPastpapers = () => {
         setBulkAssignExams([]);
         setBulkAssignPracticeTests([]);
+        setBulkAssignPastpaperPackIds([]);
+        setBulkPastpaperSubjectScope('BOTH');
         setBulkAssignUsers([]);
         setBulkMockSearch('');
         setBulkPastpaperSearch('');
@@ -1130,8 +1169,12 @@ export default function AdminPage() {
                 return;
             }
         } else if (bulkModalKind === 'pastpapers') {
-            if (bulkAssignPracticeTests.length === 0) {
-                showToast("Select at least one pastpaper section");
+            if (bulkAssignPastpaperPackIds.length === 0) {
+                showToast("Select at least one pastpaper card");
+                return;
+            }
+            if (bulkPastpaperResolvedSectionIds.length === 0) {
+                showToast("No sections match this subject filter for the selected cards");
                 return;
             }
         } else {
@@ -1145,7 +1188,9 @@ export default function AdminPage() {
                 bulkAssignUsers,
                 isMocks ? bulkAssignType : 'FULL',
                 isMocks ? bulkAssignFormType || undefined : undefined,
-                !isMocks && bulkAssignPracticeTests.length ? bulkAssignPracticeTests : undefined
+                !isMocks && bulkPastpaperResolvedSectionIds.length
+                    ? bulkPastpaperResolvedSectionIds
+                    : undefined
             );
             showToast(`Assigned access to ${bulkAssignUsers.length} user(s).`);
             if (isMocks && bulkAssignExams.length) setSelectedMockId(bulkAssignExams[0]);
@@ -2769,7 +2814,7 @@ export default function AdminPage() {
                             <div className="p-6 border-b border-slate-100 flex justify-between items-center">
                                 <div>
                                     <h2 className="text-xl font-bold text-slate-900">Bulk assign — pastpapers</h2>
-                                    <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest mt-1">Sections on a pastpaper card only · then students</p>
+                                    <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest mt-1">Pastpaper cards · choose subject scope · then students</p>
                                 </div>
                                 <button type="button" onClick={closeBulkModal} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
                             </div>
@@ -2777,55 +2822,114 @@ export default function AdminPage() {
                             <div className="flex-1 min-h-0 overflow-hidden grid grid-cols-2">
                                 <div className="border-r border-slate-100 flex flex-col min-h-0">
                                     <div className="p-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center shrink-0">
-                                        <span className="text-xs font-extrabold text-slate-500 uppercase">Pastpaper sections ({bulkAssignPracticeTests.length})</span>
-                                        <button type="button" onClick={() => setBulkAssignPracticeTests(bulkAssignPracticeTests.length === pastpaperSectionsOnCard.length ? [] : pastpaperSectionsOnCard.map((t) => t.id))} className="text-[10px] font-bold text-emerald-700 hover:underline">
-                                            {bulkAssignPracticeTests.length === pastpaperSectionsOnCard.length ? 'Deselect All' : 'Select All'}
+                                        <span className="text-xs font-extrabold text-slate-500 uppercase">Cards ({bulkAssignPastpaperPackIds.length})</span>
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                setBulkAssignPastpaperPackIds(
+                                                    bulkAssignPastpaperPackIds.length === pastpaperPacks.length && pastpaperPacks.length > 0
+                                                        ? []
+                                                        : pastpaperPacks.map((p) => p.id),
+                                                )
+                                            }
+                                            className="text-[10px] font-bold text-emerald-700 hover:underline"
+                                        >
+                                            {bulkAssignPastpaperPackIds.length === pastpaperPacks.length && pastpaperPacks.length > 0
+                                                ? 'Deselect All'
+                                                : 'Select All'}
                                         </button>
                                     </div>
-                                    <div className="p-3 border-b border-slate-100 bg-white shrink-0">
+                                    <div className="p-3 border-b border-slate-100 bg-white shrink-0 space-y-3">
                                         <div className="relative">
                                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
                                             <input
                                                 className={INPUT + ' pl-9 !py-1.5 !text-[11px]'}
-                                                placeholder="Search sections by card, label, #id…"
+                                                placeholder="Search cards or section #id…"
                                                 value={bulkPastpaperSearch}
                                                 onChange={(e) => setBulkPastpaperSearch(e.target.value)}
                                             />
                                         </div>
+                                        <div className="flex flex-col gap-1">
+                                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Assign sections</span>
+                                            <div className="flex bg-slate-100 p-1 rounded-xl">
+                                                {(
+                                                    [
+                                                        { id: 'BOTH' as const, label: 'Both' },
+                                                        { id: 'READING_WRITING' as const, label: 'English' },
+                                                        { id: 'MATH' as const, label: 'Math' },
+                                                    ] as const
+                                                ).map((opt) => (
+                                                    <button
+                                                        key={opt.id}
+                                                        type="button"
+                                                        onClick={() => setBulkPastpaperSubjectScope(opt.id)}
+                                                        className={`flex-1 py-2 px-2 rounded-lg text-[10px] font-black transition-all ${
+                                                            bulkPastpaperSubjectScope === opt.id
+                                                                ? 'bg-white text-emerald-700 shadow-sm'
+                                                                : 'text-slate-500 hover:text-slate-700'
+                                                        }`}
+                                                    >
+                                                        {opt.label}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                            <p className="text-[10px] text-slate-400 font-medium leading-snug">
+                                                Per selected card: include all sections, or only R&amp;W or only Math. Affects{' '}
+                                                <span className="font-bold text-slate-600">{bulkPastpaperResolvedSectionIds.length}</span> section
+                                                {bulkPastpaperResolvedSectionIds.length !== 1 ? 's' : ''} total.
+                                            </p>
+                                        </div>
                                     </div>
                                     <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1">
-                                        {pastpaperSectionsOnCard.length === 0 && (
+                                        {pastpaperPacks.length === 0 && (
                                             <p className="text-[11px] text-slate-400 p-2">
-                                                No sections on a card yet. Create a pastpaper card and add sections here, or move orphan sections into a card—only those appear in bulk assign.
+                                                No pastpaper cards yet. Create a card on this tab and add English/Math sections.
                                             </p>
                                         )}
-                                        {pastpaperSectionsOnCard
-                                            .filter((t) => {
-                                                const q = bulkPastpaperSearch.trim().toLowerCase();
-                                                if (!q) return true;
-                                                const line = formatPastpaperSectionForAssign(t).toLowerCase();
-                                                return line.includes(q) || String(t.id).includes(q);
-                                            })
-                                            .map((t) => (
-                                                <label key={t.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-emerald-50/50 cursor-pointer transition-colors border border-transparent hover:border-emerald-100">
+                                        {filteredBulkPastpaperPacks.length === 0 && pastpaperPacks.length > 0 && (
+                                            <p className="text-[11px] text-slate-400 p-2">No cards match your search.</p>
+                                        )}
+                                        {filteredBulkPastpaperPacks.map((pack) => {
+                                            const sections = pack.sections || [];
+                                            const { hasRw, hasMath, n } = pastpaperSectionSummary(sections);
+                                            const mix =
+                                                n === 0
+                                                    ? 'No sections'
+                                                    : hasRw && hasMath
+                                                      ? 'R&W + Math'
+                                                      : hasRw
+                                                        ? 'English only'
+                                                        : 'Math only';
+                                            return (
+                                                <label
+                                                    key={pack.id}
+                                                    className="flex items-center gap-3 p-3 rounded-xl hover:bg-emerald-50/50 cursor-pointer transition-colors border border-transparent hover:border-emerald-100"
+                                                >
                                                     <input
                                                         type="checkbox"
-                                                        className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                                                        checked={bulkAssignPracticeTests.includes(t.id)}
+                                                        className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 shrink-0"
+                                                        checked={bulkAssignPastpaperPackIds.includes(pack.id)}
                                                         onChange={(e) => {
-                                                            if (e.target.checked) setBulkAssignPracticeTests([...bulkAssignPracticeTests, t.id]);
-                                                            else setBulkAssignPracticeTests(bulkAssignPracticeTests.filter((id) => id !== t.id));
+                                                            if (e.target.checked) {
+                                                                setBulkAssignPastpaperPackIds([...bulkAssignPastpaperPackIds, pack.id]);
+                                                            } else {
+                                                                setBulkAssignPastpaperPackIds(
+                                                                    bulkAssignPastpaperPackIds.filter((id) => id !== pack.id),
+                                                                );
+                                                            }
                                                         }}
                                                     />
                                                     <div className="min-w-0">
-                                                        <p className="text-sm font-bold text-slate-800 truncate">{formatPastpaperSectionForAssign(t)}</p>
+                                                        <p className="text-sm font-bold text-slate-800 truncate">
+                                                            {formatPastpaperPackAdminLabel(pack)}
+                                                        </p>
                                                         <p className="text-[10px] text-slate-400 font-bold uppercase">
-                                                            {t.form_type === 'US' ? 'US' : 'International'}
-                                                            {t.label ? ` · ${t.label}` : ''}
+                                                            {mix} · {n} section{n !== 1 ? 's' : ''}
                                                         </p>
                                                     </div>
                                                 </label>
-                                            ))}
+                                            );
+                                        })}
                                     </div>
                                 </div>
 
@@ -2871,14 +2975,27 @@ export default function AdminPage() {
 
                             <div className="p-6 bg-white border-t border-slate-100 flex items-center justify-between gap-4 flex-wrap shrink-0">
                                 <p className="text-xs text-slate-500 font-medium">
-                                    Granting <span className="font-bold text-slate-900">{bulkAssignUsers.length}</span> student(s) access to <span className="font-bold text-emerald-800">{bulkAssignPracticeTests.length}</span> section(s) on pastpaper cards (R&amp;W or Math per row).
+                                    Granting <span className="font-bold text-slate-900">{bulkAssignUsers.length}</span> student(s) access to{' '}
+                                    <span className="font-bold text-emerald-800">{bulkPastpaperResolvedSectionIds.length}</span> section(s) on{' '}
+                                    <span className="font-bold text-slate-800">{bulkAssignPastpaperPackIds.length}</span> card(s)
+                                    {bulkPastpaperSubjectScope === 'BOTH'
+                                        ? ' (both subjects)'
+                                        : bulkPastpaperSubjectScope === 'MATH'
+                                          ? ' (Math only)'
+                                          : ' (English / R&W only)'}
+                                    .
                                 </p>
                                 <div className="flex gap-3">
                                     <button type="button" onClick={closeBulkModal} className={BTN_GHOST}>Cancel</button>
                                     <button
                                         type="button"
                                         onClick={handleBulkAssign}
-                                        disabled={saving || !bulkAssignPracticeTests.length || !bulkAssignUsers.length}
+                                        disabled={
+                                            saving ||
+                                            !bulkAssignPastpaperPackIds.length ||
+                                            !bulkPastpaperResolvedSectionIds.length ||
+                                            !bulkAssignUsers.length
+                                        }
                                         className={`${BTN_PRIMARY} !px-8 !py-3 !text-sm h-12 shadow-xl shadow-emerald-200/50 disabled:opacity-50 disabled:shadow-none`}
                                     >
                                         {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <ShieldCheck className="w-5 h-5" />}
