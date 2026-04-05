@@ -194,7 +194,12 @@ def _math_admin_allows(permission_codename: str, subject: Optional[str]) -> bool
 def can_browse_standalone_practice_library(user) -> bool:
     """
     Users who may see the full pastpaper / standalone library on the student portal
-    (/exams/), not only rows assigned to them. Mirrors admin list visibility for tests.
+    (/api/exams/...), not only rows assigned to them.
+
+    Intentionally excludes ``edit_test`` alone: TEACHER has edit_test for midterm/class
+    flows but must not see every pastpaper card on the student Pastpaper page—only tests
+    assigned to them (same as students). Authors/admins use view_*/create_test/delete_test
+    or view_all_tests for library-wide browse.
     """
     perms = get_effective_permission_codenames(user)
     if not perms:
@@ -205,7 +210,6 @@ def can_browse_standalone_practice_library(user) -> bool:
         constants.PERM_VIEW_ENGLISH_TESTS,
         constants.PERM_VIEW_MATH_TESTS,
         constants.PERM_CREATE_TEST,
-        constants.PERM_EDIT_TEST,
         constants.PERM_DELETE_TEST,
     }
     return bool(browse & perms)
