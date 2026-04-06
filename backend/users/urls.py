@@ -10,10 +10,16 @@ from .views import (
     TelegramAuthView,
     TelegramWidgetConfigView,
     TelegramLinkView,
+    ExamDateOptionListView,
+    ExamDateOptionAdminListCreateView,
+    ExamDateOptionAdminDetailView,
 )
 
 urlpatterns = [
     path('me/', UserMeView.as_view(), name='user-me'),
+    path('exam-dates/', ExamDateOptionListView.as_view(), name='exam-date-options'),
+    path('admin/exam-dates/', ExamDateOptionAdminListCreateView.as_view(), name='admin-exam-dates'),
+    path('admin/exam-dates/<int:pk>/', ExamDateOptionAdminDetailView.as_view(), name='admin-exam-date-detail'),
     path('register/', UserRegistrationView.as_view(), name='user-register'),
     path('google/', GoogleAuthView.as_view(), name='google-auth'),
     path('telegram/config/', TelegramWidgetConfigView.as_view(), name='telegram-widget-config'),

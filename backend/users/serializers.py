@@ -7,7 +7,24 @@ from access.services import authorize, get_effective_permission_codenames, user_
 from users.utils_staff import sync_django_staff_flag
 from users.phone_utils import normalize_phone
 
-from .models import User
+from .models import ExamDateOption, User
+
+
+class ExamDateOptionSerializer(serializers.ModelSerializer):
+    """Full fields for admin CRUD."""
+
+    class Meta:
+        model = ExamDateOption
+        fields = ["id", "exam_date", "label", "is_active", "sort_order", "created_at"]
+        read_only_fields = ["created_at"]
+
+
+class ExamDateOptionPublicSerializer(serializers.ModelSerializer):
+    """Active options shown to students (dropdown)."""
+
+    class Meta:
+        model = ExamDateOption
+        fields = ["id", "exam_date", "label"]
 
 
 class UserMeSerializer(serializers.ModelSerializer):
@@ -73,6 +90,16 @@ class UserMeSerializer(serializers.ModelSerializer):
             return value
         if value < 400 or value > 1600:
             raise serializers.ValidationError("Target score must be between 400 and 1600.")
+        return value
+
+    def validate_sat_exam_date(self, value):
+        """Students may only set a date that exists in the admin-managed active list."""
+        if value is None:
+            return value
+        if not ExamDateOption.objects.filter(exam_date=value, is_active=True).exists():
+            raise serializers.ValidationError(
+                "This exam date is not available. Please choose one from the list."
+            )
         return value
 
     def validate_phone_number(self, value):

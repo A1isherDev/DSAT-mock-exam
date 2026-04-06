@@ -58,6 +58,11 @@ export const usersApi = {
         const r = await api.post('/users/telegram/link/', payload);
         return r.data;
     },
+    /** Active SAT/exam dates for profile dropdown (admin-managed). */
+    listExamDates: async () => {
+        const r = await api.get('/users/exam-dates/');
+        return r.data;
+    },
 };
 
 export const authApi = {
@@ -277,6 +282,30 @@ export const adminApi = {
     createUser: async (data: object) => { const r = await api.post('/users/create/', data); return r.data; },
     updateUser: async (id: number, data: object) => { const r = await api.patch(`/users/${id}/update/`, data); return r.data; },
     deleteUser: async (id: number) => { await api.delete(`/users/${id}/delete/`); },
+
+    listExamDatesAdmin: async () => {
+        const r = await api.get('/users/admin/exam-dates/');
+        return r.data;
+    },
+    createExamDate: async (data: {
+        exam_date: string;
+        label?: string;
+        is_active?: boolean;
+        sort_order?: number;
+    }) => {
+        const r = await api.post('/users/admin/exam-dates/', data);
+        return r.data;
+    },
+    updateExamDate: async (
+        id: number,
+        data: Partial<{ exam_date: string; label: string; is_active: boolean; sort_order: number }>
+    ) => {
+        const r = await api.patch(`/users/admin/exam-dates/${id}/`, data);
+        return r.data;
+    },
+    deleteExamDate: async (id: number) => {
+        await api.delete(`/users/admin/exam-dates/${id}/`);
+    },
 
     // Mock Exams (top-level grouping)
     getMockExams: async () => { const r = await api.get('/exams/admin/mock-exams/'); return r.data; },

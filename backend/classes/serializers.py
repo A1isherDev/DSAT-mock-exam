@@ -15,6 +15,7 @@ from .models import (
     Grade,
     assignment_target_practice_test_ids,
     filter_practice_targets_by_scope,
+    grant_practice_test_library_access_for_assignment,
     raw_target_practice_test_ids_from_fks,
 )
 
@@ -371,6 +372,16 @@ class AssignmentSerializer(serializers.ModelSerializer):
             )
 
         return attrs
+
+    def create(self, validated_data):
+        inst = super().create(validated_data)
+        grant_practice_test_library_access_for_assignment(inst)
+        return inst
+
+    def update(self, instance, validated_data):
+        inst = super().update(instance, validated_data)
+        grant_practice_test_library_access_for_assignment(inst)
+        return inst
 
     def validate_external_url(self, value):
         """

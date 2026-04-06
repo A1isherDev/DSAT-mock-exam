@@ -81,6 +81,12 @@ type Attempt = {
   };
 };
 
+type ExamDateOptionRow = {
+  id: number;
+  exam_date: string;
+  label: string;
+};
+
 function mapMeToForm(me: any): MeForm {
   return {
     username: me.username || "",
@@ -117,6 +123,7 @@ export default function ProfilePage() {
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
   const [telegramCfg, setTelegramCfg] = useState<{ enabled: boolean; bot_username: string | null } | null>(null);
   const [telegramLinkBusy, setTelegramLinkBusy] = useState(false);
+  const [examDateOptions, setExamDateOptions] = useState<ExamDateOptionRow[]>([]);
 
   const handleTelegramLink = useCallback(async (user: TelegramAuthUser) => {
     setTelegramLinkBusy(true);
@@ -149,13 +156,15 @@ export default function ProfilePage() {
     let cancelled = false;
     (async () => {
       try {
-        const [meData, classData, tgWidget] = await Promise.all([
+        const [meData, classData, tgWidget, examDatesRaw] = await Promise.all([
           usersApi.getMe(),
           classesApi.list(),
           usersApi.getTelegramWidgetConfig().catch(() => ({ enabled: false, bot_username: null as string | null })),
+          usersApi.listExamDates().catch(() => []),
         ]);
         if (!cancelled) {
           setTelegramCfg(tgWidget);
+          setExamDateOptions(Array.isArray(examDatesRaw) ? (examDatesRaw as ExamDateOptionRow[]) : []);
           const meMapped = mapMeToForm(meData);
           setMe(meMapped);
           setLastMockResult(meMapped.last_mock_result || null);
@@ -266,6 +275,14 @@ export default function ProfilePage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!draft) return;
+    const allowedExamDates = new Set(examDateOptions.map((o) => o.exam_date));
+    const sat = draft.sat_exam_date?.trim() || "";
+    if (sat && !allowedExamDates.has(sat)) {
+      setMessage(
+        "This exam date is no longer available. Choose a date from the list or clear the field."
+      );
+      return;
+    }
     setSaving(true);
     setMessage(null);
     try {
@@ -925,13 +942,47 @@ export default function ProfilePage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">SAT exam date</label>
-                    <input
-                      type="date"
-                      className="input-modern"
-                      value={draft.sat_exam_date}
-                      onChange={(e) => setDraft({ ...draft, sat_exam_date: e.target.value })}
-                    />
+                    <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">
+                      SAT exam date
+                    </label>
+                    {(() => {
+                      const allowed = new Set(examDateOptions.map((o) => o.exam_date));
+                      const sat = draft.sat_exam_date?.trim() || "";
+                      const orphan = !!sat && !allowed.has(sat);
+                      return (
+                        <>
+                          <select
+                            className="input-modern"
+                            value={sat}
+                            onChange={(e) => setDraft({ ...draft, sat_exam_date: e.target.value })}
+                          >
+                            <option value="">Not set</option>
+                            {orphan ? (
+                              <option value={sat}>
+                                {formatDate(sat)} (no longer offered — pick another)
+                              </option>
+                            ) : null}
+                            {examDateOptions.map((o) => (
+                              <option key={o.id} value={o.exam_date}>
+                                {o.label
+                                  ? `${o.label} · ${formatDate(o.exam_date)}`
+                                  : formatDate(o.exam_date)}
+                              </option>
+                            ))}
+                          </select>
+                          {examDateOptions.length === 0 ? (
+                            <p className="text-[11px] text-muted-foreground mt-1">
+                              No exam dates are available yet. Your teacher or admin will add them; check back later.
+                            </p>
+                          ) : null}
+                          {orphan ? (
+                            <p className="text-[11px] text-amber-700 dark:text-amber-500/90 mt-1">
+                              Your saved date is not on the current list. Select a new date or clear to remove it.
+                            </p>
+                          ) : null}
+                        </>
+                      );
+                    })()}
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">Target score (400–1600)</label>

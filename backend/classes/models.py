@@ -4,7 +4,10 @@ import secrets
 import string
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.db import models
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 from django.utils import timezone
 
 from exams.models import MockExam, PastpaperPack, PracticeTest, Module, TestAttempt
@@ -252,6 +255,47 @@ def assignment_target_practice_test_ids(assignment: Assignment) -> list[int]:
     return filter_practice_targets_by_scope(raw, scope)
 
 
+def grant_practice_test_library_access_for_assignment(assignment: Assignment) -> None:
+    """
+    Student /practice-tests list only includes standalone PracticeTest rows the user is in
+    ``assigned_users`` for (unless they have staff library permissions). Class homework that
+    targets a pastpaper card / section did not update that M2M, so assigned work was invisible
+    on the global practice library until bulk-assign from admin. Sync class students here.
+    Timed mock sections (mock_exam set) are skipped.
+    """
+    ids = assignment_target_practice_test_ids(assignment)
+    if not ids:
+        return
+    standalone = PracticeTest.objects.filter(pk__in=ids, mock_exam__isnull=True)
+    if not standalone.exists():
+        return
+    student_ids = list(
+        assignment.classroom.memberships.filter(
+            role=ClassroomMembership.ROLE_STUDENT
+        ).values_list("user_id", flat=True)
+    )
+    if not student_ids:
+        return
+    User = get_user_model()
+    users = list(User.objects.filter(pk__in=student_ids))
+    if not users:
+        return
+    for pt in standalone:
+        pt.assigned_users.add(*users)
+
+
+def grant_practice_test_library_access_for_user_in_classroom(classroom: Classroom, user) -> None:
+    """When a student joins a class, unlock existing pastpaper homework targets on the practice library."""
+    if user is None:
+        return
+    for assignment in Assignment.objects.filter(classroom=classroom):
+        ids = assignment_target_practice_test_ids(assignment)
+        if not ids:
+            continue
+        for pt in PracticeTest.objects.filter(pk__in=ids, mock_exam__isnull=True):
+            pt.assigned_users.add(user)
+
+
 class Submission(models.Model):
     STATUS_DRAFT = "DRAFT"
     STATUS_SUBMITTED = "SUBMITTED"
@@ -302,4 +346,11 @@ class Grade(models.Model):
 
     class Meta:
         db_table = "class_grades"
+
+
+@receiver(post_save, sender=ClassroomMembership)
+def _grant_practice_library_on_student_enroll(sender, instance, created, **kwargs):
+    if not created or instance.role != ClassroomMembership.ROLE_STUDENT:
+        return
+    grant_practice_test_library_access_for_user_in_classroom(instance.classroom, instance.user)
 

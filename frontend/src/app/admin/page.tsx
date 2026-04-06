@@ -29,7 +29,8 @@ const getImageUrl = (path: string | null | undefined) => {
 import {
     Users, BookOpen, ShieldCheck, LogOut, Plus, Pencil, Trash2, Save,
     X, Loader2, Layers, HelpCircle, Search, Upload, Image as ImageIcon, ArrowUp, ArrowDown,
-    Bold as BoldIcon, Italic as ItalicIcon, Underline as UnderlineIcon, Sigma, Percent, Variable, SlidersHorizontal, AlertTriangle
+    Bold as BoldIcon, Italic as ItalicIcon, Underline as UnderlineIcon, Sigma, Percent, Variable, SlidersHorizontal, AlertTriangle,
+    Calendar,
 } from 'lucide-react';
 
 // KaTeX dynamic import for rendering math in previews
@@ -189,7 +190,7 @@ const RichTextEditor = ({ value, onChange, label, placeholder = "" }: { value: s
     );
 };
 
-type Tab = 'users' | 'pastpapers' | 'mocks' | 'modules' | 'questions';
+type Tab = 'users' | 'pastpapers' | 'mocks' | 'modules' | 'questions' | 'examdates';
 
 // ─── Inline Form Row ──────────────────────────────────────────────────────────
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -359,6 +360,15 @@ export default function AdminPage() {
         'BOTH' | 'READING_WRITING' | 'MATH'
     >('BOTH');
 
+    const [examDatesAdmin, setExamDatesAdmin] = useState<any[]>([]);
+    const [editingExamDate, setEditingExamDate] = useState<any | null>(null);
+    const [examDateForm, setExamDateForm] = useState({
+        exam_date: '',
+        label: '',
+        is_active: true,
+        sort_order: 0,
+    });
+
     /** Pastpaper list: search + filters (admin UX). */
     const [pastpaperAdminQuery, setPastpaperAdminQuery] = useState("");
     const [pastpaperFormFilter, setPastpaperFormFilter] = useState<"ALL" | "INTERNATIONAL" | "US">("ALL");
@@ -382,6 +392,15 @@ export default function AdminPage() {
 
     // Fetch
     const fetchUsers = useCallback(async () => { try { setUsers(await adminApi.getUsers()); } catch(e){} }, []);
+
+    const fetchExamDatesAdmin = useCallback(async () => {
+        try {
+            const data = await adminApi.listExamDatesAdmin();
+            setExamDatesAdmin(Array.isArray(data) ? data : []);
+        } catch {
+            setExamDatesAdmin([]);
+        }
+    }, []);
     
     const fetchMockExams = useCallback(async () => {
         try {
@@ -429,7 +448,10 @@ export default function AdminPage() {
         if (can("manage_users") || can("assign_test_access")) {
             fetchUsers();
         }
-    }, [fetchMockExams, fetchStandaloneTests, fetchPastpaperPacks, fetchUsers]);
+        if (can("manage_users")) {
+            fetchExamDatesAdmin();
+        }
+    }, [fetchMockExams, fetchStandaloneTests, fetchPastpaperPacks, fetchUsers, fetchExamDatesAdmin]);
 
     const allSelectableTests = useMemo(() => {
         const rows: any[] = [];
@@ -843,6 +865,46 @@ export default function AdminPage() {
     const handleDeleteUser = async (id: number) => {
         if (!confirm('Delete this user?')) return;
         await adminApi.deleteUser(id); await fetchUsers(); showToast('User deleted');
+    };
+
+    const handleSaveExamDateOption = async () => {
+        if (!examDateForm.exam_date?.trim()) {
+            showToast('Exam date is required');
+            return;
+        }
+        setSaving(true);
+        try {
+            const payload = {
+                exam_date: examDateForm.exam_date,
+                label: examDateForm.label?.trim() || '',
+                is_active: !!examDateForm.is_active,
+                sort_order: Number(examDateForm.sort_order) || 0,
+            };
+            if (editingExamDate?.id) {
+                await adminApi.updateExamDate(editingExamDate.id, payload);
+            } else {
+                await adminApi.createExamDate(payload);
+            }
+            await fetchExamDatesAdmin();
+            setEditingExamDate(null);
+            setExamDateForm({ exam_date: '', label: '', is_active: true, sort_order: 0 });
+            showToast('Exam date saved');
+        } catch {
+            showToast('Could not save exam date');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleDeleteExamDateOption = async (id: number) => {
+        if (!confirm('Delete this exam date option? Students will no longer be able to select it.')) return;
+        try {
+            await adminApi.deleteExamDate(id);
+            await fetchExamDatesAdmin();
+            showToast('Exam date removed');
+        } catch {
+            showToast('Could not delete exam date');
+        }
     };
 
     // ── Mock Exam CRUD
@@ -1315,6 +1377,7 @@ export default function AdminPage() {
             { key: 'pastpapers', label: 'Pastpaper tests', icon: <BookOpen className="w-4 h-4" /> },
             { key: 'mocks', label: 'Mock exams', icon: <Layers className="w-4 h-4" /> },
             { key: 'questions', label: 'Questions', icon: <HelpCircle className="w-4 h-4" /> },
+            { key: 'examdates', label: 'Exam dates', icon: <Calendar className="w-4 h-4" /> },
             { key: 'users', label: 'Users', icon: <Users className="w-4 h-4" /> },
         ];
         const testArea =
@@ -1328,7 +1391,7 @@ export default function AdminPage() {
             can('create_mock_sat') ||
             can('create_midterm_mock');
         const filtered = all.filter((item) => {
-            if (item.key === 'users') return can('manage_users');
+            if (item.key === 'users' || item.key === 'examdates') return can('manage_users');
             if (item.key === 'questions') return canUseGlobalQuestionsTab();
             if (item.key === 'mocks') {
                 return (
@@ -2760,6 +2823,177 @@ export default function AdminPage() {
                                             </div>
                                         </div>
                                     ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'examdates' && (
+                            <div className="space-y-6 max-w-4xl">
+                                <div className="flex items-center justify-between gap-4 flex-wrap">
+                                    <div>
+                                        <h2 className="text-xl font-bold text-slate-900">SAT exam dates</h2>
+                                        <p className="text-xs text-slate-500 mt-1 max-w-xl">
+                                            Students pick their exam date from this list on their profile. Inactive rows stay in the admin list but are hidden from the dropdown.
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        className={BTN_PRIMARY}
+                                        onClick={() => {
+                                            setEditingExamDate({});
+                                            setExamDateForm({
+                                                exam_date: '',
+                                                label: '',
+                                                is_active: true,
+                                                sort_order: 0,
+                                            });
+                                        }}
+                                    >
+                                        <Plus className="w-4 h-4" /> New date
+                                    </button>
+                                </div>
+                                {editingExamDate !== null && (
+                                    <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm grid grid-cols-2 gap-4">
+                                        <Field label="Exam date">
+                                            <input
+                                                type="date"
+                                                className={INPUT}
+                                                value={examDateForm.exam_date}
+                                                onChange={(e) =>
+                                                    setExamDateForm({ ...examDateForm, exam_date: e.target.value })
+                                                }
+                                            />
+                                        </Field>
+                                        <Field label="Label (optional)">
+                                            <input
+                                                className={INPUT}
+                                                placeholder="e.g. March 2026 US"
+                                                value={examDateForm.label}
+                                                onChange={(e) =>
+                                                    setExamDateForm({ ...examDateForm, label: e.target.value })
+                                                }
+                                            />
+                                        </Field>
+                                        <Field label="Sort order">
+                                            <input
+                                                type="number"
+                                                min={0}
+                                                className={INPUT}
+                                                value={examDateForm.sort_order}
+                                                onChange={(e) =>
+                                                    setExamDateForm({
+                                                        ...examDateForm,
+                                                        sort_order: parseInt(e.target.value, 10) || 0,
+                                                    })
+                                                }
+                                            />
+                                        </Field>
+                                        <div className="flex items-center gap-2 mt-6">
+                                            <label className="flex items-center gap-2 text-sm font-bold text-slate-600">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={!!examDateForm.is_active}
+                                                    onChange={(e) =>
+                                                        setExamDateForm({
+                                                            ...examDateForm,
+                                                            is_active: e.target.checked,
+                                                        })
+                                                    }
+                                                />
+                                                Active (shown to students)
+                                            </label>
+                                        </div>
+                                        <div className="col-span-2 flex justify-end gap-2">
+                                            <button
+                                                type="button"
+                                                className={BTN_GHOST}
+                                                onClick={() => {
+                                                    setEditingExamDate(null);
+                                                    setExamDateForm({
+                                                        exam_date: '',
+                                                        label: '',
+                                                        is_active: true,
+                                                        sort_order: 0,
+                                                    });
+                                                }}
+                                            >
+                                                <X className="w-4 h-4" /> Cancel
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className={BTN_PRIMARY}
+                                                onClick={handleSaveExamDateOption}
+                                                disabled={saving}
+                                            >
+                                                {saving ? (
+                                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                                ) : (
+                                                    <Save className="w-4 h-4" />
+                                                )}{' '}
+                                                Save
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                                <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+                                    {examDatesAdmin.length === 0 ? (
+                                        <p className="p-6 text-sm text-slate-500">
+                                            No exam dates yet. Add at least one so students can choose on their profile.
+                                        </p>
+                                    ) : (
+                                        examDatesAdmin.map((row) => (
+                                            <div
+                                                key={row.id}
+                                                className="p-4 border-b last:border-0 flex items-center justify-between hover:bg-slate-50 gap-4 flex-wrap"
+                                            >
+                                                <div className="min-w-0">
+                                                    <p className="font-bold text-sm text-slate-900">
+                                                        {row.exam_date}{' '}
+                                                        {row.label ? (
+                                                            <span className="text-slate-600 font-semibold">
+                                                                · {row.label}
+                                                            </span>
+                                                        ) : null}
+                                                    </p>
+                                                    <p className="text-[11px] text-slate-400 font-mono">
+                                                        sort {row.sort_order ?? 0}
+                                                        {!row.is_active ? (
+                                                            <span className="ml-2 text-amber-600 font-bold">
+                                                                INACTIVE
+                                                            </span>
+                                                        ) : null}
+                                                    </p>
+                                                </div>
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                    <button
+                                                        type="button"
+                                                        className={BTN_GHOST}
+                                                        onClick={() => {
+                                                            setEditingExamDate(row);
+                                                            setExamDateForm({
+                                                                exam_date: row.exam_date || '',
+                                                                label: row.label || '',
+                                                                is_active: row.is_active !== false,
+                                                                sort_order:
+                                                                    row.sort_order != null
+                                                                        ? Number(row.sort_order)
+                                                                        : 0,
+                                                            });
+                                                        }}
+                                                    >
+                                                        <Pencil className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        className={BTN_DANGER}
+                                                        onClick={() => handleDeleteExamDateOption(row.id)}
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
                                 </div>
                             </div>
                         )}

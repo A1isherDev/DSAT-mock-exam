@@ -2,6 +2,23 @@ from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
 
 
+class ExamDateOption(models.Model):
+    """Admin-defined SAT/exam dates students may choose from (profile dropdown)."""
+
+    exam_date = models.DateField(unique=True, db_index=True)
+    label = models.CharField(max_length=200, blank=True, default="")
+    is_active = models.BooleanField(default=True, db_index=True)
+    sort_order = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "users_exam_date_option"
+        ordering = ["sort_order", "exam_date"]
+
+    def __str__(self):
+        return self.label.strip() or str(self.exam_date)
+
+
 class UserManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
         if not email:

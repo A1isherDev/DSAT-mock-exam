@@ -2,7 +2,16 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.forms import UserChangeForm, UserCreationForm
 
-from .models import User
+from .models import ExamDateOption, User
+
+
+@admin.register(ExamDateOption)
+class ExamDateOptionAdmin(admin.ModelAdmin):
+    list_display = ["exam_date", "label", "is_active", "sort_order", "created_at"]
+    list_filter = ["is_active"]
+    list_editable = ["is_active", "sort_order"]
+    ordering = ["sort_order", "exam_date"]
+    search_fields = ["label"]
 
 
 class CustomUserCreationForm(UserCreationForm):

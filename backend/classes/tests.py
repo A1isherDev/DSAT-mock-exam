@@ -10,6 +10,7 @@ from classes.models import (
     Submission,
     assignment_target_practice_test_ids,
 )
+from classes.serializers import AssignmentSerializer
 
 User = get_user_model()
 
@@ -30,6 +31,40 @@ class AssignmentTargetIdsTests(TestCase):
             practice_test_ids=[1, "2", "x", None],
         )
         self.assertEqual(assignment_target_practice_test_ids(a), [1, 2])
+
+
+class AssignmentPracticeAccessSyncTests(TestCase):
+    """Homework targeting standalone practice tests must add class students to assigned_users."""
+
+    def setUp(self):
+        from exams.models import PracticeTest
+
+        self.admin = User.objects.create_user("apas_admin@test.com", "secret123")
+        self.student = User.objects.create_user("apas_student@test.com", "secret123")
+        self.classroom = Classroom.objects.create(
+            name="C",
+            subject=Classroom.SUBJECT_ENGLISH,
+            lesson_days=Classroom.DAYS_ODD,
+            created_by=self.admin,
+        )
+        ClassroomMembership.objects.create(
+            classroom=self.classroom, user=self.admin, role=ClassroomMembership.ROLE_ADMIN
+        )
+        ClassroomMembership.objects.create(
+            classroom=self.classroom, user=self.student, role=ClassroomMembership.ROLE_STUDENT
+        )
+        self.pt = PracticeTest.objects.create(
+            mock_exam=None,
+            pastpaper_pack=None,
+            subject="READING_WRITING",
+            title="Standalone section",
+        )
+
+    def test_create_assignment_adds_students_to_practice_test_assigned_users(self):
+        ser = AssignmentSerializer(data={"title": "Pastpaper HW", "practice_test": self.pt.pk})
+        ser.is_valid(raise_exception=True)
+        ser.save(classroom=self.classroom, created_by=self.admin)
+        self.assertTrue(self.pt.assigned_users.filter(pk=self.student.pk).exists())
 
 
 class ClassroomSecurityTests(TestCase):

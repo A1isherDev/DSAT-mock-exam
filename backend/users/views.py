@@ -7,11 +7,17 @@ from rest_framework.views import APIView
 from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.db.models import Q
-from .models import User
+from .models import ExamDateOption, User
 from access.permissions import HasManageUsers, HasManageUsersOrAssignTestAccess
 from access.services import get_effective_permission_codenames
 
-from .serializers import UserSerializer, UserMeSerializer, MyTokenObtainPairSerializer
+from .serializers import (
+    ExamDateOptionPublicSerializer,
+    ExamDateOptionSerializer,
+    UserSerializer,
+    UserMeSerializer,
+    MyTokenObtainPairSerializer,
+)
 from .permissions import IsAuthenticatedAndNotFrozen
 from django.conf import settings
 import re
@@ -85,6 +91,28 @@ class UserMeView(generics.RetrieveUpdateAPIView):
 
     def get_object(self):
         return self.request.user
+
+
+class ExamDateOptionListView(generics.ListAPIView):
+    """Active exam dates for student profile dropdown."""
+
+    permission_classes = [IsAuthenticatedAndNotFrozen]
+    serializer_class = ExamDateOptionPublicSerializer
+
+    def get_queryset(self):
+        return ExamDateOption.objects.filter(is_active=True).order_by("sort_order", "exam_date")
+
+
+class ExamDateOptionAdminListCreateView(generics.ListCreateAPIView):
+    permission_classes = [HasManageUsers]
+    serializer_class = ExamDateOptionSerializer
+    queryset = ExamDateOption.objects.all().order_by("sort_order", "exam_date")
+
+
+class ExamDateOptionAdminDetailView(generics.RetrieveUpdateDestroyAPIView):
+    permission_classes = [HasManageUsers]
+    serializer_class = ExamDateOptionSerializer
+    queryset = ExamDateOption.objects.all()
 
 
 class GoogleAuthView(APIView):
