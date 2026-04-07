@@ -945,7 +945,7 @@ export default function AdminPage() {
     const clearUserSelection = () => setSelectedUserIds([]);
 
     const bulkApplyToSelectedUsers = async (
-        action: "freeze" | "unfreeze" | "activate" | "deactivate" | "delete",
+        action: "freeze" | "unfreeze" | "delete",
     ) => {
         if (selectedUserIds.length === 0) return;
         if (action === "delete") {
@@ -967,12 +967,8 @@ export default function AdminPage() {
                         await adminApi.deleteUser(id);
                     } else if (action === "freeze") {
                         await adminApi.updateUser(id, { is_frozen: true });
-                    } else if (action === "unfreeze") {
-                        await adminApi.updateUser(id, { is_frozen: false });
-                    } else if (action === "activate") {
-                        await adminApi.updateUser(id, { is_active: true });
                     } else {
-                        await adminApi.updateUser(id, { is_active: false });
+                        await adminApi.updateUser(id, { is_frozen: false });
                     }
                     ok++;
                 } catch {
@@ -3236,22 +3232,6 @@ export default function AdminPage() {
                                                 onClick={() => bulkApplyToSelectedUsers('unfreeze')}
                                             >
                                                 <Unlock className="w-3.5 h-3.5" /> Unfreeze
-                                            </button>
-                                            <button
-                                                type="button"
-                                                className={BTN_GHOST + ' !py-1.5 !text-xs'}
-                                                disabled={saving}
-                                                onClick={() => bulkApplyToSelectedUsers('activate')}
-                                            >
-                                                Activate
-                                            </button>
-                                            <button
-                                                type="button"
-                                                className={BTN_GHOST + ' !py-1.5 !text-xs'}
-                                                disabled={saving}
-                                                onClick={() => bulkApplyToSelectedUsers('deactivate')}
-                                            >
-                                                Deactivate
                                             </button>
                                             <button
                                                 type="button"
