@@ -6,14 +6,13 @@ import { usePathname } from "next/navigation";
 import AuthGuard from "@/components/AuthGuard";
 import { LayoutDashboard, ClipboardList, Users, Menu, X, Search } from "lucide-react";
 import { IconButton } from "@/components/ui/IconButton";
-import { Tooltip } from "@/components/ui/Tooltip";
 import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/lib/cn";
 
 const nav = [
-  { href: "/teacher", label: "Dashboard", icon: LayoutDashboard, tip: "Overview and shortcuts" },
-  { href: "/teacher/homework", label: "Homework", icon: ClipboardList, tip: "Assignments across classes" },
-  { href: "/teacher/students", label: "Students", icon: Users, tip: "Roster and progress" },
+  { href: "/teacher", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/teacher/homework", label: "Homework", icon: ClipboardList },
+  { href: "/teacher/students", label: "Students", icon: Users },
 ];
 
 export default function TeacherLayout({ children }: { children: React.ReactNode }) {
@@ -57,7 +56,7 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
 
         <aside
           className={cn(
-            "shell-sidebar-gold fixed inset-y-0 left-0 z-[100] flex h-[100dvh] w-[min(100%,272px)] shrink-0 flex-col border-r border-border bg-card backdrop-blur-xl transition-transform duration-200 md:static md:h-screen md:min-h-0 md:translate-x-0",
+            "shell-sidebar-gold fixed inset-y-0 left-0 z-[100] flex h-[100dvh] w-[min(100%,272px)] shrink-0 flex-col overflow-hidden border-r border-border bg-card backdrop-blur-xl transition-transform duration-200 md:static md:h-screen md:min-h-0 md:translate-x-0",
             mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
           )}
         >
@@ -89,29 +88,28 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
             </div>
           </div>
 
-          <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain px-3 py-4 md:px-4" aria-label="Teacher">
-            {filtered.map(({ href, label, icon: Icon, tip }) => {
+          <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-hidden px-3 py-4 md:px-4" aria-label="Teacher">
+            {filtered.map(({ href, label, icon: Icon }) => {
               const active = href === "/teacher" ? pathname === "/teacher" : pathname.startsWith(href);
               return (
-                <Tooltip key={href} content={tip} side="right" className="flex w-full min-w-0">
-                  <Link
-                    href={href}
-                    className={cn(linkCls(active), "w-full")}
-                    onClick={() => setMobileOpen(false)}
+                <Link
+                  key={href}
+                  href={href}
+                  className={cn(linkCls(active), "w-full")}
+                  onClick={() => setMobileOpen(false)}
+                >
+                  <span
+                    className={cn(
+                      "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
+                      active
+                        ? "bg-gradient-to-br from-primary/15 to-ds-gold/10 text-foreground ring-1 ring-primary/20"
+                        : "bg-surface-2 text-label-foreground group-hover:bg-card",
+                    )}
                   >
-                    <span
-                      className={cn(
-                        "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
-                        active
-                          ? "bg-gradient-to-br from-primary/15 to-ds-gold/10 text-foreground ring-1 ring-primary/20"
-                          : "bg-surface-2 text-label-foreground group-hover:bg-card",
-                      )}
-                    >
-                      <Icon className="h-[18px] w-[18px]" />
-                    </span>
-                    {label}
-                  </Link>
-                </Tooltip>
+                    <Icon className="h-[18px] w-[18px]" />
+                  </span>
+                  {label}
+                </Link>
               );
             })}
           </nav>

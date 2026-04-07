@@ -34,12 +34,12 @@ import { cn } from "@/lib/cn";
 const SIDEBAR_COLLAPSED_KEY = "mastersat.sidebarCollapsed";
 
 const nav = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard, tip: "Your goals and latest mock" },
-  { href: "/practice-tests", label: "Pastpaper tests", icon: BookOpenCheck, tip: "Untimed practice from your library" },
-  { href: "/mock-exam", label: "Timed mock", icon: ClipboardList, tip: "Full-length timed diagnostics" },
-  { href: "/midterm", label: "Midterm", icon: FileWarning, tip: "No Desmos / reference sheet" },
-  { href: "/classes", label: "Classes", icon: Users, tip: "Groups, homework, grades" },
-  { href: "/profile", label: "Profile", icon: UserCircle, tip: "Account and exam preferences" },
+  { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/practice-tests", label: "Pastpaper tests", icon: BookOpenCheck },
+  { href: "/mock-exam", label: "Timed mock", icon: ClipboardList },
+  { href: "/midterm", label: "Midterm", icon: FileWarning },
+  { href: "/classes", label: "Classes", icon: Users },
+  { href: "/profile", label: "Profile", icon: UserCircle },
 ];
 
 const quickLinks = [
@@ -270,7 +270,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
           </div>
           <nav
             className={cn(
-              "flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain px-3 pb-4 md:px-4",
+              "flex min-h-0 flex-1 flex-col gap-1 overflow-hidden px-3 pb-4 md:px-4",
               sidebarCollapsed && "md:items-center md:px-2",
             )}
             aria-label="Main"
@@ -278,7 +278,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
             {filteredNav.length === 0 ? (
               <p className="px-2 py-6 text-center text-sm text-muted-foreground">No sections match “{navQuery}”.</p>
             ) : (
-              filteredNav.map(({ href, label, icon: Icon, tip }) => {
+              filteredNav.map(({ href, label, icon: Icon }) => {
                 const active =
                   href === "/"
                     ? pathname === "/"
@@ -286,25 +286,24 @@ export default function StudentShell({ children }: { children: React.ReactNode }
                       ? pathname === "/practice-tests" || pathname.startsWith("/practice-test/")
                       : pathname.startsWith(href);
                 return (
-                  <Tooltip key={href} content={tip} side="right" className="flex w-full min-w-0">
-                    <Link
-                      href={href}
-                      className={cn(navLinkClass(active), "w-full")}
-                      onClick={() => setMobileOpen(false)}
+                  <Link
+                    key={href}
+                    href={href}
+                    className={cn(navLinkClass(active), "w-full")}
+                    onClick={() => setMobileOpen(false)}
+                  >
+                    <span
+                      className={cn(
+                        "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors duration-200",
+                        active
+                          ? "bg-gradient-to-br from-primary/15 to-amber-500/10 text-foreground ring-1 ring-amber-500/15"
+                          : "bg-surface-2 text-label-foreground group-hover:bg-card",
+                      )}
                     >
-                      <span
-                        className={cn(
-                          "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors duration-200",
-                          active
-                            ? "bg-gradient-to-br from-primary/15 to-amber-500/10 text-foreground ring-1 ring-amber-500/15"
-                            : "bg-surface-2 text-label-foreground group-hover:bg-card",
-                        )}
-                      >
-                        <Icon className="h-[18px] w-[18px]" strokeWidth={2} />
-                      </span>
-                      <span className={cn("leading-snug", sidebarCollapsed && "md:sr-only")}>{label}</span>
-                    </Link>
-                  </Tooltip>
+                      <Icon className="h-[18px] w-[18px]" strokeWidth={2} />
+                    </span>
+                    <span className={cn("leading-snug", sidebarCollapsed && "md:sr-only")}>{label}</span>
+                  </Link>
                 );
               })
             )}
@@ -320,21 +319,19 @@ export default function StudentShell({ children }: { children: React.ReactNode }
               Tip: use the search box to filter long menus.
             </p>
             {isLoggedIn ? (
-              <Tooltip content="Sign out" side="right" className="flex w-full min-w-0">
-                <button
-                  type="button"
-                  onClick={() => authApi.logout()}
-                  className={cn(
-                    "mt-4 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-muted-foreground transition-all hover:bg-surface-2 hover:text-foreground",
-                    sidebarCollapsed && "md:justify-center md:px-2",
-                  )}
-                >
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-label-foreground">
-                    <LogOut className="h-[18px] w-[18px]" strokeWidth={2} />
-                  </span>
-                  <span className={cn("leading-snug", sidebarCollapsed && "md:sr-only")}>Sign out</span>
-                </button>
-              </Tooltip>
+              <button
+                type="button"
+                onClick={() => authApi.logout()}
+                className={cn(
+                  "mt-4 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-muted-foreground transition-all hover:bg-surface-2 hover:text-foreground",
+                  sidebarCollapsed && "md:justify-center md:px-2",
+                )}
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-label-foreground">
+                  <LogOut className="h-[18px] w-[18px]" strokeWidth={2} />
+                </span>
+                <span className={cn("leading-snug", sidebarCollapsed && "md:sr-only")}>Sign out</span>
+              </button>
             ) : null}
           </div>
         </aside>
