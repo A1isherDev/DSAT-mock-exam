@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Cookies from "js-cookie";
 import { classesApi, examsApi, usersApi } from "@/lib/api";
-import { ArrowRight, BarChart3, Calendar, Pencil, PlayCircle, Target, TrendingUp } from "lucide-react";
+import { ArrowRight, BarChart3, Calendar, Loader2, Pencil, PlayCircle, Target, TrendingUp } from "lucide-react";
 import { ClassroomButton } from "@/components/classroom";
 import { DashboardCard, DashboardEyebrow, DashboardTitle } from "./DashboardCard";
 import { GoalScoreModal, initialSectionsFromTarget } from "./GoalScoreModal";
@@ -18,6 +18,12 @@ type Attempt = {
   is_completed?: boolean;
   score?: number | null;
   practice_test_details?: { subject?: string; title?: string };
+};
+
+type ExamDateOptionRow = {
+  id: number;
+  exam_date: string;
+  label: string;
 };
 
 type Me = {
@@ -49,6 +55,19 @@ function startOfDay(d: Date) {
 
 const SECTION_GOALS_KEY = (userId: number) => `mastersat.sectionGoals.${userId}`;
 
+function formatExamDateLabel(d: string) {
+  if (!d) return "";
+  try {
+    return new Date(d).toLocaleDateString("en-US", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+  } catch {
+    return d;
+  }
+}
+
 function readStoredSectionGoals(
   userId: number | undefined,
   target: number | null,
@@ -75,6 +94,9 @@ export function HomeDashboard() {
   const [classCount, setClassCount] = useState(0);
   const [goalModalOpen, setGoalModalOpen] = useState(false);
   const [savingGoal, setSavingGoal] = useState(false);
+  const [examDateOptions, setExamDateOptions] = useState<ExamDateOptionRow[]>([]);
+  const [savingExamDate, setSavingExamDate] = useState(false);
+  const [examDateError, setExamDateError] = useState<string | null>(null);
 
   useEffect(() => {
     setHasToken(!!Cookies.get("access_token"));
@@ -88,13 +110,15 @@ export function HomeDashboard() {
     let cancelled = false;
     (async () => {
       try {
-        const [meData, rawAttempts, classes] = await Promise.all([
+        const [meData, rawAttempts, classes, examDatesRaw] = await Promise.all([
           usersApi.getMe(),
           examsApi.getAttempts().catch(() => []),
           classesApi.list().catch(() => []),
+          usersApi.listExamDates().catch(() => []),
         ]);
         if (cancelled) return;
         setMe(meData as Me);
+        setExamDateOptions(Array.isArray(examDatesRaw) ? (examDatesRaw as ExamDateOptionRow[]) : []);
         setAttempts(Array.isArray(rawAttempts) ? (rawAttempts as Attempt[]) : []);
         setClassCount(Array.isArray(classes) ? classes.length : 0);
       } catch {
@@ -157,6 +181,29 @@ export function HomeDashboard() {
     if (me.target_score != null) n++;
     return Math.round((n / t) * 100);
   }, [me]);
+
+  async function handleExamDateChange(value: string) {
+    if (me?.id == null) return;
+    setSavingExamDate(true);
+    setExamDateError(null);
+    try {
+      const updated = await usersApi.patchMe({
+        sat_exam_date: value.trim() ? value : null,
+      });
+      setMe((prev) => (prev ? { ...prev, ...(updated as Me) } : prev));
+    } catch (err: unknown) {
+      const d = (err as { response?: { data?: Record<string, unknown> } })?.response?.data;
+      const text =
+        typeof d === "object" && d && d !== null
+          ? Object.entries(d)
+              .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") : String(v)}`)
+              .join(" ")
+          : "Could not save exam date.";
+      setExamDateError(text);
+    } finally {
+      setSavingExamDate(false);
+    }
+  }
 
   async function handleGoalSubmit(math: number, english: number) {
     if (me?.id == null) return;
@@ -387,18 +434,76 @@ export function HomeDashboard() {
             </span>
             <span className="text-sm font-bold uppercase tracking-wider text-white/90">days</span>
           </div>
-          <p className="relative mt-2 text-sm font-medium text-white/85">
-            {me?.sat_exam_date
-              ? `Until ${new Date(me.sat_exam_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
-              : "Add your exam date in Profile"}
-          </p>
-          <Link
-            href="/profile"
-            className="relative mt-4 inline-flex items-center gap-1 text-xs font-bold text-white/90 underline-offset-4 hover:underline"
-          >
-            {me?.sat_exam_date ? "Adjust date" : "Set date"}
-            <ArrowRight className="h-3 w-3" />
-          </Link>
+          {(() => {
+            const allowed = new Set(examDateOptions.map((o) => o.exam_date));
+            const sat = me?.sat_exam_date?.trim() || "";
+            const orphan = !!sat && !allowed.has(sat);
+            return (
+              <div className="relative mt-2 w-full min-w-0">
+                <p className="text-sm font-medium text-white/85">
+                  {sat
+                    ? `Until ${formatExamDateLabel(sat)}`
+                    : "Select the SAT date you registered for (same list as Profile)."}
+                </p>
+                <label htmlFor="dash-exam-date" className="sr-only">
+                  SAT exam date
+                </label>
+                <select
+                  id="dash-exam-date"
+                  disabled={savingExamDate}
+                  value={sat}
+                  onChange={(e) => void handleExamDateChange(e.target.value)}
+                  className={cn(
+                    "relative mt-3 w-full min-w-0 rounded-xl border border-white/25 bg-white/10 px-3 py-2.5 text-sm font-semibold text-white shadow-inner backdrop-blur-sm",
+                    "outline-none focus:border-white/45 focus:ring-2 focus:ring-white/20",
+                    "disabled:cursor-wait disabled:opacity-70",
+                    "[&>option]:bg-[#0f172a] [&>option]:text-white",
+                  )}
+                >
+                  <option value="">Not set</option>
+                  {orphan ? (
+                    <option value={sat}>
+                      {formatExamDateLabel(sat)} (no longer on list — pick another)
+                    </option>
+                  ) : null}
+                  {examDateOptions.map((o) => (
+                    <option key={o.id} value={o.exam_date}>
+                      {o.label
+                        ? `${o.label} · ${formatExamDateLabel(o.exam_date)}`
+                        : formatExamDateLabel(o.exam_date)}
+                    </option>
+                  ))}
+                </select>
+                {savingExamDate ? (
+                  <p className="mt-2 flex items-center gap-2 text-xs font-bold text-white/80">
+                    <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden />
+                    Saving…
+                  </p>
+                ) : null}
+                {examDateError ? (
+                  <p className="mt-2 text-xs font-semibold text-amber-200">{examDateError}</p>
+                ) : null}
+                {examDateOptions.length === 0 ? (
+                  <p className="mt-2 text-xs leading-snug text-white/75">
+                    No exam dates yet. An admin adds them in{" "}
+                    <span className="font-bold text-white/90">Admin → Exam dates</span>.
+                  </p>
+                ) : null}
+                {orphan ? (
+                  <p className="mt-2 text-xs text-amber-100/95">
+                    Your saved date is not on the current list. Choose a new date or clear.
+                  </p>
+                ) : null}
+                <Link
+                  href="/profile"
+                  className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-white/80 underline-offset-4 hover:text-white hover:underline"
+                >
+                  Other profile settings
+                  <ArrowRight className="h-3 w-3" />
+                </Link>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Performance */}

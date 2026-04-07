@@ -945,6 +945,9 @@ export default function ProfilePage() {
                     <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">
                       SAT exam date
                     </label>
+                    <p className="mb-2 text-[11px] text-muted-foreground">
+                      Choose from the list your center admin publishes. You cannot enter a custom date.
+                    </p>
                     {(() => {
                       const allowed = new Set(examDateOptions.map((o) => o.exam_date));
                       const sat = draft.sat_exam_date?.trim() || "";
