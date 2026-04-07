@@ -28,7 +28,7 @@ const getImageUrl = (path: string | null | undefined) => {
 };
 import {
     Users, BookOpen, ShieldCheck, LogOut, Plus, Pencil, Trash2, Save,
-    X, Loader2, Layers, HelpCircle, Search, Upload, Image as ImageIcon, ArrowUp, ArrowDown,
+    X, Loader2, Layers, HelpCircle, Search, Upload, Image as ImageIcon, ArrowUp, ArrowDown, Lock, Unlock,
     Bold as BoldIcon, Italic as ItalicIcon, Underline as UnderlineIcon, Sigma, Percent, Variable, SlidersHorizontal, AlertTriangle,
     Calendar,
 } from 'lucide-react';
@@ -387,6 +387,14 @@ export default function AdminPage() {
         "ALL" | "READING_WRITING" | "MATH"
     >("ALL");
     const [questionsMockKindFilter, setQuestionsMockKindFilter] = useState<"ALL" | "MOCK_SAT" | "MIDTERM">("ALL");
+    /** Users tab: search, filters, bulk selection */
+    const [userAdminQuery, setUserAdminQuery] = useState("");
+    const [userRoleFilter, setUserRoleFilter] = useState<string>("ALL");
+    const [userStatusFilter, setUserStatusFilter] = useState<
+        "ALL" | "ACTIVE" | "INACTIVE" | "FROZEN" | "NOT_FROZEN"
+    >("ALL");
+    const [userSort, setUserSort] = useState<"NAME" | "EMAIL" | "ID">("NAME");
+    const [selectedUserIds, setSelectedUserIds] = useState<number[]>([]);
 
     const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
@@ -648,6 +656,57 @@ export default function AdminPage() {
         return list;
     }, [mockExams, mockAdminQuery, mockKindFilter, mockPublishedFilter, mockSort]);
 
+    const filteredUsersAdmin = useMemo(() => {
+        let list = [...users];
+        const q = userAdminQuery.trim().toLowerCase();
+        if (q) {
+            list = list.filter((u) => {
+                const blob = `${u.id} ${u.first_name || ""} ${u.last_name || ""} ${u.username || ""} ${u.email || ""} ${u.phone_number || ""} ${u.role || ""}`
+                    .toLowerCase();
+                return blob.includes(q);
+            });
+        }
+        if (userRoleFilter !== "ALL") {
+            list = list.filter((u) => (u.role || "STUDENT") === userRoleFilter);
+        }
+        if (userStatusFilter === "ACTIVE") {
+            list = list.filter((u) => u.is_active !== false && !u.is_frozen);
+        } else if (userStatusFilter === "INACTIVE") {
+            list = list.filter((u) => u.is_active === false);
+        } else if (userStatusFilter === "FROZEN") {
+            list = list.filter((u) => !!u.is_frozen);
+        } else if (userStatusFilter === "NOT_FROZEN") {
+            list = list.filter((u) => !u.is_frozen);
+        }
+        if (userSort === "NAME") {
+            list.sort((a, b) =>
+                `${a.first_name || ""} ${a.last_name || ""}`.localeCompare(
+                    `${b.first_name || ""} ${b.last_name || ""}`,
+                    undefined,
+                    { sensitivity: "base" },
+                ),
+            );
+        } else if (userSort === "EMAIL") {
+            list.sort((a, b) =>
+                (a.email || "").localeCompare(b.email || "", undefined, { sensitivity: "base" }),
+            );
+        } else {
+            list.sort((a, b) => a.id - b.id);
+        }
+        return list;
+    }, [users, userAdminQuery, userRoleFilter, userStatusFilter, userSort]);
+
+    const filteredUserIdSet = useMemo(
+        () => new Set(filteredUsersAdmin.map((u) => u.id)),
+        [filteredUsersAdmin],
+    );
+    const allFilteredUsersSelected = useMemo(
+        () =>
+            filteredUsersAdmin.length > 0 &&
+            filteredUsersAdmin.every((u) => selectedUserIds.includes(u.id)),
+        [filteredUsersAdmin, selectedUserIds],
+    );
+
     const questionSectionOptions = useMemo(() => {
         if (!questionsGroupValue) return [];
         if (questionsGroupValue === 'orphan') return orphanPastpaperTests;
@@ -865,6 +924,71 @@ export default function AdminPage() {
     const handleDeleteUser = async (id: number) => {
         if (!confirm('Delete this user?')) return;
         await adminApi.deleteUser(id); await fetchUsers(); showToast('User deleted');
+    };
+
+    const toggleUserRowSelected = (id: number) => {
+        setSelectedUserIds((prev) =>
+            prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+        );
+    };
+    const toggleSelectAllFilteredUsers = () => {
+        if (allFilteredUsersSelected) {
+            setSelectedUserIds((prev) => prev.filter((id) => !filteredUserIdSet.has(id)));
+        } else {
+            setSelectedUserIds((prev) => {
+                const s = new Set(prev);
+                filteredUsersAdmin.forEach((u) => s.add(u.id));
+                return Array.from(s);
+            });
+        }
+    };
+    const clearUserSelection = () => setSelectedUserIds([]);
+
+    const bulkApplyToSelectedUsers = async (
+        action: "freeze" | "unfreeze" | "activate" | "deactivate" | "delete",
+    ) => {
+        if (selectedUserIds.length === 0) return;
+        if (action === "delete") {
+            if (
+                !confirm(
+                    `Delete ${selectedUserIds.length} user(s)? This cannot be undone.`,
+                )
+            ) {
+                return;
+            }
+        }
+        setSaving(true);
+        let ok = 0;
+        let fail = 0;
+        try {
+            for (const id of selectedUserIds) {
+                try {
+                    if (action === "delete") {
+                        await adminApi.deleteUser(id);
+                    } else if (action === "freeze") {
+                        await adminApi.updateUser(id, { is_frozen: true });
+                    } else if (action === "unfreeze") {
+                        await adminApi.updateUser(id, { is_frozen: false });
+                    } else if (action === "activate") {
+                        await adminApi.updateUser(id, { is_active: true });
+                    } else {
+                        await adminApi.updateUser(id, { is_active: false });
+                    }
+                    ok++;
+                } catch {
+                    fail++;
+                }
+            }
+            await fetchUsers();
+            setSelectedUserIds([]);
+            showToast(
+                fail > 0
+                    ? `Bulk action: ${ok} succeeded, ${fail} failed`
+                    : `Bulk action completed (${ok}) ✓`,
+            );
+        } finally {
+            setSaving(false);
+        }
     };
 
     const handleSaveExamDateOption = async () => {
@@ -3018,13 +3142,135 @@ export default function AdminPage() {
                         )}
 
                         {activeTab === 'users' && (
-                            <div className="space-y-6 max-w-4xl">
-                                <div className="flex items-center justify-between">
+                            <div className="space-y-6 max-w-5xl">
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                     <h2 className="text-xl font-bold text-slate-900">User Management</h2>
                                     <button className={BTN_PRIMARY} onClick={() => { setEditingUser({}); setUserForm({ first_name: '', last_name: '', username: '', email: '', phone_number: '', password: '', role: 'STUDENT', is_active: true, is_frozen: false }); }}>
                                         <Plus className="w-4 h-4" /> New User
                                     </button>
                                 </div>
+                                <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-3">
+                                    <div className="flex items-center gap-2 text-xs font-extrabold text-slate-500 uppercase tracking-widest">
+                                        <SlidersHorizontal className="w-4 h-4" /> Find &amp; filter users
+                                    </div>
+                                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                                        <div className="relative sm:col-span-2 lg:col-span-1">
+                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                                            <input
+                                                className={INPUT + ' pl-9 !py-2'}
+                                                placeholder="Search name, email, username, phone, #id…"
+                                                value={userAdminQuery}
+                                                onChange={(e) => setUserAdminQuery(e.target.value)}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Role</label>
+                                            <select
+                                                className={INPUT + ' !py-2'}
+                                                value={userRoleFilter}
+                                                onChange={(e) => setUserRoleFilter(e.target.value)}
+                                            >
+                                                <option value="ALL">All roles</option>
+                                                {STAFF_ROLE_OPTIONS.map((o) => (
+                                                    <option key={o.value} value={o.value}>{o.label}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Status</label>
+                                            <select
+                                                className={INPUT + ' !py-2'}
+                                                value={userStatusFilter}
+                                                onChange={(e) =>
+                                                    setUserStatusFilter(e.target.value as typeof userStatusFilter)
+                                                }
+                                            >
+                                                <option value="ALL">All</option>
+                                                <option value="ACTIVE">Active (not frozen)</option>
+                                                <option value="INACTIVE">Inactive</option>
+                                                <option value="FROZEN">Frozen</option>
+                                                <option value="NOT_FROZEN">Not frozen</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Sort</label>
+                                            <select
+                                                className={INPUT + ' !py-2'}
+                                                value={userSort}
+                                                onChange={(e) => setUserSort(e.target.value as typeof userSort)}
+                                            >
+                                                <option value="NAME">Name</option>
+                                                <option value="EMAIL">Email</option>
+                                                <option value="ID">User ID</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <p className="text-[11px] text-slate-500">
+                                        Showing <span className="font-bold text-slate-700">{filteredUsersAdmin.length}</span>
+                                        {' '}of <span className="font-bold text-slate-700">{users.length}</span> users
+                                        {selectedUserIds.length > 0 && (
+                                            <span className="ml-2 text-indigo-600 font-bold">
+                                                · {selectedUserIds.length} selected
+                                            </span>
+                                        )}
+                                    </p>
+                                </div>
+                                {selectedUserIds.length > 0 && (
+                                    <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-indigo-200 bg-indigo-50/60 px-4 py-3">
+                                        <span className="text-sm font-bold text-indigo-900">
+                                            {selectedUserIds.length} selected
+                                        </span>
+                                        <div className="flex flex-wrap gap-2">
+                                            <button
+                                                type="button"
+                                                className={BTN_GHOST + ' !py-1.5 !text-xs'}
+                                                disabled={saving}
+                                                onClick={() => bulkApplyToSelectedUsers('freeze')}
+                                            >
+                                                <Lock className="w-3.5 h-3.5" /> Freeze
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className={BTN_GHOST + ' !py-1.5 !text-xs'}
+                                                disabled={saving}
+                                                onClick={() => bulkApplyToSelectedUsers('unfreeze')}
+                                            >
+                                                <Unlock className="w-3.5 h-3.5" /> Unfreeze
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className={BTN_GHOST + ' !py-1.5 !text-xs'}
+                                                disabled={saving}
+                                                onClick={() => bulkApplyToSelectedUsers('activate')}
+                                            >
+                                                Activate
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className={BTN_GHOST + ' !py-1.5 !text-xs'}
+                                                disabled={saving}
+                                                onClick={() => bulkApplyToSelectedUsers('deactivate')}
+                                            >
+                                                Deactivate
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className={BTN_DANGER + ' !py-1.5 !text-xs'}
+                                                disabled={saving}
+                                                onClick={() => bulkApplyToSelectedUsers('delete')}
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5" /> Delete
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="text-xs font-bold text-slate-500 hover:text-slate-800 underline ml-1"
+                                                onClick={clearUserSelection}
+                                            >
+                                                Clear selection
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
                                 {editingUser !== null && (
                                     <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm grid grid-cols-2 gap-4">
                                         <Field label="First Name"><input className={INPUT} value={userForm.first_name || ''} onChange={e => setUserForm({ ...userForm, first_name: e.target.value })} /></Field>
@@ -3067,18 +3313,87 @@ export default function AdminPage() {
                                     </div>
                                 )}
                                 <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-                                    {users.map(user => (
-                                        <div key={user.id} className="p-4 border-b last:border-0 flex items-center justify-between hover:bg-slate-50">
-                                            <div className="flex items-center gap-4">
-                                                <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center font-bold text-slate-500">{user.first_name?.[0]}{user.last_name?.[0]}</div>
-                                                <div><p className="font-bold text-sm text-slate-900">{user.first_name} {user.last_name} {user.role && user.role !== 'STUDENT' && <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded ml-1">{user.role}</span>} {user.is_frozen && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded ml-1">FROZEN</span>} {!user.is_active && <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded ml-1">INACTIVE</span>}</p><p className="text-[11px] text-slate-400">{user.phone_number ? `${user.phone_number} · ` : ''}{user.email} · @{user.username}</p></div>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <button className={BTN_GHOST} onClick={() => { setEditingUser(user); setUserForm({ first_name: user.first_name, last_name: user.last_name, username: user.username, email: user.email, phone_number: user.phone_number || '', password: '', role: user.role || 'STUDENT', is_active: user.is_active !== false, is_frozen: !!user.is_frozen }); }}><Pencil className="w-3.5 h-3.5" /></button>
-                                                <button className={BTN_DANGER} onClick={() => handleDeleteUser(user.id)}><Trash2 className="w-3.5 h-3.5" /></button>
-                                            </div>
+                                    <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-100 bg-slate-50/80">
+                                        <input
+                                            type="checkbox"
+                                            className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                            checked={allFilteredUsersSelected}
+                                            onChange={toggleSelectAllFilteredUsers}
+                                            disabled={filteredUsersAdmin.length === 0}
+                                            title="Select all filtered"
+                                        />
+                                        <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">
+                                            Select visible
+                                        </span>
+                                    </div>
+                                    {filteredUsersAdmin.length === 0 ? (
+                                        <div className="p-10 text-center text-sm text-slate-500">
+                                            No users match your filters.
                                         </div>
-                                    ))}
+                                    ) : (
+                                        filteredUsersAdmin.map((user) => (
+                                            <div
+                                                key={user.id}
+                                                className="p-4 border-b last:border-0 flex items-center justify-between gap-3 hover:bg-slate-50"
+                                            >
+                                                <div className="flex items-center gap-3 min-w-0 flex-1">
+                                                    <input
+                                                        type="checkbox"
+                                                        className="w-4 h-4 shrink-0 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                                        checked={selectedUserIds.includes(user.id)}
+                                                        onChange={() => toggleUserRowSelected(user.id)}
+                                                    />
+                                                    <div className="w-10 h-10 shrink-0 bg-slate-100 rounded-full flex items-center justify-center font-bold text-slate-500">{user.first_name?.[0]}{user.last_name?.[0]}</div>
+                                                    <div className="min-w-0">
+                                                        <p className="font-bold text-sm text-slate-900">
+                                                            {user.first_name} {user.last_name}{' '}
+                                                            {user.role && user.role !== 'STUDENT' && (
+                                                                <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded ml-1">{user.role}</span>
+                                                            )}{' '}
+                                                            {user.is_frozen && (
+                                                                <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded ml-1">FROZEN</span>
+                                                            )}{' '}
+                                                            {!user.is_active && (
+                                                                <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded ml-1">INACTIVE</span>
+                                                            )}
+                                                        </p>
+                                                        <p className="text-[11px] text-slate-400 truncate">
+                                                            {user.phone_number ? `${user.phone_number} · ` : ''}{user.email} · @{user.username}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                    <button
+                                                        type="button"
+                                                        className={BTN_GHOST}
+                                                        onClick={() => {
+                                                            setEditingUser(user);
+                                                            setUserForm({
+                                                                first_name: user.first_name,
+                                                                last_name: user.last_name,
+                                                                username: user.username,
+                                                                email: user.email,
+                                                                phone_number: user.phone_number || '',
+                                                                password: '',
+                                                                role: user.role || 'STUDENT',
+                                                                is_active: user.is_active !== false,
+                                                                is_frozen: !!user.is_frozen,
+                                                            });
+                                                        }}
+                                                    >
+                                                        <Pencil className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        className={BTN_DANGER}
+                                                        onClick={() => handleDeleteUser(user.id)}
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
                                 </div>
                             </div>
                         )}
