@@ -32,8 +32,9 @@ export function DashboardCard({
     <div
       className={cn(
         "rounded-2xl border border-border bg-card shadow-md backdrop-blur-sm",
-        accent === "gold" ? "border-amber-500/30" : "",
-        "shadow-[0_4px_24px_-4px_color-mix(in_srgb,var(--foreground)_6%,transparent)] dark:shadow-[0_8px_32px_-8px_color-mix(in_srgb,var(--primary)_14%,transparent)]",
+        accent === "gold" ? "border-amber-500/40 dark:border-amber-400/35" : "",
+        "shadow-[0_4px_24px_-4px_color-mix(in_srgb,var(--foreground)_6%,transparent)]",
+        "dark:shadow-[0_10px_40px_-10px_rgba(0,0,0,0.85),0_0_0_1px_rgba(255,255,255,0.06),inset_0_1px_0_0_rgba(255,255,255,0.05)]",
         "transition-[transform,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
         interactive && "cursor-pointer hover:-translate-y-0.5 hover:shadow-lg",
         interactive && glow,

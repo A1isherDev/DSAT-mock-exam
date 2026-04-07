@@ -79,10 +79,10 @@
 }
 
 .dark {
-  /* Near-black surfaces */
+  /* Page vs cards: keep --bg darkest so panels read as lifted surfaces */
   --bg: #020203;
-  --surface: #0a0a0c;
-  --surface-2: #030304;
+  --surface: #151821;
+  --surface-2: #0c0e14;
   --text-primary: #e8eaed;
   --text-secondary: #9aa0a8;
   --text-label: #7d8490;
@@ -99,7 +99,7 @@
   --ds-secondary-soft: rgba(245, 158, 11, 0.14);
   --ds-accent: #60a5fa;
   --ds-accent-amber: #fbbf24;
-  --border-subtle: color-mix(in srgb, var(--ds-gold-bright) 10%, rgba(255, 255, 255, 0.05));
+  --border-subtle: color-mix(in srgb, var(--ds-gold-bright) 16%, rgba(255, 255, 255, 0.09));
   --gold-rail: color-mix(in srgb, var(--ds-gold-bright) 48%, transparent);
   --gold-rail-soft: color-mix(in srgb, var(--ds-gold-bright) 12%, transparent);
   --gold-rail-glow: color-mix(in srgb, var(--ds-gold-bright) 14%, transparent);

@@ -25,7 +25,8 @@ export function LearningRoadmap({ steps }: { steps: RoadmapStep[] }) {
               href={s.href}
               className={cn(
                 "group flex h-full flex-col rounded-xl border border-border bg-surface-2/50 p-4 transition-[transform,box-shadow,border-color,background-color] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
-                "hover:border-primary/25 hover:bg-card",
+                "dark:border-white/[0.08] dark:bg-[color-mix(in_srgb,var(--surface-2)_88%,var(--card))] dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)]",
+                "hover:border-primary/25 hover:bg-card dark:hover:border-primary/35",
               )}
             >
               <div className="mb-3 flex items-center justify-between gap-2">

@@ -278,7 +278,7 @@ export function HomeDashboard() {
           <DashboardCard
             accent="gold"
             padding="md"
-            className="border-amber-500/25 bg-gradient-to-br from-card via-card to-amber-500/[0.06] dark:to-amber-400/[0.08]"
+            className="border-amber-500/35 bg-gradient-to-br from-card via-card to-amber-500/[0.08] dark:to-amber-400/[0.12] dark:ring-1 dark:ring-amber-400/15"
           >
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex min-w-0 flex-1 items-start gap-4">
@@ -373,8 +373,8 @@ export function HomeDashboard() {
         <div
           className={cn(
             "relative overflow-hidden rounded-2xl border p-5 md:p-6 text-white shadow-xl",
-            "border-primary/40 bg-gradient-to-br from-primary via-[color-mix(in_srgb,var(--primary)_55%,var(--surface-2))] to-[color-mix(in_srgb,var(--ds-gold-bright)_45%,var(--primary))]",
-            "shadow-[0_24px_48px_-12px_color-mix(in_oklab,var(--primary)_28%,transparent)]",
+            "border-primary/50 bg-gradient-to-br from-primary via-[color-mix(in_srgb,var(--primary)_55%,var(--surface-2))] to-[color-mix(in_srgb,var(--ds-gold-bright)_45%,var(--primary))]",
+            "shadow-[0_24px_48px_-12px_color-mix(in_oklab,var(--primary)_28%,transparent),0_0_0_1px_rgba(255,255,255,0.12)]",
           )}
         >
           <div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-amber-400/15 blur-2xl" />
