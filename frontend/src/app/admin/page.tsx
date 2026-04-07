@@ -1324,7 +1324,7 @@ export default function AdminPage() {
         setSaving(true);
         try {
             const isMocks = bulkModalKind === 'mocks';
-            await adminApi.bulkAssignStudents(
+            const res = await adminApi.bulkAssignStudents(
                 isMocks ? bulkAssignExams : [],
                 bulkAssignUsers,
                 isMocks ? bulkAssignType : 'FULL',
@@ -1332,8 +1332,27 @@ export default function AdminPage() {
                 !isMocks && bulkPastpaperResolvedSectionIds.length
                     ? bulkPastpaperResolvedSectionIds
                     : undefined
-            );
-            showToast(`Assigned access to ${bulkAssignUsers.length} user(s).`);
+            ) as {
+                tests_added?: number;
+                practice_tests_matched?: number;
+                practice_tests_requested?: number;
+            };
+            const added = typeof res?.tests_added === 'number' ? res.tests_added : null;
+            const matched = typeof res?.practice_tests_matched === 'number' ? res.practice_tests_matched : null;
+            const requested = typeof res?.practice_tests_requested === 'number' ? res.practice_tests_requested : null;
+            if (!isMocks && requested != null && matched != null && matched < requested) {
+                showToast(
+                    `Assigned library sections: ${matched} of ${requested} IDs matched (others missing or not pastpaper). ${bulkAssignUsers.length} user(s).`,
+                );
+            } else if (!isMocks && added === 0 && (bulkPastpaperResolvedSectionIds.length ?? 0) > 0) {
+                showToast('No assignments were saved. Check that practice test IDs are valid pastpaper sections.');
+            } else {
+                showToast(
+                    added != null
+                        ? `Granted access (${added} test link(s)) to ${bulkAssignUsers.length} user(s).`
+                        : `Assigned access to ${bulkAssignUsers.length} user(s).`,
+                );
+            }
             if (isMocks && bulkAssignExams.length) setSelectedMockId(bulkAssignExams[0]);
             closeBulkModal();
             fetchMockExams();

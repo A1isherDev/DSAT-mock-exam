@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.db import transaction
 from django.db.models import Prefetch
 
 from access import constants as acc_const
@@ -17,7 +18,6 @@ from access.policies import (
     QuestionNestedAdminAccess,
 )
 from access.services import (
-    authorize,
     can_browse_standalone_practice_library,
     filter_mock_exams_for_user,
     filter_pastpaper_packs_for_user,
@@ -160,9 +160,18 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=["post"], permission_classes=[IsAuthenticated, BulkAssignAccess])
     def bulk_assign(self, request):
-        exam_ids = request.data.get("exam_ids") or []
-        practice_test_ids = request.data.get("practice_test_ids") or []
-        user_ids = request.data.get("user_ids", [])
+        def _as_int_ids(seq):
+            out = []
+            for x in seq or []:
+                try:
+                    out.append(int(x))
+                except (TypeError, ValueError):
+                    continue
+            return out
+
+        exam_ids = _as_int_ids(request.data.get("exam_ids"))
+        practice_test_ids = _as_int_ids(request.data.get("practice_test_ids"))
+        user_ids = _as_int_ids(request.data.get("user_ids"))
         assignment_type = request.data.get("assignment_type", "FULL")
         form_type = request.data.get("form_type")
 
@@ -173,60 +182,66 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
 
         if not user_ids:
             return Response({"detail": "user_ids is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not users:
+            return Response({"detail": "No matching users for the given user_ids."}, status=status.HTTP_400_BAD_REQUEST)
         if not exam_ids and not practice_test_ids:
             return Response(
                 {"detail": "Provide exam_ids (mock exams) and/or practice_test_ids (pastpaper tests)."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # Endpoint already enforced PERM_ASSIGN_TEST_ACCESS. Do not apply per-subject ABAC here:
+        # ENGLISH_ADMIN / MATH_ADMIN would otherwise skip the other subject and pastpaper bulk
+        # assign would add nobody → students see nothing on /practice-tests.
+
         added_count = 0
         removed_count = 0
+        practice_tests_matched = 0
 
-        if practice_test_ids:
-            pts = PracticeTest.objects.filter(pk__in=practice_test_ids, mock_exam__isnull=True)
-            for pt in pts:
-                if authorize(request.user, acc_const.PERM_ASSIGN_TEST_ACCESS, subject=pt.subject):
+        with transaction.atomic():
+            if practice_test_ids:
+                pts = PracticeTest.objects.filter(pk__in=practice_test_ids, mock_exam__isnull=True)
+                practice_tests_matched = pts.count()
+                for pt in pts:
                     pt.assigned_users.add(*users)
                     added_count += 1
 
-        mock_ids_touched = set()
-        if exam_ids:
-            subject_map = {
-                "MATH": (["MATH"], ["READING_WRITING"]),
-                "ENGLISH": (["READING_WRITING"], ["MATH"]),
-                "FULL": (["MATH", "READING_WRITING"], []),
-            }
-            to_add_subjects, to_remove_subjects = subject_map.get(
-                assignment_type, (["MATH", "READING_WRITING"], [])
-            )
+            mock_ids_touched = set()
+            if exam_ids:
+                subject_map = {
+                    "MATH": (["MATH"], ["READING_WRITING"]),
+                    "ENGLISH": (["READING_WRITING"], ["MATH"]),
+                    "FULL": (["MATH", "READING_WRITING"], []),
+                }
+                to_add_subjects, to_remove_subjects = subject_map.get(
+                    assignment_type, (["MATH", "READING_WRITING"], [])
+                )
 
-            add_filters = {"mock_exam_id__in": exam_ids, "subject__in": to_add_subjects}
-            if form_type:
-                add_filters["form_type"] = form_type
+                add_filters = {"mock_exam_id__in": exam_ids, "subject__in": to_add_subjects}
+                if form_type:
+                    add_filters["form_type"] = form_type
 
-            add_tests = PracticeTest.objects.filter(**add_filters)
-            for pt in add_tests:
-                if authorize(request.user, acc_const.PERM_ASSIGN_TEST_ACCESS, subject=pt.subject):
+                add_tests = PracticeTest.objects.filter(**add_filters)
+                for pt in add_tests:
                     pt.assigned_users.add(*users)
                     added_count += 1
                     if pt.mock_exam_id:
                         mock_ids_touched.add(pt.mock_exam_id)
 
-            for me in MockExam.objects.filter(pk__in=mock_ids_touched):
-                me.assigned_users.add(*users)
-                portal, _ = PortalMockExam.objects.get_or_create(
-                    mock_exam=me,
-                    defaults={"is_active": bool(me.is_published)},
-                )
-                portal.assigned_users.add(*users)
+                for me in MockExam.objects.filter(pk__in=mock_ids_touched):
+                    me.assigned_users.add(*users)
+                    portal, _ = PortalMockExam.objects.get_or_create(
+                        mock_exam=me,
+                        defaults={"is_active": bool(me.is_published)},
+                    )
+                    portal.assigned_users.add(*users)
 
-            if to_remove_subjects:
-                remove_filters = {"mock_exam_id__in": exam_ids, "subject__in": to_remove_subjects}
-                if form_type:
-                    remove_filters["form_type"] = form_type
-                remove_tests = PracticeTest.objects.filter(**remove_filters)
-                for pt in remove_tests:
-                    if authorize(request.user, acc_const.PERM_ASSIGN_TEST_ACCESS, subject=pt.subject):
+                if to_remove_subjects:
+                    remove_filters = {"mock_exam_id__in": exam_ids, "subject__in": to_remove_subjects}
+                    if form_type:
+                        remove_filters["form_type"] = form_type
+                    remove_tests = PracticeTest.objects.filter(**remove_filters)
+                    for pt in remove_tests:
                         pt.assigned_users.remove(*users)
                         removed_count += 1
 
@@ -234,6 +249,8 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
             {
                 "status": "bulk_assigned",
                 "exams_count": len(exam_ids),
+                "practice_tests_requested": len(practice_test_ids),
+                "practice_tests_matched": practice_tests_matched,
                 "practice_tests_count": len(practice_test_ids),
                 "tests_added": added_count,
                 "tests_removed": removed_count,
