@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import Cookies from "js-cookie";
-import { authApi } from "@/lib/api";
+import { authApi, usersApi } from "@/lib/api";
 import { useTheme } from "next-themes";
 import {
   LayoutDashboard,
@@ -72,6 +72,8 @@ export default function StudentShell({ children }: { children: React.ReactNode }
   const [headerSearch, setHeaderSearch] = useState("");
   const [headerSearchOpen, setHeaderSearchOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [profileImageUrl, setProfileImageUrl] = useState<string | null | undefined>(undefined);
+  const [profileAvatarFailed, setProfileAvatarFailed] = useState(false);
   const headerSearchRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
 
@@ -87,6 +89,36 @@ export default function StudentShell({ children }: { children: React.ReactNode }
     setMounted(true);
     setIsLoggedIn(!!Cookies.get("access_token"));
   }, [pathname]);
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setProfileImageUrl(undefined);
+      setProfileAvatarFailed(false);
+      return;
+    }
+    let cancelled = false;
+    setProfileAvatarFailed(false);
+    (async () => {
+      try {
+        const me = await usersApi.getMe();
+        if (cancelled) return;
+        const url =
+          typeof me?.profile_image_url === "string" && me.profile_image_url.trim()
+            ? me.profile_image_url.trim()
+            : null;
+        setProfileImageUrl(url);
+      } catch {
+        if (!cancelled) setProfileImageUrl(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoggedIn, pathname]);
+
+  useEffect(() => {
+    setProfileAvatarFailed(false);
+  }, [profileImageUrl]);
 
   useEffect(() => {
     setMobileOpen(false);
@@ -163,14 +195,25 @@ export default function StudentShell({ children }: { children: React.ReactNode }
         >
           <div
             className={cn(
-              "flex items-center justify-between gap-2 border-b border-border p-4 md:p-5",
-              sidebarCollapsed && "md:flex-col md:gap-3 md:py-4",
+              "border-b border-border",
+              sidebarCollapsed
+                ? "flex flex-col items-center gap-3 px-3 py-4 md:px-2"
+                : "flex flex-row items-center justify-between gap-3 p-4 md:p-5",
             )}
           >
-            <div className={cn("flex min-w-0 items-center gap-3", sidebarCollapsed && "md:w-full md:justify-center")}>
+            <div
+              className={cn(
+                "flex min-w-0 items-center gap-3",
+                sidebarCollapsed && "w-full justify-center md:w-auto",
+              )}
+            >
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/images/logo.png" alt="" className="h-10 w-10 shrink-0 object-contain" />
-              <div className={cn("min-w-0", sidebarCollapsed && "md:hidden")}>
+              <img
+                src="/images/logo.png"
+                alt=""
+                className="h-10 w-10 shrink-0 rounded-xl bg-background/80 object-contain p-0.5 ring-1 ring-border"
+              />
+              <div className={cn("min-w-0 flex-1", sidebarCollapsed && "md:hidden")}>
                 <span className="block truncate text-base font-extrabold tracking-tight text-foreground">
                   MasterSAT
                 </span>
@@ -179,7 +222,12 @@ export default function StudentShell({ children }: { children: React.ReactNode }
                 </span>
               </div>
             </div>
-            <div className="flex items-center gap-1">
+            <div
+              className={cn(
+                "flex shrink-0 items-center gap-1",
+                sidebarCollapsed && "w-full justify-center md:w-auto",
+              )}
+            >
               <IconButton
                 variant="ghost"
                 size="sm"
@@ -303,7 +351,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
               <Menu className="h-5 w-5" />
             </IconButton>
 
-            <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div className="flex min-w-0 flex-1 items-center gap-2 md:gap-3">
               <div ref={headerSearchRef} className="relative hidden min-w-0 max-w-xl flex-1 md:block">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-label-foreground" />
                 <input
@@ -343,7 +391,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
                 ) : null}
               </div>
 
-              <div className="min-w-0 max-w-[min(100%,200px)] flex-1 sm:max-w-xs md:max-w-[240px] lg:max-w-xs">
+              <div className="min-w-0 max-w-[min(100%,200px)] flex-1 sm:max-w-xs md:max-w-[min(100%,240px)] lg:max-w-xs">
                 <p className="truncate text-sm font-bold tracking-tight text-foreground md:text-lg">
                   {title}
                 </p>
@@ -353,7 +401,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
               </div>
             </div>
 
-            <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+            <div className="flex shrink-0 flex-nowrap items-center gap-1.5 sm:gap-2">
               <div className="hidden items-center gap-2 lg:flex">
                 <span className="ds-section-title text-[9px]">Quick</span>
                 {quickLinks.map((q) => (
@@ -412,11 +460,21 @@ export default function StudentShell({ children }: { children: React.ReactNode }
                     href="/profile"
                     aria-label="Profile"
                     className={cn(
-                      "ms-icon-btn inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border bg-card text-foreground shadow-sm transition-colors hover:border-primary/30 hover:bg-surface-2",
+                      "relative ms-icon-btn inline-flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-card text-foreground shadow-sm transition-colors hover:border-primary/30 hover:bg-surface-2",
                       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/90 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--background)] dark:focus-visible:ring-amber-400/55 dark:focus-visible:ring-offset-black",
                     )}
                   >
-                    <UserCircle className="h-5 w-5" strokeWidth={2} />
+                    {profileImageUrl && !profileAvatarFailed ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img
+                        src={profileImageUrl}
+                        alt=""
+                        className="absolute inset-0 h-full w-full object-cover"
+                        onError={() => setProfileAvatarFailed(true)}
+                      />
+                    ) : (
+                      <UserCircle className="h-5 w-5" strokeWidth={2} />
+                    )}
                   </Link>
                 </Tooltip>
               ) : (

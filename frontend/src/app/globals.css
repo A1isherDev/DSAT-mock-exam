@@ -744,6 +744,14 @@ body {
     0 25px 50px -12px color-mix(in srgb, var(--foreground) 6%, transparent);
 }
 
+/* Light mode: softer outward glow so sidebar chrome does not visually stack on main content */
+html:not(.dark) .shell-sidebar-gold {
+  box-shadow:
+    inset -3px 0 18px -8px color-mix(in srgb, var(--ds-gold-bright) 10%, transparent),
+    3px 0 28px -16px color-mix(in srgb, var(--ds-gold-bright) 4%, transparent),
+    0 14px 32px -14px color-mix(in srgb, var(--foreground) 5%, transparent);
+}
+
 .cr-hero {
   background:
     linear-gradient(125deg, color-mix(in srgb, var(--card) 96%, transparent) 0%, color-mix(in srgb, var(--surface-2) 90%, var(--card)) 45%, color-mix(in srgb, var(--primary) 8%, var(--card)) 100%),
