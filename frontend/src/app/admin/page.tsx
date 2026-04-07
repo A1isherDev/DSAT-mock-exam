@@ -926,6 +926,20 @@ export default function AdminPage() {
         await adminApi.deleteUser(id); await fetchUsers(); showToast('User deleted');
     };
 
+    const handleToggleUserFrozen = async (user: { id: number; is_frozen?: boolean }) => {
+        const nextFrozen = !user.is_frozen;
+        setSaving(true);
+        try {
+            await adminApi.updateUser(user.id, { is_frozen: nextFrozen });
+            await fetchUsers();
+            showToast(nextFrozen ? 'User frozen' : 'User unfrozen');
+        } catch {
+            showToast('Could not update user');
+        } finally {
+            setSaving(false);
+        }
+    };
+
     const toggleUserRowSelected = (id: number) => {
         setSelectedUserIds((prev) =>
             prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
@@ -3362,6 +3376,20 @@ export default function AdminPage() {
                                                         }}
                                                     >
                                                         <Pencil className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        className={BTN_GHOST}
+                                                        disabled={saving}
+                                                        title={user.is_frozen ? 'Unfreeze' : 'Freeze'}
+                                                        aria-label={user.is_frozen ? 'Unfreeze user' : 'Freeze user'}
+                                                        onClick={() => handleToggleUserFrozen(user)}
+                                                    >
+                                                        {user.is_frozen ? (
+                                                            <Unlock className="w-3.5 h-3.5" />
+                                                        ) : (
+                                                            <Lock className="w-3.5 h-3.5" />
+                                                        )}
                                                     </button>
                                                     <button
                                                         type="button"
