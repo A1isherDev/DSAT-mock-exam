@@ -8,6 +8,7 @@ import { classesApi, examsApi, usersApi } from "@/lib/api";
 import { ArrowRight, BarChart3, Calendar, Pencil, PlayCircle, Target, TrendingUp } from "lucide-react";
 import { ClassroomButton } from "@/components/classroom";
 import { DashboardCard, DashboardEyebrow, DashboardTitle } from "./DashboardCard";
+import { GoalScoreModal, initialSectionsFromTarget } from "./GoalScoreModal";
 import { LearningRoadmap, type RoadmapStep } from "./LearningRoadmap";
 import { cn } from "@/lib/cn";
 
@@ -20,6 +21,7 @@ type Attempt = {
 };
 
 type Me = {
+  id?: number;
   first_name?: string;
   last_name?: string;
   sat_exam_date?: string | null;
@@ -45,6 +47,25 @@ function startOfDay(d: Date) {
   return x.getTime();
 }
 
+const SECTION_GOALS_KEY = (userId: number) => `mastersat.sectionGoals.${userId}`;
+
+function readStoredSectionGoals(
+  userId: number | undefined,
+  target: number | null,
+): { math: number; english: number } | null {
+  if (userId == null || target == null || typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(SECTION_GOALS_KEY(userId));
+    if (!raw) return null;
+    const p = JSON.parse(raw) as { math?: unknown; english?: unknown; total?: unknown };
+    if (typeof p.math !== "number" || typeof p.english !== "number" || typeof p.total !== "number") return null;
+    if (p.total !== target) return null;
+    return { math: p.math, english: p.english };
+  } catch {
+    return null;
+  }
+}
+
 export function HomeDashboard() {
   const router = useRouter();
   const [hasToken, setHasToken] = useState(false);
@@ -52,6 +73,8 @@ export function HomeDashboard() {
   const [me, setMe] = useState<Me | null>(null);
   const [attempts, setAttempts] = useState<Attempt[]>([]);
   const [classCount, setClassCount] = useState(0);
+  const [goalModalOpen, setGoalModalOpen] = useState(false);
+  const [savingGoal, setSavingGoal] = useState(false);
 
   useEffect(() => {
     setHasToken(!!Cookies.get("access_token"));
@@ -108,6 +131,15 @@ export function HomeDashboard() {
   const examDays = daysUntil(me?.sat_exam_date ?? null);
   const target = me?.target_score ?? null;
   const mockScore = me?.last_mock_result?.score ?? null;
+  const sectionGoals = useMemo(
+    () => readStoredSectionGoals(me?.id, target),
+    [me?.id, target],
+  );
+  const goalModalInitial = useMemo(() => {
+    const fromStore = readStoredSectionGoals(me?.id, target);
+    if (fromStore) return fromStore;
+    return initialSectionsFromTarget(target);
+  }, [me?.id, target]);
   const trend =
     target != null && mockScore != null
       ? mockScore >= target
@@ -125,6 +157,24 @@ export function HomeDashboard() {
     if (me.target_score != null) n++;
     return Math.round((n / t) * 100);
   }, [me]);
+
+  async function handleGoalSubmit(math: number, english: number) {
+    if (me?.id == null) return;
+    const total = math + english;
+    setSavingGoal(true);
+    try {
+      const updated = await usersApi.patchMe({ target_score: total });
+      try {
+        localStorage.setItem(SECTION_GOALS_KEY(me.id), JSON.stringify({ math, english, total }));
+      } catch {
+        /* ignore quota */
+      }
+      setMe((prev) => (prev ? { ...prev, ...(updated as Me) } : prev));
+      setGoalModalOpen(false);
+    } finally {
+      setSavingGoal(false);
+    }
+  }
 
   const roadmapSteps: RoadmapStep[] = useMemo(
     () => [
@@ -202,13 +252,23 @@ export function HomeDashboard() {
             Resume where you left off, watch the countdown, and follow the roadmap—no clutter, just signal.
           </p>
         </div>
-        <Link
-          href="/profile"
-          className="inline-flex items-center gap-2 self-start rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold text-foreground shadow-sm transition-all hover:border-primary/30"
-        >
-          <Pencil className="h-3.5 w-3.5" />
-          Edit goals
-        </Link>
+        <div className="flex flex-wrap items-center gap-2 self-start">
+          <button
+            type="button"
+            onClick={() => setGoalModalOpen(true)}
+            className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold text-foreground shadow-sm transition-all hover:border-primary/30"
+          >
+            <Target className="h-3.5 w-3.5" />
+            My goal score
+          </button>
+          <Link
+            href="/profile"
+            className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold text-foreground shadow-sm transition-all hover:border-primary/30"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Edit goals
+          </Link>
+        </div>
       </header>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 lg:gap-5">
@@ -311,6 +371,19 @@ export function HomeDashboard() {
             <span className="pb-1 text-sm font-semibold text-label-foreground">/ {target ?? "—"}</span>
             <span className="text-xs font-bold text-muted-foreground">target</span>
           </div>
+          {sectionGoals && target != null ? (
+            <p className="mt-2 text-xs font-medium text-muted-foreground">
+              Goal: Math {sectionGoals.math} · English {sectionGoals.english} · Overall{" "}
+              <span className="tabular-nums font-bold text-foreground">{target}</span>
+            </p>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => setGoalModalOpen(true)}
+            className="mt-3 text-xs font-bold text-primary underline-offset-4 hover:underline"
+          >
+            Set Math &amp; English targets
+          </button>
           <div
             className={cn(
               "mt-3 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold",
@@ -365,6 +438,14 @@ export function HomeDashboard() {
         <LearningRoadmap steps={roadmapSteps} />
       </div>
 
+      <GoalScoreModal
+        open={goalModalOpen}
+        onOpenChange={setGoalModalOpen}
+        initialMath={goalModalInitial.math}
+        initialEnglish={goalModalInitial.english}
+        saving={savingGoal}
+        onSubmit={handleGoalSubmit}
+      />
     </div>
   );
 }
