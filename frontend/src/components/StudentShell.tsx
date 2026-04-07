@@ -29,7 +29,6 @@ import AuthGuard from "@/components/AuthGuard";
 import { Badge } from "@/components/ui/Badge";
 import { IconButton } from "@/components/ui/IconButton";
 import { Tooltip } from "@/components/ui/Tooltip";
-import { ClassroomButton } from "@/components/classroom";
 import { cn } from "@/lib/cn";
 
 const SIDEBAR_COLLAPSED_KEY = "mastersat.sidebarCollapsed";
@@ -272,6 +271,23 @@ export default function StudentShell({ children }: { children: React.ReactNode }
             <p className={cn("ds-caption mt-2 text-[11px]", sidebarCollapsed && "md:hidden")}>
               Tip: use the search box to filter long menus.
             </p>
+            {isLoggedIn ? (
+              <Tooltip content="Sign out" side="right">
+                <button
+                  type="button"
+                  onClick={() => authApi.logout()}
+                  className={cn(
+                    "mt-4 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-muted-foreground transition-all hover:bg-surface-2 hover:text-foreground",
+                    sidebarCollapsed && "md:justify-center md:px-2",
+                  )}
+                >
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-label-foreground">
+                    <LogOut className="h-[18px] w-[18px]" strokeWidth={2} />
+                  </span>
+                  <span className={cn("leading-snug", sidebarCollapsed && "md:sr-only")}>Sign out</span>
+                </button>
+              </Tooltip>
+            ) : null}
           </div>
         </aside>
 
@@ -391,16 +407,18 @@ export default function StudentShell({ children }: { children: React.ReactNode }
               )}
 
               {isLoggedIn ? (
-                <ClassroomButton
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => authApi.logout()}
-                  className="!px-2.5 sm:!px-3"
-                >
-                  <LogOut className="h-4 w-4 shrink-0" />
-                  <span className="hidden sm:inline">Sign out</span>
-                </ClassroomButton>
+                <Tooltip content="Profile" side="bottom" className="inline-flex w-auto shrink-0">
+                  <Link
+                    href="/profile"
+                    aria-label="Profile"
+                    className={cn(
+                      "ms-icon-btn inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border bg-card text-foreground shadow-sm transition-colors hover:border-primary/30 hover:bg-surface-2",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/90 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--background)] dark:focus-visible:ring-amber-400/55 dark:focus-visible:ring-offset-black",
+                    )}
+                  >
+                    <UserCircle className="h-5 w-5" strokeWidth={2} />
+                  </Link>
+                </Tooltip>
               ) : (
                 <button
                   type="button"
