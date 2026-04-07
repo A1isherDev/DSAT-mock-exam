@@ -231,6 +231,7 @@ export function HomeDashboard() {
     return (
       <div className="mx-auto max-w-6xl px-3 py-6 md:px-4 lg:px-6">
         <div className="mb-8 h-10 max-w-md ds-skeleton rounded-xl" />
+        <div className="mb-4 h-28 rounded-2xl ds-skeleton" />
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3, 4, 5].map((i) => (
             <div key={i} className="h-44 rounded-2xl ds-skeleton" />
@@ -272,6 +273,53 @@ export function HomeDashboard() {
       </header>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 lg:gap-5">
+        {/* Target goal — dedicated row for quick score setup */}
+        <div className="col-span-full">
+          <DashboardCard
+            accent="gold"
+            padding="md"
+            className="border-amber-500/25 bg-gradient-to-br from-card via-card to-amber-500/[0.06] dark:to-amber-400/[0.08]"
+          >
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 flex-1 items-start gap-4">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/20 to-ds-gold/20 text-primary ring-1 ring-ds-gold/30">
+                  <Target className="h-7 w-7" />
+                </div>
+                <div className="min-w-0">
+                  <DashboardEyebrow>Goal</DashboardEyebrow>
+                  <DashboardTitle className="mt-1">Your target score</DashboardTitle>
+                  <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                    <span className="text-4xl font-black tabular-nums tracking-tight text-foreground">
+                      {target != null ? target : "—"}
+                    </span>
+                    <span className="text-sm font-bold text-muted-foreground">/ 1600 total</span>
+                  </div>
+                  {sectionGoals && target != null ? (
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      Math <span className="font-bold tabular-nums text-foreground">{sectionGoals.math}</span>
+                      <span className="mx-1.5 text-border">·</span>
+                      English{" "}
+                      <span className="font-bold tabular-nums text-foreground">{sectionGoals.english}</span>
+                    </p>
+                  ) : (
+                    <p className="mt-2 max-w-md text-sm text-muted-foreground">
+                      Set Math and English targets — your overall goal updates automatically.
+                    </p>
+                  )}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setGoalModalOpen(true)}
+                className="ms-btn-primary ms-cta-fill inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-bold ring-1 ring-ds-gold/35 sm:w-auto sm:min-w-[10.5rem]"
+              >
+                <Target className="h-4 w-4" />
+                {target != null ? "Update score" : "Set score"}
+              </button>
+            </div>
+          </DashboardCard>
+        </div>
+
         {/* Continue learning */}
         <DashboardCard accent="blue" padding="md" className="lg:col-span-2">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -377,13 +425,6 @@ export function HomeDashboard() {
               <span className="tabular-nums font-bold text-foreground">{target}</span>
             </p>
           ) : null}
-          <button
-            type="button"
-            onClick={() => setGoalModalOpen(true)}
-            className="mt-3 text-xs font-bold text-primary underline-offset-4 hover:underline"
-          >
-            Set Math &amp; English targets
-          </button>
           <div
             className={cn(
               "mt-3 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold",
