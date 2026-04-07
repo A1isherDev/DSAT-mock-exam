@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { examsApi } from "@/lib/api";
 import {
   buildHomeworkPastpaperCards,
@@ -12,7 +12,7 @@ import {
   sortPastpaperSections,
   subjectLabel,
 } from "@/lib/practiceTestCards";
-import { FileText, Search, X, ArrowRight } from "lucide-react";
+import { ArrowRight, FileText, RefreshCw, Search, X } from "lucide-react";
 import Cookies from "js-cookie";
 import { cn } from "@/lib/cn";
 
@@ -108,27 +108,44 @@ export default function PracticeTestsList({
   const [attempts, setAttempts] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [listRefreshKey, setListRefreshKey] = useState(0);
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
-    const token = Cookies.get("access_token");
-    setIsLoggedIn(!!token);
+    let cancelled = false;
 
     const fetchData = async () => {
+      const token = Cookies.get("access_token");
+      if (!cancelled) setIsLoggedIn(!!token);
       try {
         const list = await examsApi.getPracticeTests();
+        if (cancelled) return;
         const raw = Array.isArray(list) ? list : [];
         setTests(raw.filter((t) => !isTimedMockSectionRow(t)));
         if (token) {
           const attemptsData = await examsApi.getAttempts();
-          setAttempts(attemptsData);
+          if (!cancelled) setAttempts(Array.isArray(attemptsData) ? attemptsData : []);
+        } else {
+          setAttempts([]);
         }
       } catch (err) {
         console.error(err);
       }
     };
-    fetchData();
-  }, []);
+
+    void fetchData();
+
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void fetchData();
+    };
+    window.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [pathname, listRefreshKey]);
 
   const cards = useMemo(() => buildHomeworkPastpaperCards(tests), [tests]);
 
@@ -152,9 +169,19 @@ export default function PracticeTestsList({
   return (
     <div className="mx-auto max-w-7xl px-8 py-12">
       <div className="mb-12">
-        <div className="mb-3 flex items-center gap-2">
-          <span className="h-1 w-12 rounded-full bg-primary" />
-          <span className="block text-[10px] font-bold uppercase tracking-widest text-primary">{eyebrow}</span>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="h-1 w-12 rounded-full bg-primary" />
+            <span className="block text-[10px] font-bold uppercase tracking-widest text-primary">{eyebrow}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setListRefreshKey((k) => k + 1)}
+            className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground shadow-sm transition-colors hover:border-primary/30 hover:bg-surface-2"
+          >
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+            Refresh list
+          </button>
         </div>
         <h2 className="mb-4 text-4xl font-extrabold tracking-tight text-foreground">{title}</h2>
         {description ? (

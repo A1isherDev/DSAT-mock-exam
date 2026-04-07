@@ -5,7 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.db import transaction
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Q
 
 from access import constants as acc_const
 from access.permissions import RequiresSubmitTest
@@ -126,21 +126,6 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated]
     serializer_class = PracticeTestSerializer
 
-    def _expand_pastpaper_pack_siblings(self, base, qs):
-        """
-        If the user is assigned any section of a PastpaperPack, include every section in that pack
-        (one assignment unlocks the full card on /practice-tests).
-        """
-        pack_ids = list(
-            qs.filter(pastpaper_pack_id__isnull=False)
-            .values_list("pastpaper_pack_id", flat=True)
-            .distinct()
-        )
-        if not pack_ids:
-            return qs
-        sibling_qs = base.filter(pastpaper_pack_id__in=pack_ids)
-        return (qs | sibling_qs).distinct()
-
     def get_queryset(self):
         """
         Students: assigned standalone tests plus siblings in the same pastpaper pack.
@@ -155,8 +140,18 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
         )
         if can_browse_standalone_practice_library(user):
             return filter_practice_tests_for_user(user, base).distinct()
-        mine = base.filter(assigned_users=user).distinct()
-        return self._expand_pastpaper_pack_siblings(base, mine)
+        # Use Q() instead of queryset | queryset — OR-merge is reliable across DB backends.
+        mine = base.filter(assigned_users=user)
+        pack_ids = list(
+            mine.filter(pastpaper_pack_id__isnull=False)
+            .values_list("pastpaper_pack_id", flat=True)
+            .distinct()
+        )
+        if not pack_ids:
+            return mine.distinct()
+        return base.filter(
+            Q(assigned_users=user) | Q(pastpaper_pack_id__in=pack_ids)
+        ).distinct()
 
     @action(detail=False, methods=["post"], permission_classes=[IsAuthenticated, BulkAssignAccess])
     def bulk_assign(self, request):
