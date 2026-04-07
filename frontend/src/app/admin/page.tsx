@@ -29,6 +29,7 @@ const getImageUrl = (path: string | null | undefined) => {
 import {
     Users, BookOpen, ShieldCheck, LogOut, Plus, Pencil, Trash2, Save,
     X, Loader2, Layers, HelpCircle, Search, Upload, Image as ImageIcon, ArrowUp, ArrowDown, Lock, Unlock,
+    GraduationCap,
     Bold as BoldIcon, Italic as ItalicIcon, Underline as UnderlineIcon, Sigma, Percent, Variable, SlidersHorizontal, AlertTriangle,
     Calendar,
 } from 'lucide-react';
@@ -190,7 +191,9 @@ const RichTextEditor = ({ value, onChange, label, placeholder = "" }: { value: s
     );
 };
 
-type Tab = 'users' | 'pastpapers' | 'mocks' | 'modules' | 'questions' | 'examdates';
+type Tab = 'users' | 'pastpapers' | 'mocks' | 'midterms' | 'modules' | 'questions' | 'examdates';
+
+const MIDTERM_SCORE_OPTIONS = [1, 2, 3, 5, 8, 10] as const;
 
 // ─── Inline Form Row ──────────────────────────────────────────────────────────
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -304,7 +307,9 @@ export default function AdminPage() {
         midterm_module_count: 2,
         midterm_module1_minutes: 60,
         midterm_module2_minutes: 60,
+        midterm_target_question_count: 0,
     });
+    const [midtermTotals, setMidtermTotals] = useState({ points: 0, count: 0 });
     const [questionForm, setQuestionForm] = useState({ 
         question_text: '', question_prompt: '', 
         option_a: '', option_b: '', option_c: '', option_d: '',
@@ -656,6 +661,34 @@ export default function AdminPage() {
         return list;
     }, [mockExams, mockAdminQuery, mockKindFilter, mockPublishedFilter, mockSort]);
 
+    const filteredMidtermsAdmin = useMemo(() => {
+        let list = mockExams.filter((m) => (m.kind || "MOCK_SAT") === "MIDTERM");
+        const q = mockAdminQuery.trim().toLowerCase();
+        if (q) {
+            list = list.filter((m) => {
+                const tests = m.tests || [];
+                const blob = `${m.id} ${m.title || ""} ${m.kind || ""} ${m.practice_date || ""}`.toLowerCase();
+                const tb = tests.map((t: any) => `${t.id} ${t.subject} ${t.label || ""}`).join(" ").toLowerCase();
+                return blob.includes(q) || tb.includes(q);
+            });
+        }
+        if (mockPublishedFilter === "PUBLISHED") list = list.filter((m) => !!m.is_published);
+        if (mockPublishedFilter === "DRAFT") list = list.filter((m) => !m.is_published);
+        if (mockSort === "TITLE") {
+            list.sort((a, b) => (a.title || "").localeCompare(b.title || "", undefined, { sensitivity: "base" }));
+        } else if (mockSort === "ID") {
+            list.sort((a, b) => b.id - a.id);
+        } else {
+            list.sort((a, b) => {
+                const da = a.practice_date || "";
+                const db = b.practice_date || "";
+                if (da !== db) return db.localeCompare(da);
+                return b.id - a.id;
+            });
+        }
+        return list;
+    }, [mockExams, mockAdminQuery, mockPublishedFilter, mockSort]);
+
     const filteredUsersAdmin = useMemo(() => {
         let list = [...users];
         const q = userAdminQuery.trim().toLowerCase();
@@ -868,6 +901,38 @@ export default function AdminPage() {
         return mockExams.find((m) => m.id === mockPk) || null;
     }, [selectedPracticeTestId, allSelectableTests, mockExams]);
 
+    const refreshMidtermTotals = useCallback(async () => {
+        if (!selectedPracticeTestId) {
+            setMidtermTotals({ points: 0, count: 0 });
+            return;
+        }
+        const mock = mockExams.find((m) =>
+            (m.tests || []).some((t: any) => t.id === selectedPracticeTestId),
+        );
+        if (!mock || mock.kind !== "MIDTERM") {
+            setMidtermTotals({ points: 0, count: 0 });
+            return;
+        }
+        try {
+            const mods = await adminApi.getModules(selectedPracticeTestId);
+            let points = 0;
+            let count = 0;
+            for (const mod of mods) {
+                const qs = await adminApi.getQuestions(selectedPracticeTestId, mod.id);
+                const arr = Array.isArray(qs) ? qs : [];
+                points += arr.reduce((s: number, q: any) => s + (q.score || 0), 0);
+                count += arr.length;
+            }
+            setMidtermTotals({ points, count });
+        } catch {
+            setMidtermTotals({ points: 0, count: 0 });
+        }
+    }, [selectedPracticeTestId, mockExams]);
+
+    useEffect(() => {
+        void refreshMidtermTotals();
+    }, [refreshMidtermTotals]);
+
     useEffect(() => { 
         if (selectedPracticeTestId) {
             fetchModules().then((data) => {
@@ -1067,8 +1132,13 @@ export default function AdminPage() {
         }
         setSaving(true);
         try {
-            if (editingMock?.id) { await adminApi.updateMockExam(editingMock.id, mockForm); }
-            else { await adminApi.createMockExam(mockForm); }
+            const formPayload =
+                activeTab === "midterms" ? { ...mockForm, kind: "MIDTERM" as const } : mockForm;
+            if (editingMock?.id) {
+                await adminApi.updateMockExam(editingMock.id, formPayload);
+            } else {
+                await adminApi.createMockExam(formPayload);
+            }
             await fetchMockExams();
             setEditingMock(null);
             setMockForm({
@@ -1080,6 +1150,7 @@ export default function AdminPage() {
                 midterm_module_count: 2,
                 midterm_module1_minutes: 60,
                 midterm_module2_minutes: 60,
+                midterm_target_question_count: 0,
             });
             showToast('Mock Exam saved ✓');
         } finally { setSaving(false); }
@@ -1316,10 +1387,14 @@ export default function AdminPage() {
             const list = await adminApi.getQuestions(testIdForApi, moduleIdForApi);
             setQuestions(Array.isArray(list) ? list : []);
             setEditingQuestion(null);
+            const mockForTest = mockExams.find((m) =>
+                (m.tests || []).some((t: any) => t.id === testIdForApi),
+            );
+            const isMid = mockForTest?.kind === 'MIDTERM';
             setQuestionForm({ 
                 question_text: '', question_prompt: '', 
                 option_a: '', option_b: '', option_c: '', option_d: '',
-                correct_answer: 'A', score: 10, question_type: (currentTest?.subject === 'MATH' ? 'MATH' : 'READING'), is_math_input: (currentTest?.subject === 'MATH')
+                correct_answer: 'A', score: isMid ? 5 : 10, question_type: (currentTest?.subject === 'MATH' ? 'MATH' : 'READING'), is_math_input: (currentTest?.subject === 'MATH')
             });
             setQuestionImage(null);
             setOptionAImage(null);
@@ -1332,6 +1407,7 @@ export default function AdminPage() {
             setClearOptionCImage(false);
             setClearOptionDImage(false);
             showToast('Question saved ✓');
+            await refreshMidtermTotals();
         } catch (e: any) {
             const details = e?.response?.data;
             const detailText = typeof details?.detail === 'string'
@@ -1356,7 +1432,9 @@ export default function AdminPage() {
         if (!selectedPracticeTestId || !selectedModuleId) return;
         if (!confirm('Delete this question?')) return;
         await adminApi.deleteQuestion(selectedPracticeTestId, selectedModuleId, qId);
-        await fetchQuestions(); showToast('Question deleted');
+        await fetchQuestions();
+        await refreshMidtermTotals();
+        showToast('Question deleted');
     };
 
     const bulkPastpaperResolvedSectionIds = useMemo(() => {
@@ -1505,30 +1583,50 @@ export default function AdminPage() {
         if (subject === 'READING_WRITING') return order === 1 ? 330 : 270;
         return order === 1 ? 380 : 220;
     };
-    const getModuleBase = (subject: string, order: number) => {
-        return order === 1 ? 200 : 0;
-    };
 
     const currentModule = modules.find(m => m.id === selectedModuleId);
     const currentTest = allSelectableTests.find((t) => t.id === selectedPracticeTestId);
     const isMidtermExamContext = mockParentForSelectedTest?.kind === 'MIDTERM';
+    const midtermPointsBudget = 100;
+    const midtermTarget = mockParentForSelectedTest?.midterm_target_question_count ?? 0;
+
+    const predictedMidtermPoints = useMemo(() => {
+        if (!isMidtermExamContext) return 0;
+        const editingOld =
+            editingQuestion && editingQuestion.id != null && editingQuestion.id !== ""
+                ? (questions.find((q) => q.id === editingQuestion.id)?.score ?? 0)
+                : 0;
+        if (editingQuestion !== null) {
+            return midtermTotals.points - editingOld + (Number(questionForm.score) || 0);
+        }
+        return midtermTotals.points;
+    }, [isMidtermExamContext, midtermTotals.points, editingQuestion, questions, questionForm.score]);
+
     const moduleScoreSum = questions.reduce((sum, q) => sum + (q.score || 0), 0);
     const budget = (currentTest && currentModule)
-        ? (isMidtermExamContext ? 9_999_999 : getModuleBudget(currentTest.subject, currentModule.module_order))
+        ? (isMidtermExamContext ? midtermPointsBudget : getModuleBudget(currentTest.subject, currentModule.module_order))
         : 0;
-    const base = (currentTest && currentModule) ? getModuleBase(currentTest.subject, currentModule.module_order) : 0;
-    
-    const maxQuestions = isMidtermExamContext ? 999 : (currentTest?.subject === 'MATH' ? 22 : 27);
+
+    const maxQuestions = isMidtermExamContext
+        ? (midtermTarget > 0 ? midtermTarget : 999)
+        : (currentTest?.subject === 'MATH' ? 22 : 27);
     const selectedPracticeSubject = currentTest?.subject as string | undefined;
     const canEditCurrentQuestions = canEditQuestionsForSubject(selectedPracticeSubject);
-    const isAtLimit = questions.length >= maxQuestions;
+    const isAtLimit = isMidtermExamContext
+        ? (midtermTarget > 0
+            ? midtermTotals.count >= midtermTarget && !(editingQuestion && editingQuestion.id)
+            : false)
+        : questions.length >= maxQuestions;
     const predictedSum = editingQuestion !== null ? (moduleScoreSum - (editingQuestion.id ? (questions.find(q => q.id === editingQuestion.id)?.score || 0) : 0) + (questionForm.score || 0)) : moduleScoreSum;
-    const isOverBudget = predictedSum > budget;
+    const isOverBudget = isMidtermExamContext
+        ? predictedMidtermPoints > midtermPointsBudget
+        : predictedSum > budget;
 
     const navItems: { key: Tab; label: string; icon: React.ReactNode }[] = (() => {
         const all: { key: Tab; label: string; icon: React.ReactNode }[] = [
             { key: 'pastpapers', label: 'Pastpaper tests', icon: <BookOpen className="w-4 h-4" /> },
             { key: 'mocks', label: 'Mock exams', icon: <Layers className="w-4 h-4" /> },
+            { key: 'midterms', label: 'Midterm', icon: <GraduationCap className="w-4 h-4" /> },
             { key: 'questions', label: 'Questions', icon: <HelpCircle className="w-4 h-4" /> },
             { key: 'examdates', label: 'Exam dates', icon: <Calendar className="w-4 h-4" /> },
             { key: 'users', label: 'Users', icon: <Users className="w-4 h-4" /> },
@@ -1555,6 +1653,14 @@ export default function AdminPage() {
                     can('assign_test_access') ||
                     can('edit_test') ||
                     can('delete_test')
+                );
+            }
+            if (item.key === 'midterms') {
+                return (
+                    canCreateMidtermMock() ||
+                    canManageMockExamShell() ||
+                    can('assign_test_access') ||
+                    can('edit_test')
                 );
             }
             return testArea;
@@ -2277,6 +2383,7 @@ export default function AdminPage() {
                                                 midterm_module_count: 2,
                                                 midterm_module1_minutes: 60,
                                                 midterm_module2_minutes: 60,
+                                                midterm_target_question_count: 0,
                                             }); }}>
                                                 <Plus className="w-4 h-4" /> New mock exam
                                             </button>
@@ -2361,7 +2468,7 @@ export default function AdminPage() {
                                                 ) : null}
                                             </select>
                                         </Field>
-                                        {mockForm.kind === 'MIDTERM' && !editingMock?.id && (
+                                        {mockForm.kind === 'MIDTERM' && (
                                             <>
                                                 <Field label="Midterm subject">
                                                     <select className={INPUT} value={mockForm.midterm_subject} onChange={e => setMockForm({ ...mockForm, midterm_subject: e.target.value })}>
@@ -2369,14 +2476,29 @@ export default function AdminPage() {
                                                         <option value="MATH">Math</option>
                                                     </select>
                                                 </Field>
+                                                <Field label="Target question count (optional)">
+                                                    <input
+                                                        type="number"
+                                                        min={0}
+                                                        className={INPUT}
+                                                        value={mockForm.midterm_target_question_count ?? 0}
+                                                        onChange={(e) =>
+                                                            setMockForm({
+                                                                ...mockForm,
+                                                                midterm_target_question_count: Number(e.target.value) || 0,
+                                                            })
+                                                        }
+                                                    />
+                                                    <p className="text-[10px] text-slate-400 mt-1 font-medium">0 = no cap. Otherwise max questions across all modules (planner).</p>
+                                                </Field>
                                                 <Field label="Number of modules">
                                                     <select className={INPUT} value={mockForm.midterm_module_count} onChange={e => setMockForm({ ...mockForm, midterm_module_count: Number(e.target.value) })}>
                                                         <option value={1}>1 module</option>
                                                         <option value={2}>2 modules</option>
                                                     </select>
                                                 </Field>
-                                                <Field label="Module 1 (minutes)"><input type="number" min={1} className={INPUT} value={mockForm.midterm_module1_minutes} onChange={e => setMockForm({ ...mockForm, midterm_module1_minutes: Number(e.target.value) })} /></Field>
-                                                <Field label="Module 2 (minutes)"><input type="number" min={1} className={INPUT} disabled={mockForm.midterm_module_count < 2} value={mockForm.midterm_module2_minutes} onChange={e => setMockForm({ ...mockForm, midterm_module2_minutes: Number(e.target.value) })} /></Field>
+                                                <Field label="Module 1 time (minutes)"><input type="number" min={1} className={INPUT} value={mockForm.midterm_module1_minutes} onChange={e => setMockForm({ ...mockForm, midterm_module1_minutes: Number(e.target.value) })} /></Field>
+                                                <Field label="Module 2 time (minutes)"><input type="number" min={1} className={INPUT} disabled={mockForm.midterm_module_count < 2} value={mockForm.midterm_module2_minutes} onChange={e => setMockForm({ ...mockForm, midterm_module2_minutes: Number(e.target.value) })} /></Field>
                                             </>
                                         )}
                                         {adminNorm(mockForm.title) &&
@@ -2501,6 +2623,7 @@ export default function AdminPage() {
                                                             midterm_module_count: mock.midterm_module_count ?? 2,
                                                             midterm_module1_minutes: mock.midterm_module1_minutes ?? 60,
                                                             midterm_module2_minutes: mock.midterm_module2_minutes ?? 60,
+                                                            midterm_target_question_count: mock.midterm_target_question_count ?? 0,
                                                         }); }}><Pencil className="w-3.5 h-3.5" /> Edit</button>
                                                     )}
                                                     {can('delete_test') && (
@@ -2569,6 +2692,296 @@ export default function AdminPage() {
                             </div>
                         )}
 
+                        {activeTab === 'midterms' && (
+                            <div className="space-y-6 max-w-4xl">
+                                <div className="flex items-center justify-between flex-wrap gap-3">
+                                    <div>
+                                        <h2 className="text-xl font-bold text-slate-900">Midterm exams</h2>
+                                        <p className="text-xs text-slate-500 mt-1 max-w-xl">
+                                            Create timed midterms with <strong>custom minutes per module</strong>, a <strong>target question count</strong>, and <strong>up to 100 points</strong> total (per-question weights 1, 2, 3, 5, 8, 10 in Questions). Published exams appear on the student <strong>/midterm</strong> page.
+                                        </p>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        {can('assign_test_access') && (
+                                            <button className={BTN_GHOST} onClick={openBulkModalMocks}>
+                                                <Users className="w-4 h-4" /> Bulk assign
+                                            </button>
+                                        )}
+                                        {canManageMockExamShell() && canCreateMidtermMock() && (
+                                            <button
+                                                className={BTN_PRIMARY}
+                                                onClick={() => {
+                                                    const d = new Date().toISOString().slice(0, 10);
+                                                    setEditingMock({});
+                                                    setMockForm({
+                                                        title: `Midterm · ${d}`,
+                                                        practice_date: d,
+                                                        is_active: true,
+                                                        kind: 'MIDTERM',
+                                                        midterm_subject: 'READING_WRITING',
+                                                        midterm_module_count: 2,
+                                                        midterm_module1_minutes: 60,
+                                                        midterm_module2_minutes: 60,
+                                                        midterm_target_question_count: 0,
+                                                    });
+                                                }}
+                                            >
+                                                <Plus className="w-4 h-4" /> New midterm
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                                <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                                    <div className="flex items-center gap-2 text-[11px] font-bold text-slate-500 uppercase tracking-widest">
+                                        <SlidersHorizontal className="w-4 h-4" /> Find midterms
+                                    </div>
+                                    <div className="flex flex-wrap gap-3 items-end">
+                                        <div className="flex flex-col gap-1 min-w-[200px] flex-1">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase">Search</span>
+                                            <div className="relative">
+                                                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                                <input
+                                                    className={INPUT + " !pl-9"}
+                                                    placeholder="Title, #id, section…"
+                                                    value={mockAdminQuery}
+                                                    onChange={(e) => setMockAdminQuery(e.target.value)}
+                                                />
+                                            </div>
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase">Status</span>
+                                            <select
+                                                className={INPUT + " !min-w-[130px]"}
+                                                value={mockPublishedFilter}
+                                                onChange={(e) => setMockPublishedFilter(e.target.value as typeof mockPublishedFilter)}
+                                            >
+                                                <option value="ALL">Any</option>
+                                                <option value="PUBLISHED">Published</option>
+                                                <option value="DRAFT">Draft</option>
+                                            </select>
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase">Sort</span>
+                                            <select
+                                                className={INPUT + " !min-w-[130px]"}
+                                                value={mockSort}
+                                                onChange={(e) => setMockSort(e.target.value as typeof mockSort)}
+                                            >
+                                                <option value="DATE">Practice date</option>
+                                                <option value="TITLE">Title A–Z</option>
+                                                <option value="ID">Newest id</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <p className="text-[11px] text-slate-500">
+                                        Showing <strong>{filteredMidtermsAdmin.length}</strong> midterm(s). Build questions under <strong>Questions</strong> → select this mock.
+                                    </p>
+                                </div>
+                                {editingMock !== null && (
+                                    <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm grid grid-cols-2 gap-4">
+                                        <Field label="Title (unique — shown in admin & student list)">
+                                            <input className={INPUT} value={mockForm.title} onChange={(e) => setMockForm({ ...mockForm, title: e.target.value })} placeholder="e.g. Midterm · Unit 2 · Algebra" />
+                                        </Field>
+                                        <Field label="Practice Date">
+                                            <input type="date" className={INPUT} value={mockForm.practice_date} onChange={(e) => setMockForm({ ...mockForm, practice_date: e.target.value })} />
+                                        </Field>
+                                        <Field label="Exam type">
+                                            <select className={INPUT} value="MIDTERM" disabled>
+                                                <option value="MIDTERM">Midterm (custom time & question target)</option>
+                                            </select>
+                                        </Field>
+                                        <Field label="Midterm subject">
+                                            <select className={INPUT} value={mockForm.midterm_subject} onChange={(e) => setMockForm({ ...mockForm, midterm_subject: e.target.value })}>
+                                                <option value="READING_WRITING">Reading &amp; Writing</option>
+                                                <option value="MATH">Math</option>
+                                            </select>
+                                        </Field>
+                                        <Field label="Target question count (optional)">
+                                            <input
+                                                type="number"
+                                                min={0}
+                                                className={INPUT}
+                                                value={mockForm.midterm_target_question_count ?? 0}
+                                                onChange={(e) =>
+                                                    setMockForm({
+                                                        ...mockForm,
+                                                        kind: 'MIDTERM',
+                                                        midterm_target_question_count: Number(e.target.value) || 0,
+                                                    })
+                                                }
+                                            />
+                                            <p className="text-[10px] text-slate-400 mt-1 font-medium">0 = no cap across modules.</p>
+                                        </Field>
+                                        <Field label="Number of modules">
+                                            <select className={INPUT} value={mockForm.midterm_module_count} onChange={(e) => setMockForm({ ...mockForm, kind: 'MIDTERM', midterm_module_count: Number(e.target.value) })}>
+                                                <option value={1}>1 module</option>
+                                                <option value={2}>2 modules</option>
+                                            </select>
+                                        </Field>
+                                        <Field label="Module 1 time (minutes)">
+                                            <input type="number" min={1} className={INPUT} value={mockForm.midterm_module1_minutes} onChange={(e) => setMockForm({ ...mockForm, kind: 'MIDTERM', midterm_module1_minutes: Number(e.target.value) })} />
+                                        </Field>
+                                        <Field label="Module 2 time (minutes)">
+                                            <input type="number" min={1} className={INPUT} disabled={mockForm.midterm_module_count < 2} value={mockForm.midterm_module2_minutes} onChange={(e) => setMockForm({ ...mockForm, kind: 'MIDTERM', midterm_module2_minutes: Number(e.target.value) })} />
+                                        </Field>
+                                        <div className="flex items-center gap-2 mt-4 col-span-2">
+                                            <input type="checkbox" id="mid-act" checked={mockForm.is_active} onChange={(e) => setMockForm({ ...mockForm, is_active: e.target.checked })} />
+                                            <label htmlFor="mid-act" className="text-sm font-bold text-slate-600">Is Active</label>
+                                        </div>
+                                        <div className="col-span-2 flex justify-end gap-2">
+                                            <button className={BTN_GHOST} onClick={() => setEditingMock(null)}>
+                                                <X className="w-4 h-4" /> Cancel
+                                            </button>
+                                            <button className={BTN_PRIMARY} onClick={() => void handleSaveMock()} disabled={saving}>
+                                                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                                <div className="space-y-4">
+                                    {filteredMidtermsAdmin.length === 0 && (
+                                        <p className="text-sm text-amber-900 bg-amber-50 rounded-2xl border border-amber-200 p-6">
+                                            No midterms yet. Click <strong>New midterm</strong>, save, then open <strong>Questions</strong> to add items (max 100 points total).
+                                        </p>
+                                    )}
+                                    {filteredMidtermsAdmin.map((mock) => {
+                                        const titleDup =
+                                            adminNorm(mock.title || "") && mockNormalizedTitleDupes.has(adminNorm(mock.title || ""));
+                                        return (
+                                            <div
+                                                key={mock.id}
+                                                className={`bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow ${selectedMockId === mock.id ? 'ring-2 ring-indigo-500' : ''}`}
+                                                onClick={() => setSelectedMockId(mock.id)}
+                                            >
+                                                <div className="p-5 flex items-center justify-between bg-slate-50/50">
+                                                    <div className="min-w-0">
+                                                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                                                            <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-lg border text-blue-800 bg-blue-50 border-blue-200">
+                                                                Midterm · #{mock.id}
+                                                            </span>
+                                                            <span
+                                                                className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-lg border ${
+                                                                    mock.is_published
+                                                                        ? "text-emerald-800 bg-emerald-50 border-emerald-200"
+                                                                        : "text-amber-800 bg-amber-50 border-amber-200"
+                                                                }`}
+                                                            >
+                                                                {mock.is_published ? "Published" : "Draft"}
+                                                            </span>
+                                                            {titleDup ? (
+                                                                <span className="text-[10px] font-black uppercase tracking-wider text-amber-900 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-lg inline-flex items-center gap-1">
+                                                                    <AlertTriangle className="w-3 h-3" /> Duplicate title
+                                                                </span>
+                                                            ) : null}
+                                                        </div>
+                                                        <p className="font-bold text-base text-slate-900 truncate">{mock.title || `Untitled #${mock.id}`}</p>
+                                                        <p className="text-[11px] text-slate-500 font-mono truncate mt-0.5">{formatMockExamAdminLabel(mock)}</p>
+                                                        <p className="text-[11px] text-slate-400 mt-1">
+                                                            Target questions: {mock.midterm_target_question_count > 0 ? mock.midterm_target_question_count : '—'} · Modules: {mock.midterm_module_count ?? 1} · M1 {mock.midterm_module1_minutes ?? 60}m
+                                                            {(mock.midterm_module_count ?? 2) >= 2 ? ` · M2 ${mock.midterm_module2_minutes ?? 60}m` : ''}
+                                                        </p>
+                                                        {!mock.is_published && mock.publish_block_reason ? (
+                                                            <p className="text-[10px] text-amber-800 mt-1 max-w-xl leading-snug">{mock.publish_block_reason}</p>
+                                                        ) : null}
+                                                        {canManageMockExamShell() && (
+                                                            <div className="flex flex-wrap gap-2 mt-2" onClick={(e) => e.stopPropagation()}>
+                                                                {mock.publish_ready && !mock.is_published ? (
+                                                                    <button
+                                                                        type="button"
+                                                                        className="text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700"
+                                                                        onClick={async (e) => {
+                                                                            e.stopPropagation();
+                                                                            try {
+                                                                                await adminApi.publishMockExam(mock.id);
+                                                                                await fetchMockExams();
+                                                                                showToast("Published. Students see it on /midterm when assigned.");
+                                                                            } catch (er: any) {
+                                                                                showToast(er?.response?.data?.detail || "Publish failed");
+                                                                            }
+                                                                        }}
+                                                                    >
+                                                                        Publish
+                                                                    </button>
+                                                                ) : null}
+                                                                {mock.is_published ? (
+                                                                    <button
+                                                                        type="button"
+                                                                        className="text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100"
+                                                                        onClick={async (e) => {
+                                                                            e.stopPropagation();
+                                                                            if (!confirm("Unpublish? Students will no longer see this midterm.")) return;
+                                                                            try {
+                                                                                await adminApi.unpublishMockExam(mock.id);
+                                                                                await fetchMockExams();
+                                                                                showToast("Unpublished");
+                                                                            } catch (er: any) {
+                                                                                showToast(er?.response?.data?.detail || "Unpublish failed");
+                                                                            }
+                                                                        }}
+                                                                    >
+                                                                        Unpublish
+                                                                    </button>
+                                                                ) : null}
+                                                                <button
+                                                                    type="button"
+                                                                    className="text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg border border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        const first = (mock.tests || [])[0];
+                                                                        setActiveTab("questions");
+                                                                        setQuestionsGroupValue(`mock:${mock.id}`);
+                                                                        setSelectedMockId(mock.id);
+                                                                        if (first?.id) setSelectedPracticeTestId(first.id);
+                                                                    }}
+                                                                >
+                                                                    Questions
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        {canManageMockExamShell() && (
+                                                            <button
+                                                                className={BTN_GHOST + " bg-white shadow-sm border border-slate-100"}
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setEditingMock(mock);
+                                                                    setMockForm({
+                                                                        title: mock.title,
+                                                                        practice_date: mock.practice_date || "",
+                                                                        is_active: !!mock.is_active,
+                                                                        kind: "MIDTERM",
+                                                                        midterm_subject: mock.midterm_subject || "READING_WRITING",
+                                                                        midterm_module_count: mock.midterm_module_count ?? 2,
+                                                                        midterm_module1_minutes: mock.midterm_module1_minutes ?? 60,
+                                                                        midterm_module2_minutes: mock.midterm_module2_minutes ?? 60,
+                                                                        midterm_target_question_count: mock.midterm_target_question_count ?? 0,
+                                                                    });
+                                                                }}
+                                                            >
+                                                                <Pencil className="w-3.5 h-3.5" /> Edit
+                                                            </button>
+                                                        )}
+                                                        {can("delete_test") && (
+                                                            <button
+                                                                className={BTN_DANGER + " bg-white shadow-sm border border-slate-100"}
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    void handleDeleteMock(mock.id);
+                                                                }}
+                                                            >
+                                                                <Trash2 className="w-3.5 h-3.5" /> Delete
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
                         {activeTab === 'modules' && (
                             <div className="flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-slate-200 border-dashed">
                                 <Layers className="w-12 h-12 text-slate-200 mb-4" />
@@ -2584,9 +2997,26 @@ export default function AdminPage() {
                                         <h2 className="text-xl font-bold text-slate-900">Questions</h2>
                                         <div className="flex flex-col mt-1">
                                             <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">
-                                                Module Budget: <span className={moduleScoreSum > budget ? "text-red-600" : "text-emerald-600"}>{moduleScoreSum}</span> / {budget} points
-                                                <span className="mx-2 text-slate-300">|</span>
-                                                Questions: <span className={isAtLimit ? "text-red-600" : "text-emerald-600"}>{questions.length}</span> / {maxQuestions} limit
+                                                {isMidtermExamContext ? (
+                                                    <>
+                                                        Midterm points:{' '}
+                                                        <span className={predictedMidtermPoints > midtermPointsBudget ? "text-red-600" : "text-emerald-600"}>{predictedMidtermPoints}</span>
+                                                        {' '}/ {midtermPointsBudget} ·{' '}
+                                                        <span className={predictedMidtermPoints > midtermPointsBudget ? "text-red-600" : "text-slate-600"}>
+                                                            {Math.max(0, midtermPointsBudget - predictedMidtermPoints)} remaining
+                                                        </span>
+                                                        <span className="mx-2 text-slate-300">|</span>
+                                                        Questions:{' '}
+                                                        <span className={isAtLimit ? "text-red-600" : "text-emerald-600"}>{midtermTotals.count}</span>
+                                                        {' '}/ {midtermTarget > 0 ? midtermTarget : '—'} target
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        Module Budget: <span className={moduleScoreSum > budget ? "text-red-600" : "text-emerald-600"}>{moduleScoreSum}</span> / {budget} points
+                                                        <span className="mx-2 text-slate-300">|</span>
+                                                        Questions: <span className={isAtLimit ? "text-red-600" : "text-emerald-600"}>{questions.length}</span> / {maxQuestions} limit
+                                                    </>
+                                                )}
                                             </p>
                                         </div>
                                     </div>
@@ -2698,11 +3128,12 @@ export default function AdminPage() {
                                         </select>
                                         <button className={BTN_PRIMARY} disabled={!canEditCurrentQuestions || !selectedModuleId || (isAtLimit && !editingQuestion?.id)} onClick={() => { 
                                             const currentTest = allSelectableTests.find(t => t.id === selectedPracticeTestId);
+                                            const isMid = mockParentForSelectedTest?.kind === 'MIDTERM';
                                             setEditingQuestion({}); 
                                             setQuestionForm({ 
                                                 question_text: '', question_prompt: '', 
                                                 option_a: '', option_b: '', option_c: '', option_d: '',
-                                                correct_answer: 'A', score: 10, question_type: (currentTest?.subject === 'MATH' ? 'MATH' : 'READING'), is_math_input: (currentTest?.subject === 'MATH') 
+                                                correct_answer: 'A', score: isMid ? 5 : 10, question_type: (currentTest?.subject === 'MATH' ? 'MATH' : 'READING'), is_math_input: (currentTest?.subject === 'MATH') 
                                             });
                                             setQuestionImage(null);
                                             setOptionAImage(null);
@@ -2719,7 +3150,7 @@ export default function AdminPage() {
                                         </button>
                                         <button 
                                             className={`${BTN_PRIMARY} !bg-indigo-600 hover:!bg-indigo-700 disabled:!bg-slate-300 disabled:!text-slate-500`} 
-                                            disabled={!canEditCurrentQuestions || !selectedModuleId || !isAtLimit || moduleScoreSum !== budget} 
+                                            disabled={!canEditCurrentQuestions || !selectedModuleId || (!isMidtermExamContext && (!isAtLimit || moduleScoreSum !== budget))} 
                                             onClick={() => {
                                                 setToast('✅ Module constraints verified and saved successfully!');
                                                 setTimeout(() => setToast(''), 3000);
@@ -2882,10 +3313,18 @@ export default function AdminPage() {
                                                     </select>
                                                 </Field>
                                             )}
-                                            <Field label="Score (Subject to Logic)">
-                                                <select className={INPUT} value={questionForm.score} onChange={e => setQuestionForm({...questionForm, score: Number(e.target.value)})}>
-                                                    <option value={10}>10</option><option value={20}>20</option><option value={40}>40</option>
-                                                </select>
+                                            <Field label={isMidtermExamContext ? "Points (1–10; total ≤ 100)" : "Score (Subject to Logic)"}>
+                                                {isMidtermExamContext ? (
+                                                    <select className={INPUT} value={questionForm.score} onChange={e => setQuestionForm({...questionForm, score: Number(e.target.value)})}>
+                                                        {MIDTERM_SCORE_OPTIONS.map((v) => (
+                                                            <option key={v} value={v}>{v}</option>
+                                                        ))}
+                                                    </select>
+                                                ) : (
+                                                    <select className={INPUT} value={questionForm.score} onChange={e => setQuestionForm({...questionForm, score: Number(e.target.value)})}>
+                                                        <option value={10}>10</option><option value={20}>20</option><option value={40}>40</option>
+                                                    </select>
+                                                )}
                                             </Field>
                                             <Field label="Correct Answer">
                                                 {questionForm.is_math_input ? (
@@ -2921,7 +3360,11 @@ export default function AdminPage() {
                                                 setOptionDImage(null);
                                             }}><X className="w-4 h-4" /> Cancel</button>
                                             <div className="flex items-center gap-3">
-                                                {isOverBudget && <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest bg-red-50 px-2 py-1 rounded">Score Budget Exceeded ({predictedSum}/{budget})</span>}
+                                                {isOverBudget && (
+                                                    <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest bg-red-50 px-2 py-1 rounded">
+                                                        Score Budget Exceeded ({isMidtermExamContext ? predictedMidtermPoints : predictedSum}/{isMidtermExamContext ? midtermPointsBudget : budget})
+                                                    </span>
+                                                )}
                                                 <button className={BTN_PRIMARY} onClick={handleSaveQuestion} disabled={saving || isOverBudget}>{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save Question</button>
                                             </div>
                                         </div>

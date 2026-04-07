@@ -105,6 +105,10 @@ class MockExam(TimestampedModel):
     midterm_module_count = models.PositiveSmallIntegerField(default=2)
     midterm_module1_minutes = models.PositiveIntegerField(default=60)
     midterm_module2_minutes = models.PositiveIntegerField(default=60)
+    midterm_target_question_count = models.PositiveIntegerField(
+        default=0,
+        help_text="0 = no fixed target. Otherwise planner cap for total questions across modules.",
+    )
     # Who may open this mock in the app (full SAT / midterm flow). Separate from PracticeTest rows below.
     assigned_users = models.ManyToManyField(
         User,
@@ -361,6 +365,26 @@ class TestAttempt(TimestampedModel):
             
         self.submitted_at = timezone.now()
         self.is_completed = True
+
+        pt = self.practice_test
+        mock = getattr(pt, "mock_exam", None)
+        if mock is None and pt.mock_exam_id:
+            mock = MockExam.objects.filter(pk=pt.mock_exam_id).first()
+        if mock and mock.kind == MockExam.KIND_MIDTERM:
+            total_earned = 0
+            for module_id_str, answers in self.module_answers.items():
+                try:
+                    module = Module.objects.prefetch_related("questions").get(id=int(module_id_str))
+                except (ValueError, Module.DoesNotExist):
+                    continue
+                for question in module.questions.all():
+                    ans = answers.get(str(question.id))
+                    if question.check_answer(ans):
+                        total_earned += question.score
+            self.score = min(total_earned, 100)
+            self.current_module = None
+            self.save()
+            return
         
         # SAT Scoring Rules:
         # English (READING_WRITING): M1 base 200, max 530 (gap 330); M2 max 270. Total 800.
@@ -402,6 +426,11 @@ class TestAttempt(TimestampedModel):
         """Returns detailed results broken down by module for the review page."""
         results = []
         subject = self.practice_test.subject
+        pt = self.practice_test
+        mock = getattr(pt, "mock_exam", None)
+        if mock is None and pt.mock_exam_id:
+            mock = MockExam.objects.filter(pk=pt.mock_exam_id).first()
+        is_midterm = bool(mock and mock.kind == MockExam.KIND_MIDTERM)
         
         # Prefetch questions for all modules in this test
         modules = self.practice_test.modules.prefetch_related('questions').order_by('module_order')
@@ -431,9 +460,11 @@ class TestAttempt(TimestampedModel):
                     'is_math_input': question.is_math_input
                 })
             
-            # Apply caps exactly like in complete_test
+            # Apply caps exactly like in complete_test (midterm: raw sum, max 100 at attempt level)
             capped_earned = module_earned
-            if subject == 'READING_WRITING':
+            if is_midterm:
+                capped_earned = module_earned
+            elif subject == 'READING_WRITING':
                 if module.module_order == 1: capped_earned = min(module_earned, 330)
                 else: capped_earned = min(module_earned, 270)
             elif subject == 'MATH':

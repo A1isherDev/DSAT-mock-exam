@@ -69,7 +69,15 @@ class MockExamAdmin(admin.ModelAdmin):
         (None, {"fields": ("title", "practice_date", "is_active", "kind", "assigned_users")}),
         (
             "Midterm options (when kind = Midterm)",
-            {"fields": ("midterm_subject", "midterm_module_count", "midterm_module1_minutes", "midterm_module2_minutes")},
+            {
+                "fields": (
+                    "midterm_subject",
+                    "midterm_module_count",
+                    "midterm_module1_minutes",
+                    "midterm_module2_minutes",
+                    "midterm_target_question_count",
+                )
+            },
         ),
     )
 

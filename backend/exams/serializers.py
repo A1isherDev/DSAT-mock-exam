@@ -1,9 +1,15 @@
 from django.contrib.auth import get_user_model
+from django.db.models import Sum
+from django.shortcuts import get_object_or_404
 from rest_framework import serializers
 
 from .models import Question, PracticeTest, Module, TestAttempt, MockExam, PortalMockExam, PastpaperPack
 
 User = get_user_model()
+
+MIDTERM_ALLOWED_SCORES = frozenset({1, 2, 3, 5, 8, 10})
+MIDTERM_MAX_TOTAL_POINTS = 100
+
 
 class QuestionSerializer(serializers.ModelSerializer):
     class Meta:
@@ -210,6 +216,61 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
 
         return super().update(instance, validated_data)
 
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        score = attrs.get("score")
+        if self.instance is not None and score is None:
+            score = self.instance.score
+        if score is None:
+            score = 10
+        try:
+            score = int(score)
+        except (TypeError, ValueError):
+            raise serializers.ValidationError({"score": "Invalid score."})
+        attrs["score"] = score
+
+        module = None
+        if self.instance is not None:
+            module = self.instance.module
+        else:
+            view = self.context.get("view")
+            if view is not None and hasattr(view, "kwargs"):
+                test_pk = view.kwargs.get("test_pk")
+                module_pk = view.kwargs.get("module_pk")
+                if test_pk and module_pk:
+                    module = get_object_or_404(
+                        Module, pk=module_pk, practice_test_id=test_pk
+                    )
+
+        if module is None:
+            return attrs
+
+        pt = module.practice_test
+        exam = getattr(pt, "mock_exam", None)
+        if exam is None and pt.mock_exam_id:
+            exam = MockExam.objects.filter(pk=pt.mock_exam_id).first()
+        if exam is None or exam.kind != MockExam.KIND_MIDTERM:
+            return attrs
+
+        if score not in MIDTERM_ALLOWED_SCORES:
+            raise serializers.ValidationError(
+                {
+                    "score": "Midterm questions must use scores 1, 2, 3, 5, 8, or 10."
+                }
+            )
+
+        qs = Question.objects.filter(module__practice_test=pt)
+        if self.instance is not None:
+            qs = qs.exclude(pk=self.instance.pk)
+        current_sum = qs.aggregate(s=Sum("score"))["s"] or 0
+        if current_sum + score > MIDTERM_MAX_TOTAL_POINTS:
+            raise serializers.ValidationError(
+                {
+                    "score": f"Total midterm points cannot exceed {MIDTERM_MAX_TOTAL_POINTS}."
+                }
+            )
+        return attrs
+
 
 class AdminModuleSerializer(serializers.ModelSerializer):
     class Meta:
@@ -316,6 +377,7 @@ class AdminMockExamSerializer(serializers.ModelSerializer):
             "midterm_module_count",
             "midterm_module1_minutes",
             "midterm_module2_minutes",
+            "midterm_target_question_count",
             "tests",
             "publish_ready",
             "publish_block_reason",
