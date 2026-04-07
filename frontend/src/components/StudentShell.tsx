@@ -286,7 +286,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
                       ? pathname === "/practice-tests" || pathname.startsWith("/practice-test/")
                       : pathname.startsWith(href);
                 return (
-                  <Tooltip key={href} content={tip} side="right">
+                  <Tooltip key={href} content={tip} side="right" className="flex w-full min-w-0">
                     <Link
                       href={href}
                       className={cn(navLinkClass(active), "w-full")}
@@ -320,7 +320,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
               Tip: use the search box to filter long menus.
             </p>
             {isLoggedIn ? (
-              <Tooltip content="Sign out" side="right">
+              <Tooltip content="Sign out" side="right" className="flex w-full min-w-0">
                 <button
                   type="button"
                   onClick={() => authApi.logout()}
@@ -401,7 +401,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
               </div>
             </div>
 
-            <div className="flex shrink-0 flex-nowrap items-center gap-1.5 sm:gap-2">
+            <div className="flex shrink-0 flex-nowrap items-center gap-2 sm:gap-2.5 md:gap-3">
               <div className="hidden items-center gap-2 lg:flex">
                 <span className="ds-section-title text-[9px]">Quick</span>
                 {quickLinks.map((q) => (
@@ -443,11 +443,16 @@ export default function StudentShell({ children }: { children: React.ReactNode }
               </div>
 
               {mounted && (
-                <Tooltip content={theme === "dark" ? "Light mode" : "Dark mode"} side="bottom">
+                <Tooltip
+                  content={theme === "dark" ? "Light mode" : "Dark mode"}
+                  side="bottom"
+                  className="shrink-0"
+                >
                   <IconButton
                     variant="default"
                     onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
                     aria-label="Toggle dark mode"
+                    className="shrink-0"
                   >
                     {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
                   </IconButton>
@@ -455,7 +460,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
               )}
 
               {isLoggedIn ? (
-                <Tooltip content="Profile" side="bottom" className="inline-flex w-auto shrink-0">
+                <Tooltip content="Profile" side="bottom" className="shrink-0">
                   <Link
                     href="/profile"
                     aria-label="Profile"

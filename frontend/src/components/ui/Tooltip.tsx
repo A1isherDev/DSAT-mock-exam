@@ -27,7 +27,12 @@ export function Tooltip({
   className?: string;
 }) {
   return (
-    <span className={cn("group/ds-tip relative flex w-full max-w-full min-w-0", className)}>
+    <span
+      className={cn(
+        "group/ds-tip relative inline-flex max-w-max shrink-0",
+        className,
+      )}
+    >
       {children}
       <span
         role="tooltip"

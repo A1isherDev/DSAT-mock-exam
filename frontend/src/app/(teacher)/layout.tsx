@@ -93,7 +93,7 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
             {filtered.map(({ href, label, icon: Icon, tip }) => {
               const active = href === "/teacher" ? pathname === "/teacher" : pathname.startsWith(href);
               return (
-                <Tooltip key={href} content={tip} side="right">
+                <Tooltip key={href} content={tip} side="right" className="flex w-full min-w-0">
                   <Link
                     href={href}
                     className={cn(linkCls(active), "w-full")}
