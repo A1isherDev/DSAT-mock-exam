@@ -1,12 +1,21 @@
-# Generated manually — expanded roles, LMS admin vs Django admin, mock SAT vs midterm.
+"""
+Replace TEACHER / ENGLISH_ADMIN / MATH_ADMIN with ENGLISH_TEACHER / MATH_TEACHER.
+
+- New roles get admin-like LMS permissions (exams, mocks, classrooms, assign access)
+  scoped to one subject via view_english_tests / view_math_tests + ABAC in code.
+- Does NOT grant manage_users or manage_roles (true admins only).
+
+Legacy TEACHER users are moved to MATH_TEACHER (reassign in admin if needed).
+"""
 
 from django.db import migrations
 
 
-def seed_rbac_v2(apps, schema_editor):
+def forward(apps, schema_editor):
     Permission = apps.get_model("access", "Permission")
     Role = apps.get_model("access", "Role")
     RolePermission = apps.get_model("access", "RolePermission")
+    User = apps.get_model("users", "User")
 
     definitions = [
         ("*", "All permissions"),
@@ -33,71 +42,33 @@ def seed_rbac_v2(apps, schema_editor):
             p.save(update_fields=["name"])
         perms[codename] = p
 
-    student = [
-        "submit_test",
-    ]
-    teacher = [
+    # Admin-like for LMS content, single-subject via view_* (ABAC in authorize()).
+    english_teacher = [
         "submit_test",
         "access_lms_admin",
         "assign_test_access",
         "manage_classrooms",
         "create_midterm_mock",
-        "edit_test",
-    ]
-    # Pastpaper authoring only; view_all_tests would widen mock-exam lists incorrectly.
-    test_admin = [
-        "submit_test",
-        "access_lms_admin",
-        "create_test",
-        "edit_test",
-        "delete_test",
-        "view_all_tests",
-    ]
-    admin = [
-        "submit_test",
-        "access_lms_admin",
-        "manage_users",
-        "manage_roles",
-        "assign_test_access",
-        "manage_classrooms",
-        "view_all_tests",
-        "view_english_tests",
-        "view_math_tests",
-        "create_test",
-        "edit_test",
-        "delete_test",
         "create_mock_sat",
-        "create_midterm_mock",
-    ]
-    english_admin = [
-        "submit_test",
-        "access_lms_admin",
-        "view_english_tests",
         "create_test",
         "edit_test",
-        "assign_test_access",
+        "delete_test",
+        "view_english_tests",
     ]
-    math_admin = [
+    math_teacher = [
         "submit_test",
         "access_lms_admin",
         "assign_test_access",
         "manage_classrooms",
         "create_midterm_mock",
-        "view_math_tests",
+        "create_mock_sat",
         "create_test",
         "edit_test",
+        "delete_test",
+        "view_math_tests",
     ]
 
-    roles_cfg = [
-        ("SUPER_ADMIN", "Super Admin", ["*"]),
-        ("ADMIN", "Admin", admin),
-        ("TEACHER", "Teacher", teacher),
-        ("TEST_ADMIN", "Test Admin", test_admin),
-        ("ENGLISH_ADMIN", "English Admin", english_admin),
-        ("MATH_ADMIN", "Math Admin", math_admin),
-        ("STUDENT", "Student", student),
-    ]
-    for code, name, plist in roles_cfg:
+    def seed_role(code: str, name: str, plist: list[str]) -> None:
         role, _ = Role.objects.get_or_create(code=code, defaults={"name": name})
         if role.name != name:
             role.name = name
@@ -105,6 +76,23 @@ def seed_rbac_v2(apps, schema_editor):
         RolePermission.objects.filter(role=role).delete()
         for pc in plist:
             RolePermission.objects.create(role=role, permission=perms[pc])
+
+    seed_role("ENGLISH_TEACHER", "English Teacher", english_teacher)
+    seed_role("MATH_TEACHER", "Math Teacher", math_teacher)
+
+    rehome = [
+        ("ENGLISH_ADMIN", "ENGLISH_TEACHER"),
+        ("MATH_ADMIN", "MATH_TEACHER"),
+        ("TEACHER", "MATH_TEACHER"),
+    ]
+    for old_code, new_code in rehome:
+        old_role = Role.objects.filter(code=old_code).first()
+        new_role = Role.objects.filter(code=new_code).first()
+        if old_role and new_role:
+            User.objects.filter(system_role_id=old_role.pk).update(system_role_id=new_role.pk)
+
+    for obsolete in ("TEACHER", "ENGLISH_ADMIN", "MATH_ADMIN"):
+        Role.objects.filter(code=obsolete).delete()
 
 
 def noop_reverse(apps, schema_editor):
@@ -114,9 +102,10 @@ def noop_reverse(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("access", "0002_seed_rbac"),
+        ("access", "0006_math_admin_classrooms_midterms"),
+        ("users", "0001_initial"),
     ]
 
     operations = [
-        migrations.RunPython(seed_rbac_v2, noop_reverse),
+        migrations.RunPython(forward, noop_reverse),
     ]

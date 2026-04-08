@@ -5,7 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.db import transaction
-from django.db.models import Prefetch, Q
+from django.db.models import Prefetch
 
 from access import constants as acc_const
 from access.permissions import RequiresSubmitTest
@@ -18,6 +18,7 @@ from access.policies import (
     QuestionNestedAdminAccess,
 )
 from access.services import (
+    authorize,
     can_browse_standalone_practice_library,
     filter_mock_exams_for_user,
     filter_pastpaper_packs_for_user,
@@ -128,7 +129,8 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         """
-        Students: assigned standalone tests plus siblings in the same pastpaper pack.
+        Students: standalone PracticeTest rows they are explicitly assigned to (assigned_users).
+        No automatic “whole pack” unlock from one section — Math vs English access stay separate.
         Staff with test-library permissions: all standalone tests visible per ABAC
         (view_all / subject scopes / authoring perms), same as admin test lists.
         """
@@ -140,18 +142,7 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
         )
         if can_browse_standalone_practice_library(user):
             return filter_practice_tests_for_user(user, base).distinct()
-        # Use Q() instead of queryset | queryset — OR-merge is reliable across DB backends.
-        mine = base.filter(assigned_users=user)
-        pack_ids = list(
-            mine.filter(pastpaper_pack_id__isnull=False)
-            .values_list("pastpaper_pack_id", flat=True)
-            .distinct()
-        )
-        if not pack_ids:
-            return mine.distinct()
-        return base.filter(
-            Q(assigned_users=user) | Q(pastpaper_pack_id__in=pack_ids)
-        ).distinct()
+        return base.filter(assigned_users=user).distinct()
 
     @action(detail=False, methods=["post"], permission_classes=[IsAuthenticated, BulkAssignAccess])
     def bulk_assign(self, request):
@@ -185,9 +176,7 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Endpoint already enforced PERM_ASSIGN_TEST_ACCESS. Do not apply per-subject ABAC here:
-        # ENGLISH_ADMIN / MATH_ADMIN would otherwise skip the other subject and pastpaper bulk
-        # assign would add nobody → students see nothing on /practice-tests.
+        # Per-subject ABAC: MATH_TEACHER / ENGLISH_TEACHER only assign rows for their subject.
 
         added_count = 0
         removed_count = 0
@@ -198,8 +187,11 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
                 pts = PracticeTest.objects.filter(pk__in=practice_test_ids, mock_exam__isnull=True)
                 practice_tests_matched = pts.count()
                 for pt in pts:
-                    pt.assigned_users.add(*users)
-                    added_count += 1
+                    if authorize(
+                        request.user, acc_const.PERM_ASSIGN_TEST_ACCESS, subject=pt.subject
+                    ):
+                        pt.assigned_users.add(*users)
+                        added_count += 1
 
             mock_ids_touched = set()
             if exam_ids:
@@ -218,10 +210,13 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
 
                 add_tests = PracticeTest.objects.filter(**add_filters)
                 for pt in add_tests:
-                    pt.assigned_users.add(*users)
-                    added_count += 1
-                    if pt.mock_exam_id:
-                        mock_ids_touched.add(pt.mock_exam_id)
+                    if authorize(
+                        request.user, acc_const.PERM_ASSIGN_TEST_ACCESS, subject=pt.subject
+                    ):
+                        pt.assigned_users.add(*users)
+                        added_count += 1
+                        if pt.mock_exam_id:
+                            mock_ids_touched.add(pt.mock_exam_id)
 
                 for me in MockExam.objects.filter(pk__in=mock_ids_touched):
                     me.assigned_users.add(*users)
@@ -237,8 +232,11 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
                         remove_filters["form_type"] = form_type
                     remove_tests = PracticeTest.objects.filter(**remove_filters)
                     for pt in remove_tests:
-                        pt.assigned_users.remove(*users)
-                        removed_count += 1
+                        if authorize(
+                            request.user, acc_const.PERM_ASSIGN_TEST_ACCESS, subject=pt.subject
+                        ):
+                            pt.assigned_users.remove(*users)
+                            removed_count += 1
 
         return Response(
             {
@@ -269,17 +267,7 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         if can_browse_standalone_practice_library(user):
             allowed = filter_practice_tests_for_user(user, base).distinct()
         else:
-            mine = base.filter(assigned_users=user)
-            pack_ids = list(
-                mine.filter(pastpaper_pack_id__isnull=False)
-                .values_list("pastpaper_pack_id", flat=True)
-                .distinct()
-            )
-            allowed = (
-                base.filter(Q(assigned_users=user) | Q(pastpaper_pack_id__in=pack_ids)).distinct()
-                if pack_ids
-                else mine.distinct()
-            )
+            allowed = base.filter(assigned_users=user).distinct()
 
         test = get_object_or_404(allowed, id=test_id)
         
@@ -473,13 +461,42 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
         from django.contrib.auth import get_user_model
         User = get_user_model()
         users = list(User.objects.filter(id__in=request.data.get('user_ids', [])))
-        
-        exam.assigned_users.set(users)
-        for test in exam.tests.all():
-            test.assigned_users.set(users)
-        portal = PortalMockExam.objects.filter(mock_exam=exam).first()
-        if portal:
-            portal.assigned_users.set(users)
+
+        tests = list(exam.tests.all())
+        can_all_sections = tests and all(
+            authorize(request.user, acc_const.PERM_ASSIGN_TEST_ACCESS, subject=t.subject)
+            for t in tests
+        )
+
+        if can_all_sections or not tests:
+            exam.assigned_users.set(users)
+            for test in tests:
+                test.assigned_users.set(users)
+            portal = PortalMockExam.objects.filter(mock_exam=exam).first()
+            if portal:
+                portal.assigned_users.set(users)
+        else:
+            touched = False
+            for test in tests:
+                if authorize(
+                    request.user, acc_const.PERM_ASSIGN_TEST_ACCESS, subject=test.subject
+                ):
+                    test.assigned_users.set(users)
+                    touched = True
+            if touched:
+                exam.assigned_users.add(*users)
+                portal, _ = PortalMockExam.objects.get_or_create(
+                    mock_exam=exam,
+                    defaults={"is_active": bool(exam.is_published)},
+                )
+                portal.assigned_users.add(*users)
+            elif users:
+                return Response(
+                    {
+                        "detail": "You cannot assign student access for any section of this mock with your permissions."
+                    },
+                    status=status.HTTP_403_FORBIDDEN,
+                )
 
         return Response({'status': 'assigned', 'users_count': len(users)})
 

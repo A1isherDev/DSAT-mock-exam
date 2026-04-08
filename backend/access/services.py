@@ -146,7 +146,7 @@ def can_create_mock_exam_kind(user, kind: str) -> bool:
 def authorize(user, permission_codename: str, *, subject: Optional[str] = None) -> bool:
     """
     1) Permission must be present (or wildcard).
-    2) ABAC: ENGLISH_ADMIN / MATH_ADMIN subject constraints for test operations & scoped views.
+    2) ABAC: ENGLISH_TEACHER / MATH_TEACHER subject constraints for test ops & scoped views.
     """
     if not user or not getattr(user, "is_authenticated", False):
         return False
@@ -158,18 +158,19 @@ def authorize(user, permission_codename: str, *, subject: Optional[str] = None) 
         return False
 
     rc = _role_code(user)
-    if rc == constants.ROLE_ENGLISH_ADMIN:
-        return _english_admin_allows(permission_codename, subject)
-    if rc == constants.ROLE_MATH_ADMIN:
-        return _math_admin_allows(permission_codename, subject)
+    if rc == constants.ROLE_ENGLISH_TEACHER:
+        return _english_teacher_subject_allows(permission_codename, subject)
+    if rc == constants.ROLE_MATH_TEACHER:
+        return _math_teacher_subject_allows(permission_codename, subject)
     return True
 
 
-def _english_admin_allows(permission_codename: str, subject: Optional[str]) -> bool:
+def _english_teacher_subject_allows(permission_codename: str, subject: Optional[str]) -> bool:
     if permission_codename in (
         constants.PERM_VIEW_ENGLISH_TESTS,
         constants.PERM_CREATE_TEST,
         constants.PERM_EDIT_TEST,
+        constants.PERM_DELETE_TEST,
         constants.PERM_ASSIGN_TEST_ACCESS,
     ):
         if subject is None:
@@ -178,11 +179,12 @@ def _english_admin_allows(permission_codename: str, subject: Optional[str]) -> b
     return True
 
 
-def _math_admin_allows(permission_codename: str, subject: Optional[str]) -> bool:
+def _math_teacher_subject_allows(permission_codename: str, subject: Optional[str]) -> bool:
     if permission_codename in (
         constants.PERM_VIEW_MATH_TESTS,
         constants.PERM_CREATE_TEST,
         constants.PERM_EDIT_TEST,
+        constants.PERM_DELETE_TEST,
         constants.PERM_ASSIGN_TEST_ACCESS,
     ):
         if subject is None:
@@ -196,9 +198,9 @@ def can_browse_standalone_practice_library(user) -> bool:
     Users who may see the full pastpaper / standalone library on the student portal
     (/api/exams/...), not only rows assigned to them.
 
-    Intentionally excludes ``edit_test`` alone: TEACHER has edit_test for midterm/class
-    flows but must not see every pastpaper card on the student Pastpaper page—only tests
-    assigned to them (same as students). Authors/admins use view_*/create_test/delete_test
+    Intentionally excludes ``edit_test`` alone: subject teachers may have edit_test for
+    midterm/class flows but must not see every pastpaper card on the student Pastpaper
+    page—only tests assigned to them (same as students). Authors/admins use view_*/create_test/delete_test
     or view_all_tests for library-wide browse.
     """
     perms = get_effective_permission_codenames(user)

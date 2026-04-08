@@ -12,6 +12,7 @@ import {
     canCreateFullMockSat,
     canCreateMidtermMock,
     canUseGlobalQuestionsTab,
+    defaultBulkPastpaperSubjectScope,
 } from '@/lib/permissions';
 import {
     buildHomeworkPastpaperCards,
@@ -265,12 +266,11 @@ function formatPastpaperSectionForAssign(t: any): string {
 
 const STAFF_ROLE_OPTIONS: { value: string; label: string }[] = [
     { value: 'STUDENT', label: 'Student' },
-    { value: 'TEACHER', label: 'Teacher (classes, assign tests, midterms)' },
+    { value: 'ENGLISH_TEACHER', label: 'English teacher (LMS admin, R&W scope)' },
+    { value: 'MATH_TEACHER', label: 'Math teacher (LMS admin, Math scope)' },
     { value: 'ADMIN', label: 'Administrator' },
     { value: 'SUPER_ADMIN', label: 'Super administrator' },
     { value: 'TEST_ADMIN', label: 'Test author (pastpapers & questions)' },
-    { value: 'ENGLISH_ADMIN', label: 'English / R&W tests only' },
-    { value: 'MATH_ADMIN', label: 'Math tests only' },
 ];
 
 export default function AdminPage() {
@@ -1503,7 +1503,7 @@ export default function AdminPage() {
         setBulkAssignExams([]);
         setBulkAssignPracticeTests([]);
         setBulkAssignPastpaperPackIds([]);
-        setBulkPastpaperSubjectScope('BOTH');
+        setBulkPastpaperSubjectScope(defaultBulkPastpaperSubjectScope());
         setBulkAssignUsers([]);
         setBulkMockSearch('');
         setBulkPastpaperSearch('');
@@ -1642,7 +1642,8 @@ export default function AdminPage() {
             can('create_mock_sat') ||
             can('create_midterm_mock');
         const filtered = all.filter((item) => {
-            if (item.key === 'users' || item.key === 'examdates') return can('manage_users');
+            if (item.key === 'examdates') return can('manage_users');
+            if (item.key === 'users') return can('manage_users') || can('assign_test_access');
             if (item.key === 'questions') return canUseGlobalQuestionsTab();
             if (item.key === 'mocks') {
                 return (
@@ -3597,10 +3598,22 @@ export default function AdminPage() {
                         {activeTab === 'users' && (
                             <div className="space-y-6 max-w-5xl">
                                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                                    <h2 className="text-xl font-bold text-slate-900">User Management</h2>
-                                    <button className={BTN_PRIMARY} onClick={() => { setEditingUser({}); setUserForm({ first_name: '', last_name: '', username: '', email: '', phone_number: '', password: '', role: 'STUDENT', is_active: true, is_frozen: false }); }}>
-                                        <Plus className="w-4 h-4" /> New User
-                                    </button>
+                                    <div>
+                                        <h2 className="text-xl font-bold text-slate-900">
+                                            {can('manage_users') ? 'User Management' : 'Students'}
+                                        </h2>
+                                        {!can('manage_users') && can('assign_test_access') ? (
+                                            <p className="text-xs text-slate-500 mt-1 max-w-xl">
+                                                Student list for picking recipients. Open <strong>Bulk assign pastpapers</strong> or{' '}
+                                                <strong>Bulk assign mocks</strong> from the Pastpaper tests or Mock exams tab.
+                                            </p>
+                                        ) : null}
+                                    </div>
+                                    {can('manage_users') ? (
+                                        <button className={BTN_PRIMARY} onClick={() => { setEditingUser({}); setUserForm({ first_name: '', last_name: '', username: '', email: '', phone_number: '', password: '', role: 'STUDENT', is_active: true, is_frozen: false }); }}>
+                                            <Plus className="w-4 h-4" /> New User
+                                        </button>
+                                    ) : null}
                                 </div>
                                 <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-3">
                                     <div className="flex items-center gap-2 text-xs font-extrabold text-slate-500 uppercase tracking-widest">
@@ -3668,7 +3681,7 @@ export default function AdminPage() {
                                         )}
                                     </p>
                                 </div>
-                                {selectedUserIds.length > 0 && (
+                                {can('manage_users') && selectedUserIds.length > 0 && (
                                     <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-indigo-200 bg-indigo-50/60 px-4 py-3">
                                         <span className="text-sm font-bold text-indigo-900">
                                             {selectedUserIds.length} selected
@@ -3708,7 +3721,7 @@ export default function AdminPage() {
                                         </div>
                                     </div>
                                 )}
-                                {editingUser !== null && (
+                                {can('manage_users') && editingUser !== null && (
                                     <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm grid grid-cols-2 gap-4">
                                         <Field label="First Name"><input className={INPUT} value={userForm.first_name || ''} onChange={e => setUserForm({ ...userForm, first_name: e.target.value })} /></Field>
                                         <Field label="Last Name"><input className={INPUT} value={userForm.last_name || ''} onChange={e => setUserForm({ ...userForm, last_name: e.target.value })} /></Field>
@@ -3750,6 +3763,7 @@ export default function AdminPage() {
                                     </div>
                                 )}
                                 <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+                                    {can('manage_users') ? (
                                     <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-100 bg-slate-50/80">
                                         <input
                                             type="checkbox"
@@ -3763,6 +3777,7 @@ export default function AdminPage() {
                                             Select visible
                                         </span>
                                     </div>
+                                    ) : null}
                                     {filteredUsersAdmin.length === 0 ? (
                                         <div className="p-10 text-center text-sm text-slate-500">
                                             No users match your filters.
@@ -3774,12 +3789,14 @@ export default function AdminPage() {
                                                 className="p-4 border-b last:border-0 flex items-center justify-between gap-3 hover:bg-slate-50"
                                             >
                                                 <div className="flex items-center gap-3 min-w-0 flex-1">
+                                                    {can('manage_users') ? (
                                                     <input
                                                         type="checkbox"
                                                         className="w-4 h-4 shrink-0 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                                                         checked={selectedUserIds.includes(user.id)}
                                                         onChange={() => toggleUserRowSelected(user.id)}
                                                     />
+                                                    ) : null}
                                                     <div className="w-10 h-10 shrink-0 bg-slate-100 rounded-full flex items-center justify-center font-bold text-slate-500">{user.first_name?.[0]}{user.last_name?.[0]}</div>
                                                     <div className="min-w-0">
                                                         <p className="font-bold text-sm text-slate-900">
@@ -3799,6 +3816,7 @@ export default function AdminPage() {
                                                         </p>
                                                     </div>
                                                 </div>
+                                                {can('manage_users') ? (
                                                 <div className="flex items-center gap-2 shrink-0">
                                                     <button
                                                         type="button"
@@ -3842,6 +3860,7 @@ export default function AdminPage() {
                                                         <Trash2 className="w-3.5 h-3.5" />
                                                     </button>
                                                 </div>
+                                                ) : null}
                                             </div>
                                         ))
                                     )}

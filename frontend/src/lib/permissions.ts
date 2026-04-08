@@ -40,7 +40,7 @@ export function canManageMockExamShell(): boolean {
 }
 
 /**
- * Subject-scoped visibility for tests (mirrors backend ABAC for ENGLISH_ADMIN / MATH_ADMIN).
+ * Subject-scoped visibility for tests (mirrors backend ABAC for ENGLISH_TEACHER / MATH_TEACHER).
  * Platform English tests use subject READING_WRITING.
  */
 export function canAbacTestSubject(subject: string): boolean {
@@ -51,6 +51,16 @@ export function canAbacTestSubject(subject: string): boolean {
   if (subject === "READING_WRITING") return hasEng;
   if (subject === "MATH") return hasMath;
   return false;
+}
+
+/** Default pastpaper bulk-assign subject filter: scoped admins start on their subject only. */
+export function defaultBulkPastpaperSubjectScope(): "BOTH" | "MATH" | "READING_WRITING" {
+  if (can("*") || can("view_all_tests")) return "BOTH";
+  const hasEng = can("view_english_tests");
+  const hasMath = can("view_math_tests");
+  if (hasMath && !hasEng) return "MATH";
+  if (hasEng && !hasMath) return "READING_WRITING";
+  return "BOTH";
 }
 
 export function canCreateTestForSubject(subject: "READING_WRITING" | "MATH"): boolean {

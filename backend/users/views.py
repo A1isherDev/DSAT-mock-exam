@@ -8,8 +8,9 @@ from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.db.models import Q
 from .models import ExamDateOption, User
+from access import constants as acc_const
 from access.permissions import HasManageUsers, HasManageUsersOrAssignTestAccess
-from access.services import get_effective_permission_codenames
+from access.services import authorize, get_effective_permission_codenames
 
 from .serializers import (
     ExamDateOptionPublicSerializer,
@@ -64,7 +65,16 @@ class ThrottledTokenObtainPairView(TokenObtainPairView):
 class UserListView(generics.ListAPIView):
     serializer_class = UserSerializer
     permission_classes = [HasManageUsersOrAssignTestAccess]
-    queryset = User.objects.select_related("system_role").all().order_by("-date_joined")
+
+    def get_queryset(self):
+        qs = User.objects.select_related("system_role").all().order_by("-date_joined")
+        user = self.request.user
+        # Full user directory: only user managers. Teachers with assign_test_access get students only (bulk assign).
+        if authorize(user, acc_const.PERM_MANAGE_USERS):
+            return qs
+        if authorize(user, acc_const.PERM_ASSIGN_TEST_ACCESS):
+            return qs.filter(system_role__code=acc_const.ROLE_STUDENT)
+        return qs.none()
 
 class UserCreateView(generics.CreateAPIView):
     serializer_class = UserSerializer

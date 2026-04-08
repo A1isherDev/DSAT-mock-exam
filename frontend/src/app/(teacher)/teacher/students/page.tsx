@@ -5,6 +5,7 @@ import Link from "next/link";
 import { adminApi, classesApi, examsApi } from "@/lib/api";
 import { ClassroomButton } from "@/components/classroom/Button";
 import { ClassroomModal } from "@/components/classroom/Modal";
+import { canAbacTestSubject } from "@/lib/permissions";
 import { isTimedMockSectionRow, singleDisplayTitle, subjectLabel } from "@/lib/practiceTestCards";
 import { Users } from "lucide-react";
 
@@ -73,7 +74,9 @@ export default function TeacherStudentsPage() {
         const list = await examsApi.getPracticeTests();
         const raw = Array.isArray(list) ? list : [];
         // Teacher access UI: standalone practice library only (exclude timed mock section rows).
-        const standalone = raw.filter((t) => !isTimedMockSectionRow(t));
+        const standalone = raw.filter(
+          (t) => !isTimedMockSectionRow(t) && canAbacTestSubject(t.subject),
+        );
         if (!cancelled) setTests(standalone);
       } catch (e: any) {
         if (!cancelled) setGrantMsg(e?.response?.data?.detail || "Could not load practice tests.");

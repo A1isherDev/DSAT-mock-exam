@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Cookies from 'js-cookie';
+import { getPermissionList } from '@/lib/permissions';
 
 export default function AuthGuard({ children, isOptional = false, adminOnly = false }: { children: React.ReactNode; isOptional?: boolean; adminOnly?: boolean }) {
     const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -11,13 +12,16 @@ export default function AuthGuard({ children, isOptional = false, adminOnly = fa
     useEffect(() => {
         const token = Cookies.get('access_token');
         const isAdmin = Cookies.get('is_admin') === 'true';
+        const perms = getPermissionList();
+        const hasLmsAdminPanel =
+            perms.includes('*') || perms.includes('access_lms_admin');
         const isFrozen = Cookies.get('is_frozen') === 'true';
 
         if (!token && !isOptional) {
             router.push('/login');
         } else if (isFrozen && !isAdmin && !isOptional) {
             router.push('/frozen');
-        } else if (adminOnly && !isAdmin && !isOptional) {
+        } else if (adminOnly && !isAdmin && !hasLmsAdminPanel && !isOptional) {
             router.push('/'); // Redirect non-admins to home
         } else {
             setIsAuthenticated(!!token);
