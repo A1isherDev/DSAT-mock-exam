@@ -5,7 +5,7 @@ export type { ClassroomButtonProps, ClassroomButtonSize, ClassroomButtonVariant 
 export { ClassroomCard } from "./Card";
 export { ClassroomEmptyState } from "./EmptyState";
 export { ClassroomField } from "./Field";
-export { crInputClass, crInputInvalidClass, crSelectClass } from "./inputStyles";
+export { crInputClass, crInputInvalidClass, crSelectClass, crTextareaClass } from "./inputStyles";
 export { ClassroomModal } from "./Modal";
 export { ClassroomPageHeader } from "./PageHeader";
 export {

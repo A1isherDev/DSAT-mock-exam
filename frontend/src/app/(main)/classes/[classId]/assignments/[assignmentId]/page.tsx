@@ -14,6 +14,7 @@ import {
   ClassroomPageHeader,
   ClassroomSkeleton,
   crInputClass,
+  crTextareaClass,
 } from "@/components/classroom";
 import { ArrowLeft, ClipboardCheck, ExternalLink, FileQuestion, Save, Send, Trophy } from "lucide-react";
 
@@ -229,30 +230,83 @@ export default function AssignmentDetailPage() {
 
               {!isClassAdmin && (
                 <ClassroomCard padding="md">
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                    Your submission
-                  </p>
-                  <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <ClassroomField label="Attempt ID (optional)" htmlFor="attempt-id" hint="If you finished a test, link its attempt ID.">
-                      <input
-                        id="attempt-id"
-                        value={attemptId}
-                        onChange={(e) => setAttemptId(e.target.value)}
-                        placeholder="e.g. 123"
-                        className={`${crInputClass} font-semibold`}
-                      />
-                    </ClassroomField>
-                    <ClassroomField label="Response" htmlFor="response-txt">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        Your submission
+                      </p>
+                      <h3 className="mt-1 text-base font-bold text-slate-900 dark:text-slate-50">Turn in your work</h3>
+                      <p className="mt-1 max-w-2xl text-sm text-slate-600 dark:text-slate-300">
+                        Write your answer in the box below. You can <strong>save a draft</strong> and come back, or press{" "}
+                        <strong>Submit</strong> when you are finished. If your teacher asked for a test attempt, add the ID in
+                        the field — otherwise you can leave it blank.
+                      </p>
+                    </div>
+                  </div>
+
+                  <ol className="mt-5 space-y-1 text-sm text-slate-600 dark:text-slate-300">
+                    <li className="flex gap-2">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-200">
+                        1
+                      </span>
+                      <span>Read the instructions and any attached files or practice links above.</span>
+                    </li>
+                    <li className="flex gap-2">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-200">
+                        2
+                      </span>
+                      <span>
+                        Type your response clearly (use paragraphs; you can paste from a document). Aim to answer the
+                        question directly and give examples or reasoning where it helps.
+                      </span>
+                    </li>
+                    <li className="flex gap-2">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-200">
+                        3
+                      </span>
+                      <span>Optional: upload a file or add your test attempt ID, then save or submit.</span>
+                    </li>
+                  </ol>
+
+                  <div className="mt-6 rounded-2xl border border-slate-200/95 bg-slate-50/90 p-4 shadow-inner dark:border-slate-600 dark:bg-slate-900/40">
+                    <ClassroomField
+                      label="Your written response"
+                      htmlFor="response-txt"
+                      hint="This box has a solid background so your typing is always easy to read."
+                    >
                       <textarea
                         id="response-txt"
                         value={responseText}
                         onChange={(e) => setResponseText(e.target.value)}
-                        placeholder="Write your response…"
-                        rows={5}
-                        className={crInputClass}
+                        placeholder={"Start typing here.\n\nTip: main idea → evidence → short conclusion."}
+                        rows={10}
+                        spellCheck
+                        className={crTextareaClass}
+                        aria-describedby="response-txt-counter"
+                      />
+                      <p id="response-txt-counter" className="mt-2 text-right text-xs font-medium text-slate-500 dark:text-slate-400">
+                        {responseText.length.toLocaleString()} characters
+                      </p>
+                    </ClassroomField>
+                  </div>
+
+                  <div className="mt-6">
+                    <ClassroomField
+                      label="Test attempt ID (only if your teacher asked)"
+                      htmlFor="attempt-id"
+                      hint="After you finish a timed mock or practice test, you may see an attempt number — paste it here if required."
+                    >
+                      <input
+                        id="attempt-id"
+                        value={attemptId}
+                        onChange={(e) => setAttemptId(e.target.value)}
+                        placeholder="e.g. 12345 (leave empty if not needed)"
+                        autoComplete="off"
+                        className={`${crInputClass} font-semibold tabular-nums`}
                       />
                     </ClassroomField>
                   </div>
+
                   <ClassroomField label="Upload file (optional)" htmlFor="sub-file" className="mt-4">
                     <input
                       id="sub-file"
@@ -275,15 +329,22 @@ export default function AssignmentDetailPage() {
                     ) : null}
                   </ClassroomField>
 
-                  <div className="mt-6 flex flex-wrap gap-2">
-                    <ClassroomButton variant="secondary" size="md" onClick={() => submit(false)} disabled={saving}>
-                      <Save className="h-4 w-4" />
-                      Save draft
-                    </ClassroomButton>
-                    <ClassroomButton variant="primary" size="md" onClick={() => submit(true)} disabled={saving}>
-                      <Send className="h-4 w-4" />
-                      Submit
-                    </ClassroomButton>
+                  <div className="mt-6 flex flex-col gap-3 rounded-xl border border-dashed border-slate-200/90 bg-white/60 px-4 py-3 dark:border-slate-600 dark:bg-slate-950/30">
+                    <p className="text-xs text-slate-600 dark:text-slate-400">
+                      <strong className="text-slate-800 dark:text-slate-200">Save draft</strong> keeps your work for later.
+                      <strong className="ml-1 text-slate-800 dark:text-slate-200">Submit</strong> sends it to your teacher
+                      (you can still save again after if allowed).
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <ClassroomButton variant="secondary" size="md" onClick={() => submit(false)} disabled={saving}>
+                        <Save className="h-4 w-4" />
+                        Save draft
+                      </ClassroomButton>
+                      <ClassroomButton variant="primary" size="md" onClick={() => submit(true)} disabled={saving}>
+                        <Send className="h-4 w-4" />
+                        Submit to teacher
+                      </ClassroomButton>
+                    </div>
                   </div>
 
                   {mySubmission?.grade ? (
