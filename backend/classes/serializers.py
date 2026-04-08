@@ -447,7 +447,17 @@ class SubmissionSerializer(serializers.ModelSerializer):
 class SubmitSerializer(serializers.Serializer):
     text_response = serializers.CharField(required=False, allow_blank=True, max_length=100_000)
     upload_file = serializers.FileField(required=False, allow_null=True)
-    attempt_id = serializers.IntegerField(required=False, allow_null=True)
+    # Accept "" from multipart forms to clear the linked attempt; integers still allowed.
+    attempt_id = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+    def validate_attempt_id(self, value):
+        if value in (None, ""):
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            raise serializers.ValidationError("Invalid attempt id.")
+
     submit = serializers.BooleanField(required=False, default=True)
 
 

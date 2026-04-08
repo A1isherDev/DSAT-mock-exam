@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { classesApi } from "@/lib/api";
+import { classesApi, examsApi } from "@/lib/api";
 import { subjectLabel } from "@/lib/practiceTestCards";
 import {
   ClassroomAlert,
@@ -14,9 +14,36 @@ import {
   ClassroomPageHeader,
   ClassroomSkeleton,
   crInputClass,
+  crSelectClass,
   crTextareaClass,
 } from "@/components/classroom";
-import { ArrowLeft, ClipboardCheck, ExternalLink, FileQuestion, Save, Send, Trophy } from "lucide-react";
+import { ArrowLeft, ClipboardCheck, ExternalLink, FileQuestion, RefreshCw, Save, Send, Trophy } from "lucide-react";
+
+type BundleRow = { id: number; subject: string; title?: string };
+
+function submissionAttemptPk(sub: { attempt?: unknown } | null | undefined): number | null {
+  if (sub == null || sub.attempt == null) return null;
+  const a = sub.attempt as { id?: unknown } | number;
+  if (typeof a === "object" && a !== null && "id" in a) {
+    const n = Number((a as { id: unknown }).id);
+    return Number.isFinite(n) ? n : null;
+  }
+  const n = Number(a);
+  return Number.isFinite(n) ? n : null;
+}
+
+function formatAttemptOption(a: { id: number; practice_test?: number; practice_test_details?: { subject?: string; title?: string }; is_completed?: boolean; score?: number | null; submitted_at?: string | null; started_at?: string | null }, bundleTests: BundleRow[]): string {
+  const ptId = Number(a.practice_test);
+  const bundle = bundleTests.find((t) => Number(t.id) === ptId);
+  const details = a.practice_test_details || {};
+  const title = (bundle?.title || details.title || "").trim();
+  const head = title || `Section #${ptId}`;
+  const sub = subjectLabel((details.subject || bundle?.subject || "READING_WRITING") as string);
+  const status = a.is_completed
+    ? `Completed${a.score != null ? ` · score ${a.score}` : ""}`
+    : "In progress";
+  return `#${a.id} · ${sub} · ${head} · ${status}`;
+}
 
 export default function AssignmentDetailPage() {
   const router = useRouter();
@@ -32,7 +59,10 @@ export default function AssignmentDetailPage() {
   const [mySubmission, setMySubmission] = useState<any>(null);
   const [responseText, setResponseText] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
-  const [attemptId, setAttemptId] = useState<string>("");
+  const [selectedAttemptId, setSelectedAttemptId] = useState<number | null>(null);
+  const [myAttempts, setMyAttempts] = useState<any[]>([]);
+  const [attemptsLoading, setAttemptsLoading] = useState(false);
+  const [attemptSearch, setAttemptSearch] = useState("");
   const [saving, setSaving] = useState(false);
 
   const [submissions, setSubmissions] = useState<any[]>([]);
@@ -52,13 +82,23 @@ export default function AssignmentDetailPage() {
       const sub = mine && typeof mine === "object" && "id" in mine && mine.id != null ? mine : null;
       setMySubmission(sub);
       setResponseText(sub?.text_response || "");
-      setAttemptId(sub?.attempt != null ? String(sub.attempt) : "");
+      setSelectedAttemptId(submissionAttemptPk(sub));
 
       if (cls?.my_role === "ADMIN") {
+        setMyAttempts([]);
         const subs = await classesApi.listSubmissions(cid, aid);
         setSubmissions(Array.isArray(subs) ? subs : []);
       } else {
         setSubmissions([]);
+        setAttemptsLoading(true);
+        try {
+          const att = await examsApi.getAttempts();
+          setMyAttempts(Array.isArray(att) ? att : []);
+        } catch {
+          setMyAttempts([]);
+        } finally {
+          setAttemptsLoading(false);
+        }
       }
     } catch (e: unknown) {
       const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
@@ -82,10 +122,11 @@ export default function AssignmentDetailPage() {
       const fd = new FormData();
       fd.append("text_response", responseText);
       fd.append("submit", finalSubmit ? "true" : "false");
-      if (attemptId.trim()) fd.append("attempt_id", String(Number(attemptId.trim())));
+      fd.append("attempt_id", selectedAttemptId != null ? String(selectedAttemptId) : "");
       if (uploadFile) fd.append("upload_file", uploadFile);
       const res = await classesApi.submitAssignment(cid, aid, fd as any);
       setMySubmission(res);
+      setSelectedAttemptId(submissionAttemptPk(res));
     } catch (e: unknown) {
       const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       setError(typeof d === "string" ? d : "Could not submit.");
@@ -106,11 +147,55 @@ export default function AssignmentDetailPage() {
       ? [assignment.attachment_file_url]
       : [];
 
-  const bundleTests: { id: number; subject: string; title?: string }[] = Array.isArray(assignment?.practice_bundle_tests)
+  const bundleTests: BundleRow[] = Array.isArray(assignment?.practice_bundle_tests)
     ? assignment.practice_bundle_tests
     : [];
   const hasPastpaperBundle = bundleTests.length > 0;
   const legacyPracticeTestId = assignment?.practice_test;
+
+  const allowedPracticeTestIdSet = useMemo(() => {
+    if (!bundleTests.length) return null;
+    return new Set(bundleTests.map((t) => Number(t.id)).filter(Number.isFinite));
+  }, [bundleTests]);
+
+  const displayAttempts = useMemo(() => {
+    const q = attemptSearch.trim().toLowerCase();
+    let list = myAttempts;
+    if (allowedPracticeTestIdSet) {
+      list = list.filter((a) => allowedPracticeTestIdSet.has(Number(a.practice_test)));
+    }
+    if (q) {
+      list = list.filter((a) => {
+        const blob = `${formatAttemptOption(a, bundleTests)} ${a.id}`.toLowerCase();
+        return blob.includes(q);
+      });
+    }
+    list = [...list].sort((a, b) => {
+      if (!!a.is_completed !== !!b.is_completed) return a.is_completed ? -1 : 1;
+      const ta = new Date(String(a.submitted_at || a.started_at || "")).getTime() || 0;
+      const tb = new Date(String(b.submitted_at || b.started_at || "")).getTime() || 0;
+      if (tb !== ta) return tb - ta;
+      return Number(b.id) - Number(a.id);
+    });
+    if (selectedAttemptId != null && !list.some((a) => Number(a.id) === selectedAttemptId)) {
+      const one = myAttempts.find((a) => Number(a.id) === selectedAttemptId);
+      if (one) return [one, ...list];
+    }
+    return list;
+  }, [myAttempts, allowedPracticeTestIdSet, attemptSearch, bundleTests, selectedAttemptId]);
+
+  const refetchAttempts = useCallback(async () => {
+    if (isClassAdmin) return;
+    setAttemptsLoading(true);
+    try {
+      const att = await examsApi.getAttempts();
+      setMyAttempts(Array.isArray(att) ? att : []);
+    } catch {
+      setMyAttempts([]);
+    } finally {
+      setAttemptsLoading(false);
+    }
+  }, [isClassAdmin]);
 
   const gradeOne = async (submissionId: number) => {
     const g = grading[String(submissionId)] || {};
@@ -264,7 +349,7 @@ export default function AssignmentDetailPage() {
                       <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-200">
                         3
                       </span>
-                      <span>Optional: upload a file or add your test attempt ID, then save or submit.</span>
+                      <span>Optional: upload a file or link your test attempt below, then save or submit.</span>
                     </li>
                   </ol>
 
@@ -290,20 +375,68 @@ export default function AssignmentDetailPage() {
                     </ClassroomField>
                   </div>
 
-                  <div className="mt-6">
+                  <div className="mt-6 rounded-2xl border border-slate-200/95 bg-white/80 p-4 dark:border-slate-600 dark:bg-slate-950/40">
                     <ClassroomField
-                      label="Test attempt ID (only if your teacher asked)"
-                      htmlFor="attempt-id"
-                      hint="After you finish a timed mock or practice test, you may see an attempt number — paste it here if required."
+                      label="Link a test attempt (if your teacher asked)"
+                      htmlFor="attempt-select"
+                      hint={
+                        allowedPracticeTestIdSet
+                          ? "Only attempts for the practice sections in this assignment are listed. Finish the test, then refresh the list."
+                          : "Shows your recent attempts for any practice or mock section. Choose one if your teacher wants proof of completion."
+                      }
                     >
-                      <input
-                        id="attempt-id"
-                        value={attemptId}
-                        onChange={(e) => setAttemptId(e.target.value)}
-                        placeholder="e.g. 12345 (leave empty if not needed)"
-                        autoComplete="off"
-                        className={`${crInputClass} font-semibold tabular-nums`}
-                      />
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
+                        <input
+                          id="attempt-search"
+                          type="search"
+                          value={attemptSearch}
+                          onChange={(e) => setAttemptSearch(e.target.value)}
+                          placeholder="Search by #id, subject, or title…"
+                          autoComplete="off"
+                          className={`${crInputClass} sm:min-w-[200px] sm:flex-1`}
+                          aria-label="Filter test attempts"
+                        />
+                        <ClassroomButton
+                          type="button"
+                          variant="secondary"
+                          size="md"
+                          className="shrink-0"
+                          disabled={attemptsLoading}
+                          onClick={() => void refetchAttempts()}
+                        >
+                          <RefreshCw className={`h-4 w-4 ${attemptsLoading ? "animate-spin" : ""}`} />
+                          Refresh list
+                        </ClassroomButton>
+                      </div>
+                      <select
+                        id="attempt-select"
+                        className={`${crSelectClass} mt-2 min-h-[2.75rem]`}
+                        value={selectedAttemptId != null ? String(selectedAttemptId) : ""}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setSelectedAttemptId(v === "" ? null : Number(v));
+                        }}
+                        disabled={attemptsLoading && myAttempts.length === 0}
+                      >
+                        <option value="">Don&apos;t link a test attempt</option>
+                        {displayAttempts.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {formatAttemptOption(a, bundleTests)}
+                          </option>
+                        ))}
+                      </select>
+                      {!attemptsLoading && allowedPracticeTestIdSet && displayAttempts.length === 0 ? (
+                        <p className="mt-2 text-xs font-medium text-amber-800 dark:text-amber-200">
+                          No attempts found for this assignment&apos;s tests yet. Open the practice or mock from the buttons
+                          above, complete it, then tap <strong>Refresh list</strong>.
+                        </p>
+                      ) : null}
+                      {!attemptsLoading && !allowedPracticeTestIdSet && myAttempts.length === 0 ? (
+                        <p className="mt-2 text-xs text-slate-600 dark:text-slate-400">
+                          No attempts on your account yet. When you start a practice or mock test, it will appear here after you
+                          refresh.
+                        </p>
+                      ) : null}
                     </ClassroomField>
                   </div>
 
