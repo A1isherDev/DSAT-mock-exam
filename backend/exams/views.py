@@ -264,7 +264,24 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
 
     def create(self, request, *args, **kwargs):
         test_id = request.data.get("practice_test")
-        test = get_object_or_404(PracticeTest, id=test_id)
+        user = request.user
+        base = PracticeTest.objects.all().select_related("mock_exam", "pastpaper_pack")
+        if can_browse_standalone_practice_library(user):
+            allowed = filter_practice_tests_for_user(user, base).distinct()
+        else:
+            mine = base.filter(assigned_users=user)
+            pack_ids = list(
+                mine.filter(pastpaper_pack_id__isnull=False)
+                .values_list("pastpaper_pack_id", flat=True)
+                .distinct()
+            )
+            allowed = (
+                base.filter(Q(assigned_users=user) | Q(pastpaper_pack_id__in=pack_ids)).distinct()
+                if pack_ids
+                else mine.distinct()
+            )
+
+        test = get_object_or_404(allowed, id=test_id)
         
         # Get or create attempt (only reuse INCOMPLETE attempts)
         attempt = TestAttempt.objects.filter(
