@@ -26,22 +26,22 @@ class HasManageUsers(BasePermission):
 
 
 class HasManageUsersOrAssignTestAccess(BasePermission):
-    """List users for admin UI: full user managers or staff who assign test access (bulk assign)."""
+    """List users for admin UI: user managers or scoped staff who can assign access."""
 
     def has_permission(self, request, view):
         return authorize(request.user, constants.PERM_MANAGE_USERS) or authorize(
-            request.user, constants.PERM_ASSIGN_TEST_ACCESS
+            request.user, constants.PERM_ASSIGN_ACCESS
         )
 
 
 class HasManageRoles(BasePermission):
     def has_permission(self, request, view):
-        return authorize(request.user, constants.PERM_MANAGE_ROLES)
+        return authorize(request.user, constants.PERM_ASSIGN_ACCESS)
 
 
 class HasManageClassrooms(BasePermission):
     def has_permission(self, request, view):
-        return authorize(request.user, constants.PERM_MANAGE_CLASSROOMS)
+        return authorize(request.user, constants.PERM_CREATE_CLASSROOM)
 
 
 class RequiresSubmitTest(BasePermission):

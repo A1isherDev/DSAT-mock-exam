@@ -31,6 +31,7 @@ api.interceptors.response.use(
             Cookies.remove('is_frozen');
             Cookies.remove('role');
             Cookies.remove('lms_permissions');
+            Cookies.remove('lms_scope');
             if (typeof window !== 'undefined') {
                 window.location.href = '/login';
             }
@@ -87,9 +88,12 @@ export const authApi = {
         Cookies.set('refresh_token', response.data.refresh, cookieOptions);
         Cookies.set('is_admin', response.data.is_admin ? 'true' : 'false', cookieOptions);
         Cookies.set('is_frozen', response.data.is_frozen ? 'true' : 'false', cookieOptions);
-        Cookies.set('role', response.data.role || 'STUDENT', cookieOptions);
+        Cookies.set('role', response.data.role || 'student', cookieOptions);
         if (Array.isArray(response.data.permissions)) {
             Cookies.set('lms_permissions', JSON.stringify(response.data.permissions), cookieOptions);
+        }
+        if (Array.isArray(response.data.scope)) {
+            Cookies.set('lms_scope', JSON.stringify(response.data.scope), cookieOptions);
         }
         return response.data;
     },
@@ -104,9 +108,12 @@ export const authApi = {
         Cookies.set('refresh_token', response.data.refresh, cookieOptions);
         Cookies.set('is_admin', response.data.is_admin ? 'true' : 'false', cookieOptions);
         Cookies.set('is_frozen', response.data.is_frozen ? 'true' : 'false', cookieOptions);
-        Cookies.set('role', response.data.role || 'STUDENT', cookieOptions);
+        Cookies.set('role', response.data.role || 'student', cookieOptions);
         if (Array.isArray(response.data.permissions)) {
             Cookies.set('lms_permissions', JSON.stringify(response.data.permissions), cookieOptions);
+        }
+        if (Array.isArray(response.data.scope)) {
+            Cookies.set('lms_scope', JSON.stringify(response.data.scope), cookieOptions);
         }
         return response.data;
     },
@@ -128,9 +135,12 @@ export const authApi = {
         Cookies.set('refresh_token', response.data.refresh, cookieOptions);
         Cookies.set('is_admin', response.data.is_admin ? 'true' : 'false', cookieOptions);
         Cookies.set('is_frozen', response.data.is_frozen ? 'true' : 'false', cookieOptions);
-        Cookies.set('role', response.data.role || 'STUDENT', cookieOptions);
+        Cookies.set('role', response.data.role || 'student', cookieOptions);
         if (Array.isArray(response.data.permissions)) {
             Cookies.set('lms_permissions', JSON.stringify(response.data.permissions), cookieOptions);
+        }
+        if (Array.isArray(response.data.scope)) {
+            Cookies.set('lms_scope', JSON.stringify(response.data.scope), cookieOptions);
         }
         return response.data;
     },
@@ -141,6 +151,7 @@ export const authApi = {
         Cookies.remove('is_frozen');
         Cookies.remove('role');
         Cookies.remove('lms_permissions');
+        Cookies.remove('lms_scope');
         window.location.href = '/login';
     }
 };

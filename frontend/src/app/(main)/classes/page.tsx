@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Cookies from "js-cookie";
 import { classesApi, adminApi } from "@/lib/api";
+import { can } from "@/lib/permissions";
 import {
   ClassroomAlert,
   ClassroomButton,
@@ -72,7 +73,7 @@ const groupTileAccent =
 
 export default function ClassesPage() {
   const router = useRouter();
-  const isAdmin = typeof window !== "undefined" && Cookies.get("is_admin") === "true";
+  const canCreateClassroom = typeof window !== "undefined" && can("create_classroom");
 
   const [loading, setLoading] = useState(true);
   const [classes, setClasses] = useState<any[]>([]);
@@ -128,7 +129,7 @@ export default function ClassesPage() {
 
   useEffect(() => {
     fetchClasses();
-    if (isAdmin) {
+    if (canCreateClassroom) {
       adminApi
         .getUsers()
         .then((u) => {
@@ -344,7 +345,7 @@ export default function ClassesPage() {
                   className={`relative cr-surface rounded-2xl p-6 pl-6 text-left ${groupTileClass}`}
                 >
                   <span className={groupTileAccent} aria-hidden />
-                  {isAdmin ? (
+                  {canCreateClassroom ? (
                     <div
                       className="absolute right-4 top-4 z-10"
                       onClick={(e) => e.stopPropagation()}
@@ -417,7 +418,7 @@ export default function ClassesPage() {
             </ClassroomButton>
           </ClassroomCard>
 
-          {isAdmin ? (
+          {canCreateClassroom ? (
             <ClassroomCard padding="md" className="border-primary/20">
               <div className="flex items-center gap-2">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -438,7 +439,7 @@ export default function ClassesPage() {
         </div>
       </div>
 
-      {isAdmin ? (
+      {canCreateClassroom ? (
         <ClassroomModal
           open={createOpen}
           onClose={() => setCreateOpen(false)}
@@ -572,7 +573,7 @@ export default function ClassesPage() {
         </ClassroomModal>
       ) : null}
 
-      {isAdmin && editingId ? (
+      {canCreateClassroom && editingId ? (
         <ClassroomModal
           open={!!editingId}
           onClose={() => setEditingId(null)}

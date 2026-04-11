@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import FrozenSet, Optional
+from typing import FrozenSet, Optional, Iterable
 
 from django.apps import apps
 from django.db.models import Q
@@ -9,61 +9,102 @@ from django.db.models import Q
 from . import constants
 
 
-def _role_code(user) -> Optional[str]:
-    role = getattr(user, "system_role", None)
-    if role is None:
-        return None
-    return role.code
+@lru_cache(maxsize=1)
+def _role_permissions_map() -> dict[str, FrozenSet[str]]:
+    """
+    Canonical RBAC mapping (single source of truth).
 
-
-def _role_id(user) -> Optional[int]:
-    return getattr(user, "system_role_id", None)
-
-
-def _frozen_permissions_for_role_code(role_code: str) -> FrozenSet[str]:
-    """DB-backed permissions for a role code; used when user has no system_role_id."""
-    Role = apps.get_model("access", "Role")
-    RolePermission = apps.get_model("access", "RolePermission")
-    try:
-        role = Role.objects.get(code=role_code)
-    except Role.DoesNotExist:
-        return frozenset({constants.PERM_SUBMIT_TEST})
-    granted = set(
-        RolePermission.objects.filter(role_id=role.pk).values_list(
-            "permission__codename", flat=True
-        )
-    )
-    if constants.WILDCARD in granted:
-        return frozenset({constants.WILDCARD})
-    return frozenset(granted)
-
-
-# Matches LMS ADMIN role if RolePermission rows are missing.
-_ADMIN_FALLBACK: FrozenSet[str] = frozenset(
-    {
-        constants.PERM_MANAGE_USERS,
-        constants.PERM_MANAGE_ROLES,
-        constants.PERM_ACCESS_LMS_ADMIN,
-        constants.PERM_CREATE_TEST,
-        constants.PERM_EDIT_TEST,
-        constants.PERM_DELETE_TEST,
-        constants.PERM_VIEW_ALL_TESTS,
-        constants.PERM_VIEW_ENGLISH_TESTS,
-        constants.PERM_VIEW_MATH_TESTS,
-        constants.PERM_ASSIGN_TEST_ACCESS,
-        constants.PERM_MANAGE_CLASSROOMS,
-        constants.PERM_CREATE_MOCK_SAT,
-        constants.PERM_CREATE_MIDTERM_MOCK,
-        constants.PERM_SUBMIT_TEST,
+    Notes:
+    - Scope (math/english) is enforced separately; permissions are subject-agnostic.
+    - Teachers can create classrooms (Issue #3 requirement).
+    """
+    return {
+        constants.ROLE_SUPER_ADMIN: frozenset({constants.WILDCARD}),
+        constants.ROLE_ADMIN: frozenset(
+            {
+                constants.PERM_VIEW_DASHBOARD,
+                constants.PERM_MANAGE_USERS,
+                constants.PERM_ASSIGN_ACCESS,
+                constants.PERM_CREATE_CLASSROOM,
+                constants.PERM_MANAGE_TESTS,
+                constants.PERM_SUBMIT_TEST,
+            }
+        ),
+        constants.ROLE_TEACHER: frozenset(
+            {
+                constants.PERM_VIEW_DASHBOARD,
+                constants.PERM_ASSIGN_ACCESS,
+                constants.PERM_CREATE_CLASSROOM,
+                constants.PERM_MANAGE_TESTS,
+                constants.PERM_SUBMIT_TEST,
+            }
+        ),
+        constants.ROLE_TEST_ADMIN: frozenset(
+            {
+                constants.PERM_VIEW_DASHBOARD,
+                constants.PERM_MANAGE_TESTS,
+                constants.PERM_SUBMIT_TEST,
+            }
+        ),
+        constants.ROLE_STUDENT: frozenset({constants.PERM_SUBMIT_TEST}),
     }
-)
+
+
+def _normalized_role(user) -> str:
+    """Return canonical role string; defaults to student."""
+    if not user or not getattr(user, "is_authenticated", False):
+        return constants.ROLE_STUDENT
+    raw = getattr(user, "role", None)
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    return constants.ROLE_STUDENT
+
+
+def _normalized_scope(user) -> FrozenSet[str]:
+    """
+    Return normalized scope keys (math/english).
+    Empty scope means no subject-domain access (strict by default).
+    """
+    raw = getattr(user, "scope", None)
+    if raw is None:
+        return frozenset()
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, Iterable):
+        return frozenset()
+    out: set[str] = set()
+    for s in raw:
+        if not isinstance(s, str):
+            continue
+        v = s.strip().lower()
+        if not v:
+            continue
+        # tolerate accidental platform subjects in scope arrays
+        if v in ("rw", "reading_writing", "reading-writing", "english"):
+            out.add(constants.SCOPE_ENGLISH)
+        elif v in ("math",):
+            out.add(constants.SCOPE_MATH)
+    return frozenset(out)
+
+
+def subject_to_scope(subject: Optional[str]) -> Optional[str]:
+    if subject is None:
+        return None
+    if subject == constants.SUBJECT_MATH_PLATFORM:
+        return constants.SCOPE_MATH
+    if subject == constants.SUBJECT_ENGLISH_PLATFORM:
+        return constants.SCOPE_ENGLISH
+    return None
 
 
 def get_effective_permission_codenames(user) -> FrozenSet[str]:
     """
-    Union role permissions + user grants − user denies.
-    Django superusers and SUPER_ADMIN always resolve to full LMS access ('*').
-    Staff without system_role_id get ADMIN-equivalent permissions from the DB.
+    Effective permission set for the authenticated user.
+
+    Rules:
+    - Django superusers always get wildcard.
+    - Otherwise permissions are derived from canonical (role -> permissions) mapping.
+    - User-level overrides via access.UserPermission are still honored when present.
     """
     if not user or not getattr(user, "is_authenticated", False):
         return frozenset()
@@ -71,37 +112,10 @@ def get_effective_permission_codenames(user) -> FrozenSet[str]:
     if getattr(user, "is_superuser", False):
         return frozenset({constants.WILDCARD})
 
-    RolePermission = apps.get_model("access", "RolePermission")
     UserPermission = apps.get_model("access", "UserPermission")
 
-    rid = _role_id(user)
-    if not rid:
-        if getattr(user, "is_staff", False):
-            granted_staff = set(_frozen_permissions_for_role_code(constants.ROLE_ADMIN))
-            overrides_staff = UserPermission.objects.filter(user_id=user.pk).select_related(
-                "permission"
-            )
-            for ov in overrides_staff:
-                if ov.granted:
-                    granted_staff.add(ov.permission.codename)
-                else:
-                    granted_staff.discard(ov.permission.codename)
-            if constants.WILDCARD in granted_staff:
-                return frozenset({constants.WILDCARD})
-            return frozenset(granted_staff)
-        return frozenset({constants.PERM_SUBMIT_TEST})
-
-    granted: set[str] = set(
-        RolePermission.objects.filter(role_id=rid).values_list(
-            "permission__codename", flat=True
-        )
-    )
-
-    rc = _role_code(user)
-    if not granted and rc == constants.ROLE_SUPER_ADMIN:
-        granted.add(constants.WILDCARD)
-    elif not granted and rc == constants.ROLE_ADMIN:
-        granted.update(_ADMIN_FALLBACK)
+    role = _normalized_role(user)
+    granted: set[str] = set(_role_permissions_map().get(role, frozenset({constants.PERM_SUBMIT_TEST})))
 
     overrides = UserPermission.objects.filter(user_id=user.pk).select_related("permission")
     for ov in overrides:
@@ -110,9 +124,6 @@ def get_effective_permission_codenames(user) -> FrozenSet[str]:
         else:
             granted.discard(ov.permission.codename)
 
-    if rc == constants.ROLE_SUPER_ADMIN:
-        return frozenset({constants.WILDCARD})
-
     if constants.WILDCARD in granted:
         return frozenset({constants.WILDCARD})
 
@@ -120,33 +131,26 @@ def get_effective_permission_codenames(user) -> FrozenSet[str]:
 
 
 def is_lms_staff_user(user) -> bool:
-    """True if user may open the Next.js /admin app (access_lms_admin or wildcard)."""
+    """
+    True if user may open staff/admin surfaces.
+
+    Admin panel access is permission-based (Issue #1): manage_users => allow.
+    """
     perms = get_effective_permission_codenames(user)
     if not perms:
         return False
     if constants.WILDCARD in perms:
         return True
-    return constants.PERM_ACCESS_LMS_ADMIN in perms
-
-
-def can_create_mock_exam_kind(user, kind: str) -> bool:
-    """
-    Timed MockExam shells: MOCK_SAT vs MIDTERM.
-    Teachers typically only have create_midterm_mock; full mocks need create_mock_sat (or wildcard / view_all).
-    """
-    perms = get_effective_permission_codenames(user)
-    if constants.WILDCARD in perms or constants.PERM_VIEW_ALL_TESTS in perms:
-        return True
-    if kind == "MIDTERM":
-        return constants.PERM_CREATE_MIDTERM_MOCK in perms or constants.PERM_CREATE_MOCK_SAT in perms
-    # MOCK_SAT or default
-    return constants.PERM_CREATE_MOCK_SAT in perms
+    return constants.PERM_MANAGE_USERS in perms or constants.PERM_VIEW_DASHBOARD in perms
 
 
 def authorize(user, permission_codename: str, *, subject: Optional[str] = None) -> bool:
     """
-    1) Permission must be present (or wildcard).
-    2) ABAC: ENGLISH_TEACHER / MATH_TEACHER subject constraints for test ops & scoped views.
+    Permission + scope enforcement.
+
+    - Permission must be present (or wildcard).
+    - If `subject` is provided and maps to a domain scope, the user must have that scope
+      unless they are wildcard (super_admin).
     """
     if not user or not getattr(user, "is_authenticated", False):
         return False
@@ -157,86 +161,41 @@ def authorize(user, permission_codename: str, *, subject: Optional[str] = None) 
     if permission_codename not in perms:
         return False
 
-    rc = _role_code(user)
-    if rc == constants.ROLE_ENGLISH_TEACHER:
-        return _english_teacher_subject_allows(permission_codename, subject)
-    if rc == constants.ROLE_MATH_TEACHER:
-        return _math_teacher_subject_allows(permission_codename, subject)
-    return True
-
-
-def _english_teacher_subject_allows(permission_codename: str, subject: Optional[str]) -> bool:
-    if permission_codename in (
-        constants.PERM_VIEW_ENGLISH_TESTS,
-        constants.PERM_CREATE_TEST,
-        constants.PERM_EDIT_TEST,
-        constants.PERM_DELETE_TEST,
-        constants.PERM_ASSIGN_TEST_ACCESS,
-    ):
-        if subject is None:
-            return True
-        return subject == constants.SUBJECT_ENGLISH_PLATFORM
-    return True
-
-
-def _math_teacher_subject_allows(permission_codename: str, subject: Optional[str]) -> bool:
-    if permission_codename in (
-        constants.PERM_VIEW_MATH_TESTS,
-        constants.PERM_CREATE_TEST,
-        constants.PERM_EDIT_TEST,
-        constants.PERM_DELETE_TEST,
-        constants.PERM_ASSIGN_TEST_ACCESS,
-    ):
-        if subject is None:
-            return True
-        return subject == constants.SUBJECT_MATH_PLATFORM
-    return True
+    required_scope = subject_to_scope(subject)
+    if required_scope is None:
+        return True
+    user_scopes = _normalized_scope(user)
+    return required_scope in user_scopes
 
 
 def can_browse_standalone_practice_library(user) -> bool:
     """
     Users who may see the full pastpaper / standalone library on the student portal
     (/api/exams/...), not only rows assigned to them.
-
-    Intentionally excludes ``edit_test`` alone: subject teachers may have edit_test for
-    midterm/class flows but must not see every pastpaper card on the student Pastpaper
-    page—only tests assigned to them (same as students). Authors/admins use view_*/create_test/delete_test
-    or view_all_tests for library-wide browse.
     """
     perms = get_effective_permission_codenames(user)
     if not perms:
         return False
-    if constants.WILDCARD in perms or constants.PERM_VIEW_ALL_TESTS in perms:
+    if constants.WILDCARD in perms:
         return True
-    browse = {
-        constants.PERM_VIEW_ENGLISH_TESTS,
-        constants.PERM_VIEW_MATH_TESTS,
-        constants.PERM_CREATE_TEST,
-        constants.PERM_DELETE_TEST,
-    }
-    return bool(browse & perms)
+    # Staff who manage tests can browse the full standalone library, scoped by domain.
+    return constants.PERM_MANAGE_TESTS in perms
 
 
 def filter_practice_tests_for_user(user, queryset):
-    """Narrow PracticeTest queryset by view_* permissions (no hardcoded role checks)."""
+    """Narrow PracticeTest queryset by scope (subject-domain enforcement)."""
     perms = get_effective_permission_codenames(user)
-    if constants.WILDCARD in perms or constants.PERM_VIEW_ALL_TESTS in perms:
+    if not perms:
+        return queryset.none()
+    if constants.WILDCARD in perms:
         return queryset
 
+    scopes = _normalized_scope(user)
     q = Q(pk__in=[])
-    has_eng = constants.PERM_VIEW_ENGLISH_TESTS in perms
-    has_math = constants.PERM_VIEW_MATH_TESTS in perms
-    if has_eng:
+    if constants.SCOPE_ENGLISH in scopes:
         q |= Q(subject=constants.SUBJECT_ENGLISH_PLATFORM)
-    if has_math:
+    if constants.SCOPE_MATH in scopes:
         q |= Q(subject=constants.SUBJECT_MATH_PLATFORM)
-    # TEST_ADMIN (create only) and similar: authoring without subject scopes sees both subjects.
-    if (constants.PERM_CREATE_TEST in perms or constants.PERM_EDIT_TEST in perms) and (
-        not has_eng and not has_math
-    ):
-        q |= Q(subject=constants.SUBJECT_ENGLISH_PLATFORM) | Q(
-            subject=constants.SUBJECT_MATH_PLATFORM
-        )
     return queryset.filter(q)
 
 
@@ -247,7 +206,7 @@ def filter_pastpaper_packs_for_user(user, queryset):
     from exams.models import PracticeTest
 
     perms = get_effective_permission_codenames(user)
-    if constants.WILDCARD in perms or constants.PERM_VIEW_ALL_TESTS in perms:
+    if constants.WILDCARD in perms:
         return queryset
 
     visible = filter_practice_tests_for_user(
@@ -255,7 +214,7 @@ def filter_pastpaper_packs_for_user(user, queryset):
         PracticeTest.objects.filter(mock_exam__isnull=True),
     )
     with_sections = queryset.filter(sections__in=visible)
-    if constants.PERM_CREATE_TEST in perms:
+    if constants.PERM_MANAGE_TESTS in perms:
         empty = queryset.annotate(_section_count=Count("sections")).filter(_section_count=0)
         return (with_sections | empty).distinct()
     return with_sections.distinct()
@@ -263,12 +222,9 @@ def filter_pastpaper_packs_for_user(user, queryset):
 
 def filter_mock_exams_for_user(user, queryset):
     """
-    Who sees which MockExam rows in admin:
-    - Wildcard / view_all: all
-    - create_mock_sat (+ usual test visibility): full mock authoring list
-    - create_midterm_mock only: midterms; if also assign_test_access, include active MOCK_SAT for assignment
-    - assign_test_access only: active mocks (to assign students)
-    - else: none (e.g. test authors without mock perms)
+    Visible MockExam rows for staff surfaces (admin APIs).
+    For now we treat mock shells as part of "manage_tests", and still enforce scope via the
+    PracticeTest sections attached to the mock.
     """
     from django.db.models import Count
 
@@ -277,35 +233,19 @@ def filter_mock_exams_for_user(user, queryset):
     perms = get_effective_permission_codenames(user)
     if constants.WILDCARD in perms:
         return queryset
-    if constants.PERM_VIEW_ALL_TESTS in perms:
-        return queryset
+    if constants.PERM_MANAGE_TESTS not in perms and constants.PERM_ASSIGN_ACCESS not in perms:
+        return queryset.none()
 
-    can_sat = constants.PERM_CREATE_MOCK_SAT in perms
-    can_mid = constants.PERM_CREATE_MIDTERM_MOCK in perms
-    can_assign = constants.PERM_ASSIGN_TEST_ACCESS in perms
-
-    if can_sat:
-        visible_tests = filter_practice_tests_for_user(user, PracticeTest.objects.all())
-        with_tests = queryset.filter(tests__in=visible_tests)
-        if constants.PERM_CREATE_TEST in perms:
-            empty_shells = queryset.annotate(_tc=Count("tests")).filter(_tc=0)
-            return (with_tests | empty_shells).distinct()
-        return with_tests.distinct()
-
-    if can_mid:
-        q = queryset.filter(kind=MockExam.KIND_MIDTERM, is_active=True)
-        if can_assign:
-            q = q | queryset.filter(kind=MockExam.KIND_MOCK_SAT, is_active=True)
-        return q.distinct()
-
-    if can_assign:
-        return queryset.filter(is_active=True)
-
-    return queryset.none()
+    visible_tests = filter_practice_tests_for_user(user, PracticeTest.objects.all())
+    with_tests = queryset.filter(tests__in=visible_tests)
+    if constants.PERM_MANAGE_TESTS in perms:
+        empty_shells = queryset.annotate(_tc=Count("tests")).filter(_tc=0)
+        return (with_tests | empty_shells).distinct()
+    return with_tests.distinct()
 
 
 def user_can_assign_as_class_teacher(user) -> bool:
     """Users who may be assigned as the group's teacher when creating a class."""
     return authorize(user, constants.PERM_MANAGE_USERS) or authorize(
-        user, constants.PERM_MANAGE_CLASSROOMS
+        user, constants.PERM_CREATE_CLASSROOM
     )

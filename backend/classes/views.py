@@ -65,7 +65,16 @@ class ClassroomViewSet(ModelViewSet):
         return ClassroomSerializer
 
     def create(self, request, *args, **kwargs):
-        if not authorize(request.user, acc_const.PERM_MANAGE_CLASSROOMS):
+        # Permission + scope (subject-domain) enforced here.
+        subj = (request.data or {}).get("subject")
+        platform_subject = (
+            acc_const.SUBJECT_MATH_PLATFORM
+            if subj == Classroom.SUBJECT_MATH
+            else acc_const.SUBJECT_ENGLISH_PLATFORM
+            if subj == Classroom.SUBJECT_ENGLISH
+            else None
+        )
+        if not authorize(request.user, acc_const.PERM_CREATE_CLASSROOM, subject=platform_subject):
             return Response(
                 {"detail": "You do not have permission to create groups."},
                 status=status.HTTP_403_FORBIDDEN,

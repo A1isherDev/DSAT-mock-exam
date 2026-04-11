@@ -12,7 +12,7 @@ def sync_django_staff_flag(user) -> None:
     if getattr(user, "is_superuser", False):
         User.objects.filter(pk=user.pk).update(is_staff=True)
         return
-    if user.system_role_id and user.role == constants.ROLE_SUPER_ADMIN:
+    if user.role == constants.ROLE_SUPER_ADMIN:
         User.objects.filter(pk=user.pk).update(is_staff=True)
     else:
         User.objects.filter(pk=user.pk).update(is_staff=False)

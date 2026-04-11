@@ -24,17 +24,18 @@ class UserManager(BaseUserManager):
         if not email:
             raise ValueError("The Email field must be set")
         email = self.normalize_email(email)
-        legacy_role = extra_fields.pop("role", None)
-        system_role = extra_fields.pop("system_role", None)
+        role = extra_fields.pop("role", None)
+        scope = extra_fields.pop("scope", None)
+        system_role = extra_fields.pop("system_role", None)  # legacy; kept for DB compatibility
         user = self.model(email=email, **extra_fields)
-        if system_role is None:
-            from access.models import Role
-
-            if legacy_role == "ADMIN":
-                system_role = Role.objects.get(code="ADMIN")
-            else:
-                system_role = Role.objects.get(code="STUDENT")
-        user.system_role = system_role
+        # Canonical authorization fields (RBAC + scope)
+        if isinstance(role, str) and role.strip():
+            user.role = role.strip()
+        if scope is not None:
+            user.scope = scope
+        # Do not derive role from system_role anymore; it is legacy.
+        if system_role is not None:
+            user.system_role = system_role
         user.set_password(password)
         user.save(using=self._db)
         return user
@@ -42,9 +43,7 @@ class UserManager(BaseUserManager):
     def create_superuser(self, email, password=None, **extra_fields):
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
-        from access.models import Role
-
-        extra_fields.setdefault("system_role", Role.objects.get(code="SUPER_ADMIN"))
+        extra_fields.setdefault("role", "super_admin")
         return self.create_user(email, password, **extra_fields)
 
 
@@ -59,6 +58,9 @@ class User(AbstractUser):
         blank=True,
     )
     is_frozen = models.BooleanField(default=False, db_index=True)
+    # Canonical RBAC + scope fields
+    role = models.CharField(max_length=30, default="student", db_index=True)
+    scope = models.JSONField(default=list, blank=True)
     profile_image = models.ImageField(upload_to='profiles/', null=True, blank=True)
     sat_exam_date = models.DateField(null=True, blank=True, help_text='Planned SAT exam date')
     target_score = models.PositiveIntegerField(null=True, blank=True, help_text='Target total SAT score (400–1600)')
@@ -87,21 +89,13 @@ class User(AbstractUser):
         db_table = 'users'
     
     def __str__(self):
-        rc = self.system_role.code if self.system_role_id else "?"
-        return f"{self.email} ({rc})"
-
-    @property
-    def role(self):
-        """Backward-compatible role code for serializers / JWT (not a DB column)."""
-        return self.system_role.code if self.system_role_id else "STUDENT"
+        return f"{self.email} ({self.role})"
 
     @property
     def is_student(self):
         from access import constants
 
-        if not self.system_role_id:
-            return True
-        return self.system_role.code == constants.ROLE_STUDENT
+        return self.role == constants.ROLE_STUDENT
 
     @property
     def is_admin(self):

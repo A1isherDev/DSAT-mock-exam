@@ -1,51 +1,40 @@
-"""Permission codenames and platform subject values (ABAC)."""
+"""Authorization constants for RBAC + scope-based access.
+
+RBAC determines *what* a user can do (permission codenames).
+Scope determines *where* they can do it (domains like math / english).
+"""
 
 WILDCARD = "*"
 
-# Granular permissions (spec)
+# Canonical permission codenames (spec)
 PERM_MANAGE_USERS = "manage_users"
-PERM_MANAGE_ROLES = "manage_roles"
-PERM_CREATE_TEST = "create_test"
-PERM_EDIT_TEST = "edit_test"
-PERM_DELETE_TEST = "delete_test"
-PERM_VIEW_ALL_TESTS = "view_all_tests"
-PERM_ASSIGN_TEST_ACCESS = "assign_test_access"
-PERM_VIEW_ENGLISH_TESTS = "view_english_tests"
-PERM_VIEW_MATH_TESTS = "view_math_tests"
+PERM_ASSIGN_ACCESS = "assign_access"
+PERM_CREATE_CLASSROOM = "create_classroom"
+PERM_MANAGE_TESTS = "manage_tests"
+PERM_VIEW_DASHBOARD = "view_dashboard"
 PERM_SUBMIT_TEST = "submit_test"
 
-# LMS areas not in the original spec list — assigned only to SUPER_ADMIN / ADMIN.
-PERM_MANAGE_CLASSROOMS = "manage_classrooms"
-# Next.js /admin panel (separate from Django is_staff / django-admin).
-PERM_ACCESS_LMS_ADMIN = "access_lms_admin"
-# Timed mock shells: full SAT vs midterm-only (teachers may create midterms only).
-PERM_CREATE_MOCK_SAT = "create_mock_sat"
-PERM_CREATE_MIDTERM_MOCK = "create_midterm_mock"
-
 ALL_PERMISSION_CODENAMES = (
-    PERM_MANAGE_USERS,
-    PERM_MANAGE_ROLES,
-    PERM_CREATE_TEST,
-    PERM_EDIT_TEST,
-    PERM_DELETE_TEST,
-    PERM_VIEW_ALL_TESTS,
-    PERM_ASSIGN_TEST_ACCESS,
-    PERM_VIEW_ENGLISH_TESTS,
-    PERM_VIEW_MATH_TESTS,
     PERM_SUBMIT_TEST,
-    PERM_MANAGE_CLASSROOMS,
-    PERM_ACCESS_LMS_ADMIN,
-    PERM_CREATE_MOCK_SAT,
-    PERM_CREATE_MIDTERM_MOCK,
+    PERM_MANAGE_USERS,
+    PERM_ASSIGN_ACCESS,
+    PERM_CREATE_CLASSROOM,
+    PERM_MANAGE_TESTS,
+    PERM_VIEW_DASHBOARD,
 )
 
-# SAT practice tests use READING_WRITING for the English/R&W section.
-SUBJECT_ENGLISH_PLATFORM = "READING_WRITING"
+# Canonical scope keys (domains)
+SCOPE_MATH = "math"
+SCOPE_ENGLISH = "english"
+ALL_SCOPES = (SCOPE_MATH, SCOPE_ENGLISH)
+
+# Platform subject values stored in DB (PracticeTest.subject)
+SUBJECT_ENGLISH_PLATFORM = "READING_WRITING"  # "English / R&W"
 SUBJECT_MATH_PLATFORM = "MATH"
 
-ROLE_SUPER_ADMIN = "SUPER_ADMIN"
-ROLE_ADMIN = "ADMIN"
-ROLE_TEST_ADMIN = "TEST_ADMIN"
-ROLE_ENGLISH_TEACHER = "ENGLISH_TEACHER"
-ROLE_MATH_TEACHER = "MATH_TEACHER"
-ROLE_STUDENT = "STUDENT"
+# Canonical RBAC roles (lowercase, per spec)
+ROLE_SUPER_ADMIN = "super_admin"
+ROLE_ADMIN = "admin"
+ROLE_TEACHER = "teacher"
+ROLE_TEST_ADMIN = "test_admin"
+ROLE_STUDENT = "student"

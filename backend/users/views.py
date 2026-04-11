@@ -67,13 +67,14 @@ class UserListView(generics.ListAPIView):
     permission_classes = [HasManageUsersOrAssignTestAccess]
 
     def get_queryset(self):
-        qs = User.objects.select_related("system_role").all().order_by("-date_joined")
+        qs = User.objects.all().order_by("-date_joined")
         user = self.request.user
         # Full user directory: only user managers. Teachers with assign_test_access get students only (bulk assign).
         if authorize(user, acc_const.PERM_MANAGE_USERS):
             return qs
-        if authorize(user, acc_const.PERM_ASSIGN_TEST_ACCESS):
-            return qs.filter(system_role__code=acc_const.ROLE_STUDENT)
+        if authorize(user, acc_const.PERM_ASSIGN_ACCESS):
+            # Scoped assigners should only see students (no staff directory leakage).
+            return qs.filter(role=acc_const.ROLE_STUDENT)
         return qs.none()
 
 class UserCreateView(generics.CreateAPIView):
@@ -196,7 +197,7 @@ class GoogleAuthView(APIView):
                 username=username,
                 first_name=first_name,
                 last_name=last_name,
-                role="STUDENT",
+                role=acc_const.ROLE_STUDENT,
                 password=User.objects.make_random_password(),
             )
         else:
@@ -339,7 +340,7 @@ class TelegramAuthView(APIView):
                 username=username,
                 first_name=first_name,
                 last_name=last_name,
-                role="STUDENT",
+                role=acc_const.ROLE_STUDENT,
                 password=User.objects.make_random_password(),
             )
         else:

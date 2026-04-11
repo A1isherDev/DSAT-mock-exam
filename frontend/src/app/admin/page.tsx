@@ -9,8 +9,6 @@ import {
     canCreateTestForSubject,
     canEditQuestionsForSubject,
     canDeletePracticeTestFromMock,
-    canCreateFullMockSat,
-    canCreateMidtermMock,
     canUseGlobalQuestionsTab,
     defaultBulkPastpaperSubjectScope,
 } from '@/lib/permissions';
@@ -265,12 +263,11 @@ function formatPastpaperSectionForAssign(t: any): string {
 }
 
 const STAFF_ROLE_OPTIONS: { value: string; label: string }[] = [
-    { value: 'STUDENT', label: 'Student' },
-    { value: 'ENGLISH_TEACHER', label: 'English teacher (LMS admin, R&W scope)' },
-    { value: 'MATH_TEACHER', label: 'Math teacher (LMS admin, Math scope)' },
-    { value: 'ADMIN', label: 'Administrator' },
-    { value: 'SUPER_ADMIN', label: 'Super administrator' },
-    { value: 'TEST_ADMIN', label: 'Test author (pastpapers & questions)' },
+    { value: "student", label: "Student" },
+    { value: "teacher", label: "Teacher" },
+    { value: "test_admin", label: "Test admin" },
+    { value: "admin", label: "Admin" },
+    { value: "super_admin", label: "Super admin" },
 ];
 
 export default function AdminPage() {
@@ -297,7 +294,7 @@ export default function AdminPage() {
     const [questionsGroupValue, setQuestionsGroupValue] = useState('');
 
     // Forms
-    const [userForm, setUserForm] = useState({ first_name: '', last_name: '', username: '', email: '', phone_number: '', password: '', role: 'STUDENT', is_active: true, is_frozen: false });
+    const [userForm, setUserForm] = useState({ first_name: '', last_name: '', username: '', email: '', phone_number: '', password: '', role: 'student', scope: [] as string[], is_active: true, is_frozen: false });
     const [mockForm, setMockForm] = useState({
         title: '',
         practice_date: '',
@@ -458,7 +455,7 @@ export default function AdminPage() {
         fetchMockExams();
         fetchStandaloneTests();
         fetchPastpaperPacks();
-        if (can("manage_users") || can("assign_test_access")) {
+        if (can("manage_users") || can("assign_access")) {
             fetchUsers();
         }
         if (can("manage_users")) {
@@ -700,7 +697,7 @@ export default function AdminPage() {
             });
         }
         if (userRoleFilter !== "ALL") {
-            list = list.filter((u) => (u.role || "STUDENT") === userRoleFilter);
+            list = list.filter((u) => (u.role || "student") === userRoleFilter);
         }
         if (userStatusFilter === "ACTIVE") {
             list = list.filter((u) => u.is_active !== false && !u.is_frozen);
@@ -969,8 +966,9 @@ export default function AdminPage() {
                 is_active: userForm.is_active,
                 is_frozen: userForm.is_frozen,
             };
-            if (can('manage_roles')) {
+            if (can("assign_access")) {
                 payload.role = userForm.role;
+                payload.scope = userForm.scope;
             }
             if (userForm.password?.trim()) {
                 payload.password = userForm.password;
@@ -982,7 +980,7 @@ export default function AdminPage() {
             }
             await fetchUsers();
             setEditingUser(null);
-            setUserForm({ first_name: '', last_name: '', username: '', email: '', phone_number: '', password: '', role: 'STUDENT', is_active: true, is_frozen: false });
+            setUserForm({ first_name: '', last_name: '', username: '', email: '', phone_number: '', password: '', role: "student", scope: [], is_active: true, is_frozen: false });
             showToast('User saved ✓');
         } finally { setSaving(false); }
     };
@@ -1108,12 +1106,8 @@ export default function AdminPage() {
 
     // ── Mock Exam CRUD
     const handleSaveMock = async () => {
-        if (mockForm.kind === 'MOCK_SAT' && !canCreateFullMockSat()) {
-            showToast('You can only create midterm exams.');
-            return;
-        }
-        if (mockForm.kind === 'MIDTERM' && !canCreateMidtermMock()) {
-            showToast('No permission to create midterm exams.');
+        if (!canManageMockExamShell()) {
+            showToast("No permission to manage tests.");
             return;
         }
         const tn = adminNorm(mockForm.title);
@@ -1190,8 +1184,8 @@ export default function AdminPage() {
     };
 
     const handleSavePack = async () => {
-        if (!can('create_test') && !editingPack?.id) return;
-        if (editingPack?.id && !can('edit_test')) return;
+        if (!can("manage_tests") && !editingPack?.id) return;
+        if (editingPack?.id && !can("manage_tests")) return;
         const sig = pastpaperPackSignatureFromForm({
             title: packForm.title,
             practice_date: packForm.practice_date,
@@ -1259,7 +1253,7 @@ export default function AdminPage() {
     };
 
     const handleMoveSectionToPack = async (testId: number, packId: number | null) => {
-        if (!can('edit_test')) return;
+        if (!can("manage_tests")) return;
         setSaving(true);
         try {
             await adminApi.updatePracticeTest(testId, { pastpaper_pack: packId });
@@ -1631,38 +1625,16 @@ export default function AdminPage() {
             { key: 'examdates', label: 'Exam dates', icon: <Calendar className="w-4 h-4" /> },
             { key: 'users', label: 'Users', icon: <Users className="w-4 h-4" /> },
         ];
-        const testArea =
-            can('*') ||
-            can('view_all_tests') ||
-            can('view_english_tests') ||
-            can('view_math_tests') ||
-            can('create_test') ||
-            can('edit_test') ||
-            can('delete_test') ||
-            can('create_mock_sat') ||
-            can('create_midterm_mock');
+        const testArea = can("*") || can("manage_tests");
         const filtered = all.filter((item) => {
             if (item.key === 'examdates') return can('manage_users');
-            if (item.key === 'users') return can('manage_users') || can('assign_test_access');
+            if (item.key === "users") return can("manage_users") || can("assign_access");
             if (item.key === 'questions') return canUseGlobalQuestionsTab();
             if (item.key === 'mocks') {
-                return (
-                    can('*') ||
-                    can('view_all_tests') ||
-                    can('create_mock_sat') ||
-                    can('create_midterm_mock') ||
-                    can('assign_test_access') ||
-                    can('edit_test') ||
-                    can('delete_test')
-                );
+                return can("*") || can("manage_tests") || can("assign_access");
             }
             if (item.key === 'midterms') {
-                return (
-                    canCreateMidtermMock() ||
-                    canManageMockExamShell() ||
-                    can('assign_test_access') ||
-                    can('edit_test')
-                );
+                return canManageMockExamShell() || can("assign_access") || can("manage_tests");
             }
             return testArea;
         });
@@ -1721,12 +1693,12 @@ export default function AdminPage() {
                                         </p>
                                     </div>
                                     <div className="flex gap-2 shrink-0">
-                                        {can('assign_test_access') && (
+                                        {can("assign_access") && (
                                             <button className={BTN_GHOST} onClick={openBulkModalPastpapers}>
                                                 <Users className="w-4 h-4" /> Bulk assign pastpapers
                                             </button>
                                         )}
-                                        {can('create_test') && (
+                                        {can("manage_tests") && (
                                             <button
                                                 className={BTN_PRIMARY}
                                                 onClick={() => {
@@ -1879,7 +1851,7 @@ export default function AdminPage() {
                                             <button
                                                 className={BTN_PRIMARY}
                                                 onClick={() => void handleSavePack()}
-                                                disabled={saving || (!editingPack?.id && !can('create_test')) || (!!editingPack?.id && !can('edit_test'))}
+                                                disabled={saving || !can("manage_tests")}
                                             >
                                                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save card
                                             </button>
@@ -2366,7 +2338,7 @@ export default function AdminPage() {
                                         </p>
                                     </div>
                                     <div className="flex gap-2">
-                                        {can('assign_test_access') && (
+                                        {can("assign_access") && (
                                             <button className={BTN_GHOST} onClick={openBulkModalMocks}>
                                                 <Users className="w-4 h-4" /> Bulk assign mocks
                                             </button>
@@ -2374,12 +2346,11 @@ export default function AdminPage() {
                                         {canManageMockExamShell() && (
                                             <button className={BTN_PRIMARY} onClick={() => { 
                                                 const d = new Date().toISOString().slice(0, 10);
-                                                const kind = canCreateFullMockSat() ? 'MOCK_SAT' : 'MIDTERM';
                                                 setEditingMock({}); setMockForm({
-                                                title: kind === 'MIDTERM' ? `Midterm · ${d}` : `SAT mock · ${d}`,
+                                                title: `SAT mock · ${d}`,
                                                 practice_date: d,
                                                 is_active: true,
-                                                kind,
+                                                kind: "MOCK_SAT" as string,
                                                 midterm_subject: 'READING_WRITING',
                                                 midterm_module_count: 2,
                                                 midterm_module1_minutes: 60,
@@ -2461,12 +2432,8 @@ export default function AdminPage() {
                                                 disabled={!!editingMock?.id}
                                                 onChange={e => setMockForm({ ...mockForm, kind: e.target.value })}
                                             >
-                                                {canCreateFullMockSat() ? (
-                                                    <option value="MOCK_SAT">SAT mock (add R&amp;W / Math sections below)</option>
-                                                ) : null}
-                                                {canCreateMidtermMock() ? (
-                                                    <option value="MIDTERM">Midterm (1 subject, 1–2 modules, custom time)</option>
-                                                ) : null}
+                                                <option value="MOCK_SAT">SAT mock (add R&amp;W / Math sections below)</option>
+                                                <option value="MIDTERM">Midterm (1 subject, 1–2 modules, custom time)</option>
                                             </select>
                                         </Field>
                                         {mockForm.kind === 'MIDTERM' && (
@@ -2649,7 +2616,7 @@ export default function AdminPage() {
                                                     </div>
                                                 ))}
                                                 
-                                                {mock.kind !== 'MIDTERM' && canCreateFullMockSat() && !(mock.kind === 'MOCK_SAT' && (mock.tests || []).some((t: any) => t.subject === 'READING_WRITING') && (mock.tests || []).some((t: any) => t.subject === 'MATH')) && (canCreateTestForSubject('READING_WRITING') || canCreateTestForSubject('MATH')) && (
+                                                {mock.kind !== 'MIDTERM' && canManageMockExamShell() && !(mock.kind === 'MOCK_SAT' && (mock.tests || []).some((t: any) => t.subject === 'READING_WRITING') && (mock.tests || []).some((t: any) => t.subject === 'MATH')) && (canCreateTestForSubject('READING_WRITING') || canCreateTestForSubject('MATH')) && (
                                                 <div className="md:col-span-2 mt-2 pt-3 border-t border-slate-50 space-y-3">
                                                     <div className="grid grid-cols-2 gap-3">
                                                         <div className="flex flex-col gap-1">
@@ -2703,12 +2670,12 @@ export default function AdminPage() {
                                         </p>
                                     </div>
                                     <div className="flex gap-2">
-                                        {can('assign_test_access') && (
+                                        {can("assign_access") && (
                                             <button className={BTN_GHOST} onClick={openBulkModalMocks}>
                                                 <Users className="w-4 h-4" /> Bulk assign
                                             </button>
                                         )}
-                                        {canManageMockExamShell() && canCreateMidtermMock() && (
+                                        {canManageMockExamShell() && (
                                             <button
                                                 className={BTN_PRIMARY}
                                                 onClick={() => {
@@ -3602,7 +3569,7 @@ export default function AdminPage() {
                                         <h2 className="text-xl font-bold text-slate-900">
                                             {can('manage_users') ? 'User Management' : 'Students'}
                                         </h2>
-                                        {!can('manage_users') && can('assign_test_access') ? (
+                                        {!can("manage_users") && can("assign_access") ? (
                                             <p className="text-xs text-slate-500 mt-1 max-w-xl">
                                                 Student list for picking recipients. Open <strong>Bulk assign pastpapers</strong> or{' '}
                                                 <strong>Bulk assign mocks</strong> from the Pastpaper tests or Mock exams tab.
@@ -3610,7 +3577,7 @@ export default function AdminPage() {
                                         ) : null}
                                     </div>
                                     {can('manage_users') ? (
-                                        <button className={BTN_PRIMARY} onClick={() => { setEditingUser({}); setUserForm({ first_name: '', last_name: '', username: '', email: '', phone_number: '', password: '', role: 'STUDENT', is_active: true, is_frozen: false }); }}>
+                                        <button className={BTN_PRIMARY} onClick={() => { setEditingUser({}); setUserForm({ first_name: '', last_name: '', username: '', email: '', phone_number: '', password: '', role: "student", scope: [], is_active: true, is_frozen: false }); }}>
                                             <Plus className="w-4 h-4" /> New User
                                         </button>
                                     ) : null}
@@ -3830,7 +3797,8 @@ export default function AdminPage() {
                                                                 email: user.email,
                                                                 phone_number: user.phone_number || '',
                                                                 password: '',
-                                                                role: user.role || 'STUDENT',
+                                                                role: user.role || "student",
+                                                                scope: Array.isArray(user.scope) ? user.scope : [],
                                                                 is_active: user.is_active !== false,
                                                                 is_frozen: !!user.is_frozen,
                                                             });

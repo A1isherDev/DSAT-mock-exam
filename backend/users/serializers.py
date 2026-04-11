@@ -2,7 +2,6 @@ from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from access import constants as acc_const
-from access.models import Role
 from access.services import authorize, get_effective_permission_codenames, user_can_assign_as_class_teacher
 from users.utils_staff import sync_django_staff_flag
 from users.phone_utils import normalize_phone
@@ -32,6 +31,7 @@ class UserMeSerializer(serializers.ModelSerializer):
     profile_image_url = serializers.SerializerMethodField(read_only=True)
     clear_profile_image = serializers.BooleanField(write_only=True, required=False)
     role = serializers.SerializerMethodField()
+    scope = serializers.SerializerMethodField()
     permissions = serializers.SerializerMethodField()
     telegram_linked = serializers.SerializerMethodField()
 
@@ -52,6 +52,7 @@ class UserMeSerializer(serializers.ModelSerializer):
             "last_mock_result",
             "clear_profile_image",
             "role",
+            "scope",
             "permissions",
         ]
         extra_kwargs = {
@@ -163,6 +164,10 @@ class UserMeSerializer(serializers.ModelSerializer):
     def get_role(self, obj):
         return obj.role
 
+    def get_scope(self, obj):
+        raw = getattr(obj, "scope", None)
+        return raw if isinstance(raw, list) else []
+
     def get_telegram_linked(self, obj):
         return obj.telegram_id is not None
 
@@ -177,6 +182,7 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
         perms = sorted(get_effective_permission_codenames(user))
         token["is_admin"] = user.is_admin
         token["role"] = user.role
+        token["scope"] = user.scope if isinstance(getattr(user, "scope", None), list) else []
         token["is_frozen"] = user.is_frozen
         token["permissions"] = perms
         return token
@@ -185,6 +191,7 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
         data = super().validate(attrs)
         data["is_admin"] = self.user.is_admin
         data["role"] = self.user.role
+        data["scope"] = self.user.scope if isinstance(getattr(self.user, "scope", None), list) else []
         data["is_frozen"] = self.user.is_frozen
         data["permissions"] = sorted(get_effective_permission_codenames(self.user))
         return data
@@ -193,7 +200,8 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
 class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=False)
     is_admin = serializers.BooleanField(write_only=True, required=False)
-    role = serializers.SerializerMethodField()
+    role = serializers.CharField(required=False)
+    scope = serializers.JSONField(required=False)
     class_teacher_eligible = serializers.SerializerMethodField()
 
     def validate_username(self, value):
@@ -249,6 +257,7 @@ class UserSerializer(serializers.ModelSerializer):
             "last_name",
             "phone_number",
             "role",
+            "scope",
             "class_teacher_eligible",
             "is_admin",
             "is_active",
@@ -258,8 +267,37 @@ class UserSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["date_joined"]
 
-    def get_role(self, obj):
-        return obj.role
+    def _normalize_role(self, raw: str | None) -> str | None:
+        if raw is None:
+            return None
+        if not isinstance(raw, str):
+            return None
+        v = raw.strip()
+        if not v:
+            return None
+        # accept legacy uppercase codes from old admin UI
+        legacy = v.upper()
+        if legacy == "SUPER_ADMIN":
+            return acc_const.ROLE_SUPER_ADMIN
+        if legacy in ("ADMIN", "ENGLISH_ADMIN", "MATH_ADMIN"):
+            return acc_const.ROLE_ADMIN
+        if legacy in ("TEACHER", "ENGLISH_TEACHER", "MATH_TEACHER"):
+            return acc_const.ROLE_TEACHER
+        if legacy == "TEST_ADMIN":
+            return acc_const.ROLE_TEST_ADMIN
+        if legacy == "STUDENT":
+            return acc_const.ROLE_STUDENT
+        # canonical values
+        v2 = v.lower()
+        if v2 in (
+            acc_const.ROLE_SUPER_ADMIN,
+            acc_const.ROLE_ADMIN,
+            acc_const.ROLE_TEACHER,
+            acc_const.ROLE_TEST_ADMIN,
+            acc_const.ROLE_STUDENT,
+        ):
+            return v2
+        return None
 
     def get_class_teacher_eligible(self, obj):
         return user_can_assign_as_class_teacher(obj)
@@ -268,9 +306,9 @@ class UserSerializer(serializers.ModelSerializer):
         data = getattr(self, "initial_data", None) or {}
         if not isinstance(data, dict):
             return None
-        rc = data.get("role_code") or data.get("role")
-        if isinstance(rc, str) and rc.strip():
-            return rc.strip()
+        rc = self._normalize_role(data.get("role_code") or data.get("role"))
+        if rc:
+            return rc
         if data.get("is_admin") is True:
             return acc_const.ROLE_ADMIN
         if data.get("is_admin") is False:
@@ -287,23 +325,31 @@ class UserSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {"role": "Authentication required to set role."}
                 )
-            if not authorize(actor, acc_const.PERM_MANAGE_ROLES):
+            if not authorize(actor, acc_const.PERM_ASSIGN_ACCESS):
                 raise serializers.ValidationError(
                     {"role": "You do not have permission to assign roles."}
                 )
-            try:
-                return Role.objects.get(code=rc)
-            except Role.DoesNotExist as exc:
-                raise serializers.ValidationError({"role": "Invalid role code."}) from exc
+            return rc
 
         if instance is None:
-            return Role.objects.get(code=acc_const.ROLE_STUDENT)
+            return acc_const.ROLE_STUDENT
         return None
 
     def create(self, validated_data):
+        request = self.context.get("request")
+        actor = getattr(request, "user", None) if request else None
+        if "scope" in validated_data and not (
+            actor and actor.is_authenticated and authorize(actor, acc_const.PERM_ASSIGN_ACCESS)
+        ):
+            raise serializers.ValidationError({"scope": "You do not have permission to set scope."})
+
         validated_data.pop("is_admin", None)
         validated_data.pop("system_role", None)
-        validated_data["system_role"] = self._resolve_system_role_for_write(instance=None)
+        role = self._resolve_system_role_for_write(instance=None)
+        validated_data["role"] = role
+        # Ensure scope exists; students default to empty scope.
+        if "scope" not in validated_data:
+            validated_data["scope"] = []
 
         password = validated_data.pop("password", None)
         user = super().create(validated_data)
@@ -315,11 +361,18 @@ class UserSerializer(serializers.ModelSerializer):
         return user
 
     def update(self, instance, validated_data):
+        request = self.context.get("request")
+        actor = getattr(request, "user", None) if request else None
+        if "scope" in validated_data and not (
+            actor and actor.is_authenticated and authorize(actor, acc_const.PERM_ASSIGN_ACCESS)
+        ):
+            raise serializers.ValidationError({"scope": "You do not have permission to set scope."})
+
         validated_data.pop("is_admin", None)
         new_role = self._resolve_system_role_for_write(instance=instance)
         if new_role is not None:
-            instance.system_role = new_role
-            instance.save(update_fields=["system_role"])
+            instance.role = new_role
+            instance.save(update_fields=["role"])
 
         password = validated_data.pop("password", None)
         user = super().update(instance, validated_data)

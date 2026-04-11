@@ -63,16 +63,9 @@ class MockExamViewSet(viewsets.ReadOnlyModelViewSet):
     def list(self, request, *args, **kwargs):
         user = request.user
         perms = get_effective_permission_codenames(user)
-        if acc_const.WILDCARD in perms or acc_const.PERM_VIEW_ALL_TESTS in perms:
+        if acc_const.WILDCARD in perms or acc_const.PERM_MANAGE_TESTS in perms:
             return super().list(request, *args, **kwargs)
-        if {
-            acc_const.PERM_VIEW_ENGLISH_TESTS,
-            acc_const.PERM_VIEW_MATH_TESTS,
-            acc_const.PERM_CREATE_TEST,
-            acc_const.PERM_EDIT_TEST,
-            acc_const.PERM_DELETE_TEST,
-            acc_const.PERM_ASSIGN_TEST_ACCESS,
-        } & perms:
+        if acc_const.PERM_ASSIGN_ACCESS in perms:
             return super().list(request, *args, **kwargs)
 
         qs = (
@@ -93,16 +86,9 @@ class MockExamViewSet(viewsets.ReadOnlyModelViewSet):
             "tests",
             queryset=PracticeTest.objects.all().prefetch_related("modules"),
         )
-        if acc_const.WILDCARD in perms or acc_const.PERM_VIEW_ALL_TESTS in perms:
+        if acc_const.WILDCARD in perms or acc_const.PERM_MANAGE_TESTS in perms:
             return base.prefetch_related(tests_prefetch)
-        if {
-            acc_const.PERM_VIEW_ENGLISH_TESTS,
-            acc_const.PERM_VIEW_MATH_TESTS,
-            acc_const.PERM_CREATE_TEST,
-            acc_const.PERM_EDIT_TEST,
-            acc_const.PERM_DELETE_TEST,
-            acc_const.PERM_ASSIGN_TEST_ACCESS,
-        } & perms:
+        if acc_const.PERM_ASSIGN_ACCESS in perms:
             return filter_mock_exams_for_user(user, base).prefetch_related(tests_prefetch)
 
         allowed_mock_ids = PortalMockExam.objects.filter(
@@ -176,7 +162,7 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Per-subject ABAC: MATH_TEACHER / ENGLISH_TEACHER only assign rows for their subject.
+        # Scope-based enforcement is handled by authorize(..., subject=...).
 
         added_count = 0
         removed_count = 0
@@ -188,7 +174,7 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
                 practice_tests_matched = pts.count()
                 for pt in pts:
                     if authorize(
-                        request.user, acc_const.PERM_ASSIGN_TEST_ACCESS, subject=pt.subject
+                        request.user, acc_const.PERM_ASSIGN_ACCESS, subject=pt.subject
                     ):
                         pt.assigned_users.add(*users)
                         added_count += 1
@@ -211,7 +197,7 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
                 add_tests = PracticeTest.objects.filter(**add_filters)
                 for pt in add_tests:
                     if authorize(
-                        request.user, acc_const.PERM_ASSIGN_TEST_ACCESS, subject=pt.subject
+                        request.user, acc_const.PERM_ASSIGN_ACCESS, subject=pt.subject
                     ):
                         pt.assigned_users.add(*users)
                         added_count += 1
@@ -233,7 +219,7 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
                     remove_tests = PracticeTest.objects.filter(**remove_filters)
                     for pt in remove_tests:
                         if authorize(
-                            request.user, acc_const.PERM_ASSIGN_TEST_ACCESS, subject=pt.subject
+                            request.user, acc_const.PERM_ASSIGN_ACCESS, subject=pt.subject
                         ):
                             pt.assigned_users.remove(*users)
                             removed_count += 1
@@ -464,7 +450,7 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
 
         tests = list(exam.tests.all())
         can_all_sections = tests and all(
-            authorize(request.user, acc_const.PERM_ASSIGN_TEST_ACCESS, subject=t.subject)
+            authorize(request.user, acc_const.PERM_ASSIGN_ACCESS, subject=t.subject)
             for t in tests
         )
 
@@ -479,7 +465,7 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
             touched = False
             for test in tests:
                 if authorize(
-                    request.user, acc_const.PERM_ASSIGN_TEST_ACCESS, subject=test.subject
+                    request.user, acc_const.PERM_ASSIGN_ACCESS, subject=test.subject
                 ):
                     test.assigned_users.set(users)
                     touched = True
