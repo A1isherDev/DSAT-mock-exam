@@ -63,6 +63,8 @@ MIDDLEWARE = [
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
+    # Subdomain separation for admin/questions consoles
+    'access.host_guard.SubdomainAPIGuardMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
@@ -183,6 +185,8 @@ CSRF_TRUSTED_ORIGINS = [
     'https://mastersat.uz',
     'http://www.mastersat.uz',
     'https://www.mastersat.uz',
+    'https://admin.mastersat.uz',
+    'https://questions.mastersat.uz',
     'http://65.109.100.104',
 ]
 

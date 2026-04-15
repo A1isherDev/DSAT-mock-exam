@@ -17,9 +17,13 @@ FRONTEND_DIR="$APP_DIR/frontend"
 VENV_DIR="$BACKEND_DIR/venv"
 ECOSYSTEM_FILE="$APP_DIR/deploy/ecosystem.config.js"
 MIGRATION_SCRIPT="$APP_DIR/deploy/migrate_sqlite_to_postgres.sh"
+NGINX_SITE_FILE_SRC="$APP_DIR/deploy/nginx.conf"
+NGINX_SITE_FILE_DST="${NGINX_SITE_FILE_DST:-/etc/nginx/sites-available/satapp}"
+NGINX_ENABLE_LINK_DST="${NGINX_ENABLE_LINK_DST:-/etc/nginx/sites-enabled/satapp}"
 
 SKIP_PULL="false"
 WITH_SQLITE_MIGRATION="false"
+WITH_NGINX="false"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -27,6 +31,8 @@ while [[ $# -gt 0 ]]; do
       SKIP_PULL="true"; shift ;;
     --with-sqlite-migration)
       WITH_SQLITE_MIGRATION="true"; shift ;;
+    --with-nginx)
+      WITH_NGINX="true"; shift ;;
     *)
       echo "Unknown argument: $1"
       exit 1 ;;
@@ -112,6 +118,24 @@ npm run build --prefix "$FRONTEND_DIR"
 echo "-> Restarting PM2 services..."
 pm2 reload "$ECOSYSTEM_FILE" --update-env || pm2 start "$ECOSYSTEM_FILE"
 pm2 save
+
+if [[ "$WITH_NGINX" == "true" ]]; then
+  echo "-> Installing Nginx site config..."
+  if [[ ! -f "$NGINX_SITE_FILE_SRC" ]]; then
+    echo "Missing nginx config template: $NGINX_SITE_FILE_SRC"
+    exit 1
+  fi
+  if command -v sudo >/dev/null 2>&1; then
+    sudo cp "$NGINX_SITE_FILE_SRC" "$NGINX_SITE_FILE_DST"
+    if [[ ! -L "$NGINX_ENABLE_LINK_DST" ]]; then
+      sudo ln -s "$NGINX_SITE_FILE_DST" "$NGINX_ENABLE_LINK_DST" || true
+    fi
+    sudo nginx -t
+    sudo systemctl reload nginx
+  else
+    echo "sudo is not available; copy nginx.conf manually to $NGINX_SITE_FILE_DST"
+  fi
+fi
 
 echo ""
 echo "========================================="

@@ -12,6 +12,7 @@ import {
     canUseGlobalQuestionsTab,
     defaultBulkPastpaperSubjectScope,
 } from '@/lib/permissions';
+import Cookies from "js-cookie";
 import {
     buildHomeworkPastpaperCards,
     formatLineDate,
@@ -190,7 +191,7 @@ const RichTextEditor = ({ value, onChange, label, placeholder = "" }: { value: s
     );
 };
 
-type Tab = 'users' | 'pastpapers' | 'mocks' | 'midterms' | 'modules' | 'questions' | 'examdates';
+type Tab = 'users' | 'assignments' | 'pastpapers' | 'mocks' | 'midterms' | 'modules' | 'questions' | 'examdates';
 
 const MIDTERM_SCORE_OPTIONS = [1, 2, 3, 5, 8, 10] as const;
 
@@ -271,6 +272,10 @@ const STAFF_ROLE_OPTIONS: { value: string; label: string }[] = [
 ];
 
 export default function AdminPage() {
+    const consoleMode = (typeof window !== "undefined" ? Cookies.get("lms_console") : null) as
+        | "admin"
+        | "questions"
+        | null;
     const router = useRouter();
     const didInitMockSelection = useRef(false);
     const [activeTab, setActiveTab] = useState<Tab>('pastpapers');
@@ -1622,11 +1627,18 @@ export default function AdminPage() {
             { key: 'mocks', label: 'Mock exams', icon: <Layers className="w-4 h-4" /> },
             { key: 'midterms', label: 'Midterm', icon: <GraduationCap className="w-4 h-4" /> },
             { key: 'questions', label: 'Questions', icon: <HelpCircle className="w-4 h-4" /> },
+            { key: 'assignments', label: 'Assignments', icon: <Users className="w-4 h-4" /> },
             { key: 'examdates', label: 'Exam dates', icon: <Calendar className="w-4 h-4" /> },
             { key: 'users', label: 'Users', icon: <Users className="w-4 h-4" /> },
         ];
         const testArea = can("*") || can("manage_tests");
         const filtered = all.filter((item) => {
+            if (consoleMode === "admin") {
+                return item.key === "assignments" || item.key === "users" || item.key === "examdates";
+            }
+            if (consoleMode === "questions") {
+                return item.key === "pastpapers" || item.key === "mocks" || item.key === "midterms" || item.key === "questions";
+            }
             if (item.key === 'examdates') return can('manage_users');
             if (item.key === "users") return can("manage_users") || can("assign_access");
             if (item.key === 'questions') return canUseGlobalQuestionsTab();
@@ -1683,6 +1695,43 @@ export default function AdminPage() {
                     </aside>
 
                     <main className="flex-1 p-8 overflow-y-auto">
+                        {activeTab === "assignments" && (
+                            <div className="space-y-6 max-w-4xl">
+                                <div className="flex items-center justify-between gap-4 flex-wrap">
+                                    <div>
+                                        <h2 className="text-xl font-bold text-slate-900">Assignments</h2>
+                                        <p className="text-xs text-slate-500 mt-1 max-w-xl">
+                                            Bulk-assign pastpapers or timed mocks to selected students. This console is scoped by your access.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                    <button
+                                        type="button"
+                                        className={BTN_PRIMARY}
+                                        disabled={!can("assign_access")}
+                                        onClick={openBulkModalPastpapers}
+                                    >
+                                        <Users className="w-4 h-4" /> Bulk assign pastpapers
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className={BTN_PRIMARY}
+                                        disabled={!can("assign_access")}
+                                        onClick={openBulkModalMocks}
+                                    >
+                                        <Users className="w-4 h-4" /> Bulk assign timed mocks
+                                    </button>
+                                </div>
+
+                                {!can("assign_access") ? (
+                                    <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
+                                        You don&apos;t have permission to bulk-assign. Ask an admin to grant <strong>assign_access</strong>.
+                                    </div>
+                                ) : null}
+                            </div>
+                        )}
                         {activeTab === 'pastpapers' && (
                             <div className="space-y-6 max-w-4xl">
                                 <div className="flex items-center justify-between gap-4 flex-wrap">
