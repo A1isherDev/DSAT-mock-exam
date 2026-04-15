@@ -50,7 +50,11 @@ class SubdomainAPIGuardMiddleware:
         # - testers (test_admin) may NOT use admin console subdomain
         # - testers MAY use questions console subdomain
         u = getattr(request, "user", None)
-        role = getattr(u, "role", None) if u and getattr(u, "is_authenticated", False) else None
+        role = (
+            str(getattr(u, "role", "") or "").strip().lower()
+            if u and getattr(u, "is_authenticated", False)
+            else ""
+        )
         if kind == "admin" and role == "test_admin":
             return JsonResponse(
                 {"detail": "Test authors cannot access admin console."}, status=403

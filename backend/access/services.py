@@ -56,7 +56,19 @@ def _normalized_role(user) -> str:
         return constants.ROLE_STUDENT
     raw = getattr(user, "role", None)
     if isinstance(raw, str) and raw.strip():
-        return raw.strip()
+        v = raw.strip()
+        legacy = v.upper()
+        if legacy == "SUPER_ADMIN":
+            return constants.ROLE_SUPER_ADMIN
+        if legacy in ("ADMIN", "ENGLISH_ADMIN", "MATH_ADMIN"):
+            return constants.ROLE_ADMIN
+        if legacy in ("TEACHER", "ENGLISH_TEACHER", "MATH_TEACHER"):
+            return constants.ROLE_TEACHER
+        if legacy == "TEST_ADMIN":
+            return constants.ROLE_TEST_ADMIN
+        if legacy == "STUDENT":
+            return constants.ROLE_STUDENT
+        return v.lower()
     return constants.ROLE_STUDENT
 
 
