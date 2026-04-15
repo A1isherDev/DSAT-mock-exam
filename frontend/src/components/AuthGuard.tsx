@@ -12,15 +12,21 @@ export default function AuthGuard({ children, isOptional = false, adminOnly = fa
     useEffect(() => {
         const token = Cookies.get('access_token');
         const perms = getPermissionList();
-        const hasLmsAdminPanel =
-            perms.includes('*') || perms.includes('manage_users');
+        const role = Cookies.get("role") || "";
+        const consoleMode = Cookies.get("lms_console") || "";
+        const isTester = role === "test_admin";
+        const hasStaffAccess =
+            perms.includes("*") ||
+            perms.includes("manage_users") ||
+            perms.includes("assign_access") ||
+            perms.includes("manage_tests");
         const isFrozen = Cookies.get('is_frozen') === 'true';
 
         if (!token && !isOptional) {
             router.push('/login');
-        } else if (isFrozen && !hasLmsAdminPanel && !isOptional) {
+        } else if (isFrozen && !hasStaffAccess && !isOptional) {
             router.push('/frozen');
-        } else if (adminOnly && !hasLmsAdminPanel && !isOptional) {
+        } else if (adminOnly && (!hasStaffAccess || (consoleMode === "admin" && isTester)) && !isOptional) {
             router.push('/'); // Redirect non-admins to home
         } else {
             setIsAuthenticated(!!token);
