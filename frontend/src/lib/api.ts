@@ -88,7 +88,7 @@ export const authApi = {
         Cookies.set('refresh_token', response.data.refresh, cookieOptions);
         Cookies.set('is_admin', response.data.is_admin ? 'true' : 'false', cookieOptions);
         Cookies.set('is_frozen', response.data.is_frozen ? 'true' : 'false', cookieOptions);
-        Cookies.set('role', response.data.role || 'student', cookieOptions);
+        Cookies.set('role', String(response.data.role || 'student').toLowerCase(), cookieOptions);
         if (Array.isArray(response.data.permissions)) {
             Cookies.set('lms_permissions', JSON.stringify(response.data.permissions), cookieOptions);
         }
@@ -108,7 +108,7 @@ export const authApi = {
         Cookies.set('refresh_token', response.data.refresh, cookieOptions);
         Cookies.set('is_admin', response.data.is_admin ? 'true' : 'false', cookieOptions);
         Cookies.set('is_frozen', response.data.is_frozen ? 'true' : 'false', cookieOptions);
-        Cookies.set('role', response.data.role || 'student', cookieOptions);
+        Cookies.set('role', String(response.data.role || 'student').toLowerCase(), cookieOptions);
         if (Array.isArray(response.data.permissions)) {
             Cookies.set('lms_permissions', JSON.stringify(response.data.permissions), cookieOptions);
         }
@@ -135,7 +135,7 @@ export const authApi = {
         Cookies.set('refresh_token', response.data.refresh, cookieOptions);
         Cookies.set('is_admin', response.data.is_admin ? 'true' : 'false', cookieOptions);
         Cookies.set('is_frozen', response.data.is_frozen ? 'true' : 'false', cookieOptions);
-        Cookies.set('role', response.data.role || 'student', cookieOptions);
+        Cookies.set('role', String(response.data.role || 'student').toLowerCase(), cookieOptions);
         if (Array.isArray(response.data.permissions)) {
             Cookies.set('lms_permissions', JSON.stringify(response.data.permissions), cookieOptions);
         }

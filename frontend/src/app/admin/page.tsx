@@ -460,7 +460,8 @@ export default function AdminPage() {
         fetchMockExams();
         fetchStandaloneTests();
         fetchPastpaperPacks();
-        if (can("manage_users") || can("assign_access")) {
+        // Users API is intentionally admin-subdomain only; avoid 403/alerts on questions console.
+        if (consoleMode !== "questions" && (can("manage_users") || can("assign_access"))) {
             fetchUsers();
         }
         if (can("manage_users")) {

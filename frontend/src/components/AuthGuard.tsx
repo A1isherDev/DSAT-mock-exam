@@ -12,7 +12,7 @@ export default function AuthGuard({ children, isOptional = false, adminOnly = fa
     useEffect(() => {
         const token = Cookies.get('access_token');
         const perms = getPermissionList();
-        const role = Cookies.get("role") || "";
+        const role = (Cookies.get("role") || "").toLowerCase();
         const consoleMode = Cookies.get("lms_console") || "";
         const isTester = role === "test_admin";
         const hasStaffAccess =

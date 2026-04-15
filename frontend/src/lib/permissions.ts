@@ -31,23 +31,44 @@ export function getScopeList(): string[] {
 export function can(codename: string): boolean {
   const p = getPermissionList();
   if (p.includes("*")) return true;
-  const legacyToNew: Record<string, string> = {
-    // Legacy permissions still referenced in older UI components
-    manage_roles: "assign_access",
-    assign_test_access: "assign_access",
-    manage_classrooms: "create_classroom",
-    access_lms_admin: "manage_users", // admin panel access (Issue #1)
-    view_all_tests: "manage_tests",
-    view_english_tests: "manage_tests",
-    view_math_tests: "manage_tests",
-    create_test: "manage_tests",
-    edit_test: "manage_tests",
-    delete_test: "manage_tests",
-    create_mock_sat: "manage_tests",
-    create_midterm_mock: "manage_tests",
+
+  // Accept both canonical and legacy codenames transparently.
+  const aliases: Record<string, string[]> = {
+    // Canonical -> legacy equivalents
+    assign_access: ["manage_roles", "assign_test_access"],
+    create_classroom: ["manage_classrooms"],
+    manage_tests: [
+      "view_all_tests",
+      "view_english_tests",
+      "view_math_tests",
+      "create_test",
+      "edit_test",
+      "delete_test",
+      "create_mock_sat",
+      "create_midterm_mock",
+    ],
+    manage_users: ["access_lms_admin"],
+
+    // Legacy -> canonical equivalents
+    manage_roles: ["assign_access"],
+    assign_test_access: ["assign_access"],
+    manage_classrooms: ["create_classroom"],
+    access_lms_admin: ["manage_users"],
+    view_all_tests: ["manage_tests"],
+    view_english_tests: ["manage_tests"],
+    view_math_tests: ["manage_tests"],
+    create_test: ["manage_tests"],
+    edit_test: ["manage_tests"],
+    delete_test: ["manage_tests"],
+    create_mock_sat: ["manage_tests"],
+    create_midterm_mock: ["manage_tests"],
   };
-  const mapped = legacyToNew[codename] || codename;
-  return p.includes(mapped);
+
+  const checks = new Set<string>([codename, ...(aliases[codename] || [])]);
+  for (const c of checks) {
+    if (p.includes(c)) return true;
+  }
+  return false;
 }
 
 /** Timed mock / test admin surfaces are part of manage_tests. */
