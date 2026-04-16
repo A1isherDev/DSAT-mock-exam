@@ -37,6 +37,8 @@ class SubdomainAPIGuardMiddleware:
         host = request.get_host()
         kind = _host_kind(host, self.cfg)
         method = (request.method or "GET").upper()
+        # Make console kind available to downstream handlers (views/serializers/etc).
+        setattr(request, "lms_console", kind)
 
         # Non-API paths are unaffected.
         if not path.startswith("/api/"):
@@ -58,6 +60,10 @@ class SubdomainAPIGuardMiddleware:
         if kind == "admin" and role == "test_admin":
             return JsonResponse(
                 {"detail": "Test authors cannot access admin console."}, status=403
+            )
+        if kind == "questions" and role == "student":
+            return JsonResponse(
+                {"detail": "Students cannot access questions console."}, status=403
             )
 
         # Admin subdomain: bulk assign + users + read-only exam lists.

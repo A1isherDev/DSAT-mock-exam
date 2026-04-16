@@ -54,6 +54,12 @@ from .serializers import (
 
 logger = logging.getLogger(__name__)
 
+def _is_student(user) -> bool:
+    return str(getattr(user, "role", "") or "").strip().lower() == "student"
+
+def _is_questions_console(request) -> bool:
+    return str(getattr(request, "lms_console", "") or "").strip().lower() == "questions"
+
 
 class MockExamViewSet(viewsets.ReadOnlyModelViewSet):
     """
@@ -422,9 +428,10 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
     serializer_class = AdminMockExamSerializer
 
     def get_queryset(self):
-        return filter_mock_exams_for_user(
-            self.request.user, MockExam.objects.all().prefetch_related("tests__modules")
-        )
+        base = MockExam.objects.all().prefetch_related("tests__modules")
+        if _is_questions_console(self.request) and not _is_student(self.request.user):
+            return base
+        return filter_mock_exams_for_user(self.request.user, base)
 
     def perform_create(self, serializer):
         exam = serializer.save()
@@ -573,15 +580,14 @@ class AdminPastpaperPackViewSet(viewsets.ModelViewSet):
     serializer_class = AdminPastpaperPackSerializer
 
     def get_queryset(self):
-        return (
-            filter_pastpaper_packs_for_user(
-                self.request.user,
-                PastpaperPack.objects.all().prefetch_related(
-                    "sections__modules",
-                    "sections__assigned_users",
-                ),
-            )
-            .order_by("-practice_date", "-id")
+        base = PastpaperPack.objects.all().prefetch_related(
+            "sections__modules",
+            "sections__assigned_users",
+        )
+        if _is_questions_console(self.request) and not _is_student(self.request.user):
+            return base.order_by("-practice_date", "-id")
+        return filter_pastpaper_packs_for_user(self.request.user, base).order_by(
+            "-practice_date", "-id"
         )
 
     def perform_update(self, serializer):
@@ -626,10 +632,11 @@ class AdminPracticeTestViewSet(viewsets.ModelViewSet):
     serializer_class = AdminPracticeTestSerializer
 
     def get_queryset(self):
-        qs = filter_practice_tests_for_user(
-            self.request.user,
-            PracticeTest.objects.all().prefetch_related("modules", "assigned_users"),
-        )
+        base = PracticeTest.objects.all().prefetch_related("modules", "assigned_users")
+        if _is_questions_console(self.request) and not _is_student(self.request.user):
+            qs = base
+        else:
+            qs = filter_practice_tests_for_user(self.request.user, base)
         standalone = self.request.query_params.get("standalone")
         if standalone in ("1", "true", "yes"):
             qs = qs.filter(mock_exam__isnull=True)

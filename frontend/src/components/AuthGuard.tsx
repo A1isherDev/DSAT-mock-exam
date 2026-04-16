@@ -15,6 +15,7 @@ export default function AuthGuard({ children, isOptional = false, adminOnly = fa
         const role = (Cookies.get("role") || "").toLowerCase();
         const consoleMode = Cookies.get("lms_console") || "";
         const isTester = role === "test_admin";
+        const isStudent = role === "student";
         const hasStaffAccess =
             perms.includes("*") ||
             perms.includes("manage_users") ||
@@ -26,6 +27,8 @@ export default function AuthGuard({ children, isOptional = false, adminOnly = fa
             router.push('/login');
         } else if (isFrozen && !hasStaffAccess && !isOptional) {
             router.push('/frozen');
+        } else if (consoleMode === "questions" && isStudent && !isOptional) {
+            router.push('/');
         } else if (adminOnly && (!hasStaffAccess || (consoleMode === "admin" && isTester)) && !isOptional) {
             router.push('/'); // Redirect non-admins to home
         } else {
