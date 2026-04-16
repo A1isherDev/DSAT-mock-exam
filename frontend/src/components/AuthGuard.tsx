@@ -29,6 +29,8 @@ export default function AuthGuard({ children, isOptional = false, adminOnly = fa
             router.push('/frozen');
         } else if (consoleMode === "questions" && isStudent && !isOptional) {
             router.push('/');
+        } else if (consoleMode === "admin" && (isStudent || isTester) && !isOptional) {
+            router.push('/');
         } else if (adminOnly && (!hasStaffAccess || (consoleMode === "admin" && isTester)) && !isOptional) {
             router.push('/'); // Redirect non-admins to home
         } else {

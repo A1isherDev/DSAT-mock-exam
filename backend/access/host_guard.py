@@ -57,9 +57,9 @@ class SubdomainAPIGuardMiddleware:
             if u and getattr(u, "is_authenticated", False)
             else ""
         )
-        if kind == "admin" and role == "test_admin":
+        if kind == "admin" and role in ("test_admin", "student"):
             return JsonResponse(
-                {"detail": "Test authors cannot access admin console."}, status=403
+                {"detail": "You cannot access admin console."}, status=403
             )
         if kind == "questions" and role == "student":
             return JsonResponse(
