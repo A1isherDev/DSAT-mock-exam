@@ -12,6 +12,60 @@ function cookieDomain(): string | undefined {
     return undefined;
 }
 
+const AUTH_COOKIE_NAMES = [
+    "access_token",
+    "refresh_token",
+    "is_admin",
+    "is_frozen",
+    "role",
+    "lms_permissions",
+    "lms_scope",
+    "lms_user",
+] as const;
+
+function clearAuthCookiesEverywhere() {
+    if (typeof window === "undefined") return;
+    const host = window.location.hostname;
+    const sharedDomain = cookieDomain();
+    const domains = [undefined, host, sharedDomain].filter(Boolean) as (string | undefined)[];
+    const paths = ["/"];
+
+    for (const name of AUTH_COOKIE_NAMES) {
+        for (const path of paths) {
+            Cookies.remove(name, { path });
+            for (const domain of domains) {
+                Cookies.remove(name, { path, domain });
+            }
+        }
+    }
+}
+
+async function persistMeCookie(rememberMe: boolean) {
+    try {
+        const me = await usersApi.getMe();
+        const cookieOptions = {
+            secure: IS_PROD,
+            sameSite: "strict" as const,
+            expires: rememberMe ? 7 : undefined,
+            domain: IS_PROD ? cookieDomain() : undefined,
+            path: "/",
+        };
+        Cookies.set(
+            "lms_user",
+            JSON.stringify({
+                id: me?.id,
+                email: me?.email,
+                username: me?.username,
+                first_name: me?.first_name,
+                last_name: me?.last_name,
+            }),
+            cookieOptions,
+        );
+    } catch {
+        // best-effort; UI will fall back to role-only if this fails
+    }
+}
+
 const api = axios.create({
     baseURL: API_URL,
 });
@@ -34,14 +88,7 @@ api.interceptors.response.use(
             }
         }
         if (error.response?.status === 401) {
-            const opts = { domain: IS_PROD ? cookieDomain() : undefined };
-            Cookies.remove('access_token', opts);
-            Cookies.remove('refresh_token', opts);
-            Cookies.remove('is_admin', opts);
-            Cookies.remove('is_frozen', opts);
-            Cookies.remove('role', opts);
-            Cookies.remove('lms_permissions', opts);
-            Cookies.remove('lms_scope', opts);
+            clearAuthCookiesEverywhere();
             if (typeof window !== 'undefined') {
                 window.location.href = '/login';
             }
@@ -88,12 +135,15 @@ export const authApi = {
         return response.data;
     },
     login: async (email: string, password: string, rememberMe = true) => {
+        // Avoid "sticky sessions" when old host-only + shared-domain cookies both exist.
+        clearAuthCookiesEverywhere();
         const response = await api.post('/auth/login/', { email, password });
         const cookieOptions = {
             secure: IS_PROD,
             sameSite: 'strict' as const,
             expires: rememberMe ? 7 : undefined,
             domain: IS_PROD ? cookieDomain() : undefined,
+            path: "/",
         };
         Cookies.set('access_token', response.data.access, cookieOptions);
         Cookies.set('refresh_token', response.data.refresh, cookieOptions);
@@ -106,15 +156,18 @@ export const authApi = {
         if (Array.isArray(response.data.scope)) {
             Cookies.set('lms_scope', JSON.stringify(response.data.scope), cookieOptions);
         }
+        await persistMeCookie(rememberMe);
         return response.data;
     },
     googleAuth: async (credential: string, profile?: { first_name?: string; last_name?: string; username?: string }, rememberMe = true) => {
+        clearAuthCookiesEverywhere();
         const response = await api.post('/users/google/', { credential, ...(profile || {}) });
         const cookieOptions = {
             secure: IS_PROD,
             sameSite: 'strict' as const,
             expires: rememberMe ? 7 : undefined,
             domain: IS_PROD ? cookieDomain() : undefined,
+            path: "/",
         };
         Cookies.set('access_token', response.data.access, cookieOptions);
         Cookies.set('refresh_token', response.data.refresh, cookieOptions);
@@ -127,6 +180,7 @@ export const authApi = {
         if (Array.isArray(response.data.scope)) {
             Cookies.set('lms_scope', JSON.stringify(response.data.scope), cookieOptions);
         }
+        await persistMeCookie(rememberMe);
         return response.data;
     },
     telegramAuth: async (
@@ -137,12 +191,14 @@ export const authApi = {
         },
         rememberMe = true
     ) => {
+        clearAuthCookiesEverywhere();
         const response = await api.post('/users/telegram/', payload);
         const cookieOptions = {
             secure: IS_PROD,
             sameSite: 'strict' as const,
             expires: rememberMe ? 7 : undefined,
             domain: IS_PROD ? cookieDomain() : undefined,
+            path: "/",
         };
         Cookies.set('access_token', response.data.access, cookieOptions);
         Cookies.set('refresh_token', response.data.refresh, cookieOptions);
@@ -155,17 +211,11 @@ export const authApi = {
         if (Array.isArray(response.data.scope)) {
             Cookies.set('lms_scope', JSON.stringify(response.data.scope), cookieOptions);
         }
+        await persistMeCookie(rememberMe);
         return response.data;
     },
     logout: () => {
-        const opts = { domain: IS_PROD ? cookieDomain() : undefined };
-        Cookies.remove('access_token', opts);
-        Cookies.remove('refresh_token', opts);
-        Cookies.remove('is_admin', opts);
-        Cookies.remove('is_frozen', opts);
-        Cookies.remove('role', opts);
-        Cookies.remove('lms_permissions', opts);
-        Cookies.remove('lms_scope', opts);
+        clearAuthCookiesEverywhere();
         window.location.href = '/login';
     }
 };

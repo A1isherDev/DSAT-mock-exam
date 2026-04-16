@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
-import { adminApi } from '@/lib/api';
+import { adminApi, authApi } from '@/lib/api';
 import {
     can,
     canManageMockExamShell,
@@ -27,6 +27,26 @@ const getImageUrl = (path: string | null | undefined) => {
     const baseUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || '';
     return `${baseUrl}${path}`;
 };
+
+function getSessionLabel(): { label: string; role: string } {
+    const role = String(Cookies.get("role") || "").toLowerCase();
+    try {
+        const raw = Cookies.get("lms_user");
+        if (raw) {
+            const u = JSON.parse(raw) as any;
+            const name = [u?.first_name, u?.last_name].filter(Boolean).join(" ").trim();
+            const label =
+                name ||
+                String(u?.username || "").trim() ||
+                String(u?.email || "").trim() ||
+                "";
+            return { label, role };
+        }
+    } catch {
+        // ignore parse errors
+    }
+    return { label: "", role };
+}
 import {
     Users, BookOpen, ShieldCheck, LogOut, Plus, Pencil, Trash2, Save,
     X, Loader2, Layers, HelpCircle, Search, Upload, Image as ImageIcon, ArrowUp, ArrowDown, Lock, Unlock,
@@ -1693,9 +1713,25 @@ export default function AdminPage() {
                         </div>
                         <span className="text-white font-bold text-lg tracking-tight">MasterSAT Admin</span>
                     </div>
-                    <button onClick={() => router.push('/')} className="flex items-center gap-2 text-slate-400 hover:text-white text-xs font-bold transition-colors">
-                        <LogOut className="w-4 h-4" /> Exit
-                    </button>
+                    <div className="flex items-center gap-3">
+                        {(() => {
+                            const s = getSessionLabel();
+                            if (!s.label && !s.role) return null;
+                            return (
+                                <div className="hidden sm:flex items-center gap-2 text-slate-300 text-xs font-semibold">
+                                    {s.label ? <span className="max-w-[220px] truncate">{s.label}</span> : null}
+                                    {s.role ? <span className="rounded-lg bg-slate-800/70 px-2 py-1 text-[10px] font-black uppercase tracking-widest">{s.role}</span> : null}
+                                </div>
+                            );
+                        })()}
+                        <button
+                            type="button"
+                            onClick={() => authApi.logout()}
+                            className="flex items-center gap-2 text-slate-400 hover:text-white text-xs font-bold transition-colors"
+                        >
+                            <LogOut className="w-4 h-4" /> Exit
+                        </button>
+                    </div>
                 </header>
 
                 <div className="flex flex-1 overflow-hidden">
