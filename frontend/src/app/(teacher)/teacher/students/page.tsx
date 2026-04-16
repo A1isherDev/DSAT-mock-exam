@@ -89,7 +89,7 @@ export default function TeacherStudentsPage() {
     };
   }, [grantOpen]);
 
-  const students = people.filter((m) => m.role === "STUDENT");
+  const students = people.filter((m) => String(m.role || "").toLowerCase() === "student");
   const allStudentsSelected = students.length > 0 && selectedStudentIds.length === students.length;
 
   const filteredTests = (() => {

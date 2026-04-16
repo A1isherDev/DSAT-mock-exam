@@ -366,10 +366,13 @@ export default function ProfilePage() {
   const completion = me ? profileCompletion(me) : 0;
   const targetScore = me?.target_score ? Math.max(0, Math.min(1600, parseInt(me.target_score, 10))) : null;
   const nextDays = me?.sat_exam_date ? daysUntil(me.sat_exam_date) : null;
-  const enrolledClasses = classes.filter((c) => c.my_role === "STUDENT" || c.my_role === "ADMIN");
+  const enrolledClasses = classes.filter((c) => {
+    const r = String(c.my_role || "").toLowerCase();
+    return r === "student" || r === "admin";
+  });
   const totalPeers = enrolledClasses.reduce((acc, c) => acc + Math.max(0, (c.members_count || 0) - 1), 0);
   const selectedClass = enrolledClasses.find((c) => c.id === selectedClassId) || null;
-  const selectedStudents = selectedClassPeople.filter((p) => p.role === "STUDENT");
+  const selectedStudents = selectedClassPeople.filter((p) => String(p.role || "").toLowerCase() === "student");
 
   const formatSubject = (s?: string) => {
     if (!s) return "General";
