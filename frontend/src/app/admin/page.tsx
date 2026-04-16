@@ -426,21 +426,36 @@ export default function AdminPage() {
                 didInitMockSelection.current = true;
                 setSelectedMockId((prev) => prev ?? data[0].id);
             }
-        } catch(e) {}
+        } catch (e: any) {
+            const d = e?.response?.data;
+            const msg = d?.detail || 'Could not load mock exams.';
+            showToast(String(msg));
+            setMockExams([]);
+        }
     }, []);
 
     const fetchStandaloneTests = useCallback(async () => {
         try {
             const data = await adminApi.getPracticeTestsAdmin(true);
             setStandaloneTests(data);
-        } catch (e) { /* ignore */ }
+        } catch (e: any) {
+            const d = e?.response?.data;
+            const msg = d?.detail || 'Could not load pastpaper sections.';
+            showToast(String(msg));
+            setStandaloneTests([]);
+        }
     }, []);
 
     const fetchPastpaperPacks = useCallback(async () => {
         try {
             const data = await adminApi.getPastpaperPacks();
             setPastpaperPacks(Array.isArray(data) ? data : []);
-        } catch (e) { /* ignore */ }
+        } catch (e: any) {
+            const d = e?.response?.data;
+            const msg = d?.detail || 'Could not load pastpaper cards.';
+            showToast(String(msg));
+            setPastpaperPacks([]);
+        }
     }, []);
 
     const fetchModules = useCallback(async () => {
