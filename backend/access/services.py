@@ -97,10 +97,25 @@ def _normalized_scope(user) -> FrozenSet[str]:
         elif v in ("math",):
             out.add(constants.SCOPE_MATH)
     # Fallback: some legacy/provisioned staff accounts may have empty scope.
-    # Test authors and global admins should see both subjects by default.
     if not out:
         role = _normalized_role(user)
+        raw_role = str(getattr(user, "role", "") or "").strip()
+        legacy = raw_role.upper()
+
+        # Subject-staff legacy roles.
+        if legacy == "ENGLISH_TEACHER":
+            return frozenset({constants.SCOPE_ENGLISH})
+        if legacy == "MATH_TEACHER":
+            return frozenset({constants.SCOPE_MATH})
+        if legacy == "ENGLISH_ADMIN":
+            return frozenset({constants.SCOPE_ENGLISH})
+        if legacy == "MATH_ADMIN":
+            return frozenset({constants.SCOPE_MATH})
+
+        # Global staff defaults.
         if role in (constants.ROLE_ADMIN, constants.ROLE_TEST_ADMIN):
+            return frozenset({constants.SCOPE_MATH, constants.SCOPE_ENGLISH})
+        if role == constants.ROLE_TEACHER and legacy == "TEACHER":
             return frozenset({constants.SCOPE_MATH, constants.SCOPE_ENGLISH})
     return frozenset(out)
 
