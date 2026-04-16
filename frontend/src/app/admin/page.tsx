@@ -285,6 +285,7 @@ export default function AdminPage() {
 
     // Data
     const [users, setUsers] = useState<any[]>([]);
+    const isStudentRole = (r: any) => String(r || "").toLowerCase() === "student";
     const [mockExams, setMockExams] = useState<any[]>([]);
     const [pastpaperPacks, setPastpaperPacks] = useState<any[]>([]);
     const [standaloneTests, setStandaloneTests] = useState<any[]>([]);
@@ -3818,7 +3819,7 @@ export default function AdminPage() {
                                                     <div className="min-w-0">
                                                         <p className="font-bold text-sm text-slate-900">
                                                             {user.first_name} {user.last_name}{' '}
-                                                            {user.role && user.role !== 'STUDENT' && (
+                                                            {user.role && !isStudentRole(user.role) && (
                                                                 <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded ml-1">{user.role}</span>
                                                             )}{' '}
                                                             {user.is_frozen && (
@@ -3949,8 +3950,8 @@ export default function AdminPage() {
                                 <div className="flex flex-col bg-slate-50/30 min-h-0">
                                     <div className="p-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center shrink-0">
                                         <span className="text-xs font-extrabold text-slate-500 uppercase">Students ({bulkAssignUsers.length})</span>
-                                        <button type="button" onClick={() => setBulkAssignUsers(bulkAssignUsers.length === users.filter(u => u.role === 'STUDENT').length ? [] : users.filter(u => u.role === 'STUDENT').map(u => u.id))} className="text-[10px] font-bold text-blue-600 hover:underline">
-                                            {bulkAssignUsers.length === users.filter(u => u.role === 'STUDENT').length ? 'Deselect All' : 'Select All'}
+                                        <button type="button" onClick={() => setBulkAssignUsers(bulkAssignUsers.length === users.filter(u => isStudentRole(u.role)).length ? [] : users.filter(u => isStudentRole(u.role)).map(u => u.id))} className="text-[10px] font-bold text-blue-600 hover:underline">
+                                            {bulkAssignUsers.length === users.filter(u => isStudentRole(u.role)).length ? 'Deselect All' : 'Select All'}
                                         </button>
                                     </div>
                                     <div className="p-3 border-b border-slate-100 bg-white shrink-0">
@@ -3965,7 +3966,7 @@ export default function AdminPage() {
                                         </div>
                                     </div>
                                     <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1">
-                                        {users.filter(u => u.role === 'STUDENT' && (u.first_name + ' ' + u.last_name + ' ' + u.username).toLowerCase().includes(bulkUserSearch.toLowerCase())).map(user => (
+                                        {users.filter(u => isStudentRole(u.role) && (u.first_name + ' ' + u.last_name + ' ' + u.username).toLowerCase().includes(bulkUserSearch.toLowerCase())).map(user => (
                                             <label key={user.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-indigo-50/50 cursor-pointer transition-colors border border-transparent hover:border-indigo-100">
                                                 <input
                                                     type="checkbox"
@@ -4179,8 +4180,8 @@ export default function AdminPage() {
                                 <div className="flex flex-col bg-slate-50/30 min-h-0">
                                     <div className="p-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center shrink-0">
                                         <span className="text-xs font-extrabold text-slate-500 uppercase">Students ({bulkAssignUsers.length})</span>
-                                        <button type="button" onClick={() => setBulkAssignUsers(bulkAssignUsers.length === users.filter(u => u.role === 'STUDENT').length ? [] : users.filter(u => u.role === 'STUDENT').map(u => u.id))} className="text-[10px] font-bold text-blue-600 hover:underline">
-                                            {bulkAssignUsers.length === users.filter(u => u.role === 'STUDENT').length ? 'Deselect All' : 'Select All'}
+                                        <button type="button" onClick={() => setBulkAssignUsers(bulkAssignUsers.length === users.filter(u => isStudentRole(u.role)).length ? [] : users.filter(u => isStudentRole(u.role)).map(u => u.id))} className="text-[10px] font-bold text-blue-600 hover:underline">
+                                            {bulkAssignUsers.length === users.filter(u => isStudentRole(u.role)).length ? 'Deselect All' : 'Select All'}
                                         </button>
                                     </div>
                                     <div className="p-3 border-b border-slate-100 bg-white shrink-0">
@@ -4195,7 +4196,7 @@ export default function AdminPage() {
                                         </div>
                                     </div>
                                     <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1">
-                                        {users.filter(u => u.role === 'STUDENT' && (u.first_name + ' ' + u.last_name + ' ' + u.username).toLowerCase().includes(bulkUserSearch.toLowerCase())).map(user => (
+                                        {users.filter(u => isStudentRole(u.role) && (u.first_name + ' ' + u.last_name + ' ' + u.username).toLowerCase().includes(bulkUserSearch.toLowerCase())).map(user => (
                                             <label key={user.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-indigo-50/50 cursor-pointer transition-colors border border-transparent hover:border-indigo-100">
                                                 <input
                                                     type="checkbox"
