@@ -33,7 +33,9 @@ type Props = {
 export default function TelegramLoginButton({ onAuth, botUsername }: Props) {
     const containerRef = useRef<HTMLDivElement>(null);
     const onAuthRef = useRef(onAuth);
-    onAuthRef.current = onAuth;
+    useEffect(() => {
+        onAuthRef.current = onAuth;
+    }, [onAuth]);
 
     const bot = (botUsername ?? process.env.NEXT_PUBLIC_TELEGRAM_BOT_NAME)?.trim() || "";
 

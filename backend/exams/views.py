@@ -2,6 +2,8 @@ from rest_framework import viewsets, status, generics
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import PermissionDenied
+import logging
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.db import transaction
@@ -49,6 +51,8 @@ from .serializers import (
     AdminModuleSerializer,
     AdminQuestionSerializer,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class MockExamViewSet(viewsets.ReadOnlyModelViewSet):
@@ -326,8 +330,13 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
             
             serializer = self.get_serializer(attempt)
             return Response(serializer.data)
-        except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            logger.exception(
+                "submit_module failed attempt_id=%s user_id=%s",
+                getattr(attempt, "id", None),
+                getattr(request.user, "id", None),
+            )
+            return Response({'error': 'Could not submit module.'}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=['post'])
     def save_attempt(self, request, pk=None):
@@ -347,6 +356,8 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'])
     def review(self, request, pk=None):
         attempt = self.get_object()
+        if not getattr(attempt, "is_completed", False):
+            raise PermissionDenied("Review is available only after you submit the test.")
         module_id_param = request.query_params.get('module_id')
         
         questions_data = []

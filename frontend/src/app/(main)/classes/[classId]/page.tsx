@@ -6,6 +6,7 @@ import Link from "next/link";
 import { classesApi } from "@/lib/api";
 import ClassLeaderboard from "@/components/ClassLeaderboard";
 import CreateAssignmentModal from "@/components/CreateAssignmentModal";
+import SafeHtml from "@/components/SafeHtml";
 import {
   ClassroomAlert,
   ClassroomButton,
@@ -206,7 +207,7 @@ export default function ClassDetailPage() {
                         <span>{p.author?.first_name || p.author?.email || "Admin"}</span>
                         <span className="tabular-nums text-slate-500">{formatDue(p.created_at)}</span>
                       </div>
-                      <div className="prose prose-slate max-w-none text-sm dark:prose-invert" dangerouslySetInnerHTML={{ __html: p.content }} />
+                      <SafeHtml className="prose prose-slate max-w-none text-sm dark:prose-invert" html={p.content} />
                     </ClassroomCard>
                   ))
                 )}

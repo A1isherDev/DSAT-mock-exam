@@ -29,7 +29,8 @@ api.interceptors.response.use(
     (error) => {
         if (error.response?.status === 403 && error.response?.data?.detail) {
             if (typeof window !== 'undefined') {
-                alert(error.response.data.detail);
+                // Avoid blocking alerts (and leaking backend detail strings) in production UX.
+                console.warn("Forbidden:", error.response.data.detail);
             }
         }
         if (error.response?.status === 401) {

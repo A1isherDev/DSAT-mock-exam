@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import Cookies from "js-cookie";
+import { authApi } from "@/lib/api";
 
 export default function FrozenPage() {
     return (
@@ -20,13 +20,7 @@ export default function FrozenPage() {
                     <button
                         type="button"
                         onClick={() => {
-                            Cookies.remove("access_token");
-                            Cookies.remove("refresh_token");
-                            Cookies.remove("is_admin");
-                            Cookies.remove("is_frozen");
-                            Cookies.remove("role");
-                            Cookies.remove("lms_permissions");
-                            window.location.href = "/login";
+                            authApi.logout();
                         }}
                         className="px-5 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-bold text-sm"
                     >

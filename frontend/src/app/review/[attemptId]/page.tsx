@@ -4,6 +4,7 @@ import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { examsApi } from '@/lib/api';
 import AuthGuard from '@/components/AuthGuard';
 import { CheckCircle2, XCircle, ArrowLeft, BarChart3, Eye, EyeOff, X, ChevronRight, BookOpen, AlertCircle } from 'lucide-react';
+import SafeHtml from '@/components/SafeHtml';
 
 interface QuestionReviewModalProps {
     question: any;
@@ -58,9 +59,9 @@ const QuestionReviewModal = ({ question, showCorrectAnswers, onClose, onNext, on
                                     />
                                 </div>
                             )}
-                            <div
+                            <SafeHtml
                                 className="bg-slate-50/50 p-6 rounded-2xl border border-slate-100 text-slate-700 leading-normal mathjax-process"
-                                dangerouslySetInnerHTML={{ __html: question.text?.replace(/\n/g, '<br/>') || 'Question text missing' }}
+                                html={question.text?.replace(/\n/g, "<br/>") || "Question text missing"}
                             />
                         </div>
                     </div>
@@ -72,9 +73,9 @@ const QuestionReviewModal = ({ question, showCorrectAnswers, onClose, onNext, on
                                 <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center">
                                     <BookOpen className="w-3 h-3 mr-2" /> Question Prompt
                                 </h3>
-                                <div
+                                <SafeHtml
                                     className="font-[Georgia] text-slate-900 leading-relaxed border-l-4 border-blue-500 pl-5 py-1 text-base font-medium mathjax-process"
-                                    dangerouslySetInnerHTML={{ __html: question.question_prompt.replace(/\n/g, '<br/>') }}
+                                    html={question.question_prompt.replace(/\n/g, "<br/>")}
                                 />
                             </div>
                         )}
@@ -121,7 +122,7 @@ const QuestionReviewModal = ({ question, showCorrectAnswers, onClose, onNext, on
                                                             />
                                                         </div>
                                                     ) : (
-                                                        <div dangerouslySetInnerHTML={{ __html: (typeof val === 'object' && val !== null ? (val as any).text : (val as string))?.replace(/\n/g, '<br/>') }} />
+                                                        <SafeHtml html={(typeof val === "object" && val !== null ? (val as any).text : (val as string))?.replace(/\n/g, "<br/>") || ""} />
                                                     )}
                                                 </div>
                                                 {icon}
@@ -151,9 +152,9 @@ const QuestionReviewModal = ({ question, showCorrectAnswers, onClose, onNext, on
                         {showCorrectAnswers && question.explanation && (
                             <div className="bg-blue-50/30 p-6 rounded-2xl border border-blue-100">
                                 <h4 className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-3">Explanation</h4>
-                                <div 
+                                <SafeHtml
                                     className="text-slate-700 font-[Georgia] leading-relaxed text-sm mathjax-process"
-                                    dangerouslySetInnerHTML={{ __html: question.explanation.replace(/\n/g, '<br/>') }}
+                                    html={question.explanation.replace(/\n/g, "<br/>")}
                                 />
                             </div>
                         )}

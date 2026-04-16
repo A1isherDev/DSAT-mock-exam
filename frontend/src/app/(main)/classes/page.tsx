@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import Cookies from "js-cookie";
 import { classesApi, adminApi } from "@/lib/api";
 import { can } from "@/lib/permissions";
 import {

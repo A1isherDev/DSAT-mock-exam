@@ -24,7 +24,7 @@ export function middleware(req: NextRequest) {
   if (console && req.nextUrl.pathname === "/") {
     const url = req.nextUrl.clone();
     url.pathname = "/admin";
-    return NextResponse.rewrite(url, { headers: res.headers });
+    return NextResponse.redirect(url, { headers: res.headers });
   }
 
   return res;

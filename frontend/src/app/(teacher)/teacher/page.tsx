@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { classesApi } from "@/lib/api";
 import { Megaphone, ClipboardList, Users } from "lucide-react";
+import SafeHtml from "@/components/SafeHtml";
 
 export default function TeacherDashboardPage() {
   const [loading, setLoading] = useState(true);
@@ -112,7 +113,7 @@ export default function TeacherDashboardPage() {
                 {posts.map((x) => (
                   <div key={x.post.id} className="p-4 rounded-2xl border border-slate-200 bg-slate-50/70">
                     <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-2">{x.group.name}</p>
-                    <div className="prose prose-slate max-w-none text-sm" dangerouslySetInnerHTML={{ __html: x.post.content }} />
+                    <SafeHtml className="prose prose-slate max-w-none text-sm" html={x.post.content} />
                   </div>
                 ))}
               </div>

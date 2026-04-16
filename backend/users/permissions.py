@@ -12,6 +12,7 @@ class IsAuthenticatedAndNotFrozen(BasePermission):
         user = request.user
         if not user or not user.is_authenticated:
             return False
-        if getattr(user, "role", None) == "STUDENT" and getattr(user, "is_frozen", False):
+        role = str(getattr(user, "role", "") or "").strip().lower()
+        if role == "student" and getattr(user, "is_frozen", False):
             return False
         return True

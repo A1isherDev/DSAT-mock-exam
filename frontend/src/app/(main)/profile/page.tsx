@@ -415,7 +415,6 @@ export default function ProfilePage() {
       window.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = prevOverflow;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editOpen]);
 
   if (loading || !me) {

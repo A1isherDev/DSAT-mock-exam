@@ -4,6 +4,7 @@ import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { examsApi } from '@/lib/api';
 import AuthGuard from '@/components/AuthGuard';
 import { Bookmark, ChevronDown, Highlighter, ZoomIn, Calculator, ChevronUp, X, Eye, EyeOff, MinusCircle, Info, Eye as EyeIcon, Play, Pause, ChevronLeft, ChevronRight, AlertCircle, BookOpen, Trash2, MoreVertical, Save } from 'lucide-react';
+import SafeHtml from '@/components/SafeHtml';
 // Fix for image URL if it's relative
 const getImageUrl = (path: string | null | undefined) => {
     if (!path) return undefined;
@@ -55,11 +56,9 @@ const QuestionPane = memo(({ currentQuestion, zoomLevel, highlighterActive, pass
                         <img src={getImageUrl(currentQuestion.question_image)} alt="Question figure" className="max-w-full h-auto max-h-[400px] object-contain" />
                     </div>
                 )}
-                <div
-                    id="passage-text-container"
+                <SafeHtml
                     className="leading-relaxed font-[Georgia] font-medium mathjax-process"
-                    style={{ fontSize: `${16 * zoomLevel * 1.2}px` }}
-                    dangerouslySetInnerHTML={{ __html: passageHtml || currentQuestion.question_text?.replace(/\n/g, '<br/>') || 'Question text goes here...' }}
+                    html={passageHtml || currentQuestion.question_text?.replace(/\n/g, "<br/>") || "Question text goes here..."}
                 />
             </div>
         </div>
@@ -180,22 +179,22 @@ const RightPane = memo(({
 
                 {/* Prompt (Question Context) - Hidden for Math as requested */}
                 {currentQuestion.question_prompt && !currentQuestion.is_math_input && (
-                    <div
+                    <SafeHtml
                         id="question-prompt-content"
                         className={`mb-8 font-[Georgia] font-medium text-slate-900 leading-relaxed mathjax-process ${highlighterActive ? 'cursor-text' : ''}`}
                         style={{ fontSize: `${16 * zoomLevel * 1.2}px` }}
-                        onMouseUp={(e) => highlighterActive && handleShowPopover('question-prompt', e)}
-                        dangerouslySetInnerHTML={{ __html: questionPromptHighlights[currentQuestion.id] || currentQuestion.question_prompt.replace(/\n/g, '<br/>') }}
+                        onMouseUp={(e: React.MouseEvent<HTMLDivElement>) => highlighterActive && handleShowPopover('question-prompt', e)}
+                        html={questionPromptHighlights[currentQuestion.id] || currentQuestion.question_prompt.replace(/\n/g, "<br/>")}
                     />
                 )}
 
                 {attempt.practice_test_details.subject !== 'READING_WRITING' && (
-                    <div
+                    <SafeHtml
                         id="question-content"
                         className={`mb-8 font-[Georgia] font-medium text-slate-900 leading-relaxed mathjax-process ${highlighterActive ? 'cursor-text' : ''}`}
                         style={{ fontSize: `${16 * zoomLevel * 1.2}px` }}
-                        onMouseUp={(e) => highlighterActive && handleShowPopover('question', e)}
-                        dangerouslySetInnerHTML={{ __html: questionHighlights[currentQuestion.id] || currentQuestion.question_text?.replace(/\n/g, '<br/>') || 'Question text goes here...' }}
+                        onMouseUp={(e: React.MouseEvent<HTMLDivElement>) => highlighterActive && handleShowPopover('question', e)}
+                        html={questionHighlights[currentQuestion.id] || currentQuestion.question_text?.replace(/\n/g, "<br/>") || "Question text goes here..."}
                     />
                 )}
 
@@ -263,7 +262,7 @@ const RightPane = memo(({
                                                         />
                                                     </div>
                                                 ) : (
-                                                    <div dangerouslySetInnerHTML={{ __html: optionHighlights[key] || (typeof val === 'object' && val !== null ? (val as any).text : (val as string))?.replace(/\n/g, '<br/>') }} />
+                                                    <SafeHtml html={optionHighlights[key] || (typeof val === "object" && val !== null ? (val as any).text : (val as string))?.replace(/\n/g, "<br/>") || ""} />
                                                 )}
                                             </div>
                                         </div>

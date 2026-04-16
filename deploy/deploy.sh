@@ -126,7 +126,18 @@ if [[ "$WITH_NGINX" == "true" ]]; then
     exit 1
   fi
   if command -v sudo >/dev/null 2>&1; then
-    sudo cp "$NGINX_SITE_FILE_SRC" "$NGINX_SITE_FILE_DST"
+    # Don't clobber Certbot-managed site configs unless explicitly forced.
+    if sudo test -f "$NGINX_SITE_FILE_DST" && sudo rg -n --fixed-strings "managed by Certbot" "$NGINX_SITE_FILE_DST" >/dev/null 2>&1; then
+      if [[ "${FORCE_NGINX_OVERWRITE:-}" == "true" ]]; then
+        echo "   ! Existing Nginx site contains Certbot markers; FORCE_NGINX_OVERWRITE=true so overwriting."
+        sudo cp "$NGINX_SITE_FILE_SRC" "$NGINX_SITE_FILE_DST"
+      else
+        echo "   ! Existing Nginx site contains Certbot markers; skipping overwrite."
+        echo "     Set FORCE_NGINX_OVERWRITE=true to override, then re-run certbot if needed."
+      fi
+    else
+      sudo cp "$NGINX_SITE_FILE_SRC" "$NGINX_SITE_FILE_DST"
+    fi
     if [[ ! -L "$NGINX_ENABLE_LINK_DST" ]]; then
       sudo ln -s "$NGINX_SITE_FILE_DST" "$NGINX_ENABLE_LINK_DST" || true
     fi

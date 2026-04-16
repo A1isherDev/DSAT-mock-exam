@@ -13,6 +13,7 @@ import {
     defaultBulkPastpaperSubjectScope,
 } from '@/lib/permissions';
 import Cookies from "js-cookie";
+import SafeHtml from "@/components/SafeHtml";
 import {
     buildHomeworkPastpaperCards,
     formatLineDate,
@@ -71,10 +72,9 @@ const MathRenderer = ({ html, id = 'math-preview' }: { html: string, id?: string
     }
 
     return (
-        <div 
-            id={id}
+        <SafeHtml
             className="p-5 bg-indigo-50/30 rounded-2xl border border-indigo-100 text-sm min-h-[60px] prose prose-indigo max-w-none text-slate-800 leading-relaxed transition-all shadow-inner mathjax-process"
-            dangerouslySetInnerHTML={{ __html: processedHtml.replace(/\n/g, '<br/>') || '<span class="text-slate-300 italic">Example: The value of \\( x^2 \\) is...</span>' }}
+            html={processedHtml.replace(/\n/g, "<br/>") || '<span class="text-slate-300 italic">Example: The value of \\( x^2 \\) is...</span>'}
         />
     );
 };
