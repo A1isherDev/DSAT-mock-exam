@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
-import { adminApi, authApi } from '@/lib/api';
+import { adminApi, authApi, usersApi } from '@/lib/api';
 import {
     can,
     canManageMockExamShell,
@@ -46,6 +46,13 @@ function getSessionLabel(): { label: string; role: string } {
         // ignore parse errors
     }
     return { label: "", role };
+}
+
+function cookieDomain(): string | undefined {
+    if (typeof window === "undefined") return undefined;
+    const host = window.location.hostname.toLowerCase();
+    if (host.endsWith("mastersat.uz")) return ".mastersat.uz";
+    return undefined;
 }
 import {
     Users, BookOpen, ShieldCheck, LogOut, Plus, Pencil, Trash2, Save,
@@ -302,6 +309,52 @@ export default function AdminPage() {
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [toast, setToast] = useState('');
+    const [session, setSession] = useState(() => getSessionLabel());
+
+    useEffect(() => {
+        // If we don't have a cached label yet (common when navigating directly to subdomains),
+        // fetch /users/me and populate the header label.
+        const token = Cookies.get("access_token");
+        if (!token) return;
+        if (session.label) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const me = await usersApi.getMe();
+                if (cancelled) return;
+                const name = [me?.first_name, me?.last_name].filter(Boolean).join(" ").trim();
+                const label =
+                    name ||
+                    String(me?.username || "").trim() ||
+                    String(me?.email || "").trim() ||
+                    "";
+                const role = String(Cookies.get("role") || "").toLowerCase();
+                setSession({ label, role });
+                // Best-effort: cache for future header renders.
+                Cookies.set(
+                    "lms_user",
+                    JSON.stringify({
+                        id: me?.id,
+                        email: me?.email,
+                        username: me?.username,
+                        first_name: me?.first_name,
+                        last_name: me?.last_name,
+                    }),
+                    {
+                        path: "/",
+                        secure: process.env.NODE_ENV === "production",
+                        sameSite: "strict",
+                        domain: process.env.NODE_ENV === "production" ? cookieDomain() : undefined,
+                    },
+                );
+            } catch {
+                // ignore; role-only header is still fine
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [session.label]);
 
     // Data
     const [users, setUsers] = useState<any[]>([]);
@@ -1714,16 +1767,12 @@ export default function AdminPage() {
                         <span className="text-white font-bold text-lg tracking-tight">MasterSAT Admin</span>
                     </div>
                     <div className="flex items-center gap-3">
-                        {(() => {
-                            const s = getSessionLabel();
-                            if (!s.label && !s.role) return null;
-                            return (
-                                <div className="hidden sm:flex items-center gap-2 text-slate-300 text-xs font-semibold">
-                                    {s.label ? <span className="max-w-[220px] truncate">{s.label}</span> : null}
-                                    {s.role ? <span className="rounded-lg bg-slate-800/70 px-2 py-1 text-[10px] font-black uppercase tracking-widest">{s.role}</span> : null}
-                                </div>
-                            );
-                        })()}
+                        {(session.label || session.role) ? (
+                            <div className="hidden sm:flex items-center gap-2 text-slate-300 text-xs font-semibold">
+                                {session.label ? <span className="max-w-[220px] truncate">{session.label}</span> : null}
+                                {session.role ? <span className="rounded-lg bg-slate-800/70 px-2 py-1 text-[10px] font-black uppercase tracking-widest">{session.role}</span> : null}
+                            </div>
+                        ) : null}
                         <button
                             type="button"
                             onClick={() => authApi.logout()}
