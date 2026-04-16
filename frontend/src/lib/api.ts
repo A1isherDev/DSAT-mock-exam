@@ -4,6 +4,14 @@ import Cookies from 'js-cookie';
 const API_URL = '/api';
 const IS_PROD = process.env.NODE_ENV === 'production';
 
+function cookieDomain(): string | undefined {
+    if (typeof window === "undefined") return undefined;
+    const host = window.location.hostname.toLowerCase();
+    // Share auth cookies across subdomains in production.
+    if (host.endsWith("mastersat.uz")) return ".mastersat.uz";
+    return undefined;
+}
+
 const api = axios.create({
     baseURL: API_URL,
 });
@@ -25,13 +33,14 @@ api.interceptors.response.use(
             }
         }
         if (error.response?.status === 401) {
-            Cookies.remove('access_token');
-            Cookies.remove('refresh_token');
-            Cookies.remove('is_admin');
-            Cookies.remove('is_frozen');
-            Cookies.remove('role');
-            Cookies.remove('lms_permissions');
-            Cookies.remove('lms_scope');
+            const opts = { domain: IS_PROD ? cookieDomain() : undefined };
+            Cookies.remove('access_token', opts);
+            Cookies.remove('refresh_token', opts);
+            Cookies.remove('is_admin', opts);
+            Cookies.remove('is_frozen', opts);
+            Cookies.remove('role', opts);
+            Cookies.remove('lms_permissions', opts);
+            Cookies.remove('lms_scope', opts);
             if (typeof window !== 'undefined') {
                 window.location.href = '/login';
             }
@@ -82,7 +91,8 @@ export const authApi = {
         const cookieOptions = {
             secure: IS_PROD,
             sameSite: 'strict' as const,
-            expires: rememberMe ? 7 : undefined
+            expires: rememberMe ? 7 : undefined,
+            domain: IS_PROD ? cookieDomain() : undefined,
         };
         Cookies.set('access_token', response.data.access, cookieOptions);
         Cookies.set('refresh_token', response.data.refresh, cookieOptions);
@@ -102,7 +112,8 @@ export const authApi = {
         const cookieOptions = {
             secure: IS_PROD,
             sameSite: 'strict' as const,
-            expires: rememberMe ? 7 : undefined
+            expires: rememberMe ? 7 : undefined,
+            domain: IS_PROD ? cookieDomain() : undefined,
         };
         Cookies.set('access_token', response.data.access, cookieOptions);
         Cookies.set('refresh_token', response.data.refresh, cookieOptions);
@@ -129,7 +140,8 @@ export const authApi = {
         const cookieOptions = {
             secure: IS_PROD,
             sameSite: 'strict' as const,
-            expires: rememberMe ? 7 : undefined
+            expires: rememberMe ? 7 : undefined,
+            domain: IS_PROD ? cookieDomain() : undefined,
         };
         Cookies.set('access_token', response.data.access, cookieOptions);
         Cookies.set('refresh_token', response.data.refresh, cookieOptions);
@@ -145,13 +157,14 @@ export const authApi = {
         return response.data;
     },
     logout: () => {
-        Cookies.remove('access_token');
-        Cookies.remove('refresh_token');
-        Cookies.remove('is_admin');
-        Cookies.remove('is_frozen');
-        Cookies.remove('role');
-        Cookies.remove('lms_permissions');
-        Cookies.remove('lms_scope');
+        const opts = { domain: IS_PROD ? cookieDomain() : undefined };
+        Cookies.remove('access_token', opts);
+        Cookies.remove('refresh_token', opts);
+        Cookies.remove('is_admin', opts);
+        Cookies.remove('is_frozen', opts);
+        Cookies.remove('role', opts);
+        Cookies.remove('lms_permissions', opts);
+        Cookies.remove('lms_scope', opts);
         window.location.href = '/login';
     }
 };
