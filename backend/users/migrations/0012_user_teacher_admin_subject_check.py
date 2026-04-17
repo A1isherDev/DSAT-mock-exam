@@ -41,7 +41,7 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="user",
             constraint=models.CheckConstraint(
-                check=~Q(role__in=["teacher", "admin"]) | Q(subject__in=["math", "english"]),
+                condition=~Q(role__in=["teacher", "admin"]) | Q(subject__in=["math", "english"]),
                 name="users_teacher_admin_subject_required",
             ),
         ),
