@@ -186,6 +186,8 @@ class UserMeSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data.pop("profile_image", None)
+        if normalized_role(instance) == acc_const.ROLE_TEST_ADMIN:
+            data["subject"] = None
         return data
 
     def get_role(self, obj):
@@ -205,7 +207,11 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
         perms = sorted(get_effective_permission_codenames(user))
         token["is_admin"] = user.is_admin
         token["role"] = user.role
-        token["subject"] = getattr(user, "subject", None) or ""
+        token["subject"] = (
+            ""
+            if normalized_role(user) == acc_const.ROLE_TEST_ADMIN
+            else (getattr(user, "subject", None) or "")
+        )
         token["is_frozen"] = user.is_frozen
         token["permissions"] = perms
         return token
@@ -214,7 +220,11 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
         data = super().validate(attrs)
         data["is_admin"] = self.user.is_admin
         data["role"] = self.user.role
-        data["subject"] = getattr(self.user, "subject", None) or ""
+        data["subject"] = (
+            ""
+            if normalized_role(self.user) == acc_const.ROLE_TEST_ADMIN
+            else (getattr(self.user, "subject", None) or "")
+        )
         data["is_frozen"] = self.user.is_frozen
         data["permissions"] = sorted(get_effective_permission_codenames(self.user))
         return data
@@ -418,8 +428,7 @@ class UserSerializer(serializers.ModelSerializer):
         elif role in (acc_const.ROLE_STUDENT, acc_const.ROLE_SUPER_ADMIN):
             validated_data["subject"] = None
         elif role == acc_const.ROLE_TEST_ADMIN:
-            if subj not in acc_const.ALL_DOMAIN_SUBJECTS:
-                validated_data["subject"] = None
+            validated_data["subject"] = None
 
         password = validated_data.pop("password", None)
         user = super().create(validated_data)
@@ -452,7 +461,7 @@ class UserSerializer(serializers.ModelSerializer):
                     )
             elif eff_role in (acc_const.ROLE_STUDENT, acc_const.ROLE_SUPER_ADMIN):
                 validated_data["subject"] = None
-            elif eff_role == acc_const.ROLE_TEST_ADMIN and subj not in acc_const.ALL_DOMAIN_SUBJECTS:
+            elif eff_role == acc_const.ROLE_TEST_ADMIN:
                 validated_data["subject"] = None
 
         password = validated_data.pop("password", None)

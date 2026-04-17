@@ -14,7 +14,6 @@ from .services import (
     get_effective_permission_codenames,
     normalized_role,
     platform_subject_for_user,
-    user_domain_subject,
 )
 
 
@@ -86,10 +85,7 @@ class PastpaperPackAdminAccess(BasePermission):
             plat = platform_subject_for_user(u)
             if plat:
                 return authorize(u, constants.PERM_MANAGE_TESTS, subject=plat)
-            # Unscoped test_admin: backend authorize(manage_tests, subject=None) is allowed.
-            if normalized_role(u) == constants.ROLE_TEST_ADMIN and user_domain_subject(u) is None:
-                return authorize(u, constants.PERM_MANAGE_TESTS, subject=None)
-            return False
+            return authorize(u, constants.PERM_MANAGE_TESTS, subject=None)
         if act in ("update", "partial_update", "destroy"):
             return True
         if act == "add_section":
@@ -115,11 +111,7 @@ class PastpaperPackAdminAccess(BasePermission):
                 if plat:
                     if not authorize(u, constants.PERM_MANAGE_TESTS, subject=plat):
                         return False
-                elif not (
-                    normalized_role(u) == constants.ROLE_TEST_ADMIN
-                    and user_domain_subject(u) is None
-                    and authorize(u, constants.PERM_MANAGE_TESTS, subject=None)
-                ):
+                elif not authorize(u, constants.PERM_MANAGE_TESTS, subject=None):
                     return False
             qs = filter_pastpaper_packs_for_user(u, type(obj).objects.filter(pk=obj.pk))
             return qs.exists()
@@ -129,9 +121,7 @@ class PastpaperPackAdminAccess(BasePermission):
                 plat = platform_subject_for_user(u)
                 if plat:
                     return authorize(u, constants.PERM_MANAGE_TESTS, subject=plat)
-                return normalized_role(u) == constants.ROLE_TEST_ADMIN and user_domain_subject(
-                    u
-                ) is None and authorize(u, constants.PERM_MANAGE_TESTS, subject=None)
+                return authorize(u, constants.PERM_MANAGE_TESTS, subject=None)
             for t in sections:
                 if not authorize(u, constants.PERM_MANAGE_TESTS, subject=t.subject):
                     return False

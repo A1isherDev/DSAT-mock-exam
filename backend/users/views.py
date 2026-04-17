@@ -40,6 +40,13 @@ from .telegram_bot_info import telegram_bot_username_for_token
 logger = logging.getLogger("security.users")
 
 
+def _subject_for_auth_response(user: User) -> str:
+    """JWT / OAuth payloads: test_admin is org-wide; omit subject."""
+    if normalized_role(user) == acc_const.ROLE_TEST_ADMIN:
+        return ""
+    return getattr(user, "subject", None) or ""
+
+
 def _prefetch_user_directory(qs):
     """Avoid N+1 when serializing ``bulk_assign_profile`` for list views."""
     return qs.prefetch_related(
@@ -324,7 +331,7 @@ class GoogleAuthView(APIView):
                 "access": str(refresh.access_token),
                 "is_admin": user.is_admin,
                 "role": user.role,
-                "subject": getattr(user, "subject", None) or "",
+                "subject": _subject_for_auth_response(user),
                 "is_frozen": user.is_frozen,
                 "permissions": sorted(get_effective_permission_codenames(user)),
             },
@@ -474,7 +481,7 @@ class TelegramAuthView(APIView):
                 "access": str(refresh.access_token),
                 "is_admin": user.is_admin,
                 "role": user.role,
-                "subject": getattr(user, "subject", None) or "",
+                "subject": _subject_for_auth_response(user),
                 "is_frozen": user.is_frozen,
                 "permissions": sorted(get_effective_permission_codenames(user)),
             },

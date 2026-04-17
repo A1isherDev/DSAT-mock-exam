@@ -135,11 +135,13 @@ def user_domain_subject(user) -> Optional[str]:
     """
     Single domain subject for staff (math|english). None means unrestricted for that role context:
     - super_admin / django superuser handled elsewhere
-    - test_admin with NULL subject => all subjects (optional scoping)
+    - test_admin: always unrestricted (full math + english authoring); ``user.subject`` is ignored
     """
     if not user or not getattr(user, "is_authenticated", False):
         return None
     if getattr(user, "is_superuser", False) or normalized_role(user) == constants.ROLE_SUPER_ADMIN:
+        return None
+    if normalized_role(user) == constants.ROLE_TEST_ADMIN:
         return None
     raw = getattr(user, "subject", None)
     if isinstance(raw, str) and raw.strip().lower() in constants.ALL_DOMAIN_SUBJECTS:
@@ -206,10 +208,7 @@ def has_global_subject_access(user, domain_subject: str) -> bool:
         ).exists()
 
     if role == constants.ROLE_TEST_ADMIN:
-        dom = user_domain_subject(user)
-        if dom is None:
-            return True
-        return dom == domain_subject
+        return True
 
     return False
 
@@ -251,10 +250,7 @@ def has_access_for_classroom(user, domain_subject: str, classroom_id: int) -> bo
         ).exists()
 
     if role == constants.ROLE_TEST_ADMIN:
-        dom = user_domain_subject(user)
-        if dom is None:
-            return True
-        return dom == domain_subject
+        return True
 
     return False
 
@@ -329,7 +325,7 @@ def authorize(user, permission_codename: str, *, subject: Optional[str] = None) 
     Exceptions where ``subject`` may be omitted (still in the set above):
 
     * ``super_admin`` / Django superuser.
-    * ``test_admin`` with no ``user.subject`` (cross-subject test staff).
+    * ``test_admin`` (full math + english; ``user.subject`` is not used for ABAC).
 
     Permissions **outside** ``PERMISSIONS_REQUIRING_PLATFORM_SUBJECT`` (e.g.
     ``view_dashboard``, ``submit_test``): ignore ``subject``; pass ``None``.
@@ -357,7 +353,7 @@ def authorize(user, permission_codename: str, *, subject: Optional[str] = None) 
     if subject is None:
         if is_privileged:
             return True
-        if role == constants.ROLE_TEST_ADMIN and user_domain_subject(user) is None:
+        if role == constants.ROLE_TEST_ADMIN:
             return True
         logger.warning(
             "authorize: missing subject= for required perm=%s role=%s user_id=%s "
@@ -376,10 +372,7 @@ def authorize(user, permission_codename: str, *, subject: Optional[str] = None) 
         return True
 
     if role == constants.ROLE_TEST_ADMIN:
-        dom = user_domain_subject(user)
-        if dom is None:
-            return True
-        return dom == required
+        return True
 
     if role in (constants.ROLE_TEACHER, constants.ROLE_ADMIN):
         return user_domain_subject(user) == required and has_global_subject_access(user, required)
@@ -408,13 +401,7 @@ def filter_practice_tests_for_user(user, queryset):
 
     role = normalized_role(user)
     if role == constants.ROLE_TEST_ADMIN:
-        dom = user_domain_subject(user)
-        if dom is None:
-            return queryset
-        q = Q(subject=constants.SUBJECT_MATH_PLATFORM) if dom == constants.DOMAIN_MATH else Q(
-            subject=constants.SUBJECT_ENGLISH_PLATFORM
-        )
-        return queryset.filter(q)
+        return queryset
 
     if constants.PERM_MANAGE_TESTS in perms and role in (constants.ROLE_TEACHER, constants.ROLE_ADMIN):
         dom = user_domain_subject(user)

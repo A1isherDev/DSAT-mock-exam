@@ -1038,7 +1038,10 @@ export default function AdminPage() {
             };
             if (can("assign_access") || can("manage_users")) {
                 payload.role = userForm.role;
-                if (["teacher", "admin", "test_admin"].includes(String(userForm.role || "").toLowerCase())) {
+                const rl = String(userForm.role || "").toLowerCase();
+                if (rl === "test_admin") {
+                    payload.subject = null;
+                } else if (rl === "teacher" || rl === "admin") {
                     payload.subject = userForm.subject || null;
                 } else {
                     payload.subject = null;
@@ -3717,7 +3720,14 @@ export default function AdminPage() {
                                                 <select
                                                     className={INPUT}
                                                     value={userForm.role}
-                                                    onChange={e => setUserForm({ ...userForm, role: e.target.value })}
+                                                    onChange={(e) => {
+                                                        const r = e.target.value;
+                                                        setUserForm({
+                                                            ...userForm,
+                                                            role: r,
+                                                            subject: r === "test_admin" ? "" : userForm.subject,
+                                                        });
+                                                    }}
                                                 >
                                                     {STAFF_ROLE_OPTIONS.map((o) => (
                                                         <option key={o.value} value={o.value}>{o.label}</option>
@@ -3730,8 +3740,7 @@ export default function AdminPage() {
                                             )}
                                         </Field>
                                         {(userForm.role === "teacher" ||
-                                            userForm.role === "admin" ||
-                                            userForm.role === "test_admin") &&
+                                            userForm.role === "admin") &&
                                         (can("manage_users") || can("assign_access")) ? (
                                             <Field label="Subject (one)">
                                                 <select
@@ -3830,7 +3839,12 @@ export default function AdminPage() {
                                                                 phone_number: user.phone_number || '',
                                                                 password: '',
                                                                 role: user.role || "student",
-                                                                subject: user.subject ? String(user.subject).toLowerCase() : "",
+                                                                subject:
+                                                                    String(user.role || "").toLowerCase() === "test_admin"
+                                                                        ? ""
+                                                                        : user.subject
+                                                                          ? String(user.subject).toLowerCase()
+                                                                          : "",
                                                                 is_active: user.is_active !== false,
                                                                 is_frozen: !!user.is_frozen,
                                                             });
