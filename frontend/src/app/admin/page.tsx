@@ -491,7 +491,10 @@ export default function AdminPage() {
             const data = await adminApi.getModules(selectedPracticeTestId);
             setModules(data);
             return data;
-        } catch(e) { return []; }
+        } catch (e) {
+            setModules([]);
+            return [];
+        }
     }, [selectedPracticeTestId]);
 
     const fetchQuestions = useCallback(async () => {
@@ -985,24 +988,36 @@ export default function AdminPage() {
         void refreshMidtermTotals();
     }, [refreshMidtermTotals]);
 
-    useEffect(() => { 
-        if (selectedPracticeTestId) {
-            fetchModules().then((data) => {
-                if (!data || data.length === 0) {
-                    setSelectedModuleId(null);
-                    return;
-                }
-                setSelectedModuleId((prev) => {
-                    if (prev != null && data.some((m: { id: number }) => m.id === prev)) return prev;
-                    return data[0].id;
-                });
-            });
+    useEffect(() => {
+        if (!selectedPracticeTestId) {
+            setModules([]);
+            setSelectedModuleId(null);
+            setQuestions([]);
+            return;
         }
+        // Avoid pairing a new section with the previous test's module (wrong budget / stale questions).
+        setSelectedModuleId(null);
+        setQuestions([]);
+        fetchModules().then((data) => {
+            if (!data || data.length === 0) {
+                setSelectedModuleId(null);
+                setQuestions([]);
+                return;
+            }
+            setSelectedModuleId((prev) => {
+                if (prev != null && data.some((m: { id: number }) => m.id === prev)) return prev;
+                return data[0].id;
+            });
+        });
     }, [selectedPracticeTestId, fetchModules]);
 
     useEffect(() => {
         setEditingQuestion(null);
     }, [selectedPracticeTestId]);
+
+    useEffect(() => {
+        setQuestions([]);
+    }, [selectedModuleId]);
 
     useEffect(() => { 
         if (selectedPracticeTestId && selectedModuleId) fetchQuestions(); 
@@ -1540,6 +1555,8 @@ export default function AdminPage() {
             ? midtermTotals.count >= midtermTarget && !(editingQuestion && editingQuestion.id)
             : false)
         : questions.length >= maxQuestions;
+    const overQuestionLimit =
+        !isMidtermExamContext && currentTest && currentModule && questions.length > maxQuestions;
     const predictedSum = editingQuestion !== null ? (moduleScoreSum - (editingQuestion.id ? (questions.find(q => q.id === editingQuestion.id)?.score || 0) : 0) + (questionForm.score || 0)) : moduleScoreSum;
     const isOverBudget = isMidtermExamContext
         ? predictedMidtermPoints > midtermPointsBudget
@@ -2968,9 +2985,13 @@ export default function AdminPage() {
                                                     </>
                                                 ) : (
                                                     <>
-                                                        Module Budget: <span className={moduleScoreSum > budget ? "text-red-600" : "text-emerald-600"}>{moduleScoreSum}</span> / {budget} points
+                                                        Module Budget:{' '}
+                                                        <span className={moduleScoreSum > budget ? "text-red-600" : "text-emerald-600"}>{moduleScoreSum}</span> /{' '}
+                                                        {currentTest && currentModule ? budget : '—'} points
                                                         <span className="mx-2 text-slate-300">|</span>
-                                                        Questions: <span className={isAtLimit ? "text-red-600" : "text-emerald-600"}>{questions.length}</span> / {maxQuestions} limit
+                                                        Questions:{' '}
+                                                        <span className={overQuestionLimit ? "text-red-600" : "text-emerald-600"}>{questions.length}</span> / {maxQuestions}{' '}
+                                                        limit
                                                     </>
                                                 )}
                                             </p>
@@ -3335,10 +3356,15 @@ export default function AdminPage() {
                                                     <div className="flex items-center gap-2 mb-1">
                                                         <span className="inline-block bg-slate-900 text-white text-[10px] font-bold w-5 h-5 flex-shrink-0 flex items-center justify-center rounded-sm">{idx + 1}</span>
                                                         <span className={`text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full ${q.is_math_input ? 'bg-amber-100 text-amber-700' : 'bg-blue-50 text-blue-600'}`}>{q.is_math_input ? 'SPR' : 'MCQ'}</span>
-                                                        <span className="text-[9px] font-bold text-slate-400 ml-1">CORECT: {q.correct_answer} · SCORE: {q.score}</span>
+                                                        <span className="text-[9px] font-bold text-slate-400 ml-1">CORRECT: {q.correct_answer} · SCORE: {q.score}</span>
                                                         {q.question_image && <ImageIcon className="w-3 h-3 text-indigo-400" />}
                                                     </div>
-                                                    <p className="text-sm text-slate-800 line-clamp-2">{q.question_text || q.question_prompt || '—'}</p>
+                                                    <div className="text-sm text-slate-800 line-clamp-2 [&_*]:inline [&_p]:m-0">
+                                                        <SafeHtml
+                                                            html={(q.question_text || q.question_prompt || '—').trim() || '—'}
+                                                            className="prose prose-sm max-w-none text-slate-800"
+                                                        />
+                                                    </div>
                                                 </div>
                                                 <div className="flex items-center gap-1">
                                                     {canEditCurrentQuestions && (
@@ -3349,12 +3375,14 @@ export default function AdminPage() {
                                                     )}
                                                     {canEditCurrentQuestions && (
                                                     <button className={BTN_GHOST} onClick={() => {
+                                                        const t = allSelectableTests.find((x) => x.id === selectedPracticeTestId);
+                                                        const defaultType = t?.subject === 'MATH' ? 'MATH' : 'READING';
                                                         setEditingQuestion(q);
                                                         setQuestionForm({
                                                             question_text: q.question_text || '', question_prompt: q.question_prompt || '',
                                                             option_a: q.option_a || '', option_b: q.option_b || '', option_c: q.option_c || '', option_d: q.option_d || '',
                                                             correct_answer: q.correct_answer, score: q.score || 10,
-                                                            question_type: q.question_type || 'MATH', is_math_input: q.is_math_input || false
+                                                            question_type: q.question_type || defaultType, is_math_input: q.is_math_input || false
                                                         });
                                                         setQuestionImage(null);
                                                         setOptionAImage(null);
