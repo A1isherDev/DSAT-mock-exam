@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { classesApi } from "@/lib/api";
+import { subscribeRealtime } from "@/lib/realtime";
 import ClassLeaderboard from "@/components/ClassLeaderboard";
 import CreateAssignmentModal from "@/components/CreateAssignmentModal";
 import SafeHtml from "@/components/SafeHtml";
@@ -40,8 +41,15 @@ export default function ClassDetailPage() {
   const [klass, setKlass] = useState<any>(null);
   const isClassAdmin = klass?.my_role === "ADMIN";
 
-  const [posts, setPosts] = useState<any[]>([]);
   const [postText, setPostText] = useState("");
+  const [streamData, setStreamData] = useState<{ results?: any[]; count?: number } | null>(null);
+  const [workspace, setWorkspace] = useState<{
+    your_assignments?: any[];
+    due_soon?: any[];
+    recently_graded?: any[];
+    new_posts?: any[];
+    is_student?: boolean;
+  } | null>(null);
 
   const [assignments, setAssignments] = useState<any[]>([]);
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -65,15 +73,16 @@ export default function ClassDetailPage() {
     setError(null);
     setLoading(true);
     try {
-      const k = await classesApi.get(id);
-      setKlass(k);
-      const [p, a, pe] = await Promise.all([
-        classesApi.listPosts(id),
-        classesApi.listAssignments(id),
+      const [k, streamPage, ws, pe] = await Promise.all([
+        classesApi.get(id),
+        classesApi.getStream(id),
+        classesApi.getStudentWorkspace(id),
         classesApi.people(id),
       ]);
-      setPosts(Array.isArray(p) ? p : []);
-      setAssignments(Array.isArray(a) ? a : []);
+      setKlass(k);
+      setStreamData(streamPage && typeof streamPage === "object" ? streamPage : { results: [] });
+      setWorkspace(ws && typeof ws === "object" ? ws : null);
+      setAssignments(Array.isArray(ws?.your_assignments) ? ws.your_assignments : []);
       setPeople(Array.isArray(pe) ? pe : []);
     } catch (e: unknown) {
       const ax = e as { response?: { status?: number; data?: { detail?: string } } };
@@ -85,7 +94,8 @@ export default function ClassDetailPage() {
         setError(typeof detail === "string" ? detail : "Could not load class.");
       }
       setKlass(null);
-      setPosts([]);
+      setStreamData(null);
+      setWorkspace(null);
       setAssignments([]);
       setPeople([]);
     } finally {
@@ -99,13 +109,77 @@ export default function ClassDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  useEffect(() => {
+    if (!Number.isFinite(id)) return;
+    const unsub = subscribeRealtime(
+      {
+        onEvent: async (ev) => {
+        // Delivery-only: refetch canonical APIs.
+        if (ev.type === "resync") {
+          const data = ev.data as { refresh?: string[]; classroom_id?: number };
+          const hints = Array.isArray(data.refresh) ? data.refresh : ["stream", "workspace", "comments"];
+          const scoped = data.classroom_id == null || Number(data.classroom_id) === id;
+          if (!scoped) return;
+          const needStream = hints.includes("stream");
+          const needWorkspace = hints.includes("workspace");
+          if (needStream && needWorkspace) {
+            const [streamPage, ws] = await Promise.all([
+              classesApi.getStream(id),
+              classesApi.getStudentWorkspace(id),
+            ]);
+            setStreamData(streamPage && typeof streamPage === "object" ? streamPage : { results: [] });
+            setWorkspace(ws && typeof ws === "object" ? ws : null);
+            setAssignments(Array.isArray((ws as any)?.your_assignments) ? (ws as any).your_assignments : []);
+          } else if (needStream) {
+            const streamPage = await classesApi.getStream(id);
+            setStreamData(streamPage && typeof streamPage === "object" ? streamPage : { results: [] });
+          } else if (needWorkspace) {
+            const ws = await classesApi.getStudentWorkspace(id);
+            setWorkspace(ws && typeof ws === "object" ? ws : null);
+            setAssignments(Array.isArray((ws as any)?.your_assignments) ? (ws as any).your_assignments : []);
+          }
+          return;
+        }
+        if (ev.type === "stream.updated") {
+          const cid = Number((ev.data as any)?.classroom_id);
+          if (cid && cid === id) {
+            const refresh = (ev.data as any)?.refresh as string[] | undefined;
+            const needWs = !refresh || refresh.includes("workspace");
+            const [streamPage, ws] = await Promise.all([
+              classesApi.getStream(id),
+              needWs ? classesApi.getStudentWorkspace(id) : Promise.resolve(null),
+            ]);
+            setStreamData(streamPage && typeof streamPage === "object" ? streamPage : { results: [] });
+            if (needWs && ws && typeof ws === "object") {
+              setWorkspace(ws);
+              setAssignments(Array.isArray((ws as any)?.your_assignments) ? (ws as any).your_assignments : []);
+            }
+          }
+        }
+        if (ev.type === "workspace.updated") {
+          const cid = Number((ev.data as any)?.classroom_id);
+          if (cid && cid === id) {
+            const ws = await classesApi.getStudentWorkspace(id);
+            setWorkspace(ws && typeof ws === "object" ? ws : null);
+            setAssignments(Array.isArray((ws as any)?.your_assignments) ? (ws as any).your_assignments : []);
+          }
+        }
+        },
+      },
+      { debounceMs: 80 },
+    );
+    return () => unsub();
+  }, [id]);
+
   const handlePost = async () => {
     setError(null);
     try {
       await classesApi.createPost(id, { content: postText });
       setPostText("");
-      const p = await classesApi.listPosts(id);
-      setPosts(Array.isArray(p) ? p : []);
+      const [streamPage, ws] = await Promise.all([classesApi.getStream(id), classesApi.getStudentWorkspace(id)]);
+      setStreamData(streamPage && typeof streamPage === "object" ? streamPage : { results: [] });
+      setWorkspace(ws && typeof ws === "object" ? ws : null);
+      setAssignments(Array.isArray(ws?.your_assignments) ? ws.your_assignments : []);
     } catch (e: unknown) {
       const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       setError(typeof d === "string" ? d : "Could not post.");
@@ -119,6 +193,14 @@ export default function ClassDetailPage() {
     } catch {
       return s;
     }
+  };
+
+  const streamItems = Array.isArray(streamData?.results) ? streamData!.results : [];
+  const wfLabel = (w?: string | null) => {
+    if (w === "GRADED") return { text: "Graded", className: "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300" };
+    if (w === "SUBMITTED") return { text: "Submitted", className: "bg-sky-500/15 text-sky-800 dark:text-sky-200" };
+    if (w === "NOT_STARTED") return { text: "Your work", className: "bg-amber-500/15 text-amber-900 dark:text-amber-200" };
+    return null;
   };
 
   const accessDenied = !loading && !klass && !!error;
@@ -190,24 +272,60 @@ export default function ClassDetailPage() {
           {tab === "stream" ? (
             <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
               <div className="space-y-4 lg:col-span-2">
-                {posts.length === 0 ? (
+                {streamItems.length === 0 ? (
                   <ClassroomEmptyState
                     icon={Megaphone}
-                    title="No announcements yet"
+                    title="Nothing in the stream yet"
                     description={
                       isClassAdmin
-                        ? "Post the first update on the right. Students see it here in real time after refresh."
-                        : "When your teacher posts updates, they will appear here."
+                        ? "Post an announcement or create classwork — activity will appear here in one timeline."
+                        : "When your teacher posts or assigns work, it will show up here."
                     }
                   />
                 ) : (
-                  posts.map((p) => (
-                    <ClassroomCard key={p.id} padding="md" className="border-slate-200/80">
-                      <div className="mb-3 flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                        <span>{p.author?.first_name || p.author?.email || "Admin"}</span>
-                        <span className="tabular-nums text-slate-500">{formatDue(p.created_at)}</span>
+                  streamItems.map((item: any) => (
+                    <ClassroomCard key={`${item.type}-${item.id}`} padding="md" className="border-slate-200/80">
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                        <span className="rounded-md bg-slate-500/10 px-2 py-0.5 text-[10px] text-slate-600 dark:text-slate-300">
+                          {item.type === "post" ? "Announcement" : item.type === "assignment" ? "Assignment" : "Turned in"}
+                        </span>
+                        <span className="tabular-nums text-slate-500">{formatDue(item.created_at)}</span>
                       </div>
-                      <SafeHtml className="prose prose-slate max-w-none text-sm dark:prose-invert" html={p.content} />
+                      {item.type === "post" && item.post ? (
+                        <>
+                          <p className="mb-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                            {item.actor?.first_name || item.actor?.email || "Member"}
+                          </p>
+                          <SafeHtml className="prose prose-slate max-w-none text-sm dark:prose-invert" html={item.post.content} />
+                        </>
+                      ) : null}
+                      {item.type === "assignment" && item.assignment ? (
+                        <div>
+                          <p className="text-sm font-bold text-slate-900 dark:text-slate-50">{item.assignment.title}</p>
+                          <p className="mt-1 text-xs text-slate-500">{formatDue(item.assignment.due_at)}</p>
+                          <Link
+                            href={`/classes/${id}/assignments/${item.assignment.id}`}
+                            className="mt-3 inline-flex text-sm font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
+                          >
+                            View assignment →
+                          </Link>
+                        </div>
+                      ) : null}
+                      {item.type === "submission" && item.submission ? (
+                        <div>
+                          <p className="text-sm text-slate-700 dark:text-slate-200">
+                            <span className="font-semibold">{item.actor?.first_name || item.actor?.email || "Student"}</span>{" "}
+                            turned in{" "}
+                            <span className="font-medium">{item.assignment_preview?.title || "assignment"}</span>
+                          </p>
+                          <Link
+                            href={`/classes/${id}/assignments/${item.assignment_preview?.id}`}
+                            className="mt-2 inline-flex text-sm font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
+                          >
+                            Open assignment →
+                          </Link>
+                        </div>
+                      ) : null}
                     </ClassroomCard>
                   ))
                 )}
@@ -272,6 +390,80 @@ export default function ClassDetailPage() {
                     </ClassroomButton>
                   ) : null}
                 </ClassroomCard>
+
+                {workspace?.is_student ? (
+                  <>
+                    <ClassroomCard padding="md">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        Due soon
+                      </p>
+                      {(workspace.due_soon || []).length === 0 ? (
+                        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Nothing due in the next 7 days.</p>
+                      ) : (
+                        <ul className="mt-3 space-y-2">
+                          {(workspace.due_soon || []).map((a: any) => (
+                            <li key={a.id}>
+                              <Link
+                                href={`/classes/${id}/assignments/${a.id}`}
+                                className="text-sm font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
+                              >
+                                {a.title}
+                              </Link>
+                              <p className="text-xs text-slate-500">{formatDue(a.due_at)}</p>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </ClassroomCard>
+                    <ClassroomCard padding="md">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        Recently graded
+                      </p>
+                      {(workspace.recently_graded || []).length === 0 ? (
+                        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">No grades yet.</p>
+                      ) : (
+                        <ul className="mt-3 space-y-2">
+                          {(workspace.recently_graded || []).map((row: any) => (
+                            <li key={row.submission_id}>
+                              <Link
+                                href={`/classes/${id}/assignments/${row.assignment?.id}`}
+                                className="text-sm font-semibold text-indigo-600 dark:text-indigo-400"
+                              >
+                                {row.assignment?.title}
+                              </Link>
+                              {row.grade?.score != null ? (
+                                <p className="text-xs text-slate-600 dark:text-slate-300">Score: {row.grade.score}</p>
+                              ) : null}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </ClassroomCard>
+                    <ClassroomCard padding="md">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        New posts
+                      </p>
+                      {(workspace.new_posts || []).length === 0 ? (
+                        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">No recent announcements.</p>
+                      ) : (
+                        <ul className="mt-3 space-y-2 text-sm text-slate-700 dark:text-slate-200">
+                          {(workspace.new_posts || []).slice(0, 5).map((p: any) => {
+                            const plain = String(p.content || "").replace(/<[^>]*>/g, "").trim();
+                            return (
+                              <li key={p.id} className="border-b border-slate-100 pb-2 last:border-0 dark:border-slate-800">
+                                <span className="text-xs text-slate-400">{formatDue(p.created_at)}</span>
+                                <p className="mt-0.5 line-clamp-2 text-sm text-slate-700 dark:text-slate-200">
+                                  {plain.slice(0, 120)}
+                                  {plain.length > 120 ? "…" : ""}
+                                </p>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </ClassroomCard>
+                  </>
+                ) : null}
 
                 {isClassAdmin ? (
                   <ClassroomCard padding="md">
@@ -373,6 +565,13 @@ export default function ClassDetailPage() {
                                   Mock
                                 </span>
                               ) : null}
+                              {wfLabel(a.workflow_status) ? (
+                                <span
+                                  className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${wfLabel(a.workflow_status)!.className}`}
+                                >
+                                  {wfLabel(a.workflow_status)!.text}
+                                </span>
+                              ) : null}
                             </div>
                             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{formatDue(a.due_at)}</p>
                           </div>
@@ -406,8 +605,15 @@ export default function ClassDetailPage() {
                               if (!confirm(`Delete homework “${a.title}”? Submissions will be removed.`)) return;
                               try {
                                 await classesApi.deleteAssignment(id, a.id);
-                                const list = await classesApi.listAssignments(id);
-                                setAssignments(Array.isArray(list) ? list : []);
+                                const [streamPage, ws] = await Promise.all([
+                                  classesApi.getStream(id),
+                                  classesApi.getStudentWorkspace(id),
+                                ]);
+                                setStreamData(
+                                  streamPage && typeof streamPage === "object" ? streamPage : { results: [] },
+                                );
+                                setWorkspace(ws && typeof ws === "object" ? ws : null);
+                                setAssignments(Array.isArray(ws?.your_assignments) ? ws.your_assignments : []);
                               } catch (e: unknown) {
                                 const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
                                 alert(typeof msg === "string" ? msg : "Could not delete assignment.");
@@ -433,8 +639,10 @@ export default function ClassDetailPage() {
                   setEditingAssignment(null);
                 }}
                 onSuccess={async () => {
-                  const a = await classesApi.listAssignments(id);
-                  setAssignments(Array.isArray(a) ? a : []);
+                  const [streamPage, ws] = await Promise.all([classesApi.getStream(id), classesApi.getStudentWorkspace(id)]);
+                  setStreamData(streamPage && typeof streamPage === "object" ? streamPage : { results: [] });
+                  setWorkspace(ws && typeof ws === "object" ? ws : null);
+                  setAssignments(Array.isArray(ws?.your_assignments) ? ws.your_assignments : []);
                   setTab("classwork");
                   setEditingAssignment(null);
                 }}

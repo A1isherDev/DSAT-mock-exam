@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Permission, Role, RolePermission, UserPermission
+from .models import Permission, Role, RolePermission, UserPermission, UserAccess
 
 
 @admin.register(Permission)
@@ -29,3 +29,10 @@ class UserPermissionAdmin(admin.ModelAdmin):
     list_display = ("user", "permission", "granted")
     list_filter = ("granted",)
     autocomplete_fields = ("user", "permission")
+
+
+@admin.register(UserAccess)
+class UserAccessAdmin(admin.ModelAdmin):
+    list_display = ("user", "subject", "classroom", "granted_by", "created_at")
+    list_filter = ("subject",)
+    autocomplete_fields = ("user", "classroom", "granted_by")

@@ -5,3 +5,7 @@ class ClassesConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "classes"
 
+    def ready(self) -> None:
+        # Stream feed + comment cleanup signals (derived layer; core models unchanged).
+        import classes.stream_signals  # noqa: F401
+

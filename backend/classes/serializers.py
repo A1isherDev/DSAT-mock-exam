@@ -13,10 +13,12 @@ from .models import (
     Assignment,
     Submission,
     Grade,
+    ClassComment,
     assignment_target_practice_test_ids,
     filter_practice_targets_by_scope,
     grant_practice_test_library_access_for_assignment,
     raw_target_practice_test_ids_from_fks,
+    submission_workflow_status,
 )
 
 
@@ -90,13 +92,17 @@ class ClassroomCreateSerializer(serializers.ModelSerializer):
 
     def validate_teacher(self, value):
         from access import constants as acc_const
-        from access.services import authorize
+        from access.services import authorize, platform_subject_for_user
 
         if value is None:
             return value
         if getattr(value, "is_frozen", False):
             raise serializers.ValidationError("Teacher cannot be a frozen account.")
-        if authorize(value, acc_const.PERM_MANAGE_USERS):
+        if authorize(
+            value,
+            acc_const.PERM_MANAGE_USERS,
+            subject=platform_subject_for_user(value),
+        ):
             return value
         # Allow keeping the current teacher on update so demoted users do not block all edits.
         instance = getattr(self, "instance", None)
@@ -401,6 +407,7 @@ class SubmissionSerializer(serializers.ModelSerializer):
     student = serializers.SerializerMethodField()
     grade = serializers.SerializerMethodField()
     upload_file_url = serializers.SerializerMethodField(read_only=True)
+    workflow_status = serializers.SerializerMethodField()
 
     class Meta:
         model = Submission
@@ -415,8 +422,12 @@ class SubmissionSerializer(serializers.ModelSerializer):
             "updated_at",
             "student",
             "grade",
+            "workflow_status",
         ]
-        read_only_fields = ["id", "submitted_at", "updated_at", "student", "grade"]
+        read_only_fields = ["id", "submitted_at", "updated_at", "student", "grade", "workflow_status"]
+
+    def get_workflow_status(self, obj):
+        return submission_workflow_status(obj)
 
     def get_student(self, obj):
         u = obj.student
@@ -464,4 +475,52 @@ class SubmitSerializer(serializers.Serializer):
 class GradeUpsertSerializer(serializers.Serializer):
     score = serializers.DecimalField(required=False, max_digits=6, decimal_places=2, allow_null=True)
     feedback = serializers.CharField(required=False, allow_blank=True)
+
+
+class ClassCommentSerializer(serializers.ModelSerializer):
+    author = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = ClassComment
+        fields = ["id", "classroom", "target_type", "target_id", "parent", "content", "author", "created_at", "updated_at"]
+        read_only_fields = ["id", "classroom", "author", "created_at", "updated_at"]
+
+    def get_author(self, obj):
+        u = obj.author
+        return {
+            "id": u.id,
+            "email": u.email,
+            "username": getattr(u, "username", None),
+            "first_name": u.first_name,
+            "last_name": u.last_name,
+        }
+
+    def validate_content(self, value):
+        text = (value or "").strip()
+        if not text:
+            raise serializers.ValidationError("Comment cannot be empty.")
+        if len(text) > 10_000:
+            raise serializers.ValidationError("Comment is too long.")
+        return text
+
+    def validate(self, attrs):
+        classroom = attrs.get("classroom") or self.context.get("classroom") or (
+            self.instance.classroom if self.instance else None
+        )
+        t_type = attrs.get("target_type") or (self.instance.target_type if self.instance else None)
+        t_id = attrs.get("target_id") if "target_id" in attrs else (self.instance.target_id if self.instance else None)
+        parent = attrs.get("parent") if "parent" in attrs else None
+        if parent is None and self.instance:
+            parent = self.instance.parent
+        if classroom and t_type and t_id is not None:
+            if t_type == ClassComment.TARGET_POST:
+                if not ClassPost.objects.filter(pk=t_id, classroom=classroom).exists():
+                    raise serializers.ValidationError({"target_id": "Announcement not found in this class."})
+            elif t_type == ClassComment.TARGET_ASSIGNMENT:
+                if not Assignment.objects.filter(pk=t_id, classroom=classroom).exists():
+                    raise serializers.ValidationError({"target_id": "Assignment not found in this class."})
+        if parent and classroom:
+            if parent.classroom_id != classroom.pk or parent.target_type != t_type or parent.target_id != t_id:
+                raise serializers.ValidationError({"parent": "Reply must belong to the same thread."})
+        return attrs
 

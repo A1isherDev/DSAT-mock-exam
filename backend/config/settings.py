@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     'users',
     'exams',
     'classes',
+    'realtime',
 ]
 
 MIDDLEWARE = [
@@ -63,10 +64,12 @@ MIDDLEWARE = [
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
-    # Subdomain separation for admin/questions consoles
-    'access.host_guard.SubdomainAPIGuardMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    # Populate JWT user before host-based API guards (DRF auth runs later per-view).
+    'access.middleware.JWTUserMiddleware',
+    'access.middleware.StaffSubjectRequiredMiddleware',
+    'access.host_guard.SubdomainAPIGuardMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -125,6 +128,60 @@ CACHES = {
         'LOCATION': 'unique-snowflake',
     }
 }
+
+# Realtime SSE push fan-out (optional; DB replay still works without it)
+REDIS_URL = os.getenv("REDIS_URL", "")
+
+# Dedupe windows (seconds): longer for low priority reduces write amplification for chatty traffic.
+REALTIME_DEFAULT_DEDUPE_SECONDS = int(os.getenv("REALTIME_DEFAULT_DEDUPE_SECONDS", "2"))
+REALTIME_LOW_PRIORITY_DEDUPE_SECONDS = int(os.getenv("REALTIME_LOW_PRIORITY_DEDUPE_SECONDS", "5"))
+# 1.0 = persist all low-priority rows; <1.0 drops some low events before outbox (no durable replay for skipped).
+REALTIME_LOW_PRIORITY_DB_SAMPLE_RATE = float(os.getenv("REALTIME_LOW_PRIORITY_DB_SAMPLE_RATE", "1.0"))
+REALTIME_BULK_BATCH_SIZE = int(os.getenv("REALTIME_BULK_BATCH_SIZE", "500"))
+
+# Backpressure (self-regulating realtime) — safe defaults, tune per environment.
+REALTIME_BACKPRESSURE_ENABLED = os.getenv("REALTIME_BACKPRESSURE_ENABLED", "True").lower() == "true"
+REALTIME_BP_MIN_LOW_SAMPLE_RATE = float(os.getenv("REALTIME_BP_MIN_LOW_SAMPLE_RATE", "0.05"))
+REALTIME_BP_MAX_LOW_DEDUPE_SECONDS = int(os.getenv("REALTIME_BP_MAX_LOW_DEDUPE_SECONDS", "20"))
+REALTIME_BP_DROP_LOW_AT_CRITICAL = os.getenv("REALTIME_BP_DROP_LOW_AT_CRITICAL", "True").lower() == "true"
+REALTIME_BP_DROP_MEDIUM_AT_CRITICAL = os.getenv("REALTIME_BP_DROP_MEDIUM_AT_CRITICAL", "False").lower() == "true"
+
+# Pressure thresholds.
+REALTIME_BP_PERSISTED_PER_S_ELEVATED = float(os.getenv("REALTIME_BP_PERSISTED_PER_S_ELEVATED", "80"))
+REALTIME_BP_PERSISTED_PER_S_HIGH = float(os.getenv("REALTIME_BP_PERSISTED_PER_S_HIGH", "160"))
+REALTIME_BP_PERSISTED_PER_S_CRITICAL = float(os.getenv("REALTIME_BP_PERSISTED_PER_S_CRITICAL", "260"))
+
+REALTIME_BP_LATENCY_MS_ELEVATED = float(os.getenv("REALTIME_BP_LATENCY_MS_ELEVATED", "250"))
+REALTIME_BP_LATENCY_MS_HIGH = float(os.getenv("REALTIME_BP_LATENCY_MS_HIGH", "600"))
+REALTIME_BP_LATENCY_MS_CRITICAL = float(os.getenv("REALTIME_BP_LATENCY_MS_CRITICAL", "1200"))
+
+REALTIME_BP_RESYNC_PER_S_ELEVATED = float(os.getenv("REALTIME_BP_RESYNC_PER_S_ELEVATED", "0.2"))
+REALTIME_BP_RESYNC_PER_S_HIGH = float(os.getenv("REALTIME_BP_RESYNC_PER_S_HIGH", "0.6"))
+REALTIME_BP_RESYNC_PER_S_CRITICAL = float(os.getenv("REALTIME_BP_RESYNC_PER_S_CRITICAL", "1.2"))
+
+REALTIME_BP_REDIS_FAIL_RATIO_ELEVATED = float(os.getenv("REALTIME_BP_REDIS_FAIL_RATIO_ELEVATED", "0.02"))
+REALTIME_BP_REDIS_FAIL_RATIO_HIGH = float(os.getenv("REALTIME_BP_REDIS_FAIL_RATIO_HIGH", "0.05"))
+REALTIME_BP_REDIS_FAIL_RATIO_CRITICAL = float(os.getenv("REALTIME_BP_REDIS_FAIL_RATIO_CRITICAL", "0.12"))
+
+# Alert thresholds (used by realtime.alerts + Prometheus scrape hooks; tune per environment).
+REALTIME_ALERT_MAX_RESYNC_RATIO = float(os.getenv("REALTIME_ALERT_MAX_RESYNC_RATIO", "0.12"))
+REALTIME_ALERT_MIN_RESYNC_EVENTS = int(os.getenv("REALTIME_ALERT_MIN_RESYNC_EVENTS", "5"))
+REALTIME_ALERT_MAX_DEDUPE_SUPPRESSION_RATIO = float(os.getenv("REALTIME_ALERT_MAX_DEDUPE_SUPPRESSION_RATIO", "0.85"))
+REALTIME_ALERT_MIN_DEDUPE_EVENTS = int(os.getenv("REALTIME_ALERT_MIN_DEDUPE_EVENTS", "50"))
+REALTIME_ALERT_MAX_REDIS_FAILURE_RATIO = float(os.getenv("REALTIME_ALERT_MAX_REDIS_FAILURE_RATIO", "0.05"))
+REALTIME_ALERT_MIN_REDIS_FAILURES = int(os.getenv("REALTIME_ALERT_MIN_REDIS_FAILURES", "3"))
+
+# Optional: expose emit→receive traces in logs when True or DEBUG.
+REALTIME_DEBUG_TRACE = os.getenv("REALTIME_DEBUG_TRACE", "False").lower() == "true"
+
+# SSE: DB replay polling interval per connection (seconds).
+REALTIME_SSE_DB_POLL_EVERY_S = float(os.getenv("REALTIME_SSE_DB_POLL_EVERY_S", "0.8"))
+
+# ─── Celery (optional in dev; required for scale) ─────────────────────────────
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "")
+CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "")
+CELERY_TASK_ALWAYS_EAGER = os.getenv("CELERY_TASK_ALWAYS_EAGER", "False").lower() == "true"
+CELERY_TASK_EAGER_PROPAGATES = True
 
 
 # ─── Password Validation ──────────────────────────────────────────────────────

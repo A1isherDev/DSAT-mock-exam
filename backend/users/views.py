@@ -1,16 +1,26 @@
+import logging
+
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.views import APIView
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 from rest_framework_simplejwt.tokens import RefreshToken
-from django.db.models import Q
+from django.db.models import Prefetch, Q
 from .models import ExamDateOption, User
+from classes.models import Classroom, ClassroomMembership
 from access import constants as acc_const
 from access.permissions import HasManageUsers, HasManageUsersOrAssignTestAccess
-from access.services import authorize, get_effective_permission_codenames
+from access.services import (
+    authorize,
+    get_effective_permission_codenames,
+    normalized_role,
+    platform_subject_for_user,
+    user_domain_subject,
+)
 
 from .serializers import (
     ExamDateOptionPublicSerializer,
@@ -26,6 +36,21 @@ import re
 from .telegram_auth import verify_telegram_login
 from .phone_utils import normalize_phone
 from .telegram_bot_info import telegram_bot_username_for_token
+
+logger = logging.getLogger("security.users")
+
+
+def _prefetch_user_directory(qs):
+    """Avoid N+1 when serializing ``bulk_assign_profile`` for list views."""
+    return qs.prefetch_related(
+        "access_grants",
+        Prefetch(
+            "class_memberships",
+            queryset=ClassroomMembership.objects.filter(role=ClassroomMembership.ROLE_STUDENT).select_related(
+                "classroom"
+            ),
+        ),
+    )
 
 
 def _apply_telegram_phone(user, data) -> Response | None:
@@ -69,26 +94,107 @@ class UserListView(generics.ListAPIView):
     def get_queryset(self):
         qs = User.objects.all().order_by("-date_joined")
         user = self.request.user
+        actor_subj = platform_subject_for_user(user)
         # Full user directory: only user managers. Teachers with assign_test_access get students only (bulk assign).
-        if authorize(user, acc_const.PERM_MANAGE_USERS):
-            return qs
-        if authorize(user, acc_const.PERM_ASSIGN_ACCESS):
-            # Scoped assigners should only see students (no staff directory leakage).
-            return qs.filter(role=acc_const.ROLE_STUDENT)
+        if authorize(user, acc_const.PERM_MANAGE_USERS, subject=actor_subj):
+            if getattr(user, "is_superuser", False) or normalized_role(user) == acc_const.ROLE_SUPER_ADMIN:
+                return _prefetch_user_directory(qs)
+            dom = user_domain_subject(user)
+            if not dom:
+                raise PermissionDenied(
+                    detail="A valid subject (math or english) is required to list users for this account."
+                )
+            clsub = (
+                Classroom.SUBJECT_MATH
+                if dom == acc_const.DOMAIN_MATH
+                else Classroom.SUBJECT_ENGLISH
+            )
+            return _prefetch_user_directory(
+                qs.filter(
+                    Q(role=acc_const.ROLE_STUDENT)
+                    & (
+                        Q(access_grants__subject=dom)
+                        | Q(class_memberships__classroom__subject=clsub)
+                    )
+                    | Q(
+                        subject=dom,
+                        role__in=[
+                            acc_const.ROLE_TEACHER,
+                            acc_const.ROLE_ADMIN,
+                            acc_const.ROLE_TEST_ADMIN,
+                        ],
+                    )
+                ).distinct()
+            )
+        if authorize(user, acc_const.PERM_ASSIGN_ACCESS, subject=actor_subj):
+            dom = user_domain_subject(user)
+            q = Q(role=acc_const.ROLE_STUDENT)
+            if not dom:
+                raise PermissionDenied(
+                    detail="A valid subject (math or english) is required to list users for this account."
+                )
+            clsub = (
+                Classroom.SUBJECT_MATH
+                if dom == acc_const.DOMAIN_MATH
+                else Classroom.SUBJECT_ENGLISH
+            )
+            q &= Q(access_grants__subject=dom) | Q(class_memberships__classroom__subject=clsub)
+            return _prefetch_user_directory(qs.filter(q).distinct())
         return qs.none()
 
 class UserCreateView(generics.CreateAPIView):
     serializer_class = UserSerializer
     permission_classes = [HasManageUsers]
 
+    def perform_create(self, serializer):
+        user = serializer.save()
+        actor = self.request.user
+        logger.info(
+            "user_created target_id=%s email=%s role=%s actor_id=%s is_superuser=%s",
+            user.pk,
+            user.email,
+            user.role,
+            getattr(actor, "pk", None),
+            getattr(actor, "is_superuser", False)
+            or normalized_role(actor) == acc_const.ROLE_SUPER_ADMIN,
+        )
+
+
 class UserUpdateView(generics.UpdateAPIView):
     serializer_class = UserSerializer
     permission_classes = [HasManageUsers]
     queryset = User.objects.all()
 
+    def perform_update(self, serializer):
+        super().perform_update(serializer)
+        inst = serializer.instance
+        actor = self.request.user
+        logger.info(
+            "user_updated target_id=%s role=%s subject=%s actor_id=%s is_superuser=%s",
+            inst.pk,
+            inst.role,
+            getattr(inst, "subject", None),
+            getattr(actor, "pk", None),
+            getattr(actor, "is_superuser", False)
+            or normalized_role(actor) == acc_const.ROLE_SUPER_ADMIN,
+        )
+
+
 class UserDeleteView(generics.DestroyAPIView):
     permission_classes = [HasManageUsers]
     queryset = User.objects.all()
+
+    def perform_destroy(self, instance):
+        actor = self.request.user
+        logger.info(
+            "user_deleted target_id=%s email=%s actor_id=%s is_superuser=%s",
+            instance.pk,
+            instance.email,
+            getattr(actor, "pk", None),
+            getattr(actor, "is_superuser", False)
+            or normalized_role(actor) == acc_const.ROLE_SUPER_ADMIN,
+        )
+        super().perform_destroy(instance)
 
 class UserRegistrationView(generics.CreateAPIView):
     serializer_class = UserSerializer
@@ -218,6 +324,7 @@ class GoogleAuthView(APIView):
                 "access": str(refresh.access_token),
                 "is_admin": user.is_admin,
                 "role": user.role,
+                "subject": getattr(user, "subject", None) or "",
                 "is_frozen": user.is_frozen,
                 "permissions": sorted(get_effective_permission_codenames(user)),
             },
@@ -367,6 +474,7 @@ class TelegramAuthView(APIView):
                 "access": str(refresh.access_token),
                 "is_admin": user.is_admin,
                 "role": user.role,
+                "subject": getattr(user, "subject", None) or "",
                 "is_frozen": user.is_frozen,
                 "permissions": sorted(get_effective_permission_codenames(user)),
             },

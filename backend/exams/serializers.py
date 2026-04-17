@@ -3,7 +3,16 @@ from django.db.models import Sum
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers
 
-from .models import Question, PracticeTest, Module, TestAttempt, MockExam, PortalMockExam, PastpaperPack
+from .models import (
+    BulkAssignmentDispatch,
+    MockExam,
+    Module,
+    PastpaperPack,
+    PortalMockExam,
+    PracticeTest,
+    Question,
+    TestAttempt,
+)
 
 User = get_user_model()
 
@@ -408,3 +417,65 @@ class AdminMockExamSerializer(serializers.ModelSerializer):
                     {"midterm_module_count": "Must be 1 or 2."}
                 )
         return attrs
+
+
+class BulkAssignmentDispatchSerializer(serializers.ModelSerializer):
+    assigned_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BulkAssignmentDispatch
+        fields = [
+            "id",
+            "kind",
+            "subject_summary",
+            "students_requested_count",
+            "students_granted_count",
+            "assigned_by",
+            "assigned_by_name",
+            "status",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+    def get_assigned_by_name(self, obj):
+        u = obj.assigned_by
+        if not u:
+            return ""
+        parts = [getattr(u, "first_name", None) or "", getattr(u, "last_name", None) or ""]
+        name = " ".join(p for p in parts if p).strip()
+        if name:
+            return name
+        return (getattr(u, "username", None) or getattr(u, "email", None) or "").strip() or f"User #{u.pk}"
+
+
+class BulkAssignmentDispatchDetailSerializer(serializers.ModelSerializer):
+    assigned_by_name = serializers.SerializerMethodField()
+    skipped_users = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BulkAssignmentDispatch
+        fields = [
+            "id",
+            "kind",
+            "subject_summary",
+            "students_requested_count",
+            "students_granted_count",
+            "assigned_by",
+            "assigned_by_name",
+            "status",
+            "payload",
+            "result",
+            "rerun_of",
+            "created_at",
+            "actor_snapshot",
+            "skipped_users",
+        ]
+        read_only_fields = fields
+
+    def get_assigned_by_name(self, obj):
+        return BulkAssignmentDispatchSerializer().get_assigned_by_name(obj)
+
+    def get_skipped_users(self, obj):
+        res = obj.result or {}
+        val = res.get("skipped_users") if isinstance(res, dict) else []
+        return val or []

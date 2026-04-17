@@ -1,7 +1,14 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
-from .views import ClassroomViewSet, JoinClassView, ClassPostViewSet, AssignmentViewSet, SubmissionAdminViewSet
+from .views import (
+    ClassroomViewSet,
+    JoinClassView,
+    ClassPostViewSet,
+    AssignmentViewSet,
+    SubmissionAdminViewSet,
+    ClassCommentListCreateView,
+)
 
 
 router = DefaultRouter()
@@ -19,6 +26,7 @@ submissions_router.register(r"", SubmissionAdminViewSet, basename="class-submiss
 
 urlpatterns = [
     path("join/", JoinClassView.as_view(), name="class-join"),
+    path("<int:classroom_pk>/comments/", ClassCommentListCreateView.as_view(), name="class-comments"),
     path("submissions/", include(submissions_router.urls)),
     path("<int:classroom_pk>/posts/", include(posts_router.urls)),
     path("<int:classroom_pk>/assignments/", include(assignments_router.urls)),

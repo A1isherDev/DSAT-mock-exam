@@ -1,11 +1,14 @@
 from collections import defaultdict
+import logging
+from datetime import timedelta
 from statistics import mean
 
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.pagination import PageNumberPagination
+from rest_framework.exceptions import NotFound, PermissionDenied
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -14,6 +17,7 @@ from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
 from access import constants as acc_const
+from access.models import UserAccess
 from access.services import authorize
 
 from exams.models import PracticeTest, TestAttempt
@@ -27,9 +31,93 @@ from .models import (
     AssignmentExtraAttachment,
     Submission,
     Grade,
+    ClassroomStreamItem,
+    ClassComment,
     assignment_target_practice_test_ids,
+    submission_workflow_status,
 )
-from .permissions import IsClassAdmin, IsClassMember
+logger = logging.getLogger("security.classes")
+
+
+class StreamPagination(PageNumberPagination):
+    page_size = 20
+    page_size_query_param = "page_size"
+    max_page_size = 50
+
+
+def _actor_brief(user):
+    return {
+        "id": user.id,
+        "email": user.email,
+        "username": getattr(user, "username", None),
+        "first_name": user.first_name or "",
+        "last_name": user.last_name or "",
+    }
+
+
+def _build_stream_payload(items: list, request):
+    """Hydrate stream rows with nested post / assignment / submission summaries."""
+    post_ids = [i.related_id for i in items if i.stream_type == ClassroomStreamItem.TYPE_POST]
+    assign_ids = [i.related_id for i in items if i.stream_type == ClassroomStreamItem.TYPE_ASSIGNMENT]
+    sub_ids = [i.related_id for i in items if i.stream_type == ClassroomStreamItem.TYPE_SUBMISSION]
+
+    posts = {p.id: p for p in ClassPost.objects.filter(pk__in=post_ids).select_related("author")}
+    assigns = {a.id: a for a in Assignment.objects.filter(pk__in=assign_ids).select_related("created_by")}
+    subs = {
+        s.id: s
+        for s in Submission.objects.filter(pk__in=sub_ids).select_related(
+            "student", "assignment", "attempt", "grade"
+        )
+    }
+
+    out = []
+    for it in items:
+        actor = _actor_brief(it.actor)
+        row = {
+            "id": it.id,
+            "type": it.stream_type,
+            "created_at": it.created_at,
+            "actor": actor,
+        }
+        if it.stream_type == ClassroomStreamItem.TYPE_POST:
+            p = posts.get(it.related_id)
+            if not p:
+                continue
+            row["post"] = ClassPostSerializer(p, context={"request": request}).data
+        elif it.stream_type == ClassroomStreamItem.TYPE_ASSIGNMENT:
+            a = assigns.get(it.related_id)
+            if not a:
+                continue
+            row["assignment"] = AssignmentSerializer(a, context={"request": request}).data
+        else:
+            s = subs.get(it.related_id)
+            if not s:
+                continue
+            row["submission"] = SubmissionSerializer(s, context={"request": request}).data
+            row["assignment_preview"] = {
+                "id": s.assignment_id,
+                "title": s.assignment.title,
+                "due_at": s.assignment.due_at.isoformat() if s.assignment.due_at else None,
+            }
+        out.append(row)
+    return out
+
+
+class _ClassroomMemberGateMixin:
+    """Fail closed with 403 when classroom exists but the user is not a member (no silent empty lists)."""
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        classroom_pk = self.kwargs.get("classroom_pk")
+        if not classroom_pk:
+            return
+        c = Classroom.objects.filter(pk=classroom_pk).first()
+        if c is None:
+            return
+        if not c.memberships.filter(user=request.user).exists():
+            raise PermissionDenied(detail="You do not have access to this classroom.")
+
+
 from .serializers import (
     ClassroomSerializer,
     ClassroomCreateSerializer,
@@ -39,6 +127,7 @@ from .serializers import (
     SubmissionSerializer,
     SubmitSerializer,
     GradeUpsertSerializer,
+    ClassCommentSerializer,
 )
 
 
@@ -64,8 +153,19 @@ class ClassroomViewSet(ModelViewSet):
             return ClassroomCreateSerializer
         return ClassroomSerializer
 
+    def get_object(self):
+        queryset = self.filter_queryset(self.get_queryset())
+        lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
+        lookup = self.kwargs.get(lookup_url_kwarg)
+        try:
+            return queryset.get(**{self.lookup_field: lookup})
+        except Classroom.DoesNotExist:
+            if Classroom.objects.filter(pk=lookup).exists():
+                raise PermissionDenied(detail="You do not have access to this classroom.")
+            raise NotFound()
+
     def create(self, request, *args, **kwargs):
-        # Permission + scope (subject-domain) enforced here.
+        # Permission + subject-domain enforced via authorize(...).
         subj = (request.data or {}).get("subject")
         platform_subject = (
             acc_const.SUBJECT_MATH_PLATFORM
@@ -88,6 +188,24 @@ class ClassroomViewSet(ModelViewSet):
         )
         ClassroomMembership.objects.get_or_create(
             classroom=classroom, user=teacher, defaults={"role": "ADMIN"}
+        )
+        dom = (
+            acc_const.DOMAIN_MATH
+            if classroom.subject == Classroom.SUBJECT_MATH
+            else acc_const.DOMAIN_ENGLISH
+        )
+        UserAccess.objects.get_or_create(
+            user=request.user,
+            subject=dom,
+            classroom=classroom,
+            defaults={"granted_by": request.user},
+        )
+        logger.info(
+            "classroom_created id=%s subject=%s created_by_id=%s teacher_id=%s",
+            classroom.pk,
+            classroom.subject,
+            request.user.pk,
+            getattr(teacher, "pk", None),
         )
         out = ClassroomSerializer(classroom, context={"request": request}).data
         return Response(out, status=status.HTTP_201_CREATED)
@@ -345,6 +463,111 @@ class ClassroomViewSet(ModelViewSet):
             }
         )
 
+    @action(detail=True, methods=["get"], permission_classes=[IsAuthenticatedAndNotFrozen], url_path="stream")
+    def stream(self, request, pk=None):
+        """
+        Unified class feed: posts, new assignments, and submission events (mixed, newest first).
+        """
+        classroom = self.get_object()
+        if not classroom.memberships.filter(user=request.user).exists():
+            return Response({"detail": "Not a member."}, status=status.HTTP_403_FORBIDDEN)
+        qs = ClassroomStreamItem.objects.filter(classroom=classroom).select_related("actor").order_by("-created_at")
+        paginator = StreamPagination()
+        page = paginator.paginate_queryset(qs, request)
+        items = list(page) if page is not None else list(qs[: StreamPagination.page_size])
+        results = _build_stream_payload(items, request)
+        if page is not None:
+            return paginator.get_paginated_response(results)
+        return Response({"count": len(results), "next": None, "previous": None, "results": results})
+
+    @action(detail=True, methods=["get"], permission_classes=[IsAuthenticatedAndNotFrozen], url_path="student-workspace")
+    def student_workspace(self, request, pk=None):
+        """
+        Student-centric slices: all classwork with workflow, due soon, recently graded, new posts.
+        Teachers receive the same assignment list with ``workflow_status`` null.
+        """
+        classroom = self.get_object()
+        if not classroom.memberships.filter(user=request.user).exists():
+            return Response({"detail": "Not a member."}, status=status.HTTP_403_FORBIDDEN)
+        user = request.user
+        is_student = classroom.memberships.filter(user=user, role=ClassroomMembership.ROLE_STUDENT).exists()
+        now = timezone.now()
+        week_end = now + timedelta(days=7)
+        two_weeks_ago = now - timedelta(days=14)
+
+        assignments_qs = (
+            Assignment.objects.filter(classroom=classroom).select_related("created_by").order_by("-created_at")
+        )
+        subs_map = {}
+        if is_student:
+            subs_map = {
+                s.assignment_id: s
+                for s in Submission.objects.filter(student=user, assignment__classroom=classroom).select_related(
+                    "grade"
+                )
+            }
+
+        def assignment_dict(a: Assignment):
+            ser = AssignmentSerializer(a, context={"request": request})
+            d = dict(ser.data)
+            d["workflow_status"] = submission_workflow_status(subs_map.get(a.id)) if is_student else None
+            return d
+
+        your_assignments = [assignment_dict(a) for a in assignments_qs]
+
+        due_soon = []
+        if is_student:
+            for a in assignments_qs:
+                wf = submission_workflow_status(subs_map.get(a.id))
+                if wf == "GRADED":
+                    continue
+                if a.due_at and now <= a.due_at <= week_end:
+                    due_soon.append(assignment_dict(a))
+
+        recently_graded = []
+        if is_student:
+            graded_subs = (
+                Submission.objects.filter(
+                    student=user,
+                    assignment__classroom=classroom,
+                    status=Submission.STATUS_SUBMITTED,
+                )
+                .select_related("assignment", "grade")
+                .filter(grade__isnull=False)
+                .order_by("-grade__graded_at")[:25]
+            )
+            for s in graded_subs:
+                g = s.grade
+                recently_graded.append(
+                    {
+                        "assignment": {"id": s.assignment_id, "title": s.assignment.title},
+                        "submission_id": s.id,
+                        "workflow_status": submission_workflow_status(s),
+                        "grade": {
+                            "score": str(g.score) if g.score is not None else None,
+                            "feedback": g.feedback,
+                            "graded_at": g.graded_at.isoformat() if g.graded_at else None,
+                        },
+                    }
+                )
+
+        new_posts = [
+            ClassPostSerializer(p, context={"request": request}).data
+            for p in ClassPost.objects.filter(classroom=classroom, created_at__gte=two_weeks_ago).order_by("-created_at")[
+                :15
+            ]
+        ]
+
+        return Response(
+            {
+                "your_assignments": your_assignments,
+                "due_soon": due_soon,
+                "recently_graded": recently_graded,
+                "new_posts": new_posts,
+                "is_student": is_student,
+            }
+        )
+
 
 class JoinClassView(APIView):
     permission_classes = [IsAuthenticatedAndNotFrozen]
@@ -365,12 +588,29 @@ class JoinClassView(APIView):
         mem, created = ClassroomMembership.objects.get_or_create(
             classroom=classroom, user=request.user, defaults={"role": "STUDENT"}
         )
+        dom = (
+            acc_const.DOMAIN_MATH
+            if classroom.subject == Classroom.SUBJECT_MATH
+            else acc_const.DOMAIN_ENGLISH
+        )
+        UserAccess.objects.get_or_create(
+            user=request.user,
+            subject=dom,
+            classroom=classroom,
+            defaults={"granted_by": None},
+        )
+        logger.info(
+            "classroom_join user_id=%s classroom_id=%s subject_domain=%s",
+            request.user.pk,
+            classroom.pk,
+            dom,
+        )
         return Response(
             {"joined": True, "role": mem.role, "classroom": ClassroomSerializer(classroom, context={"request": request}).data}
         )
 
 
-class ClassPostViewSet(ModelViewSet):
+class ClassPostViewSet(_ClassroomMemberGateMixin, ModelViewSet):
     permission_classes = [IsAuthenticatedAndNotFrozen]
     serializer_class = ClassPostSerializer
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
@@ -406,7 +646,7 @@ class ClassPostViewSet(ModelViewSet):
         instance.delete()
 
 
-class AssignmentViewSet(ModelViewSet):
+class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
     permission_classes = [IsAuthenticatedAndNotFrozen]
     serializer_class = AssignmentSerializer
     parser_classes = [MultiPartParser, FormParser, JSONParser]
@@ -520,7 +760,11 @@ class AssignmentViewSet(ModelViewSet):
         if not classroom.memberships.filter(user=request.user).exists():
             return Response({"detail": "Not a member."}, status=status.HTTP_403_FORBIDDEN)
         assignment = get_object_or_404(Assignment, pk=pk, classroom=classroom)
-        sub = Submission.objects.filter(assignment=assignment, student=request.user).select_related("attempt").first()
+        sub = (
+            Submission.objects.filter(assignment=assignment, student=request.user)
+            .select_related("attempt", "grade")
+            .first()
+        )
         if not sub:
             return Response({}, status=status.HTTP_200_OK)
         return Response(SubmissionSerializer(sub, context={"request": request}).data)
@@ -553,6 +797,17 @@ class SubmissionAdminViewSet(ReadOnlyModelViewSet):
             .select_related("assignment__classroom", "student", "grade")
             .distinct()
         )
+
+    def get_object(self):
+        queryset = self.filter_queryset(self.get_queryset())
+        lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
+        lookup = self.kwargs.get(lookup_url_kwarg)
+        try:
+            return queryset.get(**{self.lookup_field: lookup})
+        except Submission.DoesNotExist:
+            if Submission.objects.filter(pk=lookup).exists():
+                raise PermissionDenied(detail="You are not allowed to access this submission.")
+            raise NotFound()
 
     def list(self, request, *args, **kwargs):
         """Avoid accidental bulk export; grading uses per-assignment submissions/ or retrieve by id."""
@@ -587,5 +842,93 @@ class SubmissionAdminViewSet(ReadOnlyModelViewSet):
         grade.save()
 
         submission.refresh_from_db()
+        # Realtime delivery hints: teacher stream + student workspace/notifications.
+        from realtime.services import emit_to_classroom_members, emit_to_user
+
+        classroom_id = submission.assignment.classroom_id
+        emit_to_classroom_members(
+            classroom_id=classroom_id,
+            event_type="stream.updated",
+            payload={"classroom_id": classroom_id, "reason": "grade"},
+        )
+        emit_to_user(
+            user_id=submission.student_id,
+            event_type="workspace.updated",
+            payload={"classroom_id": classroom_id, "reason": "grade"},
+        )
+        emit_to_user(
+            user_id=submission.student_id,
+            event_type="notifications.updated",
+            payload={"reason": "graded", "classroom_id": classroom_id},
+        )
         return Response(SubmissionSerializer(submission, context={"request": request}).data)
+
+
+class ClassCommentListCreateView(APIView):
+    """
+    Threaded comments on announcements or classwork.
+    GET: ?target_type=post|assignment&target_id=<pk>
+    POST: { target_type, target_id, content, parent? }
+    """
+
+    permission_classes = [IsAuthenticatedAndNotFrozen]
+
+    def get(self, request, classroom_pk):
+        classroom = get_object_or_404(Classroom, pk=classroom_pk)
+        if not classroom.memberships.filter(user=request.user).exists():
+            return Response({"detail": "Not a member."}, status=status.HTTP_403_FORBIDDEN)
+        tt = (request.query_params.get("target_type") or "").strip().lower()
+        if tt == "post":
+            tt = ClassComment.TARGET_POST
+        elif tt == "assignment":
+            tt = ClassComment.TARGET_ASSIGNMENT
+        tid = request.query_params.get("target_id")
+        if tt not in (ClassComment.TARGET_POST, ClassComment.TARGET_ASSIGNMENT) or not tid:
+            return Response(
+                {"detail": "Query params target_type (post|assignment) and target_id are required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            tid = int(tid)
+        except (TypeError, ValueError):
+            return Response({"detail": "Invalid target_id."}, status=status.HTTP_400_BAD_REQUEST)
+        if tt == ClassComment.TARGET_POST:
+            if not ClassPost.objects.filter(pk=tid, classroom=classroom).exists():
+                return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        elif not Assignment.objects.filter(pk=tid, classroom=classroom).exists():
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        qs = ClassComment.objects.filter(classroom=classroom, target_type=tt, target_id=tid).select_related(
+            "author", "parent"
+        )
+        return Response(ClassCommentSerializer(qs, many=True).data)
+
+    def post(self, request, classroom_pk):
+        classroom = get_object_or_404(Classroom, pk=classroom_pk)
+        if not classroom.memberships.filter(user=request.user).exists():
+            return Response({"detail": "Not a member."}, status=status.HTTP_403_FORBIDDEN)
+        ser = ClassCommentSerializer(data=request.data, context={"classroom": classroom, "request": request})
+        ser.is_valid(raise_exception=True)
+        c = ser.save(classroom=classroom, author=request.user)
+        # Realtime delivery hint: refetch comments from canonical endpoint.
+        from realtime.services import emit_to_classroom_members, emit_to_user
+
+        emit_to_classroom_members(
+            classroom_id=classroom.pk,
+            event_type="comments.updated",
+            payload={
+                "classroom_id": classroom.pk,
+                "target_type": c.target_type,
+                "target_id": c.target_id,
+                "comment_id": c.pk,
+                "parent_id": c.parent_id,
+                "reason": "comment",
+            },
+        )
+        if c.parent_id and c.parent and c.parent.author_id and c.parent.author_id != request.user.pk:
+            emit_to_user(
+                user_id=c.parent.author_id,
+                event_type="notifications.updated",
+                payload={"reason": "comment_reply", "classroom_id": classroom.pk},
+            )
+        return Response(ClassCommentSerializer(c, context={"request": request}).data, status=status.HTTP_201_CREATED)
 

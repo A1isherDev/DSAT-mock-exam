@@ -31,3 +31,7 @@ whitenoise==6.9.0
 
 # Admin theme
 django-jazzmin==3.0.1
+
+# Async jobs / queue (realtime fan-out, reminders, cleanup)
+celery==5.5.3
+redis==6.2.0

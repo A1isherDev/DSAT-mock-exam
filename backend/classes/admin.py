@@ -1,6 +1,15 @@
 from django.contrib import admin
 
-from .models import Classroom, ClassroomMembership, ClassPost, Assignment, Submission, Grade
+from .models import (
+    Classroom,
+    ClassroomMembership,
+    ClassPost,
+    Assignment,
+    Submission,
+    Grade,
+    ClassroomStreamItem,
+    ClassComment,
+)
 
 
 @admin.register(Classroom)
@@ -43,4 +52,18 @@ class GradeAdmin(admin.ModelAdmin):
     list_display = ("id", "submission", "graded_by", "score", "graded_at")
     search_fields = ("submission__assignment__title", "submission__student__email", "graded_by__email")
     list_filter = ("graded_at",)
+
+
+@admin.register(ClassroomStreamItem)
+class ClassroomStreamItemAdmin(admin.ModelAdmin):
+    list_display = ("id", "classroom", "stream_type", "related_id", "actor", "created_at")
+    list_filter = ("stream_type", "created_at")
+    search_fields = ("classroom__name",)
+
+
+@admin.register(ClassComment)
+class ClassCommentAdmin(admin.ModelAdmin):
+    list_display = ("id", "classroom", "target_type", "target_id", "author", "created_at")
+    list_filter = ("target_type", "created_at")
+    search_fields = ("content", "author__email", "classroom__name")
 

@@ -7,11 +7,26 @@ from rest_framework.permissions import BasePermission
 from . import constants
 from .services import (
     authorize,
+    bulk_assign_request_platform_subjects,
     filter_mock_exams_for_user,
     filter_pastpaper_packs_for_user,
     filter_practice_tests_for_user,
     get_effective_permission_codenames,
+    platform_subject_for_user,
 )
+
+
+def _pastpaper_pack_platform_subjects(pack) -> list[str]:
+    return list({s for s in pack.sections.values_list("subject", flat=True) if s})
+
+
+def _mock_exam_platform_subjects(exam) -> list[str]:
+    from exams.models import MockExam
+
+    if getattr(exam, "kind", None) == MockExam.KIND_MIDTERM:
+        sub = getattr(exam, "midterm_subject", None) or "READING_WRITING"
+        return [sub] if sub else []
+    return list({t.subject for t in exam.tests.all() if getattr(t, "subject", None)})
 
 
 def _can_view_practice_test(user, practice_test) -> bool:
@@ -39,7 +54,7 @@ class PracticeTestAdminAccess(BasePermission):
             subj = (request.data or {}).get("subject")
             return authorize(u, constants.PERM_MANAGE_TESTS, subject=subj)
         if act in ("update", "partial_update", "destroy"):
-            return True
+            return True  # subject enforced in ``has_object_permission``
         return False
 
     def has_object_permission(self, request, view, obj):
@@ -66,10 +81,11 @@ class PastpaperPackAdminAccess(BasePermission):
         if act in ("list", "retrieve", "head", "options"):
             return constants.WILDCARD in perms or constants.PERM_MANAGE_TESTS in perms
         if act == "create":
-            return authorize(u, constants.PERM_MANAGE_TESTS)
-        if act in ("update", "partial_update"):
-            return authorize(u, constants.PERM_MANAGE_TESTS)
-        if act == "destroy":
+            plat = platform_subject_for_user(u)
+            if not plat:
+                return False
+            return authorize(u, constants.PERM_MANAGE_TESTS, subject=plat)
+        if act in ("update", "partial_update", "destroy"):
             return True
         if act == "add_section":
             subj = (request.data or {}).get("subject")
@@ -83,14 +99,23 @@ class PastpaperPackAdminAccess(BasePermission):
             qs = filter_pastpaper_packs_for_user(u, type(obj).objects.filter(pk=obj.pk))
             return qs.exists()
         if act in ("update", "partial_update"):
-            if not authorize(u, constants.PERM_MANAGE_TESTS):
-                return False
+            subs = _pastpaper_pack_platform_subjects(obj)
+            if subs:
+                if not all(
+                    authorize(u, constants.PERM_MANAGE_TESTS, subject=s) for s in subs
+                ):
+                    return False
+            else:
+                plat = platform_subject_for_user(u)
+                if not plat or not authorize(u, constants.PERM_MANAGE_TESTS, subject=plat):
+                    return False
             qs = filter_pastpaper_packs_for_user(u, type(obj).objects.filter(pk=obj.pk))
             return qs.exists()
         if act == "destroy":
             sections = list(obj.sections.all())
             if not sections:
-                return authorize(u, constants.PERM_MANAGE_TESTS)
+                plat = platform_subject_for_user(u)
+                return bool(plat) and authorize(u, constants.PERM_MANAGE_TESTS, subject=plat)
             for t in sections:
                 if not authorize(u, constants.PERM_MANAGE_TESTS, subject=t.subject):
                     return False
@@ -126,15 +151,19 @@ class MockExamAdminAccess(BasePermission):
                 constants.PERM_MANAGE_TESTS in perms or constants.PERM_ASSIGN_ACCESS in perms
             )
         if act == "create":
-            return authorize(u, constants.PERM_MANAGE_TESTS)
-        if act in ("update", "partial_update"):
-            return self._shell_admin(u) or authorize(u, constants.PERM_MANAGE_TESTS)
-        if act == "destroy":
-            return self._shell_admin(u) or authorize(u, constants.PERM_MANAGE_TESTS)
-        if act in ("publish", "unpublish"):
-            return self._shell_admin(u) or authorize(u, constants.PERM_MANAGE_TESTS)
-        if act == "assign_users":
-            return authorize(u, constants.PERM_ASSIGN_ACCESS)
+            from exams.models import MockExam
+
+            kind = (request.data or {}).get("kind") or MockExam.KIND_MOCK_SAT
+            if kind == MockExam.KIND_MIDTERM:
+                subj = (request.data or {}).get("midterm_subject") or "READING_WRITING"
+                return authorize(u, constants.PERM_MANAGE_TESTS, subject=subj)
+            return authorize(
+                u, constants.PERM_MANAGE_TESTS, subject=constants.SUBJECT_MATH_PLATFORM
+            ) and authorize(
+                u, constants.PERM_MANAGE_TESTS, subject=constants.SUBJECT_ENGLISH_PLATFORM
+            )
+        if act in ("update", "partial_update", "destroy", "publish", "unpublish", "assign_users"):
+            return True
         if act == "add_test":
             from exams.models import MockExam
 
@@ -171,26 +200,40 @@ class MockExamAdminAccess(BasePermission):
         if act in ("update", "partial_update"):
             if self._shell_admin(u):
                 return True
-            if not authorize(u, constants.PERM_MANAGE_TESTS):
+            subs = _mock_exam_platform_subjects(obj)
+            if not subs or not all(
+                authorize(u, constants.PERM_MANAGE_TESTS, subject=s) for s in subs
+            ):
                 return False
             qs = filter_mock_exams_for_user(u, type(obj).objects.filter(pk=obj.pk))
             return qs.exists()
         if act == "destroy":
             if self._shell_admin(u):
                 return True
-            if not authorize(u, constants.PERM_MANAGE_TESTS):
+            subs = _mock_exam_platform_subjects(obj)
+            if not subs or not all(
+                authorize(u, constants.PERM_MANAGE_TESTS, subject=s) for s in subs
+            ):
                 return False
             qs = filter_mock_exams_for_user(u, type(obj).objects.filter(pk=obj.pk))
             return qs.exists()
         if act in ("publish", "unpublish"):
             if self._shell_admin(u):
                 return True
-            if not authorize(u, constants.PERM_MANAGE_TESTS):
+            subs = _mock_exam_platform_subjects(obj)
+            if not subs or not all(
+                authorize(u, constants.PERM_MANAGE_TESTS, subject=s) for s in subs
+            ):
                 return False
             qs = filter_mock_exams_for_user(u, type(obj).objects.filter(pk=obj.pk))
             return qs.exists()
         if act == "assign_users":
-            return authorize(u, constants.PERM_ASSIGN_ACCESS)
+            subs = _mock_exam_platform_subjects(obj)
+            if not subs:
+                return False
+            return all(
+                authorize(u, constants.PERM_ASSIGN_ACCESS, subject=s) for s in subs
+            )
         if act == "add_test":
             from exams.models import MockExam
 
@@ -277,7 +320,9 @@ class ModuleNestedAdminAccess(BasePermission):
         if view.action == "create":
             return authorize(request.user, constants.PERM_MANAGE_TESTS, subject=pt.subject)
         if view.action in ("update", "partial_update", "destroy"):
-            return True
+            return authorize(
+                request.user, constants.PERM_MANAGE_TESTS, subject=pt.subject
+            )
         return False
 
     def has_object_permission(self, request, view, obj):
@@ -301,7 +346,9 @@ class QuestionNestedAdminAccess(BasePermission):
         if view.action == "create":
             return authorize(request.user, constants.PERM_MANAGE_TESTS, subject=pt.subject)
         if view.action in ("update", "partial_update", "destroy", "reorder"):
-            return True
+            return authorize(
+                request.user, constants.PERM_MANAGE_TESTS, subject=pt.subject
+            )
         return False
 
     def has_object_permission(self, request, view, obj):
@@ -315,4 +362,33 @@ class QuestionNestedAdminAccess(BasePermission):
 
 class BulkAssignAccess(BasePermission):
     def has_permission(self, request, view):
-        return authorize(request.user, constants.PERM_ASSIGN_ACCESS)
+        subjects = bulk_assign_request_platform_subjects(request.data or {})
+        if not subjects:
+            return False
+        return all(
+            authorize(request.user, constants.PERM_ASSIGN_ACCESS, subject=s)
+            for s in subjects
+        )
+
+
+class BulkAssignmentHistoryAccess(BasePermission):
+    """
+    List / re-run library bulk-assignment history (no request body on GET).
+
+    Mirrors who may use the admin Assignments console: assign_access or manage_users
+    in the actor's platform subject context, plus wildcard.
+    """
+
+    def has_permission(self, request, view):
+        user = getattr(request, "user", None)
+        if not user or not user.is_authenticated:
+            return False
+        perms = get_effective_permission_codenames(user)
+        if constants.WILDCARD in perms:
+            return True
+        subj = platform_subject_for_user(user)
+        if not subj:
+            return False
+        return authorize(user, constants.PERM_ASSIGN_ACCESS, subject=subj) or authorize(
+            user, constants.PERM_MANAGE_USERS, subject=subj
+        )

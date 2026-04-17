@@ -110,7 +110,7 @@ class ClassroomSecurityTests(TestCase):
 
         self.client.force_authenticate(self.other)
         r2 = self.client.get(f"/api/classes/submissions/{self.submission.pk}/")
-        self.assertEqual(r2.status_code, 404)
+        self.assertEqual(r2.status_code, 403)
 
     def test_student_cannot_delete_announcement(self):
         post = ClassPost.objects.create(

@@ -493,3 +493,71 @@ class AuditLog(models.Model):
 
     def __str__(self):
         return f"{self.user} - {self.action} at {self.timestamp}"
+
+
+class BulkAssignmentDispatch(models.Model):
+    """
+    Audit trail for ``/api/exams/bulk_assign/`` library dispatches (pastpaper sections + timed mocks).
+
+    ``payload`` stores the exact request body subset for ``rerun``; ``result`` stores structured outcome.
+    """
+
+    KIND_PASTPAPER = "pastpaper"
+    KIND_TIMED_MOCK = "timed_mock"
+    KIND_MIXED = "mixed"
+    KIND_CHOICES = [
+        (KIND_PASTPAPER, "Pastpaper library"),
+        (KIND_TIMED_MOCK, "Timed mock"),
+        (KIND_MIXED, "Mixed"),
+    ]
+
+    STATUS_PENDING = "pending"
+    STATUS_PROCESSING = "processing"
+    STATUS_DELIVERED = "delivered"  # kept for legacy rows; new code uses COMPLETED/FAILED
+    STATUS_COMPLETED = "completed"
+    STATUS_FAILED = "failed"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_PROCESSING, "Processing"),
+        (STATUS_DELIVERED, "Delivered"),
+        (STATUS_COMPLETED, "Completed"),
+        (STATUS_FAILED, "Failed"),
+    ]
+
+    assigned_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="bulk_library_dispatches",
+    )
+    kind = models.CharField(max_length=20, choices=KIND_CHOICES, db_index=True)
+    subject_summary = models.CharField(max_length=200, blank=True, default="")
+    students_requested_count = models.PositiveIntegerField(default=0)
+    students_granted_count = models.PositiveIntegerField(default=0)
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default=STATUS_PENDING,
+        db_index=True,
+    )
+    actor_snapshot = models.JSONField(default=dict, blank=True)
+    idempotency_key = models.CharField(max_length=64, blank=True, db_index=True)
+    idempotency_expires_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    payload = models.JSONField(default=dict, blank=True)
+    result = models.JSONField(default=dict, blank=True)
+    rerun_of = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reruns",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "exams_bulk_assignment_dispatch"
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"BulkDispatch#{self.pk} {self.kind} by {self.assigned_by_id}"

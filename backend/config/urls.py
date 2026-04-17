@@ -16,4 +16,6 @@ urlpatterns = [
     path('api/users/', include('users.urls')),
     path('api/exams/', include('exams.urls')),
     path('api/classes/', include('classes.urls')),
+    path('api/access/', include('access.urls')),
+    path('api/realtime/', include('realtime.urls')),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

@@ -19,6 +19,7 @@ const AUTH_COOKIE_NAMES = [
     "is_frozen",
     "role",
     "lms_permissions",
+    "lms_subject",
     "lms_scope",
     "lms_user",
 ] as const;
@@ -61,6 +62,12 @@ async function persistMeCookie(rememberMe: boolean) {
             }),
             cookieOptions,
         );
+        const subj = me?.subject ? String(me.subject).toLowerCase() : "";
+        if (subj === "math" || subj === "english") {
+            Cookies.set("lms_subject", subj, cookieOptions);
+        } else {
+            Cookies.remove("lms_subject", { path: "/", domain: IS_PROD ? cookieDomain() : undefined });
+        }
     } catch {
         // best-effort; UI will fall back to role-only if this fails
     }
@@ -153,8 +160,9 @@ export const authApi = {
         if (Array.isArray(response.data.permissions)) {
             Cookies.set('lms_permissions', JSON.stringify(response.data.permissions), cookieOptions);
         }
-        if (Array.isArray(response.data.scope)) {
-            Cookies.set('lms_scope', JSON.stringify(response.data.scope), cookieOptions);
+        const subj = response.data.subject ? String(response.data.subject).toLowerCase() : "";
+        if (subj === "math" || subj === "english") {
+            Cookies.set("lms_subject", subj, cookieOptions);
         }
         await persistMeCookie(rememberMe);
         return response.data;
@@ -177,8 +185,9 @@ export const authApi = {
         if (Array.isArray(response.data.permissions)) {
             Cookies.set('lms_permissions', JSON.stringify(response.data.permissions), cookieOptions);
         }
-        if (Array.isArray(response.data.scope)) {
-            Cookies.set('lms_scope', JSON.stringify(response.data.scope), cookieOptions);
+        const subj = response.data.subject ? String(response.data.subject).toLowerCase() : "";
+        if (subj === "math" || subj === "english") {
+            Cookies.set("lms_subject", subj, cookieOptions);
         }
         await persistMeCookie(rememberMe);
         return response.data;
@@ -208,8 +217,9 @@ export const authApi = {
         if (Array.isArray(response.data.permissions)) {
             Cookies.set('lms_permissions', JSON.stringify(response.data.permissions), cookieOptions);
         }
-        if (Array.isArray(response.data.scope)) {
-            Cookies.set('lms_scope', JSON.stringify(response.data.scope), cookieOptions);
+        const subj = response.data.subject ? String(response.data.subject).toLowerCase() : "";
+        if (subj === "math" || subj === "english") {
+            Cookies.set("lms_subject", subj, cookieOptions);
         }
         await persistMeCookie(rememberMe);
         return response.data;
@@ -300,6 +310,29 @@ export const classesApi = {
     },
     getLeaderboard: async (classId: number) => {
         const r = await api.get(`/classes/${classId}/leaderboard/`);
+        return r.data;
+    },
+    /** Unified activity feed (posts, assignments, submissions), paginated. */
+    getStream: async (classId: number, params?: { page?: number; page_size?: number }) => {
+        const r = await api.get(`/classes/${classId}/stream/`, { params });
+        return r.data;
+    },
+    /** Student-focused slices: your_assignments (with workflow_status), due_soon, recently_graded, new_posts. */
+    getStudentWorkspace: async (classId: number) => {
+        const r = await api.get(`/classes/${classId}/student-workspace/`);
+        return r.data;
+    },
+    listComments: async (classId: number, targetType: 'post' | 'assignment', targetId: number) => {
+        const r = await api.get(`/classes/${classId}/comments/`, {
+            params: { target_type: targetType, target_id: targetId },
+        });
+        return r.data;
+    },
+    createComment: async (
+        classId: number,
+        data: { target_type: 'post' | 'assignment'; target_id: number; content: string; parent?: number | null },
+    ) => {
+        const r = await api.post(`/classes/${classId}/comments/`, data);
         return r.data;
     },
     /** Class teacher: mock exams + pastpaper tests for homework form (same visibility as portal lists). */
@@ -412,7 +445,8 @@ export const adminApi = {
         userIds: number[],
         assignmentType: string = 'FULL',
         formType?: string,
-        practiceTestIds?: number[]
+        practiceTestIds?: number[],
+        clientContext?: Record<string, unknown>
     ) => {
         const payload: any = {
             exam_ids: examIds,
@@ -421,8 +455,19 @@ export const adminApi = {
         };
         if (formType) payload.form_type = formType;
         if (practiceTestIds?.length) payload.practice_test_ids = practiceTestIds;
+        if (clientContext && Object.keys(clientContext).length) payload.client_context = clientContext;
         const res = await api.post('/exams/bulk_assign/', payload);
         return res.data;
+    },
+
+    listBulkAssignmentHistory: async () => {
+        const r = await api.get('/exams/assignments/history/');
+        return r.data;
+    },
+
+    rerunBulkAssignmentDispatch: async (dispatchId: number) => {
+        const r = await api.post(`/exams/assignments/history/${dispatchId}/rerun/`);
+        return r.data;
     },
 
     getPastpaperPacks: async () => {

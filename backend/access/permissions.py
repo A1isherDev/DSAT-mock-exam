@@ -5,11 +5,15 @@ from __future__ import annotations
 from rest_framework.permissions import BasePermission
 
 from . import constants
-from .services import authorize, get_effective_permission_codenames
+from .services import (
+    authorize,
+    get_effective_permission_codenames,
+    platform_subject_for_user,
+)
 
 
 class HasLMSPermission(BasePermission):
-    """Set `permission_codename` on the view or subclass."""
+    """Set ``permission_codename`` on the view or subclass."""
 
     permission_codename: str = ""
 
@@ -17,31 +21,45 @@ class HasLMSPermission(BasePermission):
         code = getattr(view, "permission_codename", None) or self.permission_codename
         if not code:
             return False
-        return authorize(request.user, code)
+        subj = getattr(view, "permission_subject", None)
+        return authorize(request.user, code, subject=subj)
 
 
 class HasManageUsers(BasePermission):
     def has_permission(self, request, view):
-        return authorize(request.user, constants.PERM_MANAGE_USERS)
+        return authorize(
+            request.user,
+            constants.PERM_MANAGE_USERS,
+            subject=platform_subject_for_user(request.user),
+        )
 
 
 class HasManageUsersOrAssignTestAccess(BasePermission):
-    """List users for admin UI: user managers or scoped staff who can assign access."""
+    """List users for admin UI: user managers or subject-scoped staff who can assign access."""
 
     def has_permission(self, request, view):
-        return authorize(request.user, constants.PERM_MANAGE_USERS) or authorize(
-            request.user, constants.PERM_ASSIGN_ACCESS
-        )
+        subj = platform_subject_for_user(request.user)
+        return authorize(
+            request.user, constants.PERM_MANAGE_USERS, subject=subj
+        ) or authorize(request.user, constants.PERM_ASSIGN_ACCESS, subject=subj)
 
 
 class HasManageRoles(BasePermission):
     def has_permission(self, request, view):
-        return authorize(request.user, constants.PERM_ASSIGN_ACCESS)
+        return authorize(
+            request.user,
+            constants.PERM_ASSIGN_ACCESS,
+            subject=platform_subject_for_user(request.user),
+        )
 
 
 class HasManageClassrooms(BasePermission):
     def has_permission(self, request, view):
-        return authorize(request.user, constants.PERM_CREATE_CLASSROOM)
+        return authorize(
+            request.user,
+            constants.PERM_CREATE_CLASSROOM,
+            subject=platform_subject_for_user(request.user),
+        )
 
 
 class RequiresSubmitTest(BasePermission):

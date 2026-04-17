@@ -1,4 +1,5 @@
 from django.contrib.auth.models import AbstractUser, BaseUserManager
+from django.core.exceptions import ValidationError
 from django.db import models
 
 
@@ -26,6 +27,7 @@ class UserManager(BaseUserManager):
         email = self.normalize_email(email)
         role = extra_fields.pop("role", None)
         scope = extra_fields.pop("scope", None)
+        subject = extra_fields.pop("subject", None)
         system_role = extra_fields.pop("system_role", None)  # legacy; kept for DB compatibility
         user = self.model(email=email, **extra_fields)
         # Canonical authorization fields (RBAC + scope)
@@ -33,10 +35,18 @@ class UserManager(BaseUserManager):
             user.role = role.strip()
         if scope is not None:
             user.scope = scope
+        if isinstance(subject, str) and subject.strip():
+            user.subject = subject.strip().lower()
         # Do not derive role from system_role anymore; it is legacy.
         if system_role is not None:
             user.system_role = system_role
         user.set_password(password)
+        from access import constants as auth_const
+
+        eff_role = str(getattr(user, "role", "") or "").strip().lower()
+        if eff_role in (auth_const.ROLE_TEACHER, auth_const.ROLE_ADMIN):
+            if getattr(user, "subject", None) not in auth_const.ALL_DOMAIN_SUBJECTS:
+                raise ValueError("Teacher and admin accounts require subject: math or english.")
         user.save(using=self._db)
         return user
 
@@ -60,7 +70,19 @@ class User(AbstractUser):
     is_frozen = models.BooleanField(default=False, db_index=True)
     # Canonical RBAC + scope fields
     role = models.CharField(max_length=30, default="student", db_index=True)
-    scope = models.JSONField(default=list, blank=True)
+    scope = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Legacy field; not used for authorization. Use ``User.subject`` and ``access.UserAccess``.",
+    )
+    subject = models.CharField(
+        max_length=16,
+        blank=True,
+        null=True,
+        db_index=True,
+        choices=[("math", "Math"), ("english", "English")],
+        help_text="Required for teacher and admin (exactly math or english). Optional for test_admin. Null for super_admin/student.",
+    )
     profile_image = models.ImageField(upload_to='profiles/', null=True, blank=True)
     sat_exam_date = models.DateField(null=True, blank=True, help_text='Planned SAT exam date')
     target_score = models.PositiveIntegerField(null=True, blank=True, help_text='Target total SAT score (400–1600)')
@@ -86,10 +108,35 @@ class User(AbstractUser):
     objects = UserManager()
     
     class Meta:
-        db_table = 'users'
-    
+        db_table = "users"
+
     def __str__(self):
         return f"{self.email} ({self.role})"
+
+    def clean(self):
+        super().clean()
+        from access import constants as auth_const
+
+        role = str(getattr(self, "role", "") or "").strip().lower()
+        raw_subj = getattr(self, "subject", None)
+        subj = str(raw_subj).strip().lower() if raw_subj not in (None, "") else None
+
+        if role in (auth_const.ROLE_TEACHER, auth_const.ROLE_ADMIN):
+            if subj not in auth_const.ALL_DOMAIN_SUBJECTS:
+                raise ValidationError(
+                    {"subject": "Teacher and admin accounts require subject: math or english."}
+                )
+        elif role == auth_const.ROLE_TEST_ADMIN:
+            if subj is not None and subj not in auth_const.ALL_DOMAIN_SUBJECTS:
+                raise ValidationError({"subject": 'Subject must be "math", "english", or unset.'})
+        elif role == auth_const.ROLE_SUPER_ADMIN:
+            if subj is not None:
+                raise ValidationError({"subject": "super_admin accounts must not have a subject set."})
+        elif role == auth_const.ROLE_STUDENT:
+            if subj is not None:
+                raise ValidationError({"subject": "Student accounts must not have a subject set."})
+        elif subj is not None:
+            raise ValidationError({"subject": "Subject is not valid for this role."})
 
     @property
     def is_student(self):

@@ -1,14 +1,17 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
+    AdminMockExamViewSet,
+    AdminModuleViewSet,
+    AdminPastpaperPackViewSet,
+    AdminPracticeTestViewSet,
+    AdminQuestionViewSet,
+    BulkAssignmentHistoryListView,
+    BulkAssignmentHistoryDetailView,
+    BulkAssignmentHistoryRerunView,
     MockExamViewSet,
     PracticeTestViewSet,
     TestAttemptViewSet,
-    AdminMockExamViewSet,
-    AdminPastpaperPackViewSet,
-    AdminPracticeTestViewSet,
-    AdminModuleViewSet,
-    AdminQuestionViewSet,
 )
 
 # ── Student routes ──────────────────────────────────────────────────────────
@@ -34,6 +37,17 @@ admin_question_router = DefaultRouter()
 admin_question_router.register(r'', AdminQuestionViewSet, basename='admin-questions')
 
 urlpatterns = [
+    path("assignments/history/", BulkAssignmentHistoryListView.as_view(), name="bulk-assignment-history"),
+    path(
+        "assignments/history/<int:pk>/",
+        BulkAssignmentHistoryDetailView.as_view(),
+        name="bulk-assignment-detail",
+    ),
+    path(
+        "assignments/history/<int:pk>/rerun/",
+        BulkAssignmentHistoryRerunView.as_view(),
+        name="bulk-assignment-rerun",
+    ),
     # Admin Questions CRUD: /exams/admin/tests/<test_pk>/modules/<module_pk>/questions/
     path('admin/tests/<int:test_pk>/modules/<int:module_pk>/questions/', include(admin_question_router.urls)),
     

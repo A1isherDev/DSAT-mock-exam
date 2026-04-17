@@ -1,4 +1,5 @@
 from rest_framework import viewsets, status, generics
+from rest_framework.views import APIView
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
@@ -7,12 +8,16 @@ import logging
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.db import transaction
+from datetime import timedelta
+import hashlib
+import json
 from django.db.models import Prefetch
 
 from access import constants as acc_const
 from access.permissions import RequiresSubmitTest
 from access.policies import (
     BulkAssignAccess,
+    BulkAssignmentHistoryAccess,
     MockExamAdminAccess,
     ModuleNestedAdminAccess,
     PastpaperPackAdminAccess,
@@ -21,22 +26,33 @@ from access.policies import (
 )
 from access.services import (
     authorize,
+    bulk_assign_request_platform_subjects,
     can_browse_standalone_practice_library,
     filter_mock_exams_for_user,
     filter_pastpaper_packs_for_user,
     filter_practice_tests_for_user,
     get_effective_permission_codenames,
+    normalized_role,
+    platform_subject_for_user,
+    student_has_any_subject_grant,
 )
+from access.subject_mapping import platform_subject_to_domain
 
+from .library_bulk_assign import (
+    execute_library_bulk_assign,
+    infer_dispatch_kind,
+    subject_summary_from_subjects,
+)
 from .models import (
-    PastpaperPack,
-    PracticeTest,
-    TestAttempt,
-    Module,
-    Question,
     AuditLog,
+    BulkAssignmentDispatch,
     MockExam,
+    Module,
+    PastpaperPack,
     PortalMockExam,
+    PracticeTest,
+    Question,
+    TestAttempt,
     ensure_full_mock_practice_test_modules,
 )
 from .serializers import (
@@ -50,6 +66,8 @@ from .serializers import (
     AdminPracticeTestSerializer,
     AdminModuleSerializer,
     AdminQuestionSerializer,
+    BulkAssignmentDispatchSerializer,
+    BulkAssignmentDispatchDetailSerializer,
 )
 
 logger = logging.getLogger(__name__)
@@ -59,6 +77,40 @@ def _is_student(user) -> bool:
 
 def _is_questions_console(request) -> bool:
     return str(getattr(request, "lms_console", "") or "").strip().lower() == "questions"
+
+
+def _actor_snapshot(user, *, subject: str | None) -> dict:
+    if not getattr(user, "is_authenticated", False):
+        return {}
+    role = normalized_role(user)
+    username = getattr(user, "username", None) or ""
+    email = getattr(user, "email", None) or ""
+    first_name = getattr(user, "first_name", None) or ""
+    last_name = getattr(user, "last_name", None) or ""
+    return {
+        "id": user.pk,
+        "role": role,
+        "subject": subject,
+        "username": username,
+        "email": email,
+        "name": (f"{first_name} {last_name}".strip() or username or email) or f"User #{user.pk}",
+    }
+
+
+def _idempotency_key_for_bulk_assign(actor, payload_core: dict) -> str:
+    """
+    Stable idempotency key derived from actor + normalized payload core.
+    """
+    base = {
+        "actor_id": getattr(actor, "pk", None),
+        "exam_ids": payload_core.get("exam_ids") or [],
+        "practice_test_ids": payload_core.get("practice_test_ids") or [],
+        "user_ids": payload_core.get("user_ids") or [],
+        "assignment_type": payload_core.get("assignment_type") or "",
+        "form_type": payload_core.get("form_type") or "",
+    }
+    blob = json.dumps(base, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
 class MockExamViewSet(viewsets.ReadOnlyModelViewSet):
@@ -172,81 +224,112 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Scope-based enforcement is handled by authorize(..., subject=...).
-
-        added_count = 0
-        removed_count = 0
-        practice_tests_matched = 0
-
-        with transaction.atomic():
-            if practice_test_ids:
-                pts = PracticeTest.objects.filter(pk__in=practice_test_ids, mock_exam__isnull=True)
-                practice_tests_matched = pts.count()
-                for pt in pts:
-                    if authorize(
-                        request.user, acc_const.PERM_ASSIGN_ACCESS, subject=pt.subject
-                    ):
-                        pt.assigned_users.add(*users)
-                        added_count += 1
-
-            mock_ids_touched = set()
-            if exam_ids:
-                subject_map = {
-                    "MATH": (["MATH"], ["READING_WRITING"]),
-                    "ENGLISH": (["READING_WRITING"], ["MATH"]),
-                    "FULL": (["MATH", "READING_WRITING"], []),
-                }
-                to_add_subjects, to_remove_subjects = subject_map.get(
-                    assignment_type, (["MATH", "READING_WRITING"], [])
-                )
-
-                add_filters = {"mock_exam_id__in": exam_ids, "subject__in": to_add_subjects}
-                if form_type:
-                    add_filters["form_type"] = form_type
-
-                add_tests = PracticeTest.objects.filter(**add_filters)
-                for pt in add_tests:
-                    if authorize(
-                        request.user, acc_const.PERM_ASSIGN_ACCESS, subject=pt.subject
-                    ):
-                        pt.assigned_users.add(*users)
-                        added_count += 1
-                        if pt.mock_exam_id:
-                            mock_ids_touched.add(pt.mock_exam_id)
-
-                for me in MockExam.objects.filter(pk__in=mock_ids_touched):
-                    me.assigned_users.add(*users)
-                    portal, _ = PortalMockExam.objects.get_or_create(
-                        mock_exam=me,
-                        defaults={"is_active": bool(me.is_published)},
-                    )
-                    portal.assigned_users.add(*users)
-
-                if to_remove_subjects:
-                    remove_filters = {"mock_exam_id__in": exam_ids, "subject__in": to_remove_subjects}
-                    if form_type:
-                        remove_filters["form_type"] = form_type
-                    remove_tests = PracticeTest.objects.filter(**remove_filters)
-                    for pt in remove_tests:
-                        if authorize(
-                            request.user, acc_const.PERM_ASSIGN_ACCESS, subject=pt.subject
-                        ):
-                            pt.assigned_users.remove(*users)
-                            removed_count += 1
-
-        return Response(
-            {
-                "status": "bulk_assigned",
-                "exams_count": len(exam_ids),
-                "practice_tests_requested": len(practice_test_ids),
-                "practice_tests_matched": practice_tests_matched,
-                "practice_tests_count": len(practice_test_ids),
-                "tests_added": added_count,
-                "tests_removed": removed_count,
-                "users_count": len(users),
-                "type": assignment_type,
-            }
+        payload_core = {
+            "exam_ids": exam_ids,
+            "practice_test_ids": practice_test_ids,
+            "user_ids": user_ids,
+            "assignment_type": str(assignment_type or "FULL"),
+            "form_type": str(form_type).strip() if form_type else None,
+        }
+        idempotency_key = _idempotency_key_for_bulk_assign(request.user, payload_core)
+        window_start = timezone.now() - timedelta(minutes=10)
+        existing = (
+            BulkAssignmentDispatch.objects.filter(
+                assigned_by=request.user,
+                idempotency_key=idempotency_key,
+                created_at__gte=window_start,
+            )
+            .exclude(status=BulkAssignmentDispatch.STATUS_FAILED)
+            .order_by("-created_at")
+            .first()
         )
+        if existing:
+            body = {
+                "detail": "Duplicate bulk assignment detected within idempotency window.",
+                "dispatch_id": existing.pk,
+                "dispatch_status": existing.status,
+            }
+            if isinstance(existing.result, dict):
+                body["result"] = existing.result
+            return Response(body, status=status.HTTP_409_CONFLICT)
+
+        raw_cc = request.data.get("client_context")
+        allowed_cc = {
+            "wizard_kind",
+            "pastpaper_pack_id",
+            "pastpaper_scope",
+            "mock_exam_id",
+            "content_label",
+            "track_filter",
+        }
+        client_context = (
+            {k: raw_cc[k] for k in allowed_cc if k in raw_cc}
+            if isinstance(raw_cc, dict)
+            else {}
+        )
+        payload = {
+            **payload_core,
+            "client_context": client_context,
+        }
+
+        subjects = bulk_assign_request_platform_subjects(payload_core)
+        actor_subj = platform_subject_for_user(request.user)
+        snapshot = _actor_snapshot(request.user, subject=actor_subj)
+
+        dispatch = BulkAssignmentDispatch.objects.create(
+            assigned_by=request.user,
+            kind=infer_dispatch_kind(exam_ids, practice_test_ids),
+            subject_summary="",
+            students_requested_count=0,
+            students_granted_count=0,
+            status=BulkAssignmentDispatch.STATUS_PROCESSING,
+            payload=payload,
+            result={},
+            actor_snapshot=snapshot,
+            idempotency_key=idempotency_key,
+            idempotency_expires_at=timezone.now() + timedelta(minutes=10),
+        )
+
+        try:
+            with transaction.atomic():
+                result = execute_library_bulk_assign(
+                    actor=request.user,
+                    exam_ids=exam_ids,
+                    practice_test_ids=practice_test_ids,
+                    user_ids=user_ids,
+                    assignment_type=str(assignment_type or "FULL"),
+                    form_type=str(form_type).strip() if form_type else None,
+                )
+        except Exception as exc:  # defensive: persist failure outcome
+            dispatch.status = BulkAssignmentDispatch.STATUS_FAILED
+            dispatch.result = {
+                "error": exc.__class__.__name__,
+                "detail": str(exc),
+            }
+            dispatch.save(update_fields=["status", "result"])
+            raise
+
+        dispatch.subject_summary = subject_summary_from_subjects(result.get("subjects_touched") or [])
+        dispatch.students_requested_count = int(result.get("students_requested_count") or 0)
+        dispatch.students_granted_count = int(result.get("students_granted_count") or 0)
+        dispatch.status = BulkAssignmentDispatch.STATUS_COMPLETED
+        dispatch.result = result
+        dispatch.save(
+            update_fields=[
+                "subject_summary",
+                "students_requested_count",
+                "students_granted_count",
+                "status",
+                "result",
+            ]
+        )
+
+        out = {
+            **result,
+            "dispatch_id": dispatch.pk,
+            "dispatch_status": dispatch.status,
+        }
+        return Response(out)
 
 class TestAttemptViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, RequiresSubmitTest]
@@ -463,10 +546,33 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
     def assign_users(self, request, pk=None):
         exam = self.get_object()
         from django.contrib.auth import get_user_model
+
         User = get_user_model()
-        users = list(User.objects.filter(id__in=request.data.get('user_ids', [])))
+        users = list(User.objects.filter(id__in=request.data.get("user_ids", [])))
 
         tests = list(exam.tests.all())
+        required_domains: set[str] = set()
+        for t in tests:
+            d = platform_subject_to_domain(t.subject)
+            if d is not None:
+                required_domains.add(d)
+
+        def _may_receive_mock_portal(u) -> bool:
+            if normalized_role(u) != acc_const.ROLE_STUDENT:
+                return True
+            if not required_domains:
+                return True
+            return all(student_has_any_subject_grant(u, dom) for dom in required_domains)
+
+        users = [u for u in users if _may_receive_mock_portal(u)]
+        if not users and request.data.get("user_ids"):
+            return Response(
+                {
+                    "detail": "No eligible users: students must have subject access matching this mock.",
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         can_all_sections = tests and all(
             authorize(request.user, acc_const.PERM_ASSIGN_ACCESS, subject=t.subject)
             for t in tests
@@ -494,7 +600,7 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
                     defaults={"is_active": bool(exam.is_published)},
                 )
                 portal.assigned_users.add(*users)
-            elif users:
+            elif request.data.get("user_ids"):
                 return Response(
                     {
                         "detail": "You cannot assign student access for any section of this mock with your permissions."
@@ -502,7 +608,15 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_403_FORBIDDEN,
                 )
 
-        return Response({'status': 'assigned', 'users_count': len(users)})
+        actor = request.user
+        if getattr(actor, "is_superuser", False) or normalized_role(actor) == acc_const.ROLE_SUPER_ADMIN:
+            logger.info(
+                "mock_exam_assign_users super_actor_id=%s exam_id=%s user_count=%s",
+                actor.pk,
+                exam.pk,
+                len(users),
+            )
+        return Response({"status": "assigned", "users_count": len(users)})
 
     @action(detail=True, methods=["post"])
     def publish(self, request, pk=None):
@@ -702,3 +816,185 @@ class AdminQuestionViewSet(viewsets.ModelViewSet):
             target.save()
             return Response({'status': 'reordered'})
         return Response({'message': 'Already at boundary'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+def _as_int_ids_bulk(seq):
+    out = []
+    for x in seq or []:
+        try:
+            out.append(int(x))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _can_rerun_dispatch(actor, dispatch: BulkAssignmentDispatch) -> bool:
+    if not getattr(actor, "is_authenticated", False):
+        return False
+    perms = get_effective_permission_codenames(actor)
+    if acc_const.WILDCARD in perms:
+        return True
+    if dispatch.assigned_by_id and dispatch.assigned_by_id == actor.pk:
+        return True
+    subj = platform_subject_for_user(actor)
+    if subj and authorize(actor, acc_const.PERM_MANAGE_USERS, subject=subj):
+        return True
+    return False
+
+
+class BulkAssignmentHistoryListView(generics.ListAPIView):
+    """GET /api/exams/assignments/history/ — persisted library bulk-assign runs."""
+
+    permission_classes = [IsAuthenticated, BulkAssignmentHistoryAccess]
+    serializer_class = BulkAssignmentDispatchSerializer
+
+    def get_queryset(self):
+        user = self.request.user
+        perms = get_effective_permission_codenames(user)
+        qs = BulkAssignmentDispatch.objects.select_related("assigned_by").order_by("-created_at")
+        if acc_const.WILDCARD in perms:
+            return qs
+        return qs.filter(assigned_by=user)
+
+
+class BulkAssignmentHistoryDetailView(generics.RetrieveAPIView):
+    """
+    GET /api/exams/assignments/history/<id>/ — single dispatch detail.
+    """
+
+    permission_classes = [IsAuthenticated, BulkAssignmentHistoryAccess]
+    serializer_class = BulkAssignmentDispatchDetailSerializer
+    queryset = BulkAssignmentDispatch.objects.select_related("assigned_by")
+
+
+class BulkAssignmentHistoryRerunView(APIView):
+    """POST /api/exams/assignments/history/<id>/rerun/ — replay stored payload."""
+
+    permission_classes = [IsAuthenticated, BulkAssignmentHistoryAccess]
+
+    def post(self, request, pk):
+        dispatch = get_object_or_404(
+            BulkAssignmentDispatch.objects.select_related("assigned_by"),
+            pk=pk,
+        )
+        if not _can_rerun_dispatch(request.user, dispatch):
+            raise PermissionDenied("You may only re-run dispatches you created, unless you are a directory admin.")
+
+        p = dispatch.payload or {}
+        exam_ids = _as_int_ids_bulk(p.get("exam_ids"))
+        practice_test_ids = _as_int_ids_bulk(p.get("practice_test_ids"))
+        user_ids = _as_int_ids_bulk(p.get("user_ids"))
+        assignment_type = p.get("assignment_type") or "FULL"
+        form_type = p.get("form_type")
+        form_type = str(form_type).strip() if form_type else None
+
+        from django.contrib.auth import get_user_model
+
+        User = get_user_model()
+        users = list(User.objects.filter(id__in=user_ids))
+        if not user_ids or not users:
+            return Response({"detail": "Stored payload is missing valid user_ids."}, status=status.HTTP_400_BAD_REQUEST)
+        if not exam_ids and not practice_test_ids:
+            return Response({"detail": "Stored payload is missing content ids."}, status=status.HTTP_400_BAD_REQUEST)
+
+        subjects = bulk_assign_request_platform_subjects(
+            {
+                "exam_ids": exam_ids,
+                "practice_test_ids": practice_test_ids,
+                "assignment_type": assignment_type,
+                "form_type": form_type,
+            }
+        )
+        if not subjects or not all(
+            authorize(request.user, acc_const.PERM_ASSIGN_ACCESS, subject=s) for s in subjects
+        ):
+            raise PermissionDenied("You are not allowed to re-run this assignment for the current subjects.")
+
+        # Validate that at least one student is still eligible for the current subjects.
+        eligible_any = False
+        for u in users:
+            if normalized_role(u) != acc_const.ROLE_STUDENT:
+                continue
+            for subj in subjects:
+                dom = platform_subject_to_domain(subj)
+                if dom and student_has_any_subject_grant(u, dom):
+                    eligible_any = True
+                    break
+            if eligible_any:
+                break
+        if not eligible_any:
+            return Response(
+                {
+                    "detail": "Rerun would skip all target students for the current subjects; no eligible students remain.",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        prev_cc = p.get("client_context")
+        client_context = prev_cc if isinstance(prev_cc, dict) else {}
+        payload = {
+            "exam_ids": exam_ids,
+            "practice_test_ids": practice_test_ids,
+            "user_ids": user_ids,
+            "assignment_type": str(assignment_type or "FULL"),
+            "form_type": form_type or "",
+            "client_context": client_context,
+        }
+
+        snapshot = _actor_snapshot(request.user, subject=platform_subject_for_user(request.user))
+
+        new_dispatch = BulkAssignmentDispatch.objects.create(
+            assigned_by=request.user,
+            kind=infer_dispatch_kind(exam_ids, practice_test_ids),
+            subject_summary="",
+            students_requested_count=0,
+            students_granted_count=0,
+            status=BulkAssignmentDispatch.STATUS_PROCESSING,
+            payload=payload,
+            result={},
+            rerun_of=dispatch,
+            actor_snapshot=snapshot,
+        )
+
+        try:
+            with transaction.atomic():
+                result = execute_library_bulk_assign(
+                    actor=request.user,
+                    exam_ids=exam_ids,
+                    practice_test_ids=practice_test_ids,
+                    user_ids=user_ids,
+                    assignment_type=str(assignment_type or "FULL"),
+                    form_type=form_type,
+                )
+        except Exception as exc:  # defensive: persist failure outcome
+            new_dispatch.status = BulkAssignmentDispatch.STATUS_FAILED
+            new_dispatch.result = {
+                "error": exc.__class__.__name__,
+                "detail": str(exc),
+            }
+            new_dispatch.save(update_fields=["status", "result"])
+            raise
+
+        new_dispatch.subject_summary = subject_summary_from_subjects(result.get("subjects_touched") or [])
+        new_dispatch.students_requested_count = int(result.get("students_requested_count") or 0)
+        new_dispatch.students_granted_count = int(result.get("students_granted_count") or 0)
+        new_dispatch.status = BulkAssignmentDispatch.STATUS_COMPLETED
+        new_dispatch.result = result
+        new_dispatch.save(
+            update_fields=[
+                "subject_summary",
+                "students_requested_count",
+                "students_granted_count",
+                "status",
+                "result",
+            ]
+        )
+
+        return Response(
+            {
+                **result,
+                "dispatch_id": new_dispatch.pk,
+                "dispatch_status": new_dispatch.status,
+                "rerun_of_id": dispatch.pk,
+            }
+        )

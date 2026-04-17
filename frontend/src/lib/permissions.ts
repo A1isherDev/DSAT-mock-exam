@@ -3,6 +3,7 @@ import Cookies from "js-cookie";
 /**
  * UI-only permission helpers. The backend enforces all authorization.
  * Synced from login / Google auth into the `lms_permissions` cookie (JSON array).
+ * UI hints only: every protected action must still succeed or fail based on the API.
  */
 export function getPermissionList(): string[] {
   if (typeof window === "undefined") return [];
@@ -16,16 +17,12 @@ export function getPermissionList(): string[] {
   }
 }
 
-export function getScopeList(): string[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = Cookies.get("lms_scope");
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+/** Single domain subject for staff (math | english), from login /me cookie. */
+export function getSubject(): "math" | "english" | null {
+  if (typeof window === "undefined") return null;
+  const raw = (Cookies.get("lms_subject") || "").trim().toLowerCase();
+  if (raw === "math" || raw === "english") return raw;
+  return null;
 }
 
 export function can(codename: string): boolean {
@@ -82,20 +79,19 @@ export function canManageMockExamShell(): boolean {
  */
 export function canAbacTestSubject(subject: string): boolean {
   if (can("*")) return true;
-  const scopes = getScopeList().map((s) => String(s || "").toLowerCase());
-  if (subject === "READING_WRITING") return scopes.includes("english");
-  if (subject === "MATH") return scopes.includes("math");
+  const dom = getSubject();
+  if (!dom) return false;
+  if (subject === "READING_WRITING") return dom === "english";
+  if (subject === "MATH") return dom === "math";
   return false;
 }
 
 /** Default pastpaper bulk-assign subject filter: scoped admins start on their subject only. */
 export function defaultBulkPastpaperSubjectScope(): "BOTH" | "MATH" | "READING_WRITING" {
   if (can("*")) return "BOTH";
-  const scopes = getScopeList().map((s) => String(s || "").toLowerCase());
-  const hasMath = scopes.includes("math");
-  const hasEng = scopes.includes("english");
-  if (hasMath && !hasEng) return "MATH";
-  if (hasEng && !hasMath) return "READING_WRITING";
+  const dom = getSubject();
+  if (dom === "math") return "MATH";
+  if (dom === "english") return "READING_WRITING";
   return "BOTH";
 }
 

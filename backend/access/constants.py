@@ -1,7 +1,7 @@
-"""Authorization constants for RBAC + scope-based access.
+"""Authorization constants: RBAC + single subject domain + DB-backed access.
 
-RBAC determines *what* a user can do (permission codenames).
-Scope determines *where* they can do it (domains like math / english).
+Subject vocabulary (platform ``MATH`` / ``READING_WRITING`` vs domain ``math`` / ``english``)
+is defined and converted only in ``access.subject_mapping``.
 """
 
 WILDCARD = "*"
@@ -23,10 +23,24 @@ ALL_PERMISSION_CODENAMES = (
     PERM_VIEW_DASHBOARD,
 )
 
-# Canonical scope keys (domains)
-SCOPE_MATH = "math"
-SCOPE_ENGLISH = "english"
-ALL_SCOPES = (SCOPE_MATH, SCOPE_ENGLISH)
+# ``authorize(..., subject=<platform>)`` MUST receive a valid platform subject for these
+# (MATH / READING_WRITING), except super_admin / Django superuser or unscoped test_admin.
+PERMISSIONS_REQUIRING_PLATFORM_SUBJECT = frozenset(
+    {
+        PERM_MANAGE_USERS,
+        PERM_MANAGE_TESTS,
+        PERM_ASSIGN_ACCESS,
+        PERM_CREATE_CLASSROOM,
+    }
+)
+
+# Overrides must never grant these to students (defense in depth vs. bad admin data).
+PERMISSIONS_STUDENT_OVERRIDE_DENIED = PERMISSIONS_REQUIRING_PLATFORM_SUBJECT
+
+# Domain subject stored on User.subject and UserAccess.subject (exactly one for staff).
+DOMAIN_MATH = "math"
+DOMAIN_ENGLISH = "english"
+ALL_DOMAIN_SUBJECTS = (DOMAIN_MATH, DOMAIN_ENGLISH)
 
 # Platform subject values stored in DB (PracticeTest.subject)
 SUBJECT_ENGLISH_PLATFORM = "READING_WRITING"  # "English / R&W"
@@ -38,3 +52,13 @@ ROLE_ADMIN = "admin"
 ROLE_TEACHER = "teacher"
 ROLE_TEST_ADMIN = "test_admin"
 ROLE_STUDENT = "student"
+
+CANONICAL_ROLES = frozenset(
+    {
+        ROLE_SUPER_ADMIN,
+        ROLE_ADMIN,
+        ROLE_TEACHER,
+        ROLE_TEST_ADMIN,
+        ROLE_STUDENT,
+    }
+)

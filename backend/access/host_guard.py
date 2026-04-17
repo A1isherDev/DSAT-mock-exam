@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+"""
+Host / subdomain routing is **defense in depth** (UX separation and coarse abuse reduction).
+
+Authorization MUST NOT depend on this module: every API view still enforces role, platform
+``subject``, and ``UserAccess`` via ``access.services.authorize`` and related checks.
+"""
+
 from dataclasses import dataclass
 
 from django.http import JsonResponse
@@ -70,7 +77,11 @@ class SubdomainAPIGuardMiddleware:
         if kind == "admin":
             if path.startswith("/api/users/"):
                 return self.get_response(request)
+            if path.startswith("/api/access/"):
+                return self.get_response(request)
             if path.startswith("/api/exams/bulk_assign"):
+                return self.get_response(request)
+            if path.startswith("/api/exams/assignments/"):
                 return self.get_response(request)
             # Allow GET-only reads for lists used by bulk assign UI.
             if path.startswith("/api/exams/admin/"):
@@ -92,6 +103,8 @@ class SubdomainAPIGuardMiddleware:
                 return self.get_response(request)
             # Still allow bulk assign if desired from questions (harmless), but not required.
             if path.startswith("/api/exams/bulk_assign"):
+                return self.get_response(request)
+            if path.startswith("/api/exams/assignments/"):
                 return self.get_response(request)
             # Users are intentionally not available here.
             if path.startswith("/api/users/"):

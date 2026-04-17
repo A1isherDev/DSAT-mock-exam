@@ -120,6 +120,12 @@ class ClassPost(models.Model):
 
 
 class Assignment(models.Model):
+    """
+    Homework / class work. ``practice_scope`` filters which **SAT sections** count for this
+    assignment (English vs Math vs both). It is **not** RBAC: authorization uses
+    ``User.role``, ``User.subject`` (math|english), and ``access.UserAccess``.
+    """
+
     PRACTICE_SCOPE_BOTH = "BOTH"
     PRACTICE_SCOPE_ENGLISH = "ENGLISH"
     PRACTICE_SCOPE_MATH = "MATH"
@@ -346,6 +352,110 @@ class Grade(models.Model):
 
     class Meta:
         db_table = "class_grades"
+
+
+def submission_workflow_status(submission: Submission | None) -> str:
+    """
+    Product lifecycle for classwork (does not replace DB ``Submission.status``):
+    NOT_STARTED → SUBMITTED → GRADED.
+    """
+    if submission is None:
+        return "NOT_STARTED"
+    if submission.status != Submission.STATUS_SUBMITTED:
+        return "NOT_STARTED"
+    if Grade.objects.filter(submission_id=submission.pk).exists():
+        return "GRADED"
+    return "SUBMITTED"
+
+
+class ClassroomStreamItem(models.Model):
+    """
+    Denormalized activity feed for a class (posts, new assignments, submission events).
+    ``related_id`` points at ``ClassPost.id``, ``Assignment.id``, or ``Submission.id`` depending on ``stream_type``.
+    """
+
+    TYPE_POST = "post"
+    TYPE_ASSIGNMENT = "assignment"
+    TYPE_SUBMISSION = "submission"
+    TYPE_CHOICES = [
+        (TYPE_POST, "Post"),
+        (TYPE_ASSIGNMENT, "Assignment"),
+        (TYPE_SUBMISSION, "Submission"),
+    ]
+
+    classroom = models.ForeignKey(
+        Classroom,
+        on_delete=models.CASCADE,
+        related_name="stream_items",
+    )
+    stream_type = models.CharField(max_length=20, choices=TYPE_CHOICES, db_index=True)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="classroom_stream_actions",
+    )
+    related_id = models.PositiveIntegerField()
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "classroom_stream_items"
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["stream_type", "related_id"],
+                name="classroom_stream_unique_type_related",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["classroom", "created_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"Stream#{self.pk} {self.stream_type} in {self.classroom_id}"
+
+
+class ClassComment(models.Model):
+    """Threaded comments on announcements or assignments within a class."""
+
+    TARGET_POST = "post"
+    TARGET_ASSIGNMENT = "assignment"
+    TARGET_CHOICES = [
+        (TARGET_POST, "Post"),
+        (TARGET_ASSIGNMENT, "Assignment"),
+    ]
+
+    classroom = models.ForeignKey(
+        Classroom,
+        on_delete=models.CASCADE,
+        related_name="comments",
+    )
+    target_type = models.CharField(max_length=20, choices=TARGET_CHOICES, db_index=True)
+    target_id = models.PositiveIntegerField()
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="class_comments",
+    )
+    parent = models.ForeignKey(
+        "self",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="replies",
+    )
+    content = models.TextField(max_length=10_000)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "class_comments"
+        ordering = ["created_at"]
+        indexes = [
+            models.Index(fields=["classroom", "target_type", "target_id"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"Comment#{self.pk} on {self.target_type}:{self.target_id}"
 
 
 @receiver(post_save, sender=ClassroomMembership)
