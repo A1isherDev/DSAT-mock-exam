@@ -25,6 +25,20 @@ export function getSubject(): "math" | "english" | null {
   return null;
 }
 
+/** Role from auth cookie (lowercase). */
+export function getRole(): string {
+  if (typeof window === "undefined") return "";
+  return (Cookies.get("role") || "").trim().toLowerCase();
+}
+
+/**
+ * Org-wide test staff: backend allows MATH + READING_WRITING when `user.subject` is null.
+ * Cookie has no `lms_subject` in that case — UI must not treat that as "no access".
+ */
+export function isUnscopedTestAdmin(): boolean {
+  return getRole() === "test_admin" && getSubject() === null;
+}
+
 export function can(codename: string): boolean {
   const p = getPermissionList();
   if (p.includes("*")) return true;
@@ -79,6 +93,9 @@ export function canManageMockExamShell(): boolean {
  */
 export function canAbacTestSubject(subject: string): boolean {
   if (can("*")) return true;
+  if (isUnscopedTestAdmin() && can("manage_tests")) {
+    return subject === "READING_WRITING" || subject === "MATH";
+  }
   const dom = getSubject();
   if (!dom) return false;
   if (subject === "READING_WRITING") return dom === "english";
@@ -89,6 +106,7 @@ export function canAbacTestSubject(subject: string): boolean {
 /** Default pastpaper bulk-assign subject filter: scoped admins start on their subject only. */
 export function defaultBulkPastpaperSubjectScope(): "BOTH" | "MATH" | "READING_WRITING" {
   if (can("*")) return "BOTH";
+  if (isUnscopedTestAdmin()) return "BOTH";
   const dom = getSubject();
   if (dom === "math") return "MATH";
   if (dom === "english") return "READING_WRITING";
