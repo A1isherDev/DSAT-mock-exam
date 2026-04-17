@@ -44,7 +44,12 @@ export function isTestAdmin(): boolean {
  */
 export function normalizePlatformSubject(raw: string | null | undefined): "READING_WRITING" | "MATH" | null {
   if (raw == null || raw === "") return null;
-  const s = String(raw).trim();
+  let s = String(raw).trim();
+  if (typeof s.normalize === "function") {
+    s = s.normalize("NFKC");
+  }
+  // Zero-width / BOM from copy-paste or bad exports — breaks strict === "MATH" in filters.
+  s = s.replace(/[\u200B-\u200D\uFEFF]/g, "").trim();
   if (!s) return null;
   const u = s.toUpperCase().replace(/\s+/g, "_");
   // Canonical platform enums + common API/legacy variants (never rely on strict === in UI).
@@ -54,6 +59,7 @@ export function normalizePlatformSubject(raw: string | null | undefined): "READI
     u === "RW" ||
     u === "READING" ||
     u === "WRITING" ||
+    u === "WRITING" ||
     u === "ENGLISH" ||
     u === "R&W" ||
     u === "R_AND_W"
@@ -62,6 +68,18 @@ export function normalizePlatformSubject(raw: string | null | undefined): "READI
   }
   // Display-style labels from bad imports / manual DB edits
   if (u.includes("READING") && u.includes("WRITING")) return "READING_WRITING";
+  // Locale / human labels (serializer or CMS) — R&W often still matches heuristics; Math needs explicit help.
+  const low = s.toLowerCase();
+  if (
+    low === "math" ||
+    low === "mathematics" ||
+    low === "maths" ||
+    low === "matematika" ||
+    low === "математика"
+  ) {
+    return "MATH";
+  }
+  if (low.includes("reading") && low.includes("writing")) return "READING_WRITING";
   return null;
 }
 

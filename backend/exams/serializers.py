@@ -1,3 +1,6 @@
+import re
+import unicodedata
+
 from django.contrib.auth import get_user_model
 from django.db.models import Sum
 from django.shortcuts import get_object_or_404
@@ -25,9 +28,13 @@ def _normalize_platform_subject_value(raw):
     if raw is None:
         return None
     s = str(raw).strip()
+    s = re.sub(r"[\u200b-\u200f\ufeff]", "", s).strip()
     if not s:
         return None
-    u = s.upper().replace(" ", "_")
+    s = unicodedata.normalize("NFKC", s).strip()
+    if not s:
+        return None
+    u = re.sub(r"\s+", "_", s.upper())
     if u in ("MATH", "MATHEMATICS", "MATHS"):
         return "MATH"
     if u in (
@@ -39,6 +46,11 @@ def _normalize_platform_subject_value(raw):
         "R&W",
         "R_AND_W",
     ) or ("READING" in u and "WRITING" in u):
+        return "READING_WRITING"
+    low = s.lower()
+    if low in ("math", "mathematics", "maths", "matematika", "математика"):
+        return "MATH"
+    if "reading" in low and "writing" in low:
         return "READING_WRITING"
     return raw
 
