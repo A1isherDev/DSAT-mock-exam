@@ -11,6 +11,8 @@ import {
     canDeletePracticeTestFromMock,
     canUseGlobalQuestionsTab,
     defaultBulkPastpaperSubjectScope,
+    platformSubjectIsMath,
+    platformSubjectIsReadingWriting,
 } from '@/lib/permissions';
 import Cookies from "js-cookie";
 import SafeHtml from "@/components/SafeHtml";
@@ -844,16 +846,12 @@ export default function AdminPage() {
     const filteredQuestionSectionOptions = useMemo(() => {
         let opts = questionSectionOptions;
         if (questionsSectionSubjectFilter === "READING_WRITING") {
-            opts = opts.filter((t: any) => t.subject === "READING_WRITING");
+            opts = opts.filter((t: any) => platformSubjectIsReadingWriting(t.subject));
         } else if (questionsSectionSubjectFilter === "MATH") {
-            opts = opts.filter((t: any) => t.subject === "MATH");
+            opts = opts.filter((t: any) => platformSubjectIsMath(t.subject));
         }
-        return [...opts].sort((a: any, b: any) => {
-            const sk = (s: string) => (s === "MATH" ? 1 : 0);
-            const c = sk(a.subject) - sk(b.subject);
-            if (c !== 0) return c;
-            return (a.id || 0) - (b.id || 0);
-        });
+        // Stable order by id — do not force English before Math (authors need both sections visible).
+        return [...opts].sort((a: any, b: any) => (a.id || 0) - (b.id || 0));
     }, [questionSectionOptions, questionsSectionSubjectFilter]);
 
     useEffect(() => {
@@ -885,16 +883,11 @@ export default function AdminPage() {
         (opts: any[]) => {
             let o = opts;
             if (questionsSectionSubjectFilter === "READING_WRITING") {
-                o = o.filter((t: any) => t.subject === "READING_WRITING");
+                o = o.filter((t: any) => platformSubjectIsReadingWriting(t.subject));
             } else if (questionsSectionSubjectFilter === "MATH") {
-                o = o.filter((t: any) => t.subject === "MATH");
+                o = o.filter((t: any) => platformSubjectIsMath(t.subject));
             }
-            const sorted = [...o].sort((a: any, b: any) => {
-                const sk = (s: string) => (s === "MATH" ? 1 : 0);
-                const c = sk(a.subject) - sk(b.subject);
-                if (c !== 0) return c;
-                return (a.id || 0) - (b.id || 0);
-            });
+            const sorted = [...o].sort((a: any, b: any) => (a.id || 0) - (b.id || 0));
             return sorted[0] || null;
         },
         [questionsSectionSubjectFilter],
@@ -1423,7 +1416,7 @@ export default function AdminPage() {
             // Auto-set question_type if it's MATH
             const currentTest = allSelectableTests.find(t => t.id === selectedPracticeTestId);
             const finalForm = { ...questionForm };
-            if (currentTest?.subject === 'MATH') {
+            if (platformSubjectIsMath(currentTest?.subject)) {
                 finalForm.question_type = 'MATH';
             }
 
@@ -1476,7 +1469,7 @@ export default function AdminPage() {
             setQuestionForm({ 
                 question_text: '', question_prompt: '', 
                 option_a: '', option_b: '', option_c: '', option_d: '',
-                correct_answer: 'A', score: isMid ? 5 : 10, question_type: (currentTest?.subject === 'MATH' ? 'MATH' : 'READING'), is_math_input: (currentTest?.subject === 'MATH')
+                correct_answer: 'A', score: isMid ? 5 : 10, question_type: (platformSubjectIsMath(currentTest?.subject) ? 'MATH' : 'READING'), is_math_input: (platformSubjectIsMath(currentTest?.subject))
             });
             setQuestionImage(null);
             setOptionAImage(null);
@@ -1550,7 +1543,7 @@ export default function AdminPage() {
 
     const maxQuestions = isMidtermExamContext
         ? (midtermTarget > 0 ? midtermTarget : 999)
-        : (currentTest?.subject === 'MATH' ? 22 : 27);
+        : (platformSubjectIsMath(currentTest?.subject) ? 22 : 27);
     const selectedPracticeSubject = currentTest?.subject as string | undefined;
     const canEditCurrentQuestions = canEditQuestionsForSubject(selectedPracticeSubject);
     const isAtLimit = isMidtermExamContext
@@ -1922,8 +1915,8 @@ export default function AdminPage() {
                                         )}
                                     {filteredPastpaperPacksAdmin.map((pack) => {
                                         const sections = pack.sections || [];
-                                        const hasRw = sections.some((s: any) => s.subject === "READING_WRITING");
-                                        const hasMath = sections.some((s: any) => s.subject === "MATH");
+                                        const hasRw = sections.some((s: any) => platformSubjectIsReadingWriting(s.subject));
+                                        const hasMath = sections.some((s: any) => platformSubjectIsMath(s.subject));
                                         const packTitle = pack.title?.trim() || `Untitled card`;
                                         const formLine = pack.form_type === "US" ? "US" : "International";
                                         const dateStr = pack.practice_date || "No date";
@@ -2025,13 +2018,13 @@ export default function AdminPage() {
                                                                 <div className="flex items-center gap-3">
                                                                     <div
                                                                         className={`w-2 h-2 rounded-full shrink-0 ${
-                                                                            t.subject === "MATH"
+                                                                            platformSubjectIsMath(t.subject)
                                                                                 ? "bg-emerald-500"
                                                                                 : "bg-blue-500 shadow-sm shadow-blue-200"
                                                                         }`}
                                                                     />
                                                                     <span className="text-[12px] font-black text-slate-800 uppercase tracking-wider">
-                                                                        {t.subject === "MATH" ? "Mathematics" : "Reading & Writing"}
+                                                                        {platformSubjectIsMath(t.subject) ? "Mathematics" : "Reading & Writing"}
                                                                     </span>
                                                                 </div>
                                                                 <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest ml-5 block mt-1">
@@ -2155,8 +2148,8 @@ export default function AdminPage() {
                                                         ? card.pack?.practice_date || tests[0]?.practice_date
                                                         : card.test.practice_date || card.test.created_at,
                                                 );
-                                                const hasRw = tests.some((s: any) => s.subject === "READING_WRITING");
-                                                const hasMath = tests.some((s: any) => s.subject === "MATH");
+                                                const hasRw = tests.some((s: any) => platformSubjectIsReadingWriting(s.subject));
+                                                const hasMath = tests.some((s: any) => platformSubjectIsMath(s.subject));
                                                 const groupSelected = tests.some((t: any) => t.id === selectedPracticeTestId);
                                                 const formLine = (tests[0]?.form_type || "INTERNATIONAL") === "US" ? "US" : "International";
                                                 const labelHint = (tests[0]?.label || "").trim();
@@ -2227,13 +2220,13 @@ export default function AdminPage() {
                                                                         <div className="flex items-center gap-3">
                                                                             <div
                                                                                 className={`w-2 h-2 rounded-full shrink-0 ${
-                                                                                    t.subject === "MATH"
+                                                                                    platformSubjectIsMath(t.subject)
                                                                                         ? "bg-emerald-500"
                                                                                         : "bg-blue-500 shadow-sm shadow-blue-200"
                                                                                 }`}
                                                                             />
                                                                             <span className="text-[12px] font-black text-slate-800 uppercase tracking-wider">
-                                                                                {t.subject === "MATH" ? "Mathematics" : "Reading & Writing"}
+                                                                                {platformSubjectIsMath(t.subject) ? "Mathematics" : "Reading & Writing"}
                                                                             </span>
                                                                         </div>
                                                                         <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest ml-5 block mt-1">
@@ -2605,8 +2598,8 @@ export default function AdminPage() {
                                                     <div key={t.id} className="p-3 rounded-xl border border-slate-100 bg-slate-50/50 flex items-center justify-between">
                                                         <div className="flex flex-col gap-1">
                                                             <div className="flex items-center gap-3">
-                                                                <div className={`w-2 h-2 rounded-full ${t.subject === 'MATH' ? 'bg-emerald-500' : 'bg-blue-500 shadow-sm shadow-blue-200'}`} />
-                                                                <span className="text-[12px] font-black text-slate-800 uppercase tracking-wider">{t.subject === 'MATH' ? 'Mathematics' : 'Reading & Writing'}</span>
+                                                                <div className={`w-2 h-2 rounded-full ${platformSubjectIsMath(t.subject) ? 'bg-emerald-500' : 'bg-blue-500 shadow-sm shadow-blue-200'}`} />
+                                                                <span className="text-[12px] font-black text-slate-800 uppercase tracking-wider">{platformSubjectIsMath(t.subject) ? 'Mathematics' : 'Reading & Writing'}</span>
                                                                 {t.label && <span className="text-[10px] font-black bg-slate-900 text-white px-2 py-0.5 rounded-lg shadow-sm">{t.label}</span>}
                                                             </div>
                                                             <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest ml-5">Section #{t.id} · {t.form_type === 'US' ? 'US Standard' : 'International Form'}</span>
@@ -2617,7 +2610,7 @@ export default function AdminPage() {
                                                     </div>
                                                 ))}
                                                 
-                                                {mock.kind !== 'MIDTERM' && canManageMockExamShell() && !(mock.kind === 'MOCK_SAT' && (mock.tests || []).some((t: any) => t.subject === 'READING_WRITING') && (mock.tests || []).some((t: any) => t.subject === 'MATH')) && (canCreateTestForSubject('READING_WRITING') || canCreateTestForSubject('MATH')) && (
+                                                {mock.kind !== 'MIDTERM' && canManageMockExamShell() && !(mock.kind === 'MOCK_SAT' && (mock.tests || []).some((t: any) => platformSubjectIsReadingWriting(t.subject)) && (mock.tests || []).some((t: any) => platformSubjectIsMath(t.subject))) && (canCreateTestForSubject('READING_WRITING') || canCreateTestForSubject('MATH')) && (
                                                 <div className="md:col-span-2 mt-2 pt-3 border-t border-slate-50 space-y-3">
                                                     <div className="grid grid-cols-2 gap-3">
                                                         <div className="flex flex-col gap-1">
@@ -3096,7 +3089,7 @@ export default function AdminPage() {
                                                 <option value="">{questionsGroupValue ? 'Choose section…' : 'Pick a card first'}</option>
                                                 {filteredQuestionSectionOptions.map((t: any) => (
                                                     <option key={t.id} value={t.id}>
-                                                        #{t.id} · {t.subject === 'MATH' ? 'Math' : 'Reading & Writing'}
+                                                        #{t.id} · {platformSubjectIsMath(t.subject) ? 'Math' : 'Reading & Writing'}
                                                         {t.label ? ` [${t.label}]` : ''}
                                                     </option>
                                                 ))}
@@ -3113,7 +3106,7 @@ export default function AdminPage() {
                                             setQuestionForm({ 
                                                 question_text: '', question_prompt: '', 
                                                 option_a: '', option_b: '', option_c: '', option_d: '',
-                                                correct_answer: 'A', score: isMid ? 5 : 10, question_type: (currentTest?.subject === 'MATH' ? 'MATH' : 'READING'), is_math_input: (currentTest?.subject === 'MATH') 
+                                                correct_answer: 'A', score: isMid ? 5 : 10, question_type: (platformSubjectIsMath(currentTest?.subject) ? 'MATH' : 'READING'), is_math_input: (platformSubjectIsMath(currentTest?.subject)) 
                                             });
                                             setQuestionImage(null);
                                             setOptionAImage(null);
@@ -3286,7 +3279,7 @@ export default function AdminPage() {
                                                     )}
                                                 </div>
                                             </Field>
-                                            {allSelectableTests.find(t => t.id === selectedPracticeTestId)?.subject === 'READING_WRITING' && (
+                                            {platformSubjectIsReadingWriting(allSelectableTests.find(t => t.id === selectedPracticeTestId)?.subject) && (
                                                 <Field label="Type">
                                                     <select className={INPUT} value={questionForm.question_type} onChange={e => setQuestionForm({ ...questionForm, question_type: e.target.value })}>
                                                         <option value="READING">Reading</option><option value="WRITING">Writing</option>
@@ -3324,7 +3317,7 @@ export default function AdminPage() {
                                                 )}
                                             </Field>
 
-                                            {allSelectableTests.find(t => t.id === selectedPracticeTestId)?.subject === 'MATH' && (
+                                            {platformSubjectIsMath(allSelectableTests.find(t => t.id === selectedPracticeTestId)?.subject) && (
                                                 <div className="col-span-2 flex items-center gap-2">
                                                     <input type="checkbox" id="spr" checked={questionForm.is_math_input} onChange={e => setQuestionForm({ ...questionForm, is_math_input: e.target.checked })} className="w-4 h-4 rounded border-slate-300" />
                                                     <label htmlFor="spr" className="text-xs font-bold text-slate-600 uppercase tracking-wide cursor-pointer">Student-Produced Response (SPR)</label>
@@ -3379,7 +3372,7 @@ export default function AdminPage() {
                                                     {canEditCurrentQuestions && (
                                                     <button className={BTN_GHOST} onClick={() => {
                                                         const t = allSelectableTests.find((x) => x.id === selectedPracticeTestId);
-                                                        const defaultType = t?.subject === 'MATH' ? 'MATH' : 'READING';
+                                                        const defaultType = platformSubjectIsMath(t?.subject) ? 'MATH' : 'READING';
                                                         setEditingQuestion(q);
                                                         setQuestionForm({
                                                             question_text: q.question_text || '', question_prompt: q.question_prompt || '',

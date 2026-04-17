@@ -39,6 +39,25 @@ export function isTestAdmin(): boolean {
   return getRole() === "test_admin";
 }
 
+/**
+ * Normalize practice-test platform subject from API (handles stray casing/whitespace).
+ */
+export function normalizePlatformSubject(raw: string | null | undefined): "READING_WRITING" | "MATH" | null {
+  if (raw == null || raw === "") return null;
+  const u = String(raw).trim().toUpperCase();
+  if (u === "MATH") return "MATH";
+  if (u === "READING_WRITING" || u === "RW") return "READING_WRITING";
+  return null;
+}
+
+export function platformSubjectIsMath(raw: string | null | undefined): boolean {
+  return normalizePlatformSubject(raw) === "MATH";
+}
+
+export function platformSubjectIsReadingWriting(raw: string | null | undefined): boolean {
+  return normalizePlatformSubject(raw) === "READING_WRITING";
+}
+
 export function can(codename: string): boolean {
   const p = getPermissionList();
   if (p.includes("*")) return true;
@@ -94,14 +113,16 @@ export function canManageMockExamShell(): boolean {
  * Platform English tests use subject READING_WRITING, scope key is "english".
  */
 export function canAbacTestSubject(subject: string): boolean {
+  const p = normalizePlatformSubject(subject);
+  if (!p) return false;
   if (can("*")) return true;
   if (isTestAdmin()) {
-    return subject === "READING_WRITING" || subject === "MATH";
+    return true;
   }
   const dom = getSubject();
   if (!dom) return false;
-  if (subject === "READING_WRITING") return dom === "english";
-  if (subject === "MATH") return dom === "math";
+  if (p === "READING_WRITING") return dom === "english";
+  if (p === "MATH") return dom === "math";
   return false;
 }
 
