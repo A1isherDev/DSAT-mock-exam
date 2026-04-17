@@ -34,6 +34,8 @@ def _can_view_practice_test(user, practice_test) -> bool:
     perms = get_effective_permission_codenames(user)
     if constants.WILDCARD in perms:
         return True
+    if normalized_role(user) == constants.ROLE_TEST_ADMIN:
+        return authorize(user, constants.PERM_MANAGE_TESTS, subject=practice_test.subject)
     if constants.PERM_MANAGE_TESTS not in perms:
         return False
     # subject-domain enforcement
@@ -48,6 +50,8 @@ class PracticeTestAdminAccess(BasePermission):
         act = view.action
         if act in ("list", "retrieve", "head", "options"):
             perms = get_effective_permission_codenames(u)
+            if normalized_role(u) == constants.ROLE_TEST_ADMIN:
+                return True
             return bool(perms) and (
                 constants.WILDCARD in perms or constants.PERM_MANAGE_TESTS in perms
             )
@@ -77,10 +81,14 @@ class PastpaperPackAdminAccess(BasePermission):
         u = request.user
         act = view.action
         perms = get_effective_permission_codenames(u)
+        if act in ("list", "retrieve", "head", "options"):
+            if normalized_role(u) == constants.ROLE_TEST_ADMIN:
+                return True
+            if not perms:
+                return False
+            return constants.WILDCARD in perms or constants.PERM_MANAGE_TESTS in perms
         if not perms:
             return False
-        if act in ("list", "retrieve", "head", "options"):
-            return constants.WILDCARD in perms or constants.PERM_MANAGE_TESTS in perms
         if act == "create":
             plat = platform_subject_for_user(u)
             if plat:
@@ -139,6 +147,8 @@ class MockExamAdminAccess(BasePermission):
     """
 
     def _shell_admin(self, u) -> bool:
+        if normalized_role(u) == constants.ROLE_TEST_ADMIN:
+            return True
         perms = get_effective_permission_codenames(u)
         return constants.WILDCARD in perms or constants.PERM_MANAGE_TESTS in perms
 
@@ -150,12 +160,16 @@ class MockExamAdminAccess(BasePermission):
         u = request.user
         act = view.action
         perms = get_effective_permission_codenames(u)
-        if not perms:
-            return False
         if act in ("list", "retrieve", "head", "options"):
+            if normalized_role(u) == constants.ROLE_TEST_ADMIN:
+                return True
+            if not perms:
+                return False
             return constants.WILDCARD in perms or (
                 constants.PERM_MANAGE_TESTS in perms or constants.PERM_ASSIGN_ACCESS in perms
             )
+        if not perms:
+            return False
         if act == "create":
             from exams.models import MockExam
 

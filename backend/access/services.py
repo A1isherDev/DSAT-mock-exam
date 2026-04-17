@@ -341,13 +341,21 @@ def authorize(user, permission_codename: str, *, subject: Optional[str] = None) 
     perms = get_effective_permission_codenames(user)
     if constants.WILDCARD in perms:
         return True
-    if permission_codename not in perms:
+
+    role = normalized_role(user)
+    # Role implies manage_tests for org-wide testers; DB overrides may strip the codename.
+    has_codename = permission_codename in perms
+    if (
+        not has_codename
+        and role == constants.ROLE_TEST_ADMIN
+        and permission_codename == constants.PERM_MANAGE_TESTS
+    ):
+        has_codename = True
+    if not has_codename:
         return False
 
     if permission_codename not in constants.PERMISSIONS_REQUIRING_PLATFORM_SUBJECT:
         return True
-
-    role = normalized_role(user)
     is_privileged = getattr(user, "is_superuser", False) or role == constants.ROLE_SUPER_ADMIN
 
     if subject is None:

@@ -13,6 +13,7 @@ import {
     defaultBulkPastpaperSubjectScope,
     platformSubjectIsMath,
     platformSubjectIsReadingWriting,
+    coalesceArray,
 } from '@/lib/permissions';
 import Cookies from "js-cookie";
 import SafeHtml from "@/components/SafeHtml";
@@ -527,7 +528,7 @@ export default function AdminPage() {
         const rows: any[] = [];
         standaloneTests.forEach((t) => rows.push({ ...t, _group: 'pastpaper' as const }));
         mockExams.forEach((m) =>
-            (m.tests || []).forEach((t: any) =>
+            coalesceArray(m.tests).forEach((t: any) =>
                 rows.push({ ...t, _group: 'mock' as const, _mockTitle: m.title, _mockId: m.id })
             )
         );
@@ -803,12 +804,12 @@ export default function AdminPage() {
         if (questionsGroupValue.startsWith('pack:')) {
             const pid = Number(questionsGroupValue.slice(5));
             const p = pastpaperPacks.find((x) => x.id === pid);
-            return p?.sections || [];
+            return coalesceArray(p?.sections);
         }
         if (questionsGroupValue.startsWith('mock:')) {
             const mid = Number(questionsGroupValue.slice(5));
             const m = mockExams.find((x) => x.id === mid);
-            return m?.tests || [];
+            return coalesceArray(m?.tests);
         }
         return [];
     }, [questionsGroupValue, pastpaperPacks, orphanPastpaperTests, mockExams]);
@@ -835,7 +836,7 @@ export default function AdminPage() {
         if (!q) return list;
         return list.filter((m) => {
             const blob = formatMockExamAdminLabel(m).toLowerCase();
-            const tb = (m.tests || [])
+            const tb = coalesceArray(m.tests)
                 .map((t: any) => `${t.id} ${t.subject || ""} ${t.label || ""}`)
                 .join(" ")
                 .toLowerCase();
@@ -896,15 +897,16 @@ export default function AdminPage() {
     const handleQuestionsGroupChange = useCallback(
         (val: string) => {
             setQuestionsGroupValue(val);
+            setQuestionsSectionSubjectFilter("ALL");
             setSelectedModuleId(null);
             let opts: any[] = [];
             if (val === 'orphan') opts = orphanPastpaperTests;
             else if (val.startsWith('pack:')) {
                 const pid = Number(val.slice(5));
-                opts = pastpaperPacks.find((x) => x.id === pid)?.sections || [];
+                opts = coalesceArray(pastpaperPacks.find((x) => x.id === pid)?.sections);
             } else if (val.startsWith('mock:')) {
                 const mid = Number(val.slice(5));
-                opts = mockExams.find((x) => x.id === mid)?.tests || [];
+                opts = coalesceArray(mockExams.find((x) => x.id === mid)?.tests);
             }
             const first = pickFirstQuestionSection(opts);
             if (first) {
@@ -2594,7 +2596,7 @@ export default function AdminPage() {
                                                 </div>
                                             </div>
                                             <div className="p-4 border-t border-slate-100 bg-white grid grid-cols-1 md:grid-cols-2 gap-3">
-                                                {(mock.tests || []).map((t: any) => (
+                                                {coalesceArray(mock.tests).map((t: any) => (
                                                     <div key={t.id} className="p-3 rounded-xl border border-slate-100 bg-slate-50/50 flex items-center justify-between">
                                                         <div className="flex flex-col gap-1">
                                                             <div className="flex items-center gap-3">
@@ -2610,7 +2612,7 @@ export default function AdminPage() {
                                                     </div>
                                                 ))}
                                                 
-                                                {mock.kind !== 'MIDTERM' && canManageMockExamShell() && !(mock.kind === 'MOCK_SAT' && (mock.tests || []).some((t: any) => platformSubjectIsReadingWriting(t.subject)) && (mock.tests || []).some((t: any) => platformSubjectIsMath(t.subject))) && (canCreateTestForSubject('READING_WRITING') || canCreateTestForSubject('MATH')) && (
+                                                {mock.kind !== 'MIDTERM' && canManageMockExamShell() && !(mock.kind === 'MOCK_SAT' && coalesceArray(mock.tests).some((t: any) => platformSubjectIsReadingWriting(t.subject)) && coalesceArray(mock.tests).some((t: any) => platformSubjectIsMath(t.subject))) && (canCreateTestForSubject('READING_WRITING') || canCreateTestForSubject('MATH')) && (
                                                 <div className="md:col-span-2 mt-2 pt-3 border-t border-slate-50 space-y-3">
                                                     <div className="grid grid-cols-2 gap-3">
                                                         <div className="flex flex-col gap-1">

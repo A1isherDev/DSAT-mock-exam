@@ -58,6 +58,12 @@ export function platformSubjectIsReadingWriting(raw: string | null | undefined):
   return normalizePlatformSubject(raw) === "READING_WRITING";
 }
 
+/** API may return a single object instead of a one-element array; normalize for list UIs. */
+export function coalesceArray<T>(x: T | T[] | null | undefined): T[] {
+  if (x == null) return [];
+  return Array.isArray(x) ? x : [x];
+}
+
 export function can(codename: string): boolean {
   const p = getPermissionList();
   if (p.includes("*")) return true;
