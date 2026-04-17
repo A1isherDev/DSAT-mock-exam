@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { classesApi, examsApi } from "@/lib/api";
 import { subjectLabel } from "@/lib/practiceTestCards";
+import { platformSubjectIsMath } from "@/lib/permissions";
 import {
   ClassroomAlert,
   ClassroomButton,
@@ -271,7 +272,7 @@ export default function AssignmentDetailPage() {
                           type="button"
                           onClick={() => router.push(`/practice-test/${t.id}`)}
                           className={`${linkBtn} ms-btn-primary border-transparent shadow-sm ${
-                            t.subject === "MATH" ? "ms-cta-math text-white" : "ms-cta-fill text-white"
+                            platformSubjectIsMath(t.subject) ? "ms-cta-math text-white" : "ms-cta-fill text-white"
                           }`}
                         >
                           <ExternalLink className="h-4 w-4" />

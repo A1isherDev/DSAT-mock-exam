@@ -11,6 +11,7 @@ import { DashboardCard, DashboardEyebrow, DashboardTitle } from "./DashboardCard
 import { GoalScoreModal, initialSectionsFromTarget } from "./GoalScoreModal";
 import { LearningRoadmap, type RoadmapStep } from "./LearningRoadmap";
 import { cn } from "@/lib/cn";
+import { platformSubjectIsMath, platformSubjectIsReadingWriting } from "@/lib/permissions";
 
 type Attempt = {
   id: number;
@@ -379,9 +380,9 @@ export function HomeDashboard() {
                     {incomplete.practice_test_details?.title || "Practice test"}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {incomplete.practice_test_details?.subject === "MATH"
+                    {platformSubjectIsMath(incomplete.practice_test_details?.subject)
                       ? "Math"
-                      : incomplete.practice_test_details?.subject === "READING_WRITING"
+                      : platformSubjectIsReadingWriting(incomplete.practice_test_details?.subject)
                         ? "Reading & Writing"
                         : "In progress"}
                     {" · "}

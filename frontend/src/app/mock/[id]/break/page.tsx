@@ -4,6 +4,7 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import AuthGuard from "@/components/AuthGuard";
 import { examsApi } from "@/lib/api";
+import { platformSubjectIsMath } from "@/lib/permissions";
 import { ArrowLeft, Timer } from "lucide-react";
 
 const BREAK_SECONDS = 10 * 60;
@@ -53,7 +54,7 @@ function BreakInner() {
 
       try {
         const exam = await examsApi.getMockExam(Number(mockId));
-        const mathTest = (exam.tests || []).find((t: { subject?: string }) => t.subject === "MATH");
+        const mathTest = (exam.tests || []).find((t: { subject?: string }) => platformSubjectIsMath(t.subject));
         const modules = [...(mathTest?.modules || [])].sort(
           (a: { module_order?: number }, b: { module_order?: number }) =>
             (a.module_order ?? 0) - (b.module_order ?? 0)

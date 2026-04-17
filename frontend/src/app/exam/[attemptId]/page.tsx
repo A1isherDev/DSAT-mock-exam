@@ -3,6 +3,7 @@ import React, { useState, useEffect, memo, useCallback, Suspense } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { examsApi } from '@/lib/api';
 import AuthGuard from '@/components/AuthGuard';
+import { platformSubjectIsMath, platformSubjectIsReadingWriting } from '@/lib/permissions';
 import { Bookmark, ChevronDown, Highlighter, ZoomIn, Calculator, ChevronUp, X, Eye, EyeOff, MinusCircle, Info, Eye as EyeIcon, Play, Pause, ChevronLeft, ChevronRight, AlertCircle, BookOpen, Trash2, MoreVertical, Save } from 'lucide-react';
 import SafeHtml from '@/components/SafeHtml';
 // Fix for image URL if it's relative
@@ -12,6 +13,14 @@ const getImageUrl = (path: string | null | undefined) => {
     const baseUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || '';
     return `${baseUrl}${path}`;
 };
+
+/** `/exams/attempts/` payload may not use strict DB enum strings for `practice_test_details.subject`. */
+function attemptPtSubjectIsRW(attempt: { practice_test_details?: { subject?: string } } | null | undefined) {
+    return platformSubjectIsReadingWriting(attempt?.practice_test_details?.subject);
+}
+function attemptPtSubjectIsMath(attempt: { practice_test_details?: { subject?: string } } | null | undefined) {
+    return platformSubjectIsMath(attempt?.practice_test_details?.subject);
+}
 
 const formatFraction = (ans: string | undefined | null) => {
     if (!ans) return 'Omit';
@@ -122,16 +131,16 @@ const RightPane = memo(({
 
     return (
         <div
-            className={`overflow-y-auto bg-white pb-8 ${((attempt.practice_test_details.subject === 'READING_WRITING' && !showCalculator) || currentQuestion.is_math_input) ? 'w-1/2' : 'w-full'} flex justify-center transition-transform duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${(showCalculator && !currentQuestion.is_math_input) ? 'translate-x-[12vw] translate-y-0' : 'translate-x-0 translate-y-0'} ${
-                attempt.practice_test_details.subject === 'READING_WRITING' || currentQuestion.is_math_input
+            className={`overflow-y-auto bg-white pb-8 ${((attemptPtSubjectIsRW(attempt) && !showCalculator) || currentQuestion.is_math_input) ? 'w-1/2' : 'w-full'} flex justify-center transition-transform duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${(showCalculator && !currentQuestion.is_math_input) ? 'translate-x-[12vw] translate-y-0' : 'translate-x-0 translate-y-0'} ${
+                attemptPtSubjectIsRW(attempt) || currentQuestion.is_math_input
                     ? 'p-10' : ''
             }`}
             style={{ fontSize: `${15 * zoomLevel}px` }}
         >
             <div className={
-                attempt.practice_test_details.subject === 'READING_WRITING' 
+                attemptPtSubjectIsRW(attempt)
                     ? 'w-full px-10' // English equalized 50/50 proportion
-                    : (attempt.practice_test_details.subject !== 'READING_WRITING' && !currentQuestion.is_math_input && !showCalculator 
+                    : (attemptPtSubjectIsMath(attempt) && !currentQuestion.is_math_input && !showCalculator
                         ? 'w-full max-w-2xl px-10 py-10' // Plain Math
                         : 'w-full max-w-3xl') // Math SPR or Math with Calculator
             }>
@@ -166,7 +175,7 @@ const RightPane = memo(({
                 <div className="w-full h-[3px] mb-8 opacity-100" style={{ background: 'repeating-linear-gradient(to right, #b91c1c 0, #b91c1c 48px, transparent 48px, transparent 54px, #ca8a04 54px, #ca8a04 102px, transparent 102px, transparent 108px, #15803d 108px, #15803d 156px, transparent 156px, transparent 162px, #0f172a 162px, #0f172a 210px, transparent 210px, transparent 216px)' }} />
 
                 {/* Image above question text */}
-                {currentQuestion.question_image && attempt.practice_test_details.subject !== 'READING_WRITING' && (
+                {currentQuestion.question_image && attemptPtSubjectIsMath(attempt) && (
                     <div className="mb-6 flex justify-center">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
@@ -188,7 +197,7 @@ const RightPane = memo(({
                     />
                 )}
 
-                {attempt.practice_test_details.subject !== 'READING_WRITING' && (
+                {attemptPtSubjectIsMath(attempt) && (
                     <SafeHtml
                         id="question-content"
                         className={`mb-8 font-[Georgia] font-medium text-slate-900 leading-relaxed mathjax-process ${highlighterActive ? 'cursor-text' : ''}`}
@@ -671,11 +680,11 @@ function ExamPlayerInner() {
             if (updatedAttempt.is_completed) {
                 const meid = searchParams.get('mockExamId');
                 const subj = updatedAttempt.practice_test_details?.subject;
-                if (mockFlow && meid && subj === 'READING_WRITING') {
+                if (mockFlow && meid && platformSubjectIsReadingWriting(subj)) {
                     router.push(`/mock/${meid}/break?rwAttempt=${attemptId}`);
                     return;
                 }
-                if (mockFlow && meid && subj === 'MATH') {
+                if (mockFlow && meid && platformSubjectIsMath(subj)) {
                     const rw = searchParams.get('rwAttempt');
                     const qs =
                         rw && rw.length > 0
@@ -843,7 +852,7 @@ function ExamPlayerInner() {
                         <img src="/images/logo.png" alt="Master SAT" className="w-9 h-9 object-contain" />
                         <div>
                             <h1 className="text-sm font-bold text-slate-900 tracking-tight flex items-center gap-1">
-                                Section {attempt.practice_test_details.subject === 'READING_WRITING' ? '1' : '2'}, Module {attempt.current_module_details?.module_order || 1}: {attempt.practice_test_details.subject === 'READING_WRITING' ? 'Reading and Writing' : 'Math'}
+                                Section {attemptPtSubjectIsRW(attempt) ? '1' : '2'}, Module {attempt.current_module_details?.module_order || 1}: {attemptPtSubjectIsRW(attempt) ? 'Reading and Writing' : 'Math'}
                             </h1>
                             <button className="text-[11px] font-bold text-slate-700 flex items-center mt-1 border-b border-transparent hover:border-slate-800 pb-0.5">
                                 Directions <ChevronDown className="w-3 h-3 ml-1 stroke-[3px]" />
@@ -933,7 +942,7 @@ function ExamPlayerInner() {
                             <span className="text-[9px] font-bold uppercase tracking-wider">Annotate</span>
                         </button>
 
-                        {!midtermMode && attempt.practice_test_details.subject === 'MATH' && (
+                        {!midtermMode && attemptPtSubjectIsMath(attempt) && (
                             <>
                                 <button onClick={() => {
                                     if (!showCalculator) {
@@ -988,7 +997,7 @@ function ExamPlayerInner() {
                             - SPR (Math input): directions panel
                             - Plain Math: no left pane
                         */}
-                        {!showCalculator && attempt.practice_test_details.subject === 'READING_WRITING' ? (                                            
+                        {!showCalculator && attemptPtSubjectIsRW(attempt) ? (                                            
                             <QuestionPane
                                 currentQuestion={currentQuestion}
                                 zoomLevel={zoomLevel}
@@ -1039,7 +1048,7 @@ function ExamPlayerInner() {
                         <div className="mb-16 mx-auto bg-white max-w-xl w-full rounded-2xl shadow-[0_2px_40px_rgb(0,0,0,0.3)] border border-slate-200 border-t-[6px] border-t-slate-800 overflow-hidden animate-in slide-in-from-bottom-4 duration-200">
                             <div className="px-6 py-4 flex justify-between items-center bg-white border-b border-slate-200">
                                 <h2 className="text-base font-bold text-slate-900">
-                                    Section 1, Module {attempt.current_module_details.module_order}: {attempt.practice_test_details.subject === 'READING_WRITING' ? 'Reading and Writing' : 'Math'} Questions
+                                    Section {attemptPtSubjectIsRW(attempt) ? '1' : '2'}, Module {attempt.current_module_details.module_order}: {attemptPtSubjectIsRW(attempt) ? 'Reading and Writing' : 'Math'} Questions
                                 </h2>
                                 <button onClick={() => setShowNavigation(false)} className="text-slate-500 hover:text-slate-800">
                                     <X className="w-5 h-5" />

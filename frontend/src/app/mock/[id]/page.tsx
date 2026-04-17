@@ -4,6 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import AuthGuard from "@/components/AuthGuard";
 import { examsApi } from "@/lib/api";
+import { coalesceArray, platformSubjectIsMath, platformSubjectIsReadingWriting } from "@/lib/permissions";
 import { BookOpen, Calculator, CheckCircle2, ArrowLeft, Play, Eye, Trophy } from "lucide-react";
 import Cookies from "js-cookie";
 
@@ -65,9 +66,9 @@ function MockExamDetailInner() {
   const backHref = examIsMidterm ? "/midterm" : "/mock-exam";
 
   const { rwTest, mathTest, rwAttempt, mathAttempt, rwDone, mathDone, breakDone } = useMemo(() => {
-    const tests = mockExam?.tests || [];
-    const rw = tests.find((t: any) => t.subject === "READING_WRITING");
-    const mt = tests.find((t: any) => t.subject === "MATH");
+    const tests = coalesceArray(mockExam?.tests);
+    const rw = tests.find((t: any) => platformSubjectIsReadingWriting(t.subject));
+    const mt = tests.find((t: any) => platformSubjectIsMath(t.subject));
     const latest = (testId: number) =>
       attempts
         .filter((a) => a.practice_test === testId)
@@ -142,7 +143,7 @@ function MockExamDetailInner() {
 
   const renderTestCard = (test: any) => {
     if (!test) return null;
-    const isRW = test.subject === "READING_WRITING";
+    const isRW = platformSubjectIsReadingWriting(test.subject);
     const Icon = isRW ? BookOpen : Calculator;
     const label = isRW ? "Reading & Writing" : "Mathematics";
     const modules = test.modules || [];
@@ -405,9 +406,13 @@ function MockExamDetailInner() {
                 ) : null}
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {(mockExam?.tests || [])
+                {coalesceArray(mockExam?.tests)
                   .slice()
-                  .sort((a: any, b: any) => (a.subject === "READING_WRITING" ? -1 : 1))
+                  .sort(
+                    (a: any, b: any) =>
+                      (platformSubjectIsReadingWriting(a.subject) ? 0 : 1) -
+                      (platformSubjectIsReadingWriting(b.subject) ? 0 : 1),
+                  )
                   .map((test: any) => renderTestCard(test))}
                 {(!mockExam?.tests || mockExam.tests.length === 0) && (
                   <div className="col-span-full flex flex-col items-center justify-center rounded-3xl border-2 border-dashed border-border bg-card py-20">

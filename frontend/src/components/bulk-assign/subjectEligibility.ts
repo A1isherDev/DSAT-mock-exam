@@ -1,3 +1,4 @@
+import { normalizePlatformSubject } from "@/lib/permissions";
 import type { BulkAssignProfile, BulkAssignUserRow, PastpaperScope, PlatformSubject } from "./types";
 
 export function isStudentRole(role: string | undefined | null): boolean {
@@ -20,9 +21,10 @@ export function resolvePastpaperSectionIdsForPack(
   const sections = pack?.sections || [];
   const ids: number[] = [];
   for (const s of sections) {
+    const canon = normalizePlatformSubject(s.subject);
     if (scope === "BOTH") ids.push(s.id);
-    else if (scope === "MATH" && s.subject === "MATH") ids.push(s.id);
-    else if (scope === "READING_WRITING" && s.subject === "READING_WRITING") ids.push(s.id);
+    else if (scope === "MATH" && canon === "MATH") ids.push(s.id);
+    else if (scope === "READING_WRITING" && canon === "READING_WRITING") ids.push(s.id);
   }
   return ids;
 }
@@ -36,7 +38,8 @@ export function platformSubjectsInResolvedPastpaper(
   const out = new Set<PlatformSubject>();
   for (const s of pack?.sections || []) {
     if (!sectionIds.includes(s.id)) continue;
-    if (s.subject === "MATH" || s.subject === "READING_WRITING") out.add(s.subject);
+    const canon = normalizePlatformSubject(s.subject);
+    if (canon === "MATH" || canon === "READING_WRITING") out.add(canon);
   }
   return out;
 }
@@ -48,7 +51,11 @@ export function platformSubjectsForMockAssignment(
   formType: string,
 ): Set<PlatformSubject> {
   const tests = (mock.tests || []).filter((t) => !formType || (t.form_type || "INTERNATIONAL") === formType);
-  const inMock = new Set(tests.map((t) => t.subject).filter(Boolean) as PlatformSubject[]);
+  const inMock = new Set(
+    tests
+      .map((t) => normalizePlatformSubject(t.subject))
+      .filter((x): x is PlatformSubject => x === "MATH" || x === "READING_WRITING"),
+  );
   if (assignmentType === "MATH") {
     return new Set([...inMock].filter((s) => s === "MATH"));
   }

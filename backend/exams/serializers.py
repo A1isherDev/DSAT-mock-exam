@@ -166,9 +166,10 @@ class TestAttemptSerializer(serializers.ModelSerializer):
     def get_practice_test_details(self, obj):
         pt = obj.practice_test
         mock = pt.mock_exam
+        subj = _normalize_platform_subject_value(pt.subject) or pt.subject
         return {
             "id": pt.id,
-            "subject": pt.subject,
+            "subject": subj,
             "title": mock.title if mock else "",
             "practice_date": mock.practice_date.isoformat() if mock and mock.practice_date else None,
             "is_active": mock.is_active if mock else True,

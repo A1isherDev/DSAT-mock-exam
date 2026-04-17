@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import AuthGuard from "@/components/AuthGuard";
 import { examsApi } from "@/lib/api";
+import { platformSubjectIsMath, platformSubjectIsReadingWriting } from "@/lib/permissions";
 import { ArrowLeft, Trophy } from "lucide-react";
 
 function ResultsInner() {
@@ -23,8 +24,8 @@ function ResultsInner() {
         const mock = await examsApi.getMockExam(mockId);
         if (cancelled) return;
         setTitle(mock.title || "Mock exam");
-        const rwTest = (mock.tests || []).find((t: any) => t.subject === "READING_WRITING");
-        const mathTest = (mock.tests || []).find((t: any) => t.subject === "MATH");
+        const rwTest = (mock.tests || []).find((t: any) => platformSubjectIsReadingWriting(t.subject));
+        const mathTest = (mock.tests || []).find((t: any) => platformSubjectIsMath(t.subject));
         const rwParam = searchParams.get("rwAttempt");
         const mathParam = searchParams.get("mathAttempt");
         const attempts = await examsApi.getAttempts();
