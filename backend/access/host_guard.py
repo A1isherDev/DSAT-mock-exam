@@ -19,10 +19,23 @@ class HostGuardConfig:
 
 
 def _host_kind(host: str, cfg: HostGuardConfig) -> str:
+    """
+    Detect console from Host label.
+
+    ``questions.mastersat.uz`` and ``www.questions.mastersat.uz`` (and ``api.questions.…``)
+    must all resolve to ``questions``. A plain ``startswith("questions.")`` misses
+    ``www.questions.…``, which kept ``lms_console=main`` and broke ``_is_questions_console``
+    (wrong admin queryset / 403 on authoring APIs depending on path).
+    """
     h = (host or "").split(":")[0].lower()
-    if h.startswith(cfg.admin_prefix):
+    labels = [p for p in h.split(".") if p]
+    if not labels:
+        return "main"
+    if labels[0] == "admin" or h.startswith(cfg.admin_prefix):
         return "admin"
-    if h.startswith(cfg.questions_prefix):
+    if labels[0] == "questions" or h.startswith(cfg.questions_prefix):
+        return "questions"
+    if len(labels) >= 2 and labels[1] == "questions":
         return "questions"
     return "main"
 

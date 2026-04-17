@@ -59,7 +59,6 @@ export function normalizePlatformSubject(raw: string | null | undefined): "READI
     u === "RW" ||
     u === "READING" ||
     u === "WRITING" ||
-    u === "WRITING" ||
     u === "ENGLISH" ||
     u === "R&W" ||
     u === "R_AND_W"
@@ -84,11 +83,33 @@ export function normalizePlatformSubject(raw: string | null | undefined): "READI
 }
 
 export function platformSubjectIsMath(raw: string | null | undefined): boolean {
-  return normalizePlatformSubject(raw) === "MATH";
+  if (normalizePlatformSubject(raw) === "MATH") return true;
+  // Last resort: model value from DB is exactly "MATH" but odd invisible chars slipped past normalize.
+  const s = String(raw ?? "")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .trim()
+    .toUpperCase();
+  return s === "MATH";
 }
 
 export function platformSubjectIsReadingWriting(raw: string | null | undefined): boolean {
-  return normalizePlatformSubject(raw) === "READING_WRITING";
+  if (normalizePlatformSubject(raw) === "READING_WRITING") return true;
+  const s = String(raw ?? "")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .trim()
+    .toUpperCase();
+  return s === "READING_WRITING";
+}
+
+/** First non-empty subject-like field on a PracticeTest row (defensive against odd API shapes). */
+export function practiceTestRowSubject(row: any): string | undefined {
+  if (row == null || typeof row !== "object") return undefined;
+  const keys = ["subject", "platform_subject", "section_subject", "exam_subject"] as const;
+  for (const k of keys) {
+    const v = row[k];
+    if (v != null && String(v).trim() !== "") return String(v);
+  }
+  return undefined;
 }
 
 /** API may return a single object instead of a one-element array; normalize for list UIs. */
@@ -152,12 +173,11 @@ export function canManageMockExamShell(): boolean {
  * Platform English tests use subject READING_WRITING, scope key is "english".
  */
 export function canAbacTestSubject(subject: string): boolean {
+  if (can("*")) return true;
+  // Org-wide testers must not be blocked when a row has a legacy/odd subject string.
+  if (isTestAdmin()) return true;
   const p = normalizePlatformSubject(subject);
   if (!p) return false;
-  if (can("*")) return true;
-  if (isTestAdmin()) {
-    return true;
-  }
   const dom = getSubject();
   if (!dom) return false;
   if (p === "READING_WRITING") return dom === "english";

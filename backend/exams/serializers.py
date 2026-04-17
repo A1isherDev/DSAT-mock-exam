@@ -365,9 +365,14 @@ class AdminPracticeTestSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
-        canon = _normalize_platform_subject_value(data.get("subject"))
-        if canon is not None:
-            data["subject"] = canon
+        # Prefer model field — DB enum is always READING_WRITING | MATH when valid.
+        v = getattr(instance, "subject", None)
+        if v:
+            canon = _normalize_platform_subject_value(v)
+            if canon in ("MATH", "READING_WRITING"):
+                data["subject"] = canon
+            else:
+                data["subject"] = str(v)
         return data
 
     def validate(self, attrs):

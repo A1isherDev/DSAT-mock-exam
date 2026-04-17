@@ -3,8 +3,11 @@ import { NextRequest, NextResponse } from "next/server";
 function consoleFromHost(host: string | null): "admin" | "questions" | null {
   if (!host) return null;
   const h = host.split(":")[0].toLowerCase();
-  if (h.startsWith("admin.")) return "admin";
-  if (h.startsWith("questions.")) return "questions";
+  const labels = h.split(".").filter(Boolean);
+  if (!labels.length) return null;
+  if (labels[0] === "admin" || h.startsWith("admin.")) return "admin";
+  if (labels[0] === "questions" || h.startsWith("questions.")) return "questions";
+  if (labels.length >= 2 && labels[1] === "questions") return "questions";
   return null;
 }
 
