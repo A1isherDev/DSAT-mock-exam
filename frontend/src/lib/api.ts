@@ -62,11 +62,16 @@ async function persistMeCookie(rememberMe: boolean) {
             }),
             cookieOptions,
         );
-        const subj = me?.subject ? String(me.subject).toLowerCase() : "";
-        if (subj === "math" || subj === "english") {
-            Cookies.set("lms_subject", subj, cookieOptions);
-        } else {
+        const roleMe = String(me?.role || "").toLowerCase();
+        if (roleMe === "test_admin") {
             Cookies.remove("lms_subject", { path: "/", domain: IS_PROD ? cookieDomain() : undefined });
+        } else {
+            const subj = me?.subject ? String(me.subject).toLowerCase() : "";
+            if (subj === "math" || subj === "english") {
+                Cookies.set("lms_subject", subj, cookieOptions);
+            } else {
+                Cookies.remove("lms_subject", { path: "/", domain: IS_PROD ? cookieDomain() : undefined });
+            }
         }
     } catch {
         // best-effort; UI will fall back to role-only if this fails
@@ -160,9 +165,16 @@ export const authApi = {
         if (Array.isArray(response.data.permissions)) {
             Cookies.set('lms_permissions', JSON.stringify(response.data.permissions), cookieOptions);
         }
-        const subj = response.data.subject ? String(response.data.subject).toLowerCase() : "";
-        if (subj === "math" || subj === "english") {
-            Cookies.set("lms_subject", subj, cookieOptions);
+        const rl = String(response.data.role || "student").toLowerCase();
+        if (rl === "test_admin") {
+            Cookies.remove("lms_subject", { path: "/", domain: IS_PROD ? cookieDomain() : undefined });
+        } else {
+            const subj = response.data.subject ? String(response.data.subject).toLowerCase() : "";
+            if (subj === "math" || subj === "english") {
+                Cookies.set("lms_subject", subj, cookieOptions);
+            } else {
+                Cookies.remove("lms_subject", { path: "/", domain: IS_PROD ? cookieDomain() : undefined });
+            }
         }
         await persistMeCookie(rememberMe);
         return response.data;
@@ -185,9 +197,16 @@ export const authApi = {
         if (Array.isArray(response.data.permissions)) {
             Cookies.set('lms_permissions', JSON.stringify(response.data.permissions), cookieOptions);
         }
-        const subj = response.data.subject ? String(response.data.subject).toLowerCase() : "";
-        if (subj === "math" || subj === "english") {
-            Cookies.set("lms_subject", subj, cookieOptions);
+        const rlG = String(response.data.role || "student").toLowerCase();
+        if (rlG === "test_admin") {
+            Cookies.remove("lms_subject", { path: "/", domain: IS_PROD ? cookieDomain() : undefined });
+        } else {
+            const subj = response.data.subject ? String(response.data.subject).toLowerCase() : "";
+            if (subj === "math" || subj === "english") {
+                Cookies.set("lms_subject", subj, cookieOptions);
+            } else {
+                Cookies.remove("lms_subject", { path: "/", domain: IS_PROD ? cookieDomain() : undefined });
+            }
         }
         await persistMeCookie(rememberMe);
         return response.data;
@@ -217,9 +236,16 @@ export const authApi = {
         if (Array.isArray(response.data.permissions)) {
             Cookies.set('lms_permissions', JSON.stringify(response.data.permissions), cookieOptions);
         }
-        const subj = response.data.subject ? String(response.data.subject).toLowerCase() : "";
-        if (subj === "math" || subj === "english") {
-            Cookies.set("lms_subject", subj, cookieOptions);
+        const rlT = String(response.data.role || "student").toLowerCase();
+        if (rlT === "test_admin") {
+            Cookies.remove("lms_subject", { path: "/", domain: IS_PROD ? cookieDomain() : undefined });
+        } else {
+            const subj = response.data.subject ? String(response.data.subject).toLowerCase() : "";
+            if (subj === "math" || subj === "english") {
+                Cookies.set("lms_subject", subj, cookieOptions);
+            } else {
+                Cookies.remove("lms_subject", { path: "/", domain: IS_PROD ? cookieDomain() : undefined });
+            }
         }
         await persistMeCookie(rememberMe);
         return response.data;

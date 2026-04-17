@@ -42,6 +42,8 @@ export function isTestAdmin(): boolean {
 export function can(codename: string): boolean {
   const p = getPermissionList();
   if (p.includes("*")) return true;
+  // test_admin is org-wide authoring; older JWT/cookie sessions may omit manage_tests — still show Math + English.
+  if (isTestAdmin() && codename === "manage_tests") return true;
 
   // Accept both canonical and legacy codenames transparently.
   const aliases: Record<string, string[]> = {
@@ -93,7 +95,7 @@ export function canManageMockExamShell(): boolean {
  */
 export function canAbacTestSubject(subject: string): boolean {
   if (can("*")) return true;
-  if (isTestAdmin() && can("manage_tests")) {
+  if (isTestAdmin()) {
     return subject === "READING_WRITING" || subject === "MATH";
   }
   const dom = getSubject();
