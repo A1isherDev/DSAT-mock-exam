@@ -1516,7 +1516,7 @@ export default function AdminPage() {
 
     // Score Budgeting Logic
     const getModuleBudget = (subject: string, order: number) => {
-        if (subject === 'READING_WRITING') return order === 1 ? 330 : 270;
+        if (platformSubjectIsReadingWriting(subject)) return order === 1 ? 330 : 270;
         return order === 1 ? 380 : 220;
     };
 

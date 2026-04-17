@@ -44,9 +44,24 @@ export function isTestAdmin(): boolean {
  */
 export function normalizePlatformSubject(raw: string | null | undefined): "READING_WRITING" | "MATH" | null {
   if (raw == null || raw === "") return null;
-  const u = String(raw).trim().toUpperCase();
-  if (u === "MATH") return "MATH";
-  if (u === "READING_WRITING" || u === "RW") return "READING_WRITING";
+  const s = String(raw).trim();
+  if (!s) return null;
+  const u = s.toUpperCase().replace(/\s+/g, "_");
+  // Canonical platform enums + common API/legacy variants (never rely on strict === in UI).
+  if (u === "MATH" || u === "MATHEMATICS" || u === "MATHS") return "MATH";
+  if (
+    u === "READING_WRITING" ||
+    u === "RW" ||
+    u === "READING" ||
+    u === "WRITING" ||
+    u === "ENGLISH" ||
+    u === "R&W" ||
+    u === "R_AND_W"
+  ) {
+    return "READING_WRITING";
+  }
+  // Display-style labels from bad imports / manual DB edits
+  if (u.includes("READING") && u.includes("WRITING")) return "READING_WRITING";
   return null;
 }
 

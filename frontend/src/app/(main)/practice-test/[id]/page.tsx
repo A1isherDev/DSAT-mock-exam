@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import AuthGuard from "@/components/AuthGuard";
 import { examsApi } from "@/lib/api";
+import { platformSubjectIsReadingWriting } from "@/lib/permissions";
 import { BookOpen, Calculator, CheckCircle2, ArrowLeft, Play, Eye } from "lucide-react";
 import Cookies from "js-cookie";
 
@@ -78,7 +79,7 @@ function PracticeTestDetailInner() {
     );
   }
 
-  const isRW = test.subject === "READING_WRITING";
+  const isRW = platformSubjectIsReadingWriting(test.subject);
   const Icon = isRW ? BookOpen : Calculator;
   const label = isRW ? "Reading & Writing" : "Mathematics";
   const modules = test.modules || [];

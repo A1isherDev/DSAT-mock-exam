@@ -1,3 +1,5 @@
+import { normalizePlatformSubject } from "./permissions";
+
 /** Normalize for duplicate checks and search. */
 export function adminNorm(s: string) {
   return (s || "").trim().toLowerCase().replace(/\s+/g, " ");
@@ -41,8 +43,8 @@ export function pastpaperSectionSummary(sections: { subject?: string }[]): {
   hasMath: boolean;
   n: number;
 } {
-  const hasRw = sections.some((s) => s.subject === "READING_WRITING");
-  const hasMath = sections.some((s) => s.subject === "MATH");
+  const hasRw = sections.some((s) => normalizePlatformSubject(s.subject) === "READING_WRITING");
+  const hasMath = sections.some((s) => normalizePlatformSubject(s.subject) === "MATH");
   return { hasRw, hasMath, n: sections.length };
 }
 
@@ -56,7 +58,7 @@ export function formatPastpaperSectionForAssign(t: Record<string, unknown>): str
         ? Number(t.pastpaper_pack_id)
         : null;
   const packHint = packId != null && !Number.isNaN(packId) ? ` · Card #${packId}` : " · No card";
-  const subj = t.subject === "MATH" ? "Math" : "R&W";
+  const subj = normalizePlatformSubject(String(t.subject ?? "")) === "MATH" ? "Math" : "R&W";
   const title = String(t.title || "").trim();
   const head = title || subj;
   const tid = t.id != null ? String(t.id) : "?";

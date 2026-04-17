@@ -3,6 +3,8 @@
  * Mirrors the student /practice-tests list so homework and portal stay consistent.
  */
 
+import { normalizePlatformSubject } from "./permissions";
+
 export type CardPack = { kind: "pack"; mockKey: number; mock: any; tests: any[] };
 export type CardPastpaperPack = { kind: "pastpaper_pack"; packKey: string; pack: any; tests: any[] };
 export type CardSingle = { kind: "single"; test: any };
@@ -19,7 +21,12 @@ function standaloneGroupKey(t: any): string {
 
 export function sortPastpaperSections(tests: any[]) {
   return [...tests].sort((a, b) => {
-    const order = (s: string) => (s === "READING_WRITING" ? 0 : s === "MATH" ? 1 : 2);
+    const order = (subj: unknown) => {
+      const p = normalizePlatformSubject(subj == null ? undefined : String(subj));
+      if (p === "READING_WRITING") return 0;
+      if (p === "MATH") return 1;
+      return 2;
+    };
     const d = order(a.subject) - order(b.subject);
     if (d !== 0) return d;
     return (a.id || 0) - (b.id || 0);
@@ -145,8 +152,7 @@ export function formatLineDate(iso?: string | null) {
 }
 
 export function subjectLabel(subject: string) {
-  if (subject === "MATH") return "Mathematics";
-  return "Reading & Writing";
+  return normalizePlatformSubject(subject) === "MATH" ? "Mathematics" : "Reading & Writing";
 }
 
 export function singleDisplayTitle(test: any) {

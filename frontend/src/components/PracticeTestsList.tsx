@@ -15,6 +15,7 @@ import {
 import { ArrowRight, FileText, RefreshCw, Search, X } from "lucide-react";
 import Cookies from "js-cookie";
 import { cn } from "@/lib/cn";
+import { platformSubjectIsMath } from "@/lib/permissions";
 
 type PracticeTestsListProps = {
   eyebrow?: string;
@@ -63,7 +64,7 @@ function PackSectionFooter({
           .filter((a) => a.practice_test === t.id)
           .sort((a, b) => (b.id || 0) - (a.id || 0))[0];
         const completed = !!att?.is_completed;
-        const isMath = t.subject === "MATH";
+        const isMath = platformSubjectIsMath(t.subject);
         return (
           <div
             key={t.id}

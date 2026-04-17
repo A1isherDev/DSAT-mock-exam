@@ -20,6 +20,29 @@ MIDTERM_ALLOWED_SCORES = frozenset({1, 2, 3, 5, 8, 10})
 MIDTERM_MAX_TOTAL_POINTS = 100
 
 
+def _normalize_platform_subject_value(raw):
+    """Canonical READING_WRITING | MATH for API output (legacy rows / typos)."""
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s:
+        return None
+    u = s.upper().replace(" ", "_")
+    if u in ("MATH", "MATHEMATICS", "MATHS"):
+        return "MATH"
+    if u in (
+        "READING_WRITING",
+        "RW",
+        "READING",
+        "WRITING",
+        "ENGLISH",
+        "R&W",
+        "R_AND_W",
+    ) or ("READING" in u and "WRITING" in u):
+        return "READING_WRITING"
+    return raw
+
+
 class QuestionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Question
@@ -96,6 +119,14 @@ class PracticeTestSerializer(serializers.ModelSerializer):
             "mock_exam_id",
         ]
         read_only_fields = ["created_at", "mock_exam_id"]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        canon = _normalize_platform_subject_value(data.get("subject"))
+        if canon is not None:
+            data["subject"] = canon
+        return data
+
 
 class MockExamSerializer(serializers.ModelSerializer):
     tests = PracticeTestSerializer(many=True, read_only=True)
@@ -318,6 +349,13 @@ class AdminPracticeTestSerializer(serializers.ModelSerializer):
             "assigned_users",
         ]
         read_only_fields = ["mock_exam"]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        canon = _normalize_platform_subject_value(data.get("subject"))
+        if canon is not None:
+            data["subject"] = canon
+        return data
 
     def validate(self, attrs):
         instance = self.instance
