@@ -1,7 +1,7 @@
 "use client";
 
 import { History, Loader2, RotateCcw } from "lucide-react";
-import type { AssignmentDispatchRow } from "./types";
+import type { AssignmentDispatchRow, SkippedUserRow } from "./types";
 
 function statusStyle(s: string): string {
   const v = String(s || "").toLowerCase();
@@ -67,15 +67,18 @@ export function AssignmentHistoryPanel({
             const label =
               (typeof cc.content_label === "string" && cc.content_label) ||
               (e.kind === "pastpaper" ? "Pastpaper library" : e.kind === "timed_mock" ? "Timed mock" : e.kind);
-            const skippedList = e.result?.skipped_users;
-            const skipped = Array.isArray(skippedList) ? skippedList.length : 0;
+            const rawSkipped = e.result?.skipped_users;
+            const skippedUsers: SkippedUserRow[] = Array.isArray(rawSkipped)
+              ? (rawSkipped as SkippedUserRow[])
+              : [];
+            const skipped = skippedUsers.length;
             const req = Number(e.students_requested_count ?? 0);
             const granted = Number(e.students_granted_count ?? 0);
             const noneGrantedAllSkipped = req > 0 && granted === 0;
             const partialGrant = req > 0 && granted > 0 && granted < req;
             const firstSkipReason =
-              noneGrantedAllSkipped && skippedList && skippedList[0] && typeof skippedList[0] === "object"
-                ? String((skippedList[0] as { reason?: string }).reason || "").trim()
+              noneGrantedAllSkipped && skippedUsers[0]
+                ? String(skippedUsers[0].reason || "").trim()
                 : "";
             return (
               <li
