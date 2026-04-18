@@ -135,13 +135,11 @@ def user_domain_subject(user) -> Optional[str]:
     """
     Single domain subject for staff (math|english). None means unrestricted for that role context:
     - super_admin / django superuser handled elsewhere
-    - test_admin: always unrestricted (full math + english authoring); ``user.subject`` is ignored
+    - teacher / admin / test_admin: exactly one domain from ``user.subject`` (required at save time)
     """
     if not user or not getattr(user, "is_authenticated", False):
         return None
     if getattr(user, "is_superuser", False) or normalized_role(user) == constants.ROLE_SUPER_ADMIN:
-        return None
-    if normalized_role(user) == constants.ROLE_TEST_ADMIN:
         return None
     raw = getattr(user, "subject", None)
     if isinstance(raw, str) and raw.strip().lower() in constants.ALL_DOMAIN_SUBJECTS:
@@ -175,8 +173,7 @@ def has_global_subject_access(user, domain_subject: str) -> bool:
     **Parameters:** ``domain_subject`` is always ``constants.DOMAIN_MATH`` or
     ``constants.DOMAIN_ENGLISH`` — never ``MATH`` / ``READING_WRITING``.
 
-    Teacher/admin: ``user.subject`` must match ``domain_subject`` before any DB query.
-    ``test_admin`` without ``user.subject``: returns True for any domain (org-wide test staff).
+    Teacher/admin/test_admin: ``user.subject`` must match ``domain_subject`` before any DB query.
 
     Raises ``SubjectContractViolation`` if a platform subject string is passed by mistake.
     """
@@ -191,7 +188,7 @@ def has_global_subject_access(user, domain_subject: str) -> bool:
     role = normalized_role(user)
     UserAccess = _user_access_model()
 
-    if role in (constants.ROLE_TEACHER, constants.ROLE_ADMIN):
+    if role in (constants.ROLE_TEACHER, constants.ROLE_ADMIN, constants.ROLE_TEST_ADMIN):
         if user_domain_subject(user) != domain_subject:
             return False
         return UserAccess.objects.filter(
@@ -206,9 +203,6 @@ def has_global_subject_access(user, domain_subject: str) -> bool:
             subject=domain_subject,
             classroom_id__isnull=True,
         ).exists()
-
-    if role == constants.ROLE_TEST_ADMIN:
-        return True
 
     return False
 
@@ -242,15 +236,12 @@ def has_access_for_classroom(user, domain_subject: str, classroom_id: int) -> bo
             Q(classroom_id__isnull=True) | Q(classroom_id=cid)
         ).exists()
 
-    if role in (constants.ROLE_TEACHER, constants.ROLE_ADMIN):
+    if role in (constants.ROLE_TEACHER, constants.ROLE_ADMIN, constants.ROLE_TEST_ADMIN):
         if user_domain_subject(user) != domain_subject:
             return False
         return UserAccess.objects.filter(user_id=user.pk, subject=domain_subject).filter(
             Q(classroom_id__isnull=True) | Q(classroom_id=cid)
         ).exists()
-
-    if role == constants.ROLE_TEST_ADMIN:
-        return True
 
     return False
 
@@ -325,7 +316,6 @@ def authorize(user, permission_codename: str, *, subject: Optional[str] = None) 
     Exceptions where ``subject`` may be omitted (still in the set above):
 
     * ``super_admin`` / Django superuser.
-    * ``test_admin`` (full math + english; ``user.subject`` is not used for ABAC).
 
     Permissions **outside** ``PERMISSIONS_REQUIRING_PLATFORM_SUBJECT`` (e.g.
     ``view_dashboard``, ``submit_test``): ignore ``subject``; pass ``None``.
@@ -361,8 +351,6 @@ def authorize(user, permission_codename: str, *, subject: Optional[str] = None) 
     if subject is None:
         if is_privileged:
             return True
-        if role == constants.ROLE_TEST_ADMIN:
-            return True
         logger.warning(
             "authorize: missing subject= for required perm=%s role=%s user_id=%s "
             "(pass constants.SUBJECT_*_PLATFORM or platform_subject_for_user(user))",
@@ -379,10 +367,11 @@ def authorize(user, permission_codename: str, *, subject: Optional[str] = None) 
     if is_privileged:
         return True
 
-    if role == constants.ROLE_TEST_ADMIN:
-        return True
-
-    if role in (constants.ROLE_TEACHER, constants.ROLE_ADMIN):
+    if role in (
+        constants.ROLE_TEACHER,
+        constants.ROLE_ADMIN,
+        constants.ROLE_TEST_ADMIN,
+    ):
         return user_domain_subject(user) == required and has_global_subject_access(user, required)
 
     if role == constants.ROLE_STUDENT:
@@ -392,28 +381,32 @@ def authorize(user, permission_codename: str, *, subject: Optional[str] = None) 
 
 
 def can_browse_standalone_practice_library(user) -> bool:
+    """Staff library browser: requires ``manage_tests`` and a domain subject (via ``user.subject``)."""
     perms = get_effective_permission_codenames(user)
     if not perms:
         return False
     if constants.WILDCARD in perms:
         return True
-    if normalized_role(user) == constants.ROLE_TEST_ADMIN:
-        return True
-    return constants.PERM_MANAGE_TESTS in perms
+    if constants.PERM_MANAGE_TESTS not in perms:
+        return False
+    if normalized_role(user) == constants.ROLE_STUDENT:
+        return False
+    return user_domain_subject(user) is not None
 
 
 def filter_practice_tests_for_user(user, queryset):
     role = normalized_role(user)
-    if role == constants.ROLE_TEST_ADMIN:
-        return queryset
-
     perms = get_effective_permission_codenames(user)
     if not perms:
         return queryset.none()
     if constants.WILDCARD in perms:
         return queryset
 
-    if constants.PERM_MANAGE_TESTS in perms and role in (constants.ROLE_TEACHER, constants.ROLE_ADMIN):
+    if constants.PERM_MANAGE_TESTS in perms and role in (
+        constants.ROLE_TEACHER,
+        constants.ROLE_ADMIN,
+        constants.ROLE_TEST_ADMIN,
+    ):
         dom = user_domain_subject(user)
         if dom == constants.DOMAIN_MATH:
             return queryset.filter(subject=constants.SUBJECT_MATH_PLATFORM)
@@ -438,8 +431,7 @@ def filter_pastpaper_packs_for_user(user, queryset):
         PracticeTest.objects.filter(mock_exam__isnull=True),
     )
     with_sections = queryset.filter(sections__in=visible)
-    role = normalized_role(user)
-    if constants.PERM_MANAGE_TESTS in perms or role == constants.ROLE_TEST_ADMIN:
+    if constants.PERM_MANAGE_TESTS in perms:
         empty = queryset.annotate(_section_count=Count("sections")).filter(_section_count=0)
         return (with_sections | empty).distinct()
     return with_sections.distinct()
@@ -449,9 +441,6 @@ def filter_mock_exams_for_user(user, queryset):
     from django.db.models import Count
 
     from exams.models import PracticeTest
-
-    if normalized_role(user) == constants.ROLE_TEST_ADMIN:
-        return queryset
 
     perms = get_effective_permission_codenames(user)
     if constants.WILDCARD in perms:
@@ -476,4 +465,4 @@ def user_can_assign_as_class_teacher(user) -> bool:
 
 def staff_must_have_subject(user) -> bool:
     role = normalized_role(user)
-    return role in (constants.ROLE_TEACHER, constants.ROLE_ADMIN)
+    return role in (constants.ROLE_TEACHER, constants.ROLE_ADMIN, constants.ROLE_TEST_ADMIN)

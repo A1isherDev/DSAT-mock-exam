@@ -81,7 +81,7 @@ class User(AbstractUser):
         null=True,
         db_index=True,
         choices=[("math", "Math"), ("english", "English")],
-        help_text="Required for teacher and admin (exactly math or english). Not used for test_admin (org-wide). Null for super_admin/student.",
+        help_text="Required for teacher, admin, and test_admin (exactly math or english). Null for super_admin/student.",
     )
     profile_image = models.ImageField(upload_to='profiles/', null=True, blank=True)
     sat_exam_date = models.DateField(null=True, blank=True, help_text='Planned SAT exam date')
@@ -121,15 +121,17 @@ class User(AbstractUser):
         raw_subj = getattr(self, "subject", None)
         subj = str(raw_subj).strip().lower() if raw_subj not in (None, "") else None
 
-        if role in (auth_const.ROLE_TEACHER, auth_const.ROLE_ADMIN):
+        if role in (
+            auth_const.ROLE_TEACHER,
+            auth_const.ROLE_ADMIN,
+            auth_const.ROLE_TEST_ADMIN,
+        ):
             if subj not in auth_const.ALL_DOMAIN_SUBJECTS:
                 raise ValidationError(
-                    {"subject": "Teacher and admin accounts require subject: math or english."}
+                    {
+                        "subject": "Teacher, admin, and test_admin accounts require subject: math or english."
+                    }
                 )
-        elif role == auth_const.ROLE_TEST_ADMIN:
-            # Single org-wide test staff role: do not scope by subject (strip legacy values).
-            if subj is not None:
-                self.subject = None
         elif role == auth_const.ROLE_SUPER_ADMIN:
             if subj is not None:
                 raise ValidationError({"subject": "super_admin accounts must not have a subject set."})

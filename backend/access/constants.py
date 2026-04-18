@@ -24,7 +24,7 @@ ALL_PERMISSION_CODENAMES = (
 )
 
 # ``authorize(..., subject=<platform>)`` MUST receive a valid platform subject for these
-# (MATH / READING_WRITING), except super_admin / Django superuser or test_admin (org-wide).
+# (MATH / READING_WRITING), except super_admin / Django superuser (wildcard).
 PERMISSIONS_REQUIRING_PLATFORM_SUBJECT = frozenset(
     {
         PERM_MANAGE_USERS,

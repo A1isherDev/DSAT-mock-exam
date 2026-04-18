@@ -125,9 +125,9 @@ class MockExamViewSet(viewsets.ReadOnlyModelViewSet):
     def list(self, request, *args, **kwargs):
         user = request.user
         perms = get_effective_permission_codenames(user)
-        if acc_const.WILDCARD in perms or acc_const.PERM_MANAGE_TESTS in perms:
+        if acc_const.WILDCARD in perms:
             return super().list(request, *args, **kwargs)
-        if acc_const.PERM_ASSIGN_ACCESS in perms:
+        if acc_const.PERM_MANAGE_TESTS in perms or acc_const.PERM_ASSIGN_ACCESS in perms:
             return super().list(request, *args, **kwargs)
 
         qs = (
@@ -148,9 +148,9 @@ class MockExamViewSet(viewsets.ReadOnlyModelViewSet):
             "tests",
             queryset=PracticeTest.objects.all().prefetch_related("modules"),
         )
-        if acc_const.WILDCARD in perms or acc_const.PERM_MANAGE_TESTS in perms:
+        if acc_const.WILDCARD in perms:
             return base.prefetch_related(tests_prefetch)
-        if acc_const.PERM_ASSIGN_ACCESS in perms:
+        if acc_const.PERM_MANAGE_TESTS in perms or acc_const.PERM_ASSIGN_ACCESS in perms:
             return filter_mock_exams_for_user(user, base).prefetch_related(tests_prefetch)
 
         allowed_mock_ids = PortalMockExam.objects.filter(

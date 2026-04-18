@@ -136,3 +136,23 @@ class AccessPrimitivesTests(TestCase):
             granted_by=self.math_teacher,
         )
         self.assertFalse(has_global_subject_access(self.math_teacher, C.DOMAIN_ENGLISH))
+
+    def test_test_admin_requires_matching_domain_for_manage_tests(self):
+        ta_math = User.objects.create_user(
+            email="ta_math@example.com",
+            password="x",
+            role=C.ROLE_TEST_ADMIN,
+            subject=C.DOMAIN_MATH,
+        )
+        UserAccess.objects.create(
+            user=ta_math,
+            subject=C.DOMAIN_MATH,
+            classroom=None,
+            granted_by=ta_math,
+        )
+        self.assertTrue(
+            authorize(ta_math, C.PERM_MANAGE_TESTS, subject=C.SUBJECT_MATH_PLATFORM)
+        )
+        self.assertFalse(
+            authorize(ta_math, C.PERM_MANAGE_TESTS, subject=C.SUBJECT_ENGLISH_PLATFORM)
+        )

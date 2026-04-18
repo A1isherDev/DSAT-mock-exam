@@ -41,9 +41,7 @@ logger = logging.getLogger("security.users")
 
 
 def _subject_for_auth_response(user: User) -> str:
-    """JWT / OAuth payloads: test_admin is org-wide; omit subject."""
-    if normalized_role(user) == acc_const.ROLE_TEST_ADMIN:
-        return ""
+    """Domain subject for staff (math|english); empty for students without subject."""
     return getattr(user, "subject", None) or ""
 
 
