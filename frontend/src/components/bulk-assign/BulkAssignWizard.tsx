@@ -452,20 +452,26 @@ export function BulkAssignWizard({
       const matched = typeof res?.practice_tests_matched === "number" ? res.practice_tests_matched : null;
       const requested = typeof res?.practice_tests_requested === "number" ? res.practice_tests_requested : null;
       const skippedN = Number(res.students_skipped_count || 0);
+      const grantsCreated =
+        typeof res?.subject_grants_created === "number" ? res.subject_grants_created : 0;
+      const grantNote =
+        grantsCreated > 0
+          ? ` ${grantsCreated} subject access grant(s) added for students who had none.`
+          : "";
 
       if (!isMocks && requested != null && matched != null && matched < requested) {
         showToast(
-          `Assigned library sections: ${matched} of ${requested} IDs matched. ${selectedUserIds.length} user(s).`,
+          `Assigned library sections: ${matched} of ${requested} IDs matched. ${selectedUserIds.length} user(s).${grantNote}`,
         );
       } else if (!isMocks && added === 0 && resolvedPastpaperSectionIds.length > 0) {
         showToast("No assignments were saved. Check section IDs.");
       } else {
         showToast(
           skippedN > 0
-            ? `Granted where eligible: ${res.students_granted_count ?? "?"} of ${selectedUserIds.length} student(s); ${skippedN} skipped.`
+            ? `Granted where eligible: ${res.students_granted_count ?? "?"} of ${selectedUserIds.length} student(s); ${skippedN} skipped.${grantNote}`
             : added != null
-              ? `Granted access (${added} test link(s)) to ${selectedUserIds.length} user(s).`
-              : `Assigned access to ${selectedUserIds.length} user(s).`,
+              ? `Granted access (${added} test link(s)) to ${selectedUserIds.length} user(s).${grantNote}`
+              : `Assigned access to ${selectedUserIds.length} user(s).${grantNote}`,
         );
       }
 

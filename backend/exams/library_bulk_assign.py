@@ -12,12 +12,44 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 
 from access import constants as acc_const
+from access.models import UserAccess
 from access.services import authorize, normalized_role, student_has_any_subject_grant
 from access.subject_mapping import platform_subject_to_domain
 
 from .models import MockExam, PortalMockExam, PracticeTest
 
 User = get_user_model()
+
+
+def _ensure_global_grants_for_students(actor, users: list, platform_subject: str) -> int:
+    """
+    When an actor may assign library content for ``platform_subject``, ensure each student
+    has a global domain grant (``UserAccess`` with ``classroom`` NULL). Without this, bulk
+    assign would skip students who have not yet received Math/English access — even though
+    the actor is explicitly granting them tests.
+    """
+    if not authorize(actor, acc_const.PERM_ASSIGN_ACCESS, subject=platform_subject):
+        return 0
+    dom = platform_subject_to_domain(platform_subject)
+    if not dom:
+        return 0
+    created_n = 0
+    for u in users:
+        if normalized_role(u) != acc_const.ROLE_STUDENT:
+            continue
+        if student_has_any_subject_grant(u, dom):
+            continue
+        _grant, was_created = UserAccess.objects.get_or_create(
+            user=u,
+            subject=dom,
+            classroom=None,
+            defaults={"granted_by": actor},
+        )
+        if was_created:
+            created_n += 1
+        else:
+            UserAccess.objects.filter(pk=_grant.pk).update(granted_by_id=actor.pk)
+    return created_n
 
 
 def _as_int_ids(seq: Any) -> list[int]:
@@ -76,6 +108,7 @@ def execute_library_bulk_assign(
     added_count = 0
     removed_count = 0
     practice_tests_matched = 0
+    subject_grants_created = 0
     touched_student_ids: set[int] = set()
     subjects_touched: set[str] = set()
 
@@ -85,6 +118,7 @@ def execute_library_bulk_assign(
         for pt in pts:
             subjects_touched.add(str(pt.subject))
             if authorize(actor, acc_const.PERM_ASSIGN_ACCESS, subject=pt.subject):
+                subject_grants_created += _ensure_global_grants_for_students(actor, users, pt.subject)
                 allowed = _allowed_students_for_platform_subject(users, pt.subject)
                 if allowed:
                     pt.assigned_users.add(*allowed)
@@ -111,6 +145,7 @@ def execute_library_bulk_assign(
         for pt in add_tests:
             subjects_touched.add(str(pt.subject))
             if authorize(actor, acc_const.PERM_ASSIGN_ACCESS, subject=pt.subject):
+                subject_grants_created += _ensure_global_grants_for_students(actor, users, pt.subject)
                 allowed = _allowed_students_for_platform_subject(users, pt.subject)
                 if allowed:
                     pt.assigned_users.add(*allowed)
@@ -178,6 +213,7 @@ def execute_library_bulk_assign(
         "students_granted_count": students_granted,
         "students_skipped_count": students_skipped_count,
         "subjects_touched": sorted(subjects_touched),
+        "subject_grants_created": subject_grants_created,
     }
 
 
