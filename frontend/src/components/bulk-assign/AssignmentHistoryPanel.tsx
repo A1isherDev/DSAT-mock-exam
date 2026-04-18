@@ -69,19 +69,44 @@ export function AssignmentHistoryPanel({
               (e.kind === "pastpaper" ? "Pastpaper library" : e.kind === "timed_mock" ? "Timed mock" : e.kind);
             const skippedList = e.result?.skipped_users;
             const skipped = Array.isArray(skippedList) ? skippedList.length : 0;
+            const req = Number(e.students_requested_count ?? 0);
+            const granted = Number(e.students_granted_count ?? 0);
+            const noneGrantedAllSkipped = req > 0 && granted === 0;
+            const partialGrant = req > 0 && granted > 0 && granted < req;
+            const firstSkipReason =
+              noneGrantedAllSkipped && skippedList && skippedList[0] && typeof skippedList[0] === "object"
+                ? String((skippedList[0] as { reason?: string }).reason || "").trim()
+                : "";
             return (
-              <li key={e.id} className="px-5 py-3 flex flex-wrap items-start gap-3 justify-between">
+              <li
+                key={e.id}
+                className={`px-5 py-3 flex flex-wrap items-start gap-3 justify-between ${
+                  noneGrantedAllSkipped ? "bg-amber-50/40" : ""
+                }`}
+              >
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-slate-900 truncate">{label}</p>
                   <p className="text-xs text-slate-600 mt-0.5">
                     {e.subject_summary ? <span>{e.subject_summary} · </span> : null}
-                    Granted <strong>{e.students_granted_count}</strong> / {e.students_requested_count} students
-                    {skipped ? (
+                    {noneGrantedAllSkipped ? (
+                      <span className="text-amber-900 font-medium">
+                        No library access granted — all {req} student{req === 1 ? "" : "s"} skipped
+                        {firstSkipReason ? ` (${firstSkipReason})` : ""}
+                      </span>
+                    ) : (
                       <>
-                        {" "}
-                        · <span className="text-amber-700">{skipped} skipped</span>
+                        Granted <strong>{granted}</strong> / {req} students
+                        {skipped ? (
+                          <>
+                            {" "}
+                            · <span className="text-amber-700">{skipped} skipped</span>
+                          </>
+                        ) : null}
+                        {partialGrant ? (
+                          <span className="text-slate-500"> · partial</span>
+                        ) : null}
                       </>
-                    ) : null}
+                    )}
                   </p>
                   <p className="text-[11px] text-slate-400 mt-1">
                     {new Date(e.created_at).toLocaleString()}
@@ -89,6 +114,11 @@ export function AssignmentHistoryPanel({
                     <span className={`ml-2 inline-flex items-center rounded-lg border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${statusStyle(e.status)}`}>
                       {e.status}
                     </span>
+                    {noneGrantedAllSkipped ? (
+                      <span className="ml-2 inline-flex items-center rounded-lg border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900">
+                        No grants
+                      </span>
+                    ) : null}
                     {e.rerun_of ? <span className="ml-1 text-slate-400">· re-run of #{e.rerun_of}</span> : null}
                   </p>
                 </div>
