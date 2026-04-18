@@ -66,6 +66,7 @@ const QuestionPane = memo(({ currentQuestion, zoomLevel, highlighterActive, pass
                     </div>
                 )}
                 <SafeHtml
+                    id="passage-text-container"
                     className="leading-relaxed font-[Georgia] font-medium mathjax-process"
                     html={passageHtml || currentQuestion.question_text?.replace(/\n/g, "<br/>") || "Question text goes here..."}
                 />
@@ -1357,6 +1358,14 @@ function ExamPlayerInner() {
                     text-underline-offset: 3px !important;
                 }
                 .annotate-mode *::selection { background-color: #3b82f640; }
+                /* MathJax/KaTeX nodes sometimes disable selection; allow highlighting while Annotate is on */
+                .annotate-mode .mathjax-process,
+                .annotate-mode .mathjax-process *,
+                .annotate-mode .katex,
+                .annotate-mode .katex * {
+                    -webkit-user-select: text !important;
+                    user-select: text !important;
+                }
             `}</style>
         </AuthGuard>
     );
