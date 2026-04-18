@@ -14,6 +14,11 @@ PERM_MANAGE_TESTS = "manage_tests"
 PERM_VIEW_DASHBOARD = "view_dashboard"
 PERM_SUBMIT_TEST = "submit_test"
 
+# Semantic aliases (same DB codename — use helpers for *view* vs *edit* semantics):
+#   can_edit_tests()  → authorize(..., PERM_EDIT_TESTS, subject=platform)
+#   can_view_tests()  → edit OR assign_access in subject scope (no separate DB perm)
+PERM_EDIT_TESTS = PERM_MANAGE_TESTS
+
 ALL_PERMISSION_CODENAMES = (
     PERM_SUBMIT_TEST,
     PERM_MANAGE_USERS,

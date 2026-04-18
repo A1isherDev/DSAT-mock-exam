@@ -22,6 +22,25 @@ if not SECRET_KEY:
 
 DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
 
+
+def _env_bool(name: str, *, default_when_unset: bool) -> bool:
+    v = os.getenv(name)
+    if v is None:
+        return default_when_unset
+    return v.lower() == 'true'
+
+
+# access.services — fail loud in dev (override with env in CI/prod)
+LMS_AUTHZ_RAISE_ON_MISSING_SUBJECT = _env_bool(
+    'LMS_AUTHZ_RAISE_ON_MISSING_SUBJECT', default_when_unset=DEBUG
+)
+LMS_AUTHZ_CONSISTENCY_CHECKS = _env_bool(
+    'LMS_AUTHZ_CONSISTENCY_CHECKS', default_when_unset=DEBUG
+)
+LMS_AUTHZ_RAISE_ON_CONSISTENCY_DRIFT = _env_bool(
+    'LMS_AUTHZ_RAISE_ON_CONSISTENCY_DRIFT', default_when_unset=DEBUG
+)
+
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '')
 # Telegram Login Widget: bot token (server only) + bot username for the widget (public).

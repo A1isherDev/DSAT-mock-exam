@@ -3,10 +3,10 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from access import constants as acc_const
 from access.services import (
+    actor_subject_probe_for_domain_perm,
     authorize,
     get_effective_permission_codenames,
     normalized_role,
-    platform_subject_for_user,
     user_can_assign_as_class_teacher,
     user_domain_subject,
 )
@@ -19,11 +19,11 @@ from .models import ExamDateOption, User
 
 
 def _sync_global_user_access(user: User) -> None:
-    """Ensure teacher/admin have a global DB access row for their domain subject."""
+    """Ensure **teachers** have a global DB access row for their domain subject."""
     from access.models import UserAccess
 
     r = normalized_role(user)
-    if r not in (acc_const.ROLE_TEACHER, acc_const.ROLE_ADMIN, acc_const.ROLE_TEST_ADMIN):
+    if r != acc_const.ROLE_TEACHER:
         return
     sj = getattr(user, "subject", None)
     if sj not in acc_const.ALL_DOMAIN_SUBJECTS:
@@ -370,8 +370,8 @@ class UserSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {"role": "Authentication required to set role."}
                 )
-            actor_subj = platform_subject_for_user(actor)
-            if not (
+            actor_subj = actor_subject_probe_for_domain_perm(actor)
+            if not actor_subj or not (
                 authorize(actor, acc_const.PERM_ASSIGN_ACCESS, subject=actor_subj)
                 or authorize(actor, acc_const.PERM_MANAGE_USERS, subject=actor_subj)
             ):
@@ -379,15 +379,7 @@ class UserSerializer(serializers.ModelSerializer):
                     {"role": "You do not have permission to assign roles."}
                 )
             adom = user_domain_subject(actor)
-            if (
-                adom
-                and rc
-                in (
-                    acc_const.ROLE_TEACHER,
-                    acc_const.ROLE_ADMIN,
-                    acc_const.ROLE_TEST_ADMIN,
-                )
-            ):
+            if adom and normalized_role(actor) == acc_const.ROLE_TEACHER:
                 incoming = (self.initial_data or {}).get("subject")
                 if incoming not in (None, "") and str(incoming).strip().lower() != adom:
                     raise serializers.ValidationError(
@@ -410,18 +402,14 @@ class UserSerializer(serializers.ModelSerializer):
         validated_data["role"] = role
 
         subj = validated_data.get("subject")
-        if role in (
-            acc_const.ROLE_TEACHER,
-            acc_const.ROLE_ADMIN,
-            acc_const.ROLE_TEST_ADMIN,
-        ):
+        if role == acc_const.ROLE_TEACHER:
             if subj not in acc_const.ALL_DOMAIN_SUBJECTS:
                 raise serializers.ValidationError(
-                    {
-                        "subject": "Teacher, admin, and test_admin accounts require subject: math or english."
-                    }
+                    {"subject": "Teacher accounts require subject: math or english."}
                 )
-        elif role in (acc_const.ROLE_STUDENT, acc_const.ROLE_SUPER_ADMIN):
+        elif role in (acc_const.ROLE_ADMIN, acc_const.ROLE_TEST_ADMIN, acc_const.ROLE_SUPER_ADMIN):
+            validated_data["subject"] = None
+        elif role == acc_const.ROLE_STUDENT:
             validated_data["subject"] = None
 
         password = validated_data.pop("password", None)
@@ -448,20 +436,18 @@ class UserSerializer(serializers.ModelSerializer):
         eff_role = self._normalize_role(instance.role) or acc_const.ROLE_STUDENT
         if "subject" in validated_data:
             subj = validated_data.get("subject")
-            if eff_role in (acc_const.ROLE_TEACHER, acc_const.ROLE_ADMIN):
+            if eff_role == acc_const.ROLE_TEACHER:
                 if subj not in acc_const.ALL_DOMAIN_SUBJECTS:
                     raise serializers.ValidationError(
-                        {"subject": "Teacher and admin accounts require subject: math or english."}
+                        {"subject": "Teacher accounts require subject: math or english."}
                     )
-            elif eff_role in (acc_const.ROLE_STUDENT, acc_const.ROLE_SUPER_ADMIN):
+            elif eff_role in (
+                acc_const.ROLE_ADMIN,
+                acc_const.ROLE_TEST_ADMIN,
+                acc_const.ROLE_SUPER_ADMIN,
+                acc_const.ROLE_STUDENT,
+            ):
                 validated_data["subject"] = None
-            elif eff_role == acc_const.ROLE_TEST_ADMIN:
-                if subj not in acc_const.ALL_DOMAIN_SUBJECTS:
-                    raise serializers.ValidationError(
-                        {
-                            "subject": "test_admin accounts require subject: math or english."
-                        }
-                    )
 
         password = validated_data.pop("password", None)
         user = super().update(instance, validated_data)
@@ -472,17 +458,15 @@ class UserSerializer(serializers.ModelSerializer):
         user.refresh_from_db()
         eff = self._normalize_role(user.role) or acc_const.ROLE_STUDENT
         sj = getattr(user, "subject", None)
-        if eff in (
-            acc_const.ROLE_TEACHER,
-            acc_const.ROLE_ADMIN,
-            acc_const.ROLE_TEST_ADMIN,
-        ):
+        if eff == acc_const.ROLE_TEACHER:
             if sj not in acc_const.ALL_DOMAIN_SUBJECTS:
                 raise serializers.ValidationError(
-                    {
-                        "subject": "Teacher, admin, and test_admin accounts require subject: math or english."
-                    }
+                    {"subject": "Teacher accounts require subject: math or english."}
                 )
+        elif eff in (acc_const.ROLE_ADMIN, acc_const.ROLE_TEST_ADMIN) and sj not in (None, ""):
+            raise serializers.ValidationError(
+                {"subject": "Admin and test_admin accounts must not have a subject set."}
+            )
         _sync_global_user_access(user)
         return user
 

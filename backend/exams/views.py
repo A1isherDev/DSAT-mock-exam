@@ -25,6 +25,7 @@ from access.policies import (
     QuestionNestedAdminAccess,
 )
 from access.services import (
+    actor_subject_probe_for_domain_perm,
     authorize,
     bulk_assign_request_platform_subjects,
     can_browse_standalone_practice_library,
@@ -33,7 +34,6 @@ from access.services import (
     filter_practice_tests_for_user,
     get_effective_permission_codenames,
     normalized_role,
-    platform_subject_for_user,
     student_has_any_subject_grant,
 )
 from access.subject_mapping import platform_subject_to_domain
@@ -74,9 +74,6 @@ logger = logging.getLogger(__name__)
 
 def _is_student(user) -> bool:
     return str(getattr(user, "role", "") or "").strip().lower() == "student"
-
-def _is_questions_console(request) -> bool:
-    return str(getattr(request, "lms_console", "") or "").strip().lower() == "questions"
 
 
 def _actor_snapshot(user, *, subject: str | None) -> dict:
@@ -273,8 +270,10 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
         }
 
         subjects = bulk_assign_request_platform_subjects(payload_core)
-        actor_subj = platform_subject_for_user(request.user)
-        snapshot = _actor_snapshot(request.user, subject=actor_subj)
+        snapshot = _actor_snapshot(
+            request.user,
+            subject=(getattr(request.user, "subject", None) or ""),
+        )
 
         dispatch = BulkAssignmentDispatch.objects.create(
             assigned_by=request.user,
@@ -512,8 +511,6 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         base = MockExam.objects.all().prefetch_related("tests__modules")
-        if _is_questions_console(self.request) and not _is_student(self.request.user):
-            return base
         return filter_mock_exams_for_user(self.request.user, base)
 
     def perform_create(self, serializer):
@@ -698,8 +695,6 @@ class AdminPastpaperPackViewSet(viewsets.ModelViewSet):
             "sections__modules",
             "sections__assigned_users",
         )
-        if _is_questions_console(self.request) and not _is_student(self.request.user):
-            return base.order_by("-practice_date", "-id")
         return filter_pastpaper_packs_for_user(self.request.user, base).order_by(
             "-practice_date", "-id"
         )
@@ -747,10 +742,7 @@ class AdminPracticeTestViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         base = PracticeTest.objects.all().prefetch_related("modules", "assigned_users")
-        if _is_questions_console(self.request) and not _is_student(self.request.user):
-            qs = base
-        else:
-            qs = filter_practice_tests_for_user(self.request.user, base)
+        qs = filter_practice_tests_for_user(self.request.user, base)
         standalone = self.request.query_params.get("standalone")
         if standalone in ("1", "true", "yes"):
             qs = qs.filter(mock_exam__isnull=True)
@@ -836,7 +828,7 @@ def _can_rerun_dispatch(actor, dispatch: BulkAssignmentDispatch) -> bool:
         return True
     if dispatch.assigned_by_id and dispatch.assigned_by_id == actor.pk:
         return True
-    subj = platform_subject_for_user(actor)
+    subj = actor_subject_probe_for_domain_perm(actor)
     if subj and authorize(actor, acc_const.PERM_MANAGE_USERS, subject=subj):
         return True
     return False
@@ -941,7 +933,10 @@ class BulkAssignmentHistoryRerunView(APIView):
             "client_context": client_context,
         }
 
-        snapshot = _actor_snapshot(request.user, subject=platform_subject_for_user(request.user))
+        snapshot = _actor_snapshot(
+            request.user,
+            subject=(getattr(request.user, "subject", None) or ""),
+        )
 
         new_dispatch = BulkAssignmentDispatch.objects.create(
             assigned_by=request.user,

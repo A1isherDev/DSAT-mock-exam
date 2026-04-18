@@ -92,16 +92,17 @@ class ClassroomCreateSerializer(serializers.ModelSerializer):
 
     def validate_teacher(self, value):
         from access import constants as acc_const
-        from access.services import authorize, platform_subject_for_user
+        from access.services import actor_subject_probe_for_domain_perm, authorize
 
         if value is None:
             return value
         if getattr(value, "is_frozen", False):
             raise serializers.ValidationError("Teacher cannot be a frozen account.")
-        if authorize(
+        subj = actor_subject_probe_for_domain_perm(value)
+        if subj and authorize(
             value,
             acc_const.PERM_MANAGE_USERS,
-            subject=platform_subject_for_user(value),
+            subject=subj,
         ):
             return value
         # Allow keeping the current teacher on update so demoted users do not block all edits.

@@ -15,10 +15,11 @@ from classes.models import Classroom, ClassroomMembership
 from access import constants as acc_const
 from access.permissions import HasManageUsers, HasManageUsersOrAssignTestAccess
 from access.services import (
+    actor_subject_probe_for_domain_perm,
     authorize,
     get_effective_permission_codenames,
+    is_global_scope_staff,
     normalized_role,
-    platform_subject_for_user,
     user_domain_subject,
 )
 
@@ -99,10 +100,14 @@ class UserListView(generics.ListAPIView):
     def get_queryset(self):
         qs = User.objects.all().order_by("-date_joined")
         user = self.request.user
-        actor_subj = platform_subject_for_user(user)
-        # Full user directory: only user managers. Teachers with assign_test_access get students only (bulk assign).
-        if authorize(user, acc_const.PERM_MANAGE_USERS, subject=actor_subj):
+        probe = actor_subject_probe_for_domain_perm(user)
+        if not probe:
+            return qs.none()
+        # Full directory: super_admin / global admin. Subject-scoped: teachers.
+        if authorize(user, acc_const.PERM_MANAGE_USERS, subject=probe):
             if getattr(user, "is_superuser", False) or normalized_role(user) == acc_const.ROLE_SUPER_ADMIN:
+                return _prefetch_user_directory(qs)
+            if is_global_scope_staff(user) and normalized_role(user) != acc_const.ROLE_TEACHER:
                 return _prefetch_user_directory(qs)
             dom = user_domain_subject(user)
             if not dom:
@@ -121,17 +126,12 @@ class UserListView(generics.ListAPIView):
                         Q(access_grants__subject=dom)
                         | Q(class_memberships__classroom__subject=clsub)
                     )
-                    | Q(
-                        subject=dom,
-                        role__in=[
-                            acc_const.ROLE_TEACHER,
-                            acc_const.ROLE_ADMIN,
-                            acc_const.ROLE_TEST_ADMIN,
-                        ],
-                    )
+                    | Q(subject=dom, role=acc_const.ROLE_TEACHER)
                 ).distinct()
             )
-        if authorize(user, acc_const.PERM_ASSIGN_ACCESS, subject=actor_subj):
+        if authorize(user, acc_const.PERM_ASSIGN_ACCESS, subject=probe):
+            if is_global_scope_staff(user) and normalized_role(user) != acc_const.ROLE_TEACHER:
+                return _prefetch_user_directory(qs.filter(role=acc_const.ROLE_STUDENT))
             dom = user_domain_subject(user)
             q = Q(role=acc_const.ROLE_STUDENT)
             if not dom:

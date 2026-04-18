@@ -31,10 +31,7 @@ export function getRole(): string {
   return (Cookies.get("role") || "").trim().toLowerCase();
 }
 
-/**
- * Test admin: single org-wide role — full Math + English authoring (matches backend ABAC).
- * `lms_subject` cookie is not used to restrict this role.
- */
+/** Test admin: subject-scoped authoring (math or english); matches backend ABAC + `lms_subject`. */
 export function isTestAdmin(): boolean {
   return getRole() === "test_admin";
 }
@@ -121,8 +118,6 @@ export function coalesceArray<T>(x: T | T[] | null | undefined): T[] {
 export function can(codename: string): boolean {
   const p = getPermissionList();
   if (p.includes("*")) return true;
-  // test_admin is org-wide authoring; older JWT/cookie sessions may omit manage_tests — still show Math + English.
-  if (isTestAdmin() && codename === "manage_tests") return true;
 
   // Accept both canonical and legacy codenames transparently.
   const aliases: Record<string, string[]> = {
@@ -174,8 +169,6 @@ export function canManageMockExamShell(): boolean {
  */
 export function canAbacTestSubject(subject: string): boolean {
   if (can("*")) return true;
-  // Org-wide testers must not be blocked when a row has a legacy/odd subject string.
-  if (isTestAdmin()) return true;
   const p = normalizePlatformSubject(subject);
   if (!p) return false;
   const dom = getSubject();
@@ -188,7 +181,6 @@ export function canAbacTestSubject(subject: string): boolean {
 /** Default pastpaper bulk-assign subject filter: scoped admins start on their subject only. */
 export function defaultBulkPastpaperSubjectScope(): "BOTH" | "MATH" | "READING_WRITING" {
   if (can("*")) return "BOTH";
-  if (isTestAdmin()) return "BOTH";
   const dom = getSubject();
   if (dom === "math") return "MATH";
   if (dom === "english") return "READING_WRITING";

@@ -3,6 +3,9 @@ API authentication + staff subject sanity checks.
 
 JWT is validated here so `request.user` is populated before `SubdomainAPIGuardMiddleware`
 (which must see roles for host-based API rules).
+
+Authorization never uses browser cookies (e.g. ``lms_subject``): role, subject, and
+permissions come only from the authenticated ``User`` row and ``access`` tables.
 """
 
 from __future__ import annotations
@@ -34,7 +37,7 @@ class JWTUserMiddleware:
 
 
 class StaffSubjectRequiredMiddleware:
-    """Teacher/admin must have exactly one configured domain subject."""
+    """Teachers must have exactly one configured domain subject (global roles do not)."""
 
     def __init__(self, get_response):
         self.get_response = get_response
@@ -49,7 +52,7 @@ class StaffSubjectRequiredMiddleware:
         if staff_must_have_subject(user):
             if user_domain_subject(user) not in C.ALL_DOMAIN_SUBJECTS:
                 return JsonResponse(
-                    {"detail": "Staff account is missing a valid subject (math or english)."},
+                    {"detail": "Teacher account is missing a valid subject (math or english)."},
                     status=403,
                 )
         return self.get_response(request)

@@ -40,6 +40,13 @@ class UserAccess(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
+    def clean(self):
+        super().clean()
+        if self.subject not in constants.ALL_DOMAIN_SUBJECTS:
+            raise ValidationError(
+                {"subject": f"Must be one of: {', '.join(constants.ALL_DOMAIN_SUBJECTS)}."}
+            )
+
     class Meta:
         db_table = "access_user_access"
         indexes = [

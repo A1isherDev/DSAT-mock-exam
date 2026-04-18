@@ -44,9 +44,12 @@ class UserManager(BaseUserManager):
         from access import constants as auth_const
 
         eff_role = str(getattr(user, "role", "") or "").strip().lower()
-        if eff_role in (auth_const.ROLE_TEACHER, auth_const.ROLE_ADMIN):
+        if eff_role == auth_const.ROLE_TEACHER:
             if getattr(user, "subject", None) not in auth_const.ALL_DOMAIN_SUBJECTS:
-                raise ValueError("Teacher and admin accounts require subject: math or english.")
+                raise ValueError("Teacher accounts require subject: math or english.")
+        elif eff_role in (auth_const.ROLE_ADMIN, auth_const.ROLE_TEST_ADMIN):
+            if getattr(user, "subject", None) not in (None, ""):
+                raise ValueError("Admin and test_admin accounts must not have a subject set.")
         user.save(using=self._db)
         return user
 
@@ -81,7 +84,7 @@ class User(AbstractUser):
         null=True,
         db_index=True,
         choices=[("math", "Math"), ("english", "English")],
-        help_text="Required for teacher, admin, and test_admin (exactly math or english). Null for super_admin/student.",
+        help_text="Required for **teacher** (math or english). Must be null for admin, test_admin, super_admin, and students.",
     )
     profile_image = models.ImageField(upload_to='profiles/', null=True, blank=True)
     sat_exam_date = models.DateField(null=True, blank=True, help_text='Planned SAT exam date')
@@ -121,16 +124,15 @@ class User(AbstractUser):
         raw_subj = getattr(self, "subject", None)
         subj = str(raw_subj).strip().lower() if raw_subj not in (None, "") else None
 
-        if role in (
-            auth_const.ROLE_TEACHER,
-            auth_const.ROLE_ADMIN,
-            auth_const.ROLE_TEST_ADMIN,
-        ):
+        if role == auth_const.ROLE_TEACHER:
             if subj not in auth_const.ALL_DOMAIN_SUBJECTS:
                 raise ValidationError(
-                    {
-                        "subject": "Teacher, admin, and test_admin accounts require subject: math or english."
-                    }
+                    {"subject": "Teacher accounts require subject: math or english."}
+                )
+        elif role in (auth_const.ROLE_ADMIN, auth_const.ROLE_TEST_ADMIN):
+            if subj is not None:
+                raise ValidationError(
+                    {"subject": "Admin and test_admin accounts must not have a subject set."}
                 )
         elif role == auth_const.ROLE_SUPER_ADMIN:
             if subj is not None:

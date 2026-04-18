@@ -6,9 +6,9 @@ from rest_framework.permissions import BasePermission
 
 from . import constants
 from .services import (
+    actor_subject_probe_for_domain_perm,
     authorize,
     get_effective_permission_codenames,
-    platform_subject_for_user,
 )
 
 
@@ -27,39 +27,34 @@ class HasLMSPermission(BasePermission):
 
 class HasManageUsers(BasePermission):
     def has_permission(self, request, view):
-        return authorize(
-            request.user,
-            constants.PERM_MANAGE_USERS,
-            subject=platform_subject_for_user(request.user),
-        )
+        subj = actor_subject_probe_for_domain_perm(request.user)
+        return bool(subj and authorize(request.user, constants.PERM_MANAGE_USERS, subject=subj))
 
 
 class HasManageUsersOrAssignTestAccess(BasePermission):
     """List users for admin UI: user managers or subject-scoped staff who can assign access."""
 
     def has_permission(self, request, view):
-        subj = platform_subject_for_user(request.user)
-        return authorize(
-            request.user, constants.PERM_MANAGE_USERS, subject=subj
-        ) or authorize(request.user, constants.PERM_ASSIGN_ACCESS, subject=subj)
+        subj = actor_subject_probe_for_domain_perm(request.user)
+        return bool(
+            subj
+            and (
+                authorize(request.user, constants.PERM_MANAGE_USERS, subject=subj)
+                or authorize(request.user, constants.PERM_ASSIGN_ACCESS, subject=subj)
+            )
+        )
 
 
 class HasManageRoles(BasePermission):
     def has_permission(self, request, view):
-        return authorize(
-            request.user,
-            constants.PERM_ASSIGN_ACCESS,
-            subject=platform_subject_for_user(request.user),
-        )
+        subj = actor_subject_probe_for_domain_perm(request.user)
+        return bool(subj and authorize(request.user, constants.PERM_ASSIGN_ACCESS, subject=subj))
 
 
 class HasManageClassrooms(BasePermission):
     def has_permission(self, request, view):
-        return authorize(
-            request.user,
-            constants.PERM_CREATE_CLASSROOM,
-            subject=platform_subject_for_user(request.user),
-        )
+        subj = actor_subject_probe_for_domain_perm(request.user)
+        return bool(subj and authorize(request.user, constants.PERM_CREATE_CLASSROOM, subject=subj))
 
 
 class RequiresSubmitTest(BasePermission):

@@ -231,6 +231,16 @@ class PracticeTest(TimestampedModel):
     class Meta:
         db_table = 'practice_tests'
 
+    def clean(self):
+        super().clean()
+        s = getattr(self, "subject", None)
+        if s not in ("MATH", "READING_WRITING"):
+            from django.core.exceptions import ValidationError
+
+            raise ValidationError(
+                {"subject": "PracticeTest.subject must be MATH or READING_WRITING."}
+            )
+
     def __str__(self):
         if self.mock_exam:
             exam_title = self.mock_exam.title

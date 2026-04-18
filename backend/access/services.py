@@ -3,28 +3,56 @@ from __future__ import annotations
 """
 LMS authorization — **use these entry points and no ad‑hoc shortcuts**.
 
+**LOCKED CONTRACT (regressions)**
+
+* **View** test content: :func:`can_view_tests` only. **Edit** test content:
+  :func:`can_edit_tests` only. Do **not** gate admin test APIs on raw ``user.role`` or ad-hoc
+  ``QuerySet.filter(subject=…)`` outside :func:`filter_practice_tests_for_user` (which derives
+  its subject list solely from :func:`visible_practice_test_platform_subjects_for_query` →
+  ``can_view_tests``).
+
+* **Composite shells** (mock exams, pastpaper packs): use :func:`can_edit_multi_subject_object`
+  or :func:`can_assign_all_platform_subjects_in_mock` so every underlying platform subject is
+  checked.
+
+* **Domain permissions**: :func:`authorize` with ``subject=`` (platform vocabulary). Cookies /
+  client headers are **never** authorization inputs.
+
+* **Querysets**: :func:`filter_practice_tests_for_user` / :func:`filter_mock_exams_for_user` /
+  :func:`filter_pastpaper_packs_for_user` must stay equivalent to ABAC helpers; enable
+  ``LMS_AUTHZ_CONSISTENCY_CHECKS`` in dev to detect drift.
+
 1. **Permission + resource subject (platform string)**  
    ``authorize(user, "<perm>", subject="<MATH|READING_WRITING>")``  
-   See ``constants.PERMISSIONS_REQUIRING_PLATFORM_SUBJECT``. For the signed-in staff
-   member's own domain, use ``platform_subject_for_user(user)`` as ``subject``.
+   See ``constants.PERMISSIONS_REQUIRING_PLATFORM_SUBJECT``. **Teachers** pass
+   ``platform_subject_for_user(user)`` (their domain mapped to platform). **Global**
+   staff (``admin``, ``test_admin``, ``super_admin``) bypass subject alignment inside
+   ``authorize`` once the codename and a valid platform ``subject=`` are present; for
+   *actor* checks that must compile for both teachers and globals, use
+   ``actor_subject_probe_for_domain_perm(user)``.
 
 2. **Database access (domain string)**  
    ``has_global_subject_access`` / ``has_access_for_classroom`` / ``student_has_any_subject_grant``  
    — always pass ``math`` / ``english`` (``constants.DOMAIN_*``), never platform strings.
 
 3. **Converting** platform ↔ domain at boundaries — **only** ``access.subject_mapping``.
+
+4. **PracticeTest visibility vs editing** — use ``can_view_tests`` / ``can_edit_tests`` /
+   ``can_access_practice_test`` / ``access_level_for_practice_test`` so querysets and
+   ``has_permission`` stay aligned. Client cookies are never inputs to these functions.
 """
 
 from functools import lru_cache
-from typing import FrozenSet, Optional
+from typing import FrozenSet, Literal, Optional
 
 import logging
 
 from django.apps import apps
+from django.conf import settings
 from django.db.models import Q
 
 from . import constants
-from .exceptions import SubjectContractViolation
+from .exceptions import AccessConsistencyDrift, SubjectContractViolation
 from .subject_mapping import (
     domain_subject_to_platform,
     platform_subject_to_domain,
@@ -33,6 +61,21 @@ from .subject_mapping import (
 )
 
 logger = logging.getLogger("access.authorize")
+integrity_logger = logging.getLogger("access.data_integrity")
+
+# DB / imports may still store pre-unification role strings; map to canonical roles only.
+_LEGACY_ROLE_ALIASES: dict[str, str] = {
+    "math_teacher": constants.ROLE_TEACHER,
+    "english_teacher": constants.ROLE_TEACHER,
+    "math_admin": constants.ROLE_ADMIN,
+    "english_admin": constants.ROLE_ADMIN,
+}
+
+
+def _authorize_log_denial(reason: str, **ctx: object) -> None:
+    """Structured denial log (INFO) for ops — tune logger level in production if noisy."""
+    parts = " ".join(f"{k}={v!r}" for k, v in sorted(ctx.items()) if v is not None)
+    logger.info("access.authorize denied: %s %s", reason, parts)
 
 
 @lru_cache(maxsize=1)
@@ -62,6 +105,7 @@ def _role_permissions_map() -> dict[str, FrozenSet[str]]:
             {
                 constants.PERM_VIEW_DASHBOARD,
                 constants.PERM_MANAGE_TESTS,
+                constants.PERM_ASSIGN_ACCESS,
                 constants.PERM_SUBMIT_TEST,
             }
         ),
@@ -78,6 +122,8 @@ def normalized_role(user) -> str:
     v = raw.strip().lower()
     if v in constants.CANONICAL_ROLES:
         return v
+    if v in _LEGACY_ROLE_ALIASES:
+        return _LEGACY_ROLE_ALIASES[v]
     return constants.ROLE_STUDENT
 
 
@@ -131,15 +177,32 @@ def bulk_assign_request_platform_subjects(data: object) -> frozenset[str]:
     return frozenset(s for s in subjects if s)
 
 
+def is_global_scope_staff(user) -> bool:
+    """True for Django superuser and roles admin / test_admin / super_admin (no single subject scope)."""
+    if not user or not getattr(user, "is_authenticated", False):
+        return False
+    if getattr(user, "is_superuser", False):
+        return True
+    r = normalized_role(user)
+    return r in (
+        constants.ROLE_SUPER_ADMIN,
+        constants.ROLE_ADMIN,
+        constants.ROLE_TEST_ADMIN,
+    )
+
+
 def user_domain_subject(user) -> Optional[str]:
     """
-    Single domain subject for staff (math|english). None means unrestricted for that role context:
-    - super_admin / django superuser handled elsewhere
-    - teacher / admin / test_admin: exactly one domain from ``user.subject`` (required at save time)
+    Domain subject (``math`` / ``english``) **only for teachers**.
+
+    ``None`` for global roles (admin, test_admin, super_admin), Django superuser, and students
+    without a subject field — **do not** assume all staff have a domain here.
     """
     if not user or not getattr(user, "is_authenticated", False):
         return None
-    if getattr(user, "is_superuser", False) or normalized_role(user) == constants.ROLE_SUPER_ADMIN:
+    if is_global_scope_staff(user):
+        return None
+    if normalized_role(user) != constants.ROLE_TEACHER:
         return None
     raw = getattr(user, "subject", None)
     if isinstance(raw, str) and raw.strip().lower() in constants.ALL_DOMAIN_SUBJECTS:
@@ -149,13 +212,26 @@ def user_domain_subject(user) -> Optional[str]:
 
 def platform_subject_for_user(user) -> Optional[str]:
     """
-    Platform subject (``MATH`` / ``READING_WRITING``) for the current user's **single**
-    LMS domain, suitable as ``authorize(..., subject=...)`` for *actor-context* checks.
+    Platform subject for **teachers** only (``MATH`` / ``READING_WRITING``).
 
-    Returns ``None`` for super_admin, Django superuser, or users without a domain row
-    (e.g. students) — callers must decide whether that is valid for their permission.
+    ``None`` for global staff, superuser, and non-teachers — use
+    :func:`actor_subject_probe_for_domain_perm` when passing ``subject=`` into :func:`authorize`
+    for permission checks that must work for both teachers and global staff.
     """
     return domain_subject_to_platform(user_domain_subject(user))
+
+
+def actor_subject_probe_for_domain_perm(user) -> Optional[str]:
+    """
+    Platform string to pass as ``authorize(..., subject=…)`` for *actor* permission checks.
+
+    * **Global staff** — any valid platform label (subject alignment is bypassed in
+      :func:`authorize`); we use ``MATH`` as a stable probe.
+    * **Teacher** — that user's platform subject, or ``None`` if misconfigured.
+    """
+    if is_global_scope_staff(user):
+        return constants.SUBJECT_MATH_PLATFORM
+    return platform_subject_for_user(user)
 
 
 def _user_access_model():
@@ -173,7 +249,9 @@ def has_global_subject_access(user, domain_subject: str) -> bool:
     **Parameters:** ``domain_subject`` is always ``constants.DOMAIN_MATH`` or
     ``constants.DOMAIN_ENGLISH`` — never ``MATH`` / ``READING_WRITING``.
 
-    Teacher/admin/test_admin: ``user.subject`` must match ``domain_subject`` before any DB query.
+    **Teacher:** ``user.subject`` must match ``domain_subject`` and a matching ``UserAccess`` row exists.
+
+    **Admin / test_admin:** global — returns ``True`` without a ``UserAccess`` self-row.
 
     Raises ``SubjectContractViolation`` if a platform subject string is passed by mistake.
     """
@@ -188,7 +266,10 @@ def has_global_subject_access(user, domain_subject: str) -> bool:
     role = normalized_role(user)
     UserAccess = _user_access_model()
 
-    if role in (constants.ROLE_TEACHER, constants.ROLE_ADMIN, constants.ROLE_TEST_ADMIN):
+    if role in (constants.ROLE_ADMIN, constants.ROLE_TEST_ADMIN):
+        return True
+
+    if role == constants.ROLE_TEACHER:
         if user_domain_subject(user) != domain_subject:
             return False
         return UserAccess.objects.filter(
@@ -231,12 +312,15 @@ def has_access_for_classroom(user, domain_subject: str, classroom_id: int) -> bo
     UserAccess = _user_access_model()
     cid = int(classroom_id)
 
+    if role in (constants.ROLE_ADMIN, constants.ROLE_TEST_ADMIN):
+        return True
+
     if role == constants.ROLE_STUDENT:
         return UserAccess.objects.filter(user_id=user.pk, subject=domain_subject).filter(
             Q(classroom_id__isnull=True) | Q(classroom_id=cid)
         ).exists()
 
-    if role in (constants.ROLE_TEACHER, constants.ROLE_ADMIN, constants.ROLE_TEST_ADMIN):
+    if role == constants.ROLE_TEACHER:
         if user_domain_subject(user) != domain_subject:
             return False
         return UserAccess.objects.filter(user_id=user.pk, subject=domain_subject).filter(
@@ -296,6 +380,192 @@ def get_effective_permission_codenames(user) -> FrozenSet[str]:
     return frozenset(granted)
 
 
+def can_edit_tests(user, platform_subject: str) -> bool:
+    """
+    **Edit** authoring (questions, shells, destructive ops): ``manage_tests`` / ``PERM_EDIT_TESTS`` only.
+
+    Authorization is **never** derived from client cookies or headers — only ``User`` + DB permissions.
+    """
+    if not user or not getattr(user, "is_authenticated", False):
+        return False
+    if not isinstance(platform_subject, str) or not platform_subject.strip():
+        return False
+    platform_subject = platform_subject.strip()
+    perms = get_effective_permission_codenames(user)
+    if constants.WILDCARD in perms:
+        return True
+    if normalized_role(user) == constants.ROLE_STUDENT:
+        return False
+    return authorize(user, constants.PERM_EDIT_TESTS, subject=platform_subject)
+
+
+def can_view_tests(user, platform_subject: str) -> bool:
+    """
+    **View** test library rows (list/retrieve): edit **or** ``assign_access`` in the same platform subject.
+
+    Do not use ``assign_access`` alone to imply edit — use :func:`can_edit_tests`.
+    """
+    if not user or not getattr(user, "is_authenticated", False):
+        return False
+    if not isinstance(platform_subject, str) or not platform_subject.strip():
+        return False
+    platform_subject = platform_subject.strip()
+    perms = get_effective_permission_codenames(user)
+    if constants.WILDCARD in perms:
+        return True
+    if normalized_role(user) == constants.ROLE_STUDENT:
+        return False
+    if can_edit_tests(user, platform_subject):
+        return True
+    return authorize(user, constants.PERM_ASSIGN_ACCESS, subject=platform_subject)
+
+
+def access_level_for_practice_test(user, practice_test: object) -> Literal["none", "view", "edit"]:
+    """
+    Single source of truth for “may this user see this PracticeTest row?” vs edit.
+
+    Mirrors queryset rules: invalid ``PracticeTest.subject`` → ``none`` and a data-integrity log.
+    """
+    subj = getattr(practice_test, "subject", None)
+    if not isinstance(subj, str) or not subj.strip():
+        _log_invalid_practice_test_subject(practice_test)
+        return "none"
+    subj = subj.strip()
+    if subj not in (constants.SUBJECT_MATH_PLATFORM, constants.SUBJECT_ENGLISH_PLATFORM):
+        _log_invalid_practice_test_subject(practice_test)
+        return "none"
+    if normalized_role(user) == constants.ROLE_STUDENT:
+        return "none"
+    if can_edit_tests(user, subj):
+        return "edit"
+    if authorize(user, constants.PERM_ASSIGN_ACCESS, subject=subj):
+        return "view"
+    return "none"
+
+
+def can_access_practice_test(user, practice_test: object) -> bool:
+    """True if the user may list/retrieve this row (view or edit)."""
+    return access_level_for_practice_test(user, practice_test) != "none"
+
+
+def collect_platform_subjects_from_mock_exam(exam) -> list[str]:
+    """All platform subjects represented on a timed mock (sections + midterm metadata)."""
+    from exams.models import MockExam
+
+    if getattr(exam, "kind", None) == MockExam.KIND_MIDTERM:
+        sub = getattr(exam, "midterm_subject", None) or constants.SUBJECT_ENGLISH_PLATFORM
+        return [sub] if sub else []
+    return list(
+        {t.subject for t in exam.tests.all() if getattr(t, "subject", None)}
+    )
+
+
+def collect_platform_subjects_from_pastpaper_pack(pack) -> list[str]:
+    return list({s for s in pack.sections.values_list("subject", flat=True) if s})
+
+
+def can_edit_multi_subject_object(user, obj) -> bool:
+    """
+    True iff the user may **edit** every platform subject present on a composite object
+    (``MockExam`` or ``PastpaperPack``). Single entry point for packs / mocks — do not
+    duplicate ``can_edit_tests`` loops in view code.
+    """
+    from exams.models import MockExam, PastpaperPack
+
+    if isinstance(obj, MockExam):
+        subs = collect_platform_subjects_from_mock_exam(obj)
+    elif isinstance(obj, PastpaperPack):
+        subs = collect_platform_subjects_from_pastpaper_pack(obj)
+    else:
+        raise TypeError(f"can_edit_multi_subject_object: unsupported type {type(obj)!r}")
+
+    perms = get_effective_permission_codenames(user)
+    if constants.WILDCARD in perms:
+        return True
+    if not subs:
+        if is_global_scope_staff(user):
+            return constants.PERM_MANAGE_TESTS in perms
+        plat = platform_subject_for_user(user)
+        return bool(plat and can_edit_tests(user, plat))
+    return all(can_edit_tests(user, s) for s in subs)
+
+
+def can_assign_all_platform_subjects_in_mock(user, exam) -> bool:
+    """``assign_users`` on a mock: require ``assign_access`` on every section subject."""
+    subs = collect_platform_subjects_from_mock_exam(exam)
+    if not subs:
+        return False
+    return all(authorize(user, constants.PERM_ASSIGN_ACCESS, subject=s) for s in subs)
+
+
+def visible_practice_test_platform_subjects_for_query(user) -> Optional[frozenset[str]]:
+    """
+    Platform subject(s) that may appear on **PracticeTest** rows visible to this user in SQL.
+
+    * ``None`` — no subject filter (wildcard / **global** admin & test_admin with library perms).
+    * ``frozenset()`` — user may not see any tests (queryset should be empty).
+    * ``frozenset({ "MATH" })`` etc. — **teacher**: one platform subject.
+
+    **Single source of truth** with :func:`can_view_tests` (global staff get unfiltered querysets).
+    """
+    if not user or not getattr(user, "is_authenticated", False):
+        return frozenset()
+    perms = get_effective_permission_codenames(user)
+    if not perms:
+        return frozenset()
+    if constants.WILDCARD in perms:
+        return None
+    if is_global_scope_staff(user):
+        if constants.PERM_MANAGE_TESTS in perms or constants.PERM_ASSIGN_ACCESS in perms:
+            return None
+        return frozenset()
+    plat = platform_subject_for_user(user)
+    if not plat:
+        return frozenset()
+    if not can_view_tests(user, plat):
+        return frozenset()
+    return frozenset([plat])
+
+
+def _log_invalid_practice_test_subject(practice_test: object) -> None:
+    pk = getattr(practice_test, "pk", None)
+    subj = getattr(practice_test, "subject", None)
+    integrity_logger.error(
+        "invalid PracticeTest.subject: id=%r subject=%r (expected MATH or READING_WRITING)",
+        pk,
+        subj,
+    )
+
+
+def debug_log_queryset_vs_can_view_tests(user, practice_test: object, filtered_queryset) -> None:
+    """
+    When ``settings.LMS_AUTHZ_CONSISTENCY_CHECKS`` is True, log if SQL visibility disagrees
+    with :func:`can_view_tests` for this row (catches queryset / authorize drift).
+
+    If ``settings.LMS_AUTHZ_RAISE_ON_CONSISTENCY_DRIFT`` is True (default: same as ``DEBUG``),
+    raises :exc:`AccessConsistencyDrift`.
+    """
+    if not getattr(settings, "LMS_AUTHZ_CONSISTENCY_CHECKS", False):
+        return
+    subj = getattr(practice_test, "subject", None)
+    if not isinstance(subj, str):
+        return
+    try:
+        in_qs = filtered_queryset.filter(pk=getattr(practice_test, "pk", None)).exists()
+    except Exception:
+        return
+    can_see = can_view_tests(user, subj)
+    if in_qs != can_see:
+        msg = (
+            f"access consistency drift: user_id={getattr(user, 'pk', None)} "
+            f"test_id={getattr(practice_test, 'pk', None)} subject={subj!r} "
+            f"in_queryset={in_qs} can_view_tests={can_see}"
+        )
+        logger.warning(msg)
+        if getattr(settings, "LMS_AUTHZ_RAISE_ON_CONSISTENCY_DRIFT", False):
+            raise AccessConsistencyDrift(msg)
+
+
 def is_lms_staff_user(user) -> bool:
     perms = get_effective_permission_codenames(user)
     if not perms:
@@ -322,8 +592,8 @@ def authorize(user, permission_codename: str, *, subject: Optional[str] = None) 
 
     **Misuse guardrails:** If ``subject`` is provided for a domain-scoped permission, it must
     be a valid **platform** string; otherwise ``SubjectContractViolation`` is raised.
-    If ``subject`` is omitted when required, the call returns ``False`` (deny) and logs a
-    **warning** so missing wiring is visible in logs without changing HTTP semantics.
+    If ``subject`` is omitted when required, the call returns ``False`` (deny) and logs an
+    INFO line via ``access.authorize`` so missing wiring is visible in logs.
     """
     if not user or not getattr(user, "is_authenticated", False):
         return False
@@ -342,6 +612,12 @@ def authorize(user, permission_codename: str, *, subject: Optional[str] = None) 
     ):
         has_codename = True
     if not has_codename:
+        _authorize_log_denial(
+            "missing_permission_codename",
+            perm=permission_codename,
+            user_id=getattr(user, "pk", None),
+            role=role,
+        )
         return False
 
     if permission_codename not in constants.PERMISSIONS_REQUIRING_PLATFORM_SUBJECT:
@@ -351,13 +627,17 @@ def authorize(user, permission_codename: str, *, subject: Optional[str] = None) 
     if subject is None:
         if is_privileged:
             return True
-        logger.warning(
-            "authorize: missing subject= for required perm=%s role=%s user_id=%s "
-            "(pass constants.SUBJECT_*_PLATFORM or platform_subject_for_user(user))",
-            permission_codename,
-            role,
-            getattr(user, "pk", None),
+        _authorize_log_denial(
+            "missing_subject_argument",
+            perm=permission_codename,
+            user_id=getattr(user, "pk", None),
+            role=role,
         )
+        if getattr(settings, "LMS_AUTHZ_RAISE_ON_MISSING_SUBJECT", False):
+            raise SubjectContractViolation(
+                f"authorize() requires subject= for permission {permission_codename!r} "
+                f"(use constants.SUBJECT_*_PLATFORM or platform_subject_for_user(user))."
+            )
         return False
 
     validate_authorize_subject(subject)
@@ -367,54 +647,77 @@ def authorize(user, permission_codename: str, *, subject: Optional[str] = None) 
     if is_privileged:
         return True
 
-    if role in (
-        constants.ROLE_TEACHER,
-        constants.ROLE_ADMIN,
-        constants.ROLE_TEST_ADMIN,
-    ):
-        return user_domain_subject(user) == required and has_global_subject_access(user, required)
+    # admin / test_admin: global scope — no user.subject alignment for resource subject.
+    if role in (constants.ROLE_ADMIN, constants.ROLE_TEST_ADMIN):
+        return True
+
+    if role == constants.ROLE_TEACHER:
+        udom = user_domain_subject(user)
+        if udom != required:
+            _authorize_log_denial(
+                "actor_subject_mismatch",
+                perm=permission_codename,
+                user_id=getattr(user, "pk", None),
+                role=role,
+                required_domain=required,
+                user_domain=udom,
+            )
+            return False
+        if not has_global_subject_access(user, required):
+            _authorize_log_denial(
+                "no_global_useraccess_row",
+                perm=permission_codename,
+                user_id=getattr(user, "pk", None),
+                role=role,
+                domain=required,
+            )
+            return False
+        return True
 
     if role == constants.ROLE_STUDENT:
-        return has_global_subject_access(user, required)
+        if not has_global_subject_access(user, required):
+            _authorize_log_denial(
+                "student_no_subject_grant",
+                perm=permission_codename,
+                user_id=getattr(user, "pk", None),
+                domain=required,
+            )
+            return False
+        return True
 
+    _authorize_log_denial(
+        "unsupported_role",
+        perm=permission_codename,
+        user_id=getattr(user, "pk", None),
+        role=role,
+    )
     return False
 
 
 def can_browse_standalone_practice_library(user) -> bool:
-    """Staff library browser: requires ``manage_tests`` and a domain subject (via ``user.subject``)."""
+    """Staff library browser: global roles see full library; teachers use :func:`can_view_tests` for their subject."""
     perms = get_effective_permission_codenames(user)
-    if not perms:
-        return False
     if constants.WILDCARD in perms:
         return True
-    if constants.PERM_MANAGE_TESTS not in perms:
+    if is_global_scope_staff(user):
+        return constants.PERM_MANAGE_TESTS in perms or constants.PERM_ASSIGN_ACCESS in perms
+    plat = platform_subject_for_user(user)
+    if not plat:
         return False
-    if normalized_role(user) == constants.ROLE_STUDENT:
-        return False
-    return user_domain_subject(user) is not None
+    return can_view_tests(user, plat)
 
 
 def filter_practice_tests_for_user(user, queryset):
-    role = normalized_role(user)
-    perms = get_effective_permission_codenames(user)
-    if not perms:
+    """
+    SQL filter **derived only** from :func:`visible_practice_test_platform_subjects_for_query`
+    (which calls :func:`can_view_tests`). No parallel role / subject branching here.
+    """
+    subjs = visible_practice_test_platform_subjects_for_query(user)
+    if subjs is not None and not subjs:
         return queryset.none()
-    if constants.WILDCARD in perms:
+    if subjs is None:
         return queryset
-
-    if constants.PERM_MANAGE_TESTS in perms and role in (
-        constants.ROLE_TEACHER,
-        constants.ROLE_ADMIN,
-        constants.ROLE_TEST_ADMIN,
-    ):
-        dom = user_domain_subject(user)
-        if dom == constants.DOMAIN_MATH:
-            return queryset.filter(subject=constants.SUBJECT_MATH_PLATFORM)
-        if dom == constants.DOMAIN_ENGLISH:
-            return queryset.filter(subject=constants.SUBJECT_ENGLISH_PLATFORM)
-        return queryset.none()
-
-    return queryset.none()
+    return queryset.filter(subject__in=subjs)
 
 
 def filter_pastpaper_packs_for_user(user, queryset):
@@ -422,19 +725,17 @@ def filter_pastpaper_packs_for_user(user, queryset):
 
     from exams.models import PracticeTest
 
-    perms = get_effective_permission_codenames(user)
-    if constants.WILDCARD in perms:
-        return queryset
+    subjs = visible_practice_test_platform_subjects_for_query(user)
+    if subjs is not None and not subjs:
+        return queryset.none()
 
     visible = filter_practice_tests_for_user(
         user,
         PracticeTest.objects.filter(mock_exam__isnull=True),
     )
     with_sections = queryset.filter(sections__in=visible)
-    if constants.PERM_MANAGE_TESTS in perms:
-        empty = queryset.annotate(_section_count=Count("sections")).filter(_section_count=0)
-        return (with_sections | empty).distinct()
-    return with_sections.distinct()
+    empty = queryset.annotate(_section_count=Count("sections")).filter(_section_count=0)
+    return (with_sections | empty).distinct()
 
 
 def filter_mock_exams_for_user(user, queryset):
@@ -442,27 +743,25 @@ def filter_mock_exams_for_user(user, queryset):
 
     from exams.models import PracticeTest
 
-    perms = get_effective_permission_codenames(user)
-    if constants.WILDCARD in perms:
-        return queryset
-    if constants.PERM_MANAGE_TESTS not in perms and constants.PERM_ASSIGN_ACCESS not in perms:
+    subjs = visible_practice_test_platform_subjects_for_query(user)
+    if subjs is not None and not subjs:
         return queryset.none()
 
     visible_tests = filter_practice_tests_for_user(user, PracticeTest.objects.all())
     with_tests = queryset.filter(tests__in=visible_tests)
-    if constants.PERM_MANAGE_TESTS in perms:
-        empty_shells = queryset.annotate(_tc=Count("tests")).filter(_tc=0)
-        return (with_tests | empty_shells).distinct()
-    return with_tests.distinct()
+    empty_shells = queryset.annotate(_tc=Count("tests")).filter(_tc=0)
+    return (with_tests | empty_shells).distinct()
 
 
 def user_can_assign_as_class_teacher(user) -> bool:
-    subj = platform_subject_for_user(user)
-    return authorize(user, constants.PERM_MANAGE_USERS, subject=subj) or authorize(
-        user, constants.PERM_CREATE_CLASSROOM, subject=subj
+    probe = actor_subject_probe_for_domain_perm(user)
+    if not probe:
+        return False
+    return authorize(user, constants.PERM_MANAGE_USERS, subject=probe) or authorize(
+        user, constants.PERM_CREATE_CLASSROOM, subject=probe
     )
 
 
 def staff_must_have_subject(user) -> bool:
-    role = normalized_role(user)
-    return role in (constants.ROLE_TEACHER, constants.ROLE_ADMIN, constants.ROLE_TEST_ADMIN)
+    """Only **teachers** must carry a domain ``subject``; global roles do not."""
+    return normalized_role(user) == constants.ROLE_TEACHER

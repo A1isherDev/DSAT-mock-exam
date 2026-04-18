@@ -34,7 +34,7 @@ class GrantAccessView(APIView):
 
     def post(self, request):
         actor_role = normalized_role(request.user)
-        if actor_role not in (C.ROLE_SUPER_ADMIN, C.ROLE_ADMIN, C.ROLE_TEACHER):
+        if actor_role == C.ROLE_STUDENT:
             return Response({"detail": "Forbidden."}, status=status.HTTP_403_FORBIDDEN)
 
         subject = str(request.data.get("subject") or "").strip().lower()
@@ -46,6 +46,12 @@ class GrantAccessView(APIView):
             return Response({"detail": "Invalid subject."}, status=status.HTTP_400_BAD_REQUEST)
 
         if not authorize(request.user, C.PERM_ASSIGN_ACCESS, subject=platform_subj):
+            logger.info(
+                "access_grant denied_by_authorize actor_id=%s actor_role=%s subject=%s",
+                getattr(request.user, "pk", None),
+                actor_role,
+                subject,
+            )
             return Response({"detail": "Forbidden."}, status=status.HTTP_403_FORBIDDEN)
 
         raw_uid = request.data.get("userId", request.data.get("user_id"))
@@ -54,7 +60,14 @@ class GrantAccessView(APIView):
         except (TypeError, ValueError):
             return Response({"detail": "userId is required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if actor_role != C.ROLE_SUPER_ADMIN and user_domain_subject(request.user) != subject:
+        # Teachers are restricted to their domain; global roles may grant any subject.
+        if actor_role == C.ROLE_TEACHER and user_domain_subject(request.user) != subject:
+            logger.info(
+                "access_grant denied_subject_mismatch actor_id=%s actor_domain=%s requested=%s",
+                getattr(request.user, "pk", None),
+                user_domain_subject(request.user),
+                subject,
+            )
             return Response({"detail": "Subject mismatch."}, status=status.HTTP_403_FORBIDDEN)
 
         classroom_id = request.data.get("classroomId", request.data.get("classroom_id"))
@@ -89,7 +102,7 @@ class GrantAccessView(APIView):
                     status=status.HTTP_403_FORBIDDEN,
                 )
 
-        if cid is None and actor_role != C.ROLE_SUPER_ADMIN:
+        if cid is None and actor_role == C.ROLE_TEACHER:
             if not has_global_subject_access(request.user, subject):
                 return Response(
                     {

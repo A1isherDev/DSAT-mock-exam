@@ -1,16 +1,23 @@
 """Security-critical tests for RBAC + ``UserAccess`` helpers."""
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 from access import constants as C
 from access.exceptions import SubjectContractViolation
-from access.models import UserAccess
+from access.models import Permission, UserAccess, UserPermission
 from access.services import (
+    access_level_for_practice_test,
     authorize,
+    can_edit_multi_subject_object,
+    can_edit_tests,
+    can_view_tests,
+    filter_practice_tests_for_user,
     has_access_for_classroom,
     has_global_subject_access,
+    normalized_role,
     student_has_any_subject_grant,
+    visible_practice_test_platform_subjects_for_query,
 )
 
 User = get_user_model()
@@ -137,22 +144,156 @@ class AccessPrimitivesTests(TestCase):
         )
         self.assertFalse(has_global_subject_access(self.math_teacher, C.DOMAIN_ENGLISH))
 
-    def test_test_admin_requires_matching_domain_for_manage_tests(self):
-        ta_math = User.objects.create_user(
+    def test_global_test_admin_authorizes_any_platform_subject(self):
+        ta = User.objects.create_user(
             email="ta_math@example.com",
             password="x",
             role=C.ROLE_TEST_ADMIN,
+        )
+        self.assertTrue(
+            authorize(ta, C.PERM_MANAGE_TESTS, subject=C.SUBJECT_MATH_PLATFORM)
+        )
+        self.assertTrue(
+            authorize(ta, C.PERM_MANAGE_TESTS, subject=C.SUBJECT_ENGLISH_PLATFORM)
+        )
+
+    def test_normalized_role_maps_legacy_strings(self):
+        u = User.objects.create_user(
+            email="legacy_t@example.com",
+            password="x",
+            role=C.ROLE_TEACHER,
+            subject=C.DOMAIN_MATH,
+        )
+        User.objects.filter(pk=u.pk).update(role="math_teacher")
+        u.refresh_from_db()
+        self.assertEqual(normalized_role(u), C.ROLE_TEACHER)
+
+    @override_settings(LMS_AUTHZ_RAISE_ON_MISSING_SUBJECT=True)
+    def test_authorize_raises_when_strict_missing_subject(self):
+        with self.assertRaises(SubjectContractViolation):
+            authorize(self.math_teacher, C.PERM_MANAGE_TESTS)
+
+    def test_assign_only_teacher_can_view_not_edit(self):
+        u = User.objects.create_user(
+            email="assign_only@example.com",
+            password="x",
+            role=C.ROLE_TEACHER,
             subject=C.DOMAIN_MATH,
         )
         UserAccess.objects.create(
-            user=ta_math,
+            user=u,
             subject=C.DOMAIN_MATH,
             classroom=None,
-            granted_by=ta_math,
+            granted_by=u,
         )
-        self.assertTrue(
-            authorize(ta_math, C.PERM_MANAGE_TESTS, subject=C.SUBJECT_MATH_PLATFORM)
+        p_mt, _ = Permission.objects.get_or_create(
+            codename=C.PERM_MANAGE_TESTS,
+            defaults={"name": "Manage tests"},
         )
-        self.assertFalse(
-            authorize(ta_math, C.PERM_MANAGE_TESTS, subject=C.SUBJECT_ENGLISH_PLATFORM)
+        p_aa, _ = Permission.objects.get_or_create(
+            codename=C.PERM_ASSIGN_ACCESS,
+            defaults={"name": "Assign access"},
         )
+        UserPermission.objects.update_or_create(
+            user=u,
+            permission=p_mt,
+            defaults={"granted": False},
+        )
+        UserPermission.objects.update_or_create(
+            user=u,
+            permission=p_aa,
+            defaults={"granted": True},
+        )
+        self.assertTrue(can_view_tests(u, C.SUBJECT_MATH_PLATFORM))
+        self.assertFalse(can_edit_tests(u, C.SUBJECT_MATH_PLATFORM))
+        from exams.models import PracticeTest
+
+        pt = PracticeTest.objects.create(subject=C.SUBJECT_MATH_PLATFORM, skip_default_modules=True)
+        self.assertEqual(access_level_for_practice_test(u, pt), "view")
+
+    def test_test_admin_access_level_view_vs_edit(self):
+        from exams.models import PracticeTest
+
+        ta = User.objects.create_user(
+            email="ta_lvl@example.com",
+            password="x",
+            role=C.ROLE_TEST_ADMIN,
+        )
+        pt = PracticeTest.objects.create(subject=C.SUBJECT_MATH_PLATFORM, skip_default_modules=True)
+        self.assertEqual(access_level_for_practice_test(ta, pt), "edit")
+
+    def test_global_staff_visible_queryset_unfiltered(self):
+        admin = User.objects.create_user(
+            email="adm@example.com",
+            password="x",
+            role=C.ROLE_ADMIN,
+        )
+        v = visible_practice_test_platform_subjects_for_query(admin)
+        self.assertIsNone(v)
+
+    def test_filter_queryset_matches_can_view_tests(self):
+        from exams.models import PracticeTest
+
+        pt = PracticeTest.objects.create(subject=C.SUBJECT_MATH_PLATFORM, skip_default_modules=True)
+        qs = filter_practice_tests_for_user(
+            self.math_teacher, PracticeTest.objects.filter(pk=pt.pk)
+        )
+        self.assertTrue(qs.exists())
+        self.assertTrue(can_view_tests(self.math_teacher, C.SUBJECT_MATH_PLATFORM))
+
+    def test_visible_platform_subjects_locked_to_can_view_tests(self):
+        v = visible_practice_test_platform_subjects_for_query(self.math_teacher)
+        self.assertEqual(v, frozenset([C.SUBJECT_MATH_PLATFORM]))
+
+    def test_can_edit_multi_subject_pastpaper_requires_all_sections(self):
+        from exams.models import PastpaperPack, PracticeTest
+
+        pack = PastpaperPack.objects.create(title="dual")
+        PracticeTest.objects.create(
+            pastpaper_pack=pack,
+            subject=C.SUBJECT_MATH_PLATFORM,
+            skip_default_modules=True,
+        )
+        PracticeTest.objects.create(
+            pastpaper_pack=pack,
+            subject=C.SUBJECT_ENGLISH_PLATFORM,
+            skip_default_modules=True,
+        )
+        self.assertFalse(can_edit_multi_subject_object(self.math_teacher, pack))
+
+    def test_can_edit_multi_subject_mock_requires_all_sections(self):
+        from exams.models import MockExam, PracticeTest
+
+        exam = MockExam.objects.create(title="dual", kind=MockExam.KIND_MOCK_SAT)
+        PracticeTest.objects.create(
+            mock_exam=exam,
+            subject=C.SUBJECT_MATH_PLATFORM,
+            skip_default_modules=True,
+        )
+        PracticeTest.objects.create(
+            mock_exam=exam,
+            subject=C.SUBJECT_ENGLISH_PLATFORM,
+            skip_default_modules=True,
+        )
+        self.assertFalse(can_edit_multi_subject_object(self.math_teacher, exam))
+
+    def test_global_test_admin_can_edit_multi_subject_shell(self):
+        from exams.models import MockExam, PracticeTest
+
+        ta = User.objects.create_user(
+            email="ta_multi@example.com",
+            password="x",
+            role=C.ROLE_TEST_ADMIN,
+        )
+        exam = MockExam.objects.create(title="dual2", kind=MockExam.KIND_MOCK_SAT)
+        PracticeTest.objects.create(
+            mock_exam=exam,
+            subject=C.SUBJECT_MATH_PLATFORM,
+            skip_default_modules=True,
+        )
+        PracticeTest.objects.create(
+            mock_exam=exam,
+            subject=C.SUBJECT_ENGLISH_PLATFORM,
+            skip_default_modules=True,
+        )
+        self.assertTrue(can_edit_multi_subject_object(ta, exam))

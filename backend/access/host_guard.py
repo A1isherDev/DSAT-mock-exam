@@ -24,8 +24,7 @@ def _host_kind(host: str, cfg: HostGuardConfig) -> str:
 
     ``questions.mastersat.uz`` and ``www.questions.mastersat.uz`` (and ``api.questions.…``)
     must all resolve to ``questions``. A plain ``startswith("questions.")`` misses
-    ``www.questions.…``, which kept ``lms_console=main`` and broke ``_is_questions_console``
-    (wrong admin queryset / 403 on authoring APIs depending on path).
+    ``www.questions.…``, which kept ``lms_console=main`` and mislabeled the console in middleware.
     """
     h = (host or "").split(":")[0].lower()
     labels = [p for p in h.split(".") if p]
