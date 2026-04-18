@@ -18,8 +18,6 @@ from .services import (
     filter_pastpaper_packs_for_user,
     filter_practice_tests_for_user,
     get_effective_permission_codenames,
-    is_global_scope_staff,
-    platform_subject_for_user,
 )
 
 
@@ -46,9 +44,7 @@ class PracticeTestAdminAccess(BasePermission):
                 return False
             if constants.WILDCARD in perms:
                 return True
-            if is_global_scope_staff(u):
-                return constants.PERM_MANAGE_TESTS in perms or constants.PERM_ASSIGN_ACCESS in perms
-            plat = platform_subject_for_user(u)
+            plat = actor_subject_probe_for_domain_perm(u)
             if not plat:
                 return False
             return can_view_tests(u, plat)
@@ -83,9 +79,7 @@ class PastpaperPackAdminAccess(BasePermission):
                 return False
             if constants.WILDCARD in perms:
                 return True
-            if is_global_scope_staff(u):
-                return constants.PERM_MANAGE_TESTS in perms or constants.PERM_ASSIGN_ACCESS in perms
-            plat = platform_subject_for_user(u)
+            plat = actor_subject_probe_for_domain_perm(u)
             if not plat:
                 return False
             return can_view_tests(u, plat)
@@ -147,9 +141,7 @@ class MockExamAdminAccess(BasePermission):
                 return False
             if constants.WILDCARD in perms:
                 return True
-            if is_global_scope_staff(u):
-                return constants.PERM_MANAGE_TESTS in perms or constants.PERM_ASSIGN_ACCESS in perms
-            plat = platform_subject_for_user(u)
+            plat = actor_subject_probe_for_domain_perm(u)
             if not plat:
                 return False
             return can_view_tests(u, plat)

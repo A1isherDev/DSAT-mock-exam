@@ -40,6 +40,8 @@ LMS_AUTHZ_CONSISTENCY_CHECKS = _env_bool(
 LMS_AUTHZ_RAISE_ON_CONSISTENCY_DRIFT = _env_bool(
     'LMS_AUTHZ_RAISE_ON_CONSISTENCY_DRIFT', default_when_unset=DEBUG
 )
+# Log role/subject and queryset counts around test-library filters (set True to debug prod issues).
+LMS_AUTHZ_DEBUG_FILTERS = _env_bool('LMS_AUTHZ_DEBUG_FILTERS', default_when_unset=False)
 
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '')

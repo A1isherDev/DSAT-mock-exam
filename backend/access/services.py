@@ -384,6 +384,9 @@ def can_edit_tests(user, platform_subject: str) -> bool:
     """
     **Edit** authoring (questions, shells, destructive ops): ``manage_tests`` / ``PERM_EDIT_TESTS`` only.
 
+    **Global** staff (admin / test_admin / super_admin): no resource-subject alignment — edit is
+    allowed iff the user has ``manage_tests`` (wildcard included). **Teachers** use ``authorize``.
+
     Authorization is **never** derived from client cookies or headers — only ``User`` + DB permissions.
     """
     if not user or not getattr(user, "is_authenticated", False):
@@ -396,12 +399,17 @@ def can_edit_tests(user, platform_subject: str) -> bool:
         return True
     if normalized_role(user) == constants.ROLE_STUDENT:
         return False
+    if is_global_scope_staff(user):
+        return constants.PERM_MANAGE_TESTS in perms
     return authorize(user, constants.PERM_EDIT_TESTS, subject=platform_subject)
 
 
 def can_view_tests(user, platform_subject: str) -> bool:
     """
     **View** test library rows (list/retrieve): edit **or** ``assign_access`` in the same platform subject.
+
+    **Global** staff: library view does **not** depend on ``platform_subject`` (role-global RBAC);
+    requires ``manage_tests`` or ``assign_access``. **Teachers** are scoped to their domain subject.
 
     Do not use ``assign_access`` alone to imply edit — use :func:`can_edit_tests`.
     """
@@ -415,6 +423,8 @@ def can_view_tests(user, platform_subject: str) -> bool:
         return True
     if normalized_role(user) == constants.ROLE_STUDENT:
         return False
+    if is_global_scope_staff(user):
+        return constants.PERM_MANAGE_TESTS in perms or constants.PERM_ASSIGN_ACCESS in perms
     if can_edit_tests(user, platform_subject):
         return True
     return authorize(user, constants.PERM_ASSIGN_ACCESS, subject=platform_subject)
@@ -438,7 +448,7 @@ def access_level_for_practice_test(user, practice_test: object) -> Literal["none
         return "none"
     if can_edit_tests(user, subj):
         return "edit"
-    if authorize(user, constants.PERM_ASSIGN_ACCESS, subject=subj):
+    if can_view_tests(user, subj):
         return "view"
     return "none"
 
@@ -502,11 +512,13 @@ def visible_practice_test_platform_subjects_for_query(user) -> Optional[frozense
     """
     Platform subject(s) that may appear on **PracticeTest** rows visible to this user in SQL.
 
-    * ``None`` — no subject filter (wildcard / **global** admin & test_admin with library perms).
+    * ``None`` — no ``PracticeTest.subject`` filter (wildcard, or **global** staff: ``user.subject`` is
+      NULL; SQL must not try to match domain subject on content rows).
     * ``frozenset()`` — user may not see any tests (queryset should be empty).
     * ``frozenset({ "MATH" })`` etc. — **teacher**: one platform subject.
 
-    **Single source of truth** with :func:`can_view_tests` (global staff get unfiltered querysets).
+    **Single source of truth** with :func:`can_view_tests` (global staff: unfiltered querysets when
+    they have effective permissions).
     """
     if not user or not getattr(user, "is_authenticated", False):
         return frozenset()
@@ -515,10 +527,11 @@ def visible_practice_test_platform_subjects_for_query(user) -> Optional[frozense
         return frozenset()
     if constants.WILDCARD in perms:
         return None
+    # Global roles never carry user.subject; SQL must not filter the library by subject.
     if is_global_scope_staff(user):
-        if constants.PERM_MANAGE_TESTS in perms or constants.PERM_ASSIGN_ACCESS in perms:
-            return None
-        return frozenset()
+        if not can_view_tests(user, constants.SUBJECT_MATH_PLATFORM):
+            return frozenset()
+        return None
     plat = platform_subject_for_user(user)
     if not plat:
         return frozenset()
@@ -695,16 +708,41 @@ def authorize(user, permission_codename: str, *, subject: Optional[str] = None) 
 
 
 def can_browse_standalone_practice_library(user) -> bool:
-    """Staff library browser: global roles see full library; teachers use :func:`can_view_tests` for their subject."""
+    """Staff library browser: same visibility as :func:`can_view_tests` (probe subject for globals)."""
     perms = get_effective_permission_codenames(user)
     if constants.WILDCARD in perms:
         return True
-    if is_global_scope_staff(user):
-        return constants.PERM_MANAGE_TESTS in perms or constants.PERM_ASSIGN_ACCESS in perms
-    plat = platform_subject_for_user(user)
+    plat = actor_subject_probe_for_domain_perm(user)
     if not plat:
         return False
     return can_view_tests(user, plat)
+
+
+def _debug_log_test_library_filter(
+    name: str,
+    user,
+    queryset_before,
+    queryset_after,
+) -> None:
+    if not getattr(settings, "LMS_AUTHZ_DEBUG_FILTERS", False):
+        return
+    try:
+        n_before = queryset_before.count()
+    except Exception as exc:
+        n_before = f"<err:{exc}>"
+    try:
+        n_after = queryset_after.count()
+    except Exception as exc:
+        n_after = f"<err:{exc}>"
+    logger.info(
+        "access.test_library_filter %s user_id=%s role=%r subject=%r count_before=%s count_after=%s",
+        name,
+        getattr(user, "pk", None),
+        getattr(user, "role", None),
+        getattr(user, "subject", None),
+        n_before,
+        n_after,
+    )
 
 
 def filter_practice_tests_for_user(user, queryset):
@@ -714,10 +752,16 @@ def filter_practice_tests_for_user(user, queryset):
     """
     subjs = visible_practice_test_platform_subjects_for_query(user)
     if subjs is not None and not subjs:
-        return queryset.none()
+        out = queryset.none()
+        _debug_log_test_library_filter("filter_practice_tests_for_user", user, queryset, out)
+        return out
     if subjs is None:
-        return queryset
-    return queryset.filter(subject__in=subjs)
+        out = queryset
+        _debug_log_test_library_filter("filter_practice_tests_for_user", user, queryset, out)
+        return out
+    out = queryset.filter(subject__in=subjs)
+    _debug_log_test_library_filter("filter_practice_tests_for_user", user, queryset, out)
+    return out
 
 
 def filter_pastpaper_packs_for_user(user, queryset):
@@ -727,7 +771,9 @@ def filter_pastpaper_packs_for_user(user, queryset):
 
     subjs = visible_practice_test_platform_subjects_for_query(user)
     if subjs is not None and not subjs:
-        return queryset.none()
+        out = queryset.none()
+        _debug_log_test_library_filter("filter_pastpaper_packs_for_user", user, queryset, out)
+        return out
 
     visible = filter_practice_tests_for_user(
         user,
@@ -735,7 +781,9 @@ def filter_pastpaper_packs_for_user(user, queryset):
     )
     with_sections = queryset.filter(sections__in=visible)
     empty = queryset.annotate(_section_count=Count("sections")).filter(_section_count=0)
-    return (with_sections | empty).distinct()
+    out = (with_sections | empty).distinct()
+    _debug_log_test_library_filter("filter_pastpaper_packs_for_user", user, queryset, out)
+    return out
 
 
 def filter_mock_exams_for_user(user, queryset):
@@ -745,12 +793,16 @@ def filter_mock_exams_for_user(user, queryset):
 
     subjs = visible_practice_test_platform_subjects_for_query(user)
     if subjs is not None and not subjs:
-        return queryset.none()
+        out = queryset.none()
+        _debug_log_test_library_filter("filter_mock_exams_for_user", user, queryset, out)
+        return out
 
     visible_tests = filter_practice_tests_for_user(user, PracticeTest.objects.all())
     with_tests = queryset.filter(tests__in=visible_tests)
     empty_shells = queryset.annotate(_tc=Count("tests")).filter(_tc=0)
-    return (with_tests | empty_shells).distinct()
+    out = (with_tests | empty_shells).distinct()
+    _debug_log_test_library_filter("filter_mock_exams_for_user", user, queryset, out)
+    return out
 
 
 def user_can_assign_as_class_teacher(user) -> bool:
