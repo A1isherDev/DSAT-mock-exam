@@ -70,13 +70,13 @@ export function SearchableSelect<T>({
       {open && !disabled ? (
         <button
           type="button"
-          className="fixed inset-0 z-40 cursor-default bg-slate-900/10"
+          className="fixed inset-0 z-[100] cursor-default bg-slate-900/10"
           aria-label="Close"
           onClick={() => setOpen(false)}
         />
       ) : null}
       {open && !disabled ? (
-        <div className="absolute z-50 mt-1 w-full rounded-xl border border-slate-200 bg-white shadow-xl overflow-hidden">
+        <div className="absolute z-[110] mt-1 w-full rounded-xl border border-slate-200 bg-white shadow-xl overflow-hidden">
           <div className="p-2 border-b border-slate-100 bg-slate-50/80">
             <div className="relative">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />

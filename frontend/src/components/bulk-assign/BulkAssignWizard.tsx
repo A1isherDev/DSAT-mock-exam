@@ -803,8 +803,12 @@ export function BulkAssignWizard({
                           <input
                             type="checkbox"
                             className="rounded border-slate-300"
-                            disabled={!meta.selectable}
-                            checked={checked && meta.selectable}
+                            checked={checked}
+                            title={
+                              meta.selectable
+                                ? undefined
+                                : `${meta.reason ?? "May be skipped"} — server only grants when subject access exists`
+                            }
                             onChange={(e) => {
                               if (e.target.checked) setSelectedUserIds((prev) => [...new Set([...prev, u.id])]);
                               else setSelectedUserIds((prev) => prev.filter((id) => id !== u.id));
