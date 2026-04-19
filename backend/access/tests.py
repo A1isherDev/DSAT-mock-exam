@@ -12,6 +12,7 @@ from access.services import (
     can_edit_multi_subject_object,
     can_edit_tests,
     can_view_tests,
+    filter_pastpaper_packs_for_user,
     filter_practice_tests_for_user,
     has_access_for_classroom,
     has_global_subject_access,
@@ -297,3 +298,23 @@ class AccessPrimitivesTests(TestCase):
             skip_default_modules=True,
         )
         self.assertTrue(can_edit_multi_subject_object(ta, exam))
+
+    def test_super_admin_sees_all_pastpaper_pack_rows(self):
+        """Regression: global roles must not rely on sections__in + queryset | union (can be empty)."""
+        from exams.models import PastpaperPack, PracticeTest
+
+        su = User.objects.create_user(
+            email="su_pp@example.com",
+            password="x",
+            role=C.ROLE_SUPER_ADMIN,
+        )
+        pack = PastpaperPack.objects.create(title="October form")
+        PracticeTest.objects.create(
+            pastpaper_pack=pack,
+            subject=C.SUBJECT_MATH_PLATFORM,
+            mock_exam=None,
+            skip_default_modules=True,
+        )
+        qs = filter_pastpaper_packs_for_user(su, PastpaperPack.objects.all())
+        self.assertEqual(qs.count(), 1)
+        self.assertTrue(qs.filter(pk=pack.pk).exists())

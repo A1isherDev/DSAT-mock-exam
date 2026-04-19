@@ -82,6 +82,15 @@ const api = axios.create({
     baseURL: API_URL,
 });
 
+/** DRF may return a bare array or a paginated ``{ results: [...] }`` object. */
+function unwrapAdminList<T>(data: unknown): T[] {
+    if (Array.isArray(data)) return data as T[];
+    if (data && typeof data === 'object' && Array.isArray((data as { results?: unknown }).results)) {
+        return (data as { results: T[] }).results;
+    }
+    return [];
+}
+
 api.interceptors.request.use((config) => {
     const token = Cookies.get('access_token');
     if (token) {
@@ -442,7 +451,10 @@ export const adminApi = {
     },
 
     // Mock Exams (top-level grouping)
-    getMockExams: async () => { const r = await api.get('/exams/admin/mock-exams/'); return r.data; },
+    getMockExams: async () => {
+        const r = await api.get('/exams/admin/mock-exams/');
+        return unwrapAdminList(r.data);
+    },
     createMockExam: async (data: object) => { const r = await api.post('/exams/admin/mock-exams/', data); return r.data; },
     updateMockExam: async (id: number, data: object) => { const r = await api.patch(`/exams/admin/mock-exams/${id}/`, data); return r.data; },
     deleteMockExam: async (id: number) => { await api.delete(`/exams/admin/mock-exams/${id}/`); },
@@ -498,7 +510,7 @@ export const adminApi = {
 
     getPastpaperPacks: async () => {
         const r = await api.get('/exams/admin/pastpaper-packs/');
-        return r.data;
+        return unwrapAdminList(r.data);
     },
     createPastpaperPack: async (data: object) => {
         const r = await api.post('/exams/admin/pastpaper-packs/', data);
@@ -520,7 +532,7 @@ export const adminApi = {
         const r = await api.get('/exams/admin/tests/', {
             params: standaloneOnly ? { standalone: '1' } : undefined,
         });
-        return r.data;
+        return unwrapAdminList(r.data);
     },
     createPracticeTest: async (data: Record<string, unknown>) => {
         const r = await api.post('/exams/admin/tests/', { mock_exam: null, ...data });

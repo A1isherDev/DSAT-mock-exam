@@ -775,6 +775,13 @@ def filter_pastpaper_packs_for_user(user, queryset):
         _debug_log_test_library_filter("filter_pastpaper_packs_for_user", user, queryset, out)
         return out
 
+    # Wildcard / global staff: unfiltered library — return all packs. Do not use
+    # ``sections__in`` + queryset union (``|``): that has produced empty results for some
+    # PostgreSQL / ORM combinations even when rows exist.
+    if subjs is None:
+        _debug_log_test_library_filter("filter_pastpaper_packs_for_user", user, queryset, queryset)
+        return queryset
+
     visible = filter_practice_tests_for_user(
         user,
         PracticeTest.objects.filter(mock_exam__isnull=True),
@@ -796,6 +803,10 @@ def filter_mock_exams_for_user(user, queryset):
         out = queryset.none()
         _debug_log_test_library_filter("filter_mock_exams_for_user", user, queryset, out)
         return out
+
+    if subjs is None:
+        _debug_log_test_library_filter("filter_mock_exams_for_user", user, queryset, queryset)
+        return queryset
 
     visible_tests = filter_practice_tests_for_user(user, PracticeTest.objects.all())
     with_tests = queryset.filter(tests__in=visible_tests)
