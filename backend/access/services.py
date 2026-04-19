@@ -5,11 +5,13 @@ LMS authorization — **use these entry points and no ad‑hoc shortcuts**.
 
 **LOCKED CONTRACT (regressions)**
 
-* **View** test content: :func:`can_view_tests` only. **Edit** test content:
-  :func:`can_edit_tests` only. Do **not** gate admin test APIs on raw ``user.role`` or ad-hoc
-  ``QuerySet.filter(subject=…)`` outside :func:`filter_practice_tests_for_user` (which derives
-  its subject list solely from :func:`visible_practice_test_platform_subjects_for_query` →
-  ``can_view_tests``).
+* **Questions authoring** (``/api/exams/admin/…``): :func:`can_manage_questions` — students denied;
+  all other authenticated roles see full querysets. Student/portal reads still use
+  :func:`filter_practice_tests_for_user` / :func:`can_view_tests` as below.
+
+* **View** test content (portal / library): :func:`can_view_tests`. **Edit** test content:
+  :func:`can_edit_tests`. Public/portal querysets use :func:`filter_practice_tests_for_user`
+  (from :func:`visible_practice_test_platform_subjects_for_query`).
 
 * **Composite shells** (mock exams, pastpaper packs): use :func:`can_edit_multi_subject_object`
   or :func:`can_assign_all_platform_subjects_in_mock` so every underlying platform subject is
@@ -125,6 +127,18 @@ def normalized_role(user) -> str:
     if v in _LEGACY_ROLE_ALIASES:
         return _LEGACY_ROLE_ALIASES[v]
     return constants.ROLE_STUDENT
+
+
+def can_manage_questions(user) -> bool:
+    """
+    Questions authoring API (``/api/exams/admin/...``): allow any authenticated non-student
+    (admin, test_admin, teacher, super_admin, etc.). Deny students and anonymous users.
+    """
+    if not user or not getattr(user, "is_authenticated", False):
+        return False
+    if getattr(user, "is_superuser", False):
+        return True
+    return normalized_role(user) != constants.ROLE_STUDENT
 
 
 def bulk_assign_request_platform_subjects(data: object) -> frozenset[str]:

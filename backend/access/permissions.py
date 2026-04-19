@@ -8,8 +8,22 @@ from . import constants
 from .services import (
     actor_subject_probe_for_domain_perm,
     authorize,
+    can_manage_questions,
     get_effective_permission_codenames,
 )
+
+
+class CanManageQuestions(BasePermission):
+    """
+    CRUD on ``/api/exams/admin/`` (mocks, pastpapers, tests, modules, questions).
+    Any authenticated user except ``student``; Django superusers always allowed.
+    """
+
+    def has_permission(self, request, view):
+        return can_manage_questions(request.user)
+
+    def has_object_permission(self, request, view, obj):
+        return can_manage_questions(request.user)
 
 
 class HasLMSPermission(BasePermission):

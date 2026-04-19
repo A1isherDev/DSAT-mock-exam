@@ -14,23 +14,18 @@ import json
 from django.db.models import Prefetch
 
 from access import constants as acc_const
-from access.permissions import RequiresSubmitTest
+from access.permissions import CanManageQuestions, RequiresSubmitTest
 from access.policies import (
     BulkAssignAccess,
     BulkAssignmentHistoryAccess,
-    MockExamAdminAccess,
-    ModuleNestedAdminAccess,
-    PastpaperPackAdminAccess,
-    PracticeTestAdminAccess,
-    QuestionNestedAdminAccess,
 )
 from access.services import (
     actor_subject_probe_for_domain_perm,
     authorize,
     bulk_assign_request_platform_subjects,
     can_browse_standalone_practice_library,
+    can_manage_questions,
     filter_mock_exams_for_user,
-    filter_pastpaper_packs_for_user,
     filter_practice_tests_for_user,
     get_effective_permission_codenames,
     normalized_role,
@@ -506,12 +501,14 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
 # ── Admin CRUD Viewsets ───────────────────────────────────────────────────────
 
 class AdminMockExamViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticated, MockExamAdminAccess]
+    permission_classes = [IsAuthenticated, CanManageQuestions]
     serializer_class = AdminMockExamSerializer
 
     def get_queryset(self):
         base = MockExam.objects.all().prefetch_related("tests__modules")
-        return filter_mock_exams_for_user(self.request.user, base)
+        if not can_manage_questions(self.request.user):
+            return base.none()
+        return base
 
     def perform_create(self, serializer):
         exam = serializer.save()
@@ -570,40 +567,12 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        can_all_sections = tests and all(
-            authorize(request.user, acc_const.PERM_ASSIGN_ACCESS, subject=t.subject)
-            for t in tests
-        )
-
-        if can_all_sections or not tests:
-            exam.assigned_users.set(users)
-            for test in tests:
-                test.assigned_users.set(users)
-            portal = PortalMockExam.objects.filter(mock_exam=exam).first()
-            if portal:
-                portal.assigned_users.set(users)
-        else:
-            touched = False
-            for test in tests:
-                if authorize(
-                    request.user, acc_const.PERM_ASSIGN_ACCESS, subject=test.subject
-                ):
-                    test.assigned_users.set(users)
-                    touched = True
-            if touched:
-                exam.assigned_users.add(*users)
-                portal, _ = PortalMockExam.objects.get_or_create(
-                    mock_exam=exam,
-                    defaults={"is_active": bool(exam.is_published)},
-                )
-                portal.assigned_users.add(*users)
-            elif request.data.get("user_ids"):
-                return Response(
-                    {
-                        "detail": "You cannot assign student access for any section of this mock with your permissions."
-                    },
-                    status=status.HTTP_403_FORBIDDEN,
-                )
+        exam.assigned_users.set(users)
+        for test in tests:
+            test.assigned_users.set(users)
+        portal = PortalMockExam.objects.filter(mock_exam=exam).first()
+        if portal:
+            portal.assigned_users.set(exam.assigned_users.all())
 
         actor = request.user
         if getattr(actor, "is_superuser", False) or normalized_role(actor) == acc_const.ROLE_SUPER_ADMIN:
@@ -687,7 +656,7 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
 
 
 class AdminPastpaperPackViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticated, PastpaperPackAdminAccess]
+    permission_classes = [IsAuthenticated, CanManageQuestions]
     serializer_class = AdminPastpaperPackSerializer
 
     def get_queryset(self):
@@ -695,9 +664,9 @@ class AdminPastpaperPackViewSet(viewsets.ModelViewSet):
             "sections__modules",
             "sections__assigned_users",
         )
-        return filter_pastpaper_packs_for_user(self.request.user, base).order_by(
-            "-practice_date", "-id"
-        )
+        if not can_manage_questions(self.request.user):
+            return base.none()
+        return base.order_by("-practice_date", "-id")
 
     def perform_update(self, serializer):
         pack = serializer.save()
@@ -737,20 +706,21 @@ class AdminPastpaperPackViewSet(viewsets.ModelViewSet):
 
 
 class AdminPracticeTestViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticated, PracticeTestAdminAccess]
+    permission_classes = [IsAuthenticated, CanManageQuestions]
     serializer_class = AdminPracticeTestSerializer
 
     def get_queryset(self):
         base = PracticeTest.objects.all().prefetch_related("modules", "assigned_users")
-        qs = filter_practice_tests_for_user(self.request.user, base)
+        if not can_manage_questions(self.request.user):
+            return base.none()
         standalone = self.request.query_params.get("standalone")
         if standalone in ("1", "true", "yes"):
-            qs = qs.filter(mock_exam__isnull=True)
-        return qs
+            return base.filter(mock_exam__isnull=True)
+        return base
 
 
 class AdminModuleViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticated, ModuleNestedAdminAccess]
+    permission_classes = [IsAuthenticated, CanManageQuestions]
     serializer_class = AdminModuleSerializer
 
     def get_queryset(self):
@@ -770,7 +740,7 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.db import models as db_models
 
 class AdminQuestionViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticated, QuestionNestedAdminAccess]
+    permission_classes = [IsAuthenticated, CanManageQuestions]
     serializer_class = AdminQuestionSerializer
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
