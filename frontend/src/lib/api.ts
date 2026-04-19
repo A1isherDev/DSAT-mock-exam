@@ -91,6 +91,9 @@ function unwrapAdminList<T>(data: unknown): T[] {
     return [];
 }
 
+/** Admin exam list payloads always include a numeric primary key. */
+type AdminListEntity = { id: number };
+
 api.interceptors.request.use((config) => {
     const token = Cookies.get('access_token');
     if (token) {
@@ -453,7 +456,7 @@ export const adminApi = {
     // Mock Exams (top-level grouping)
     getMockExams: async () => {
         const r = await api.get('/exams/admin/mock-exams/');
-        return unwrapAdminList(r.data);
+        return unwrapAdminList<AdminListEntity>(r.data);
     },
     createMockExam: async (data: object) => { const r = await api.post('/exams/admin/mock-exams/', data); return r.data; },
     updateMockExam: async (id: number, data: object) => { const r = await api.patch(`/exams/admin/mock-exams/${id}/`, data); return r.data; },
@@ -510,7 +513,7 @@ export const adminApi = {
 
     getPastpaperPacks: async () => {
         const r = await api.get('/exams/admin/pastpaper-packs/');
-        return unwrapAdminList(r.data);
+        return unwrapAdminList<AdminListEntity>(r.data);
     },
     createPastpaperPack: async (data: object) => {
         const r = await api.post('/exams/admin/pastpaper-packs/', data);
@@ -532,7 +535,7 @@ export const adminApi = {
         const r = await api.get('/exams/admin/tests/', {
             params: standaloneOnly ? { standalone: '1' } : undefined,
         });
-        return unwrapAdminList(r.data);
+        return unwrapAdminList<AdminListEntity>(r.data);
     },
     createPracticeTest: async (data: Record<string, unknown>) => {
         const r = await api.post('/exams/admin/tests/', { mock_exam: null, ...data });
