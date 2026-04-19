@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { classesApi, examsApi, usersApi } from "@/lib/api";
+import { formatLessonDaysMeta } from "@/lib/classroomSchedule";
 import TelegramLoginButton, { type TelegramAuthUser } from "@/components/TelegramLoginButton";
 import {
   BookOpen,
@@ -749,7 +750,10 @@ export default function ProfilePage() {
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="font-extrabold text-foreground">{c.name}</p>
-                      <p className="text-xs text-muted-foreground mt-1">{formatSubject(c.subject)} · {c.lesson_days || "—"} {c.lesson_time || ""}</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {formatSubject(c.subject)} · {formatLessonDaysMeta(c.lesson_days) || "—"}{" "}
+                        {c.lesson_time || ""}
+                      </p>
                     </div>
                     <BookOpen className="w-4 h-4 text-primary" />
                   </div>

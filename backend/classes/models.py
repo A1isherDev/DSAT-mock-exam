@@ -58,8 +58,8 @@ class Classroom(models.Model):
     schedule_summary = models.CharField(
         max_length=240,
         blank=True,
-        default="Tuesday, Thursday, Saturday",
-        help_text="Weekly meeting pattern shown on the class page (edit to match your center).",
+        default="",
+        help_text="Optional day list for ODD groups on the class page. EVEN groups show EVEN; Monday/Saturday appear in the header.",
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

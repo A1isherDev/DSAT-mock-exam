@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { classesApi } from "@/lib/api";
 import CreateAssignmentModal from "@/components/CreateAssignmentModal";
-import { Plus, Calendar, Pencil, Trash2 } from "lucide-react";
+import { Plus, Calendar, Pencil, Trash2, ClipboardCheck } from "lucide-react";
 
 export default function TeacherHomeworkPage() {
   const [loading, setLoading] = useState(true);
@@ -64,7 +64,13 @@ export default function TeacherHomeworkPage() {
       <div className="mb-8">
         <p className="text-[10px] font-bold text-primary uppercase tracking-widest mb-2">Homework</p>
         <h1 className="text-3xl font-extrabold text-foreground tracking-tight">Homework management</h1>
-        <p className="text-muted-foreground mt-2">Create, edit, and track homework submissions.</p>
+        <p className="text-muted-foreground mt-2">
+          Create, edit, and track homework.{" "}
+          <Link href="/teacher/homework/grading" className="font-semibold text-primary underline">
+            Open grading workspace
+          </Link>{" "}
+          to review all assignments and students.
+        </p>
       </div>
 
       {error && <div className="mb-6 p-4 rounded-2xl border border-red-200 bg-red-50 text-red-700 font-semibold text-sm">{error}</div>}
@@ -94,6 +100,13 @@ export default function TeacherHomeworkPage() {
               <div className="flex flex-wrap items-center gap-2">
                 {selectedGroupId ? (
                   <>
+                    <Link
+                      href="/teacher/homework/grading"
+                      className="inline-flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2.5 text-sm font-bold text-primary hover:bg-primary/15"
+                    >
+                      <ClipboardCheck className="h-4 w-4" />
+                      Grade homework
+                    </Link>
                     <button
                       type="button"
                       onClick={() => {

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { classesApi, adminApi } from "@/lib/api";
+import { lessonDaysMetaSuffix } from "@/lib/classroomSchedule";
 import { can } from "@/lib/permissions";
 import {
   ClassroomAlert,
@@ -371,7 +372,7 @@ export default function ClassesPage() {
                       <p className="truncate text-lg font-bold text-foreground">{c.name}</p>
                       <p className="mt-1 truncate text-sm text-muted-foreground">
                         {c.subject || "—"}
-                        {c.lesson_days ? ` · ${c.lesson_days}` : ""}
+                        {lessonDaysMetaSuffix(c.lesson_days)}
                         {c.lesson_time ? ` · ${c.lesson_time}` : ""}
                       </p>
                     </div>

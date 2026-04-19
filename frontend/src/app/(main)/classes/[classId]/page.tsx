@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { classesApi } from "@/lib/api";
+import { formatLessonDaysMeta, weeklyScheduleTitle } from "@/lib/classroomSchedule";
 import { subscribeRealtime } from "@/lib/realtime";
 import ClassLeaderboard from "@/components/ClassLeaderboard";
 
@@ -216,10 +217,11 @@ export default function ClassDetailPage() {
     );
   }
 
+  const metaDays = formatLessonDaysMeta(klass?.lesson_days);
   const metaLine = (
     <>
       {klass?.subject ? <span>{klass.subject}</span> : null}
-      {klass?.lesson_days ? <span> · {klass.lesson_days}</span> : null}
+      {metaDays ? <span> · {metaDays}</span> : null}
       {klass?.lesson_time ? <span> · {klass.lesson_time}</span> : null}
       {klass?.lesson_hours ? <span> · {klass.lesson_hours}h</span> : null}
     </>
@@ -258,13 +260,27 @@ export default function ClassDetailPage() {
               Weekly schedule
             </p>
             <p className="mt-4 text-xl font-bold leading-snug text-slate-900 dark:text-slate-50">
-              {klass.schedule_summary || "Tuesday, Thursday, Saturday"}
+              {weeklyScheduleTitle(klass.lesson_days, klass.schedule_summary)}
             </p>
             {klass.lesson_days || klass.lesson_time || klass.lesson_hours ? (
               <p className="mt-3 text-sm text-slate-600 dark:text-slate-400">
-                {klass.lesson_days ? <span>{klass.lesson_days} days</span> : null}
-                {klass.lesson_time ? <span>{klass.lesson_days ? " · " : ""}{klass.lesson_time}</span> : null}
-                {klass.lesson_hours ? <span> · {klass.lesson_hours}h sessions</span> : null}
+                {klass.lesson_days && klass.lesson_days !== "EVEN" ? (
+                  <span>{klass.lesson_days} days</span>
+                ) : null}
+                {klass.lesson_time ? (
+                  <span>
+                    {klass.lesson_days && klass.lesson_days !== "EVEN" ? " · " : null}
+                    {klass.lesson_time}
+                  </span>
+                ) : null}
+                {klass.lesson_hours ? (
+                  <span>
+                    {klass.lesson_time || (klass.lesson_days && klass.lesson_days !== "EVEN")
+                      ? " · "
+                      : null}
+                    {klass.lesson_hours}h sessions
+                  </span>
+                ) : null}
               </p>
             ) : null}
           </ClassroomCard>

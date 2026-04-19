@@ -88,7 +88,12 @@ export default function TeacherDashboardPage() {
                 <p className="text-xs font-black text-slate-500 uppercase tracking-widest">Quick access</p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <Link href="/teacher/homework" className="btn-primary">Manage homework</Link>
+                <Link href="/teacher/homework" className="btn-primary">
+                  Manage homework
+                </Link>
+                <Link href="/teacher/homework/grading" className="btn-secondary">
+                  Grade homework
+                </Link>
                 <Link href="/teacher/students" className="btn-secondary">View students</Link>
                 <Link href="/admin" className="btn-secondary">
                   Exams admin
