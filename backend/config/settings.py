@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 from datetime import timedelta
 from dotenv import load_dotenv
+from celery.schedules import crontab
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -141,17 +142,38 @@ else:
     }
 
 
+# Realtime + shared cache (throttles, homework metrics, alert dedupe): set in production.
+REDIS_URL = os.getenv("REDIS_URL", "").strip()
+
 # ─── Cache ─────────────────────────────────────────────────────────────────────
-
-CACHES = {
-    'default': {
-        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
-        'LOCATION': 'unique-snowflake',
+# Use Redis when REDIS_URL is set so throttles and homework counters are consistent across workers.
+if REDIS_URL:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": REDIS_URL,
+        }
     }
-}
+else:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "unique-snowflake",
+        }
+    }
 
-# Realtime SSE push fan-out (optional; DB replay still works without it)
-REDIS_URL = os.getenv("REDIS_URL", "")
+# Production: fail fast if Redis is not configured (LocMem breaks cross-worker throttles and metrics).
+CLASSROOM_ENFORCE_REDIS_CACHE = _env_bool(
+    "CLASSROOM_ENFORCE_REDIS_CACHE",
+    default_when_unset=(not DEBUG),
+)
+# Homework submit counters require a shared backend; disable only for single-process local dev.
+CLASSROOM_METRICS_REQUIRE_SHARED_CACHE = _env_bool(
+    "CLASSROOM_METRICS_REQUIRE_SHARED_CACHE",
+    default_when_unset=(not DEBUG),
+)
+# Suppress duplicate CRITICAL webhook/email for the same fingerprint (seconds).
+CLASSROOM_ALERT_COOLDOWN_SECONDS = int(os.getenv("CLASSROOM_ALERT_COOLDOWN_SECONDS", "900"))
 
 # Dedupe windows (seconds): longer for low priority reduces write amplification for chatty traffic.
 REALTIME_DEFAULT_DEDUPE_SECONDS = int(os.getenv("REALTIME_DEFAULT_DEDUPE_SECONDS", "2"))
@@ -203,6 +225,23 @@ CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "")
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "")
 CELERY_TASK_ALWAYS_EAGER = os.getenv("CELERY_TASK_ALWAYS_EAGER", "False").lower() == "true"
 CELERY_TASK_EAGER_PROPAGATES = True
+
+# Deadlock / serialization retries for classroom submission transactions.
+CLASSROOM_DB_DEADLOCK_MAX_ATTEMPTS = int(os.getenv("CLASSROOM_DB_DEADLOCK_MAX_ATTEMPTS", "4"))
+# Log CRITICAL when a StaleStorageBlob row fails this many times in a row.
+CLASSROOM_STALE_STORAGE_ALERT_AFTER = int(os.getenv("CLASSROOM_STALE_STORAGE_ALERT_AFTER", "8"))
+
+# Celery Beat (optional): stale homework file cleanup. Requires celery-beat and broker.
+CELERY_BEAT_SCHEDULE = {
+    "cleanup-stale-homework-storage": {
+        "task": "classes.tasks.cleanup_stale_homework_storage",
+        "schedule": crontab(minute="*/15"),
+    },
+    "prune-homework-staged-uploads": {
+        "task": "classes.tasks.prune_homework_staged_uploads",
+        "schedule": crontab(hour=3, minute=15),
+    },
+}
 
 
 # ─── Password Validation ──────────────────────────────────────────────────────
@@ -269,6 +308,40 @@ CSRF_TRUSTED_ORIGINS = [
 ]
 
 
+# ─── Classroom homework (submissions) ─────────────────────────────────────────
+# Max size per file; comma-separated lower-case extensions including the dot (e.g. ".pdf,.png").
+CLASSROOM_SUBMISSION_MAX_FILE_BYTES = int(
+    os.getenv("CLASSROOM_SUBMISSION_MAX_FILE_BYTES", str(15 * 1024 * 1024))
+)
+CLASSROOM_SUBMISSION_ALLOWED_FILE_EXTENSIONS = frozenset(
+    x.strip().lower()
+    for x in os.getenv(
+        "CLASSROOM_SUBMISSION_ALLOWED_FILE_EXTENSIONS",
+        ".pdf,.png,.jpg,.jpeg,.gif,.webp,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt",
+    ).split(",")
+    if x.strip()
+)
+CLASSROOM_SUBMISSION_GRADE_MIN = int(os.getenv("CLASSROOM_SUBMISSION_GRADE_MIN", "0"))
+CLASSROOM_SUBMISSION_GRADE_MAX = int(os.getenv("CLASSROOM_SUBMISSION_GRADE_MAX", "100"))
+
+# Homework grade leaderboard: minimum reviewed submissions before assigning a confident rank (null rank below).
+CLASSROOM_LEADERBOARD_MIN_REVIEWED_FOR_RANK = int(os.getenv("CLASSROOM_LEADERBOARD_MIN_REVIEWED_FOR_RANK", "2"))
+
+# Homework submission: caps and per-user submit throttle (DRF scope ``homework_submit``).
+CLASSROOM_SUBMISSION_MAX_FILES_PER_SUBMISSION = int(os.getenv("CLASSROOM_SUBMISSION_MAX_FILES_PER_SUBMISSION", "50"))
+CLASSROOM_SUBMISSION_MAX_BATCH_BYTES = int(
+    os.getenv("CLASSROOM_SUBMISSION_MAX_BATCH_BYTES", str(100 * 1024 * 1024))
+)
+
+# Prune ``HomeworkStagedUpload`` rows (status=attached) older than this many days.
+CLASSROOM_HOMEWORK_STAGED_RETENTION_DAYS = int(os.getenv("CLASSROOM_HOMEWORK_STAGED_RETENTION_DAYS", "30"))
+
+# Ops alerting: Slack/webhook + optional email for CRITICAL homework/storage events.
+# Dedupe / cooldown uses default cache (Redis in prod); see CLASSROOM_ALERT_COOLDOWN_SECONDS.
+CLASSROOM_OPS_WEBHOOK_URL = os.getenv("CLASSROOM_OPS_WEBHOOK_URL", "").strip()
+CLASSROOM_OPS_EMAIL_RECIPIENTS = os.getenv("CLASSROOM_OPS_EMAIL_RECIPIENTS", "").strip()
+
+
 # ─── Django REST Framework ────────────────────────────────────────────────────
 
 REST_FRAMEWORK = {
@@ -288,6 +361,9 @@ REST_FRAMEWORK = {
         'user': '1000/hour',
         'burst': '60/minute',
         'sustained': '1000/day',
+        'homework_submit': os.getenv('CLASSROOM_HOMEWORK_SUBMIT_THROTTLE', '120/hour'),
+        'homework_submit_global': os.getenv('CLASSROOM_HOMEWORK_SUBMIT_GLOBAL_THROTTLE', '5000/hour'),
+        'homework_submit_class': os.getenv('CLASSROOM_HOMEWORK_SUBMIT_PER_CLASS_THROTTLE', '800/hour'),
     }
 }
 

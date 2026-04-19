@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect, memo, useCallback, Suspense } from 'react';
+import React, { useState, useEffect, useRef, memo, useCallback, Suspense } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { examsApi } from '@/lib/api';
 import AuthGuard from '@/components/AuthGuard';
@@ -505,6 +505,13 @@ function ExamPlayerInner() {
     }, [fullscreenWarningCountdown, router]);
 
     const [timeLeft, setTimeLeft] = useState<number>(0);
+    /** Last rendered whole-second value; avoids re-rendering the exam UI every animation frame. */
+    const lastRenderedSecRef = useRef<number>(-1);
+    const moduleTimerSubmitDoneRef = useRef(false);
+    /** Effective "module start" for elapsed math; shifted on resume from pause so time stays frozen while paused. */
+    const virtualModuleStartMsRef = useRef<number>(0);
+    const timeLeftRef = useRef<number>(0);
+    const wasTimerPausedRef = useRef(false);
 
     const zoomIn = () => setZoomLevel(prev => Math.min(1.5, prev + 0.1));
     const zoomOut = () => setZoomLevel(prev => Math.max(0.7, prev - 0.1));
@@ -712,33 +719,74 @@ function ExamPlayerInner() {
     }, [attempt, attemptId, answers, flagged, router, mockFlow, searchParams]);
 
     useEffect(() => {
-        if (attempt?.current_module_details && attempt?.current_module_start_time) {
-            const updateTimer = () => {
-                const limit = attempt.current_module_details.time_limit_minutes * 60;
-                const start = new Date(attempt.current_module_start_time).getTime();
-                const now = new Date().getTime();
-                const elapsed = Math.floor((now - start) / 1000);
-                const remaining = Math.max(0, limit - elapsed);
-                setTimeLeft(remaining);
-            };
-            updateTimer();
-        }
-    }, [attempt]);
+        timeLeftRef.current = timeLeft;
+    }, [timeLeft]);
 
+    // Immediate sync when module loads (before first rAF frame).
     useEffect(() => {
-        if (timeLeft <= 0 || (isPaused && !mockFlow)) return;
-        const timer = setInterval(() => {
-            setTimeLeft(prev => {
-                if (prev <= 1) {
-                    clearInterval(timer);
-                    handleSubmitModule();
-                    return 0;
+        if (!attempt?.current_module_details || !attempt?.current_module_start_time) return;
+        const limitSec = attempt.current_module_details.time_limit_minutes * 60;
+        const startMs = new Date(attempt.current_module_start_time).getTime();
+        virtualModuleStartMsRef.current = startMs;
+        const elapsedSec = Math.floor((Date.now() - startMs) / 1000);
+        const remaining = Math.max(0, limitSec - elapsedSec);
+        lastRenderedSecRef.current = remaining;
+        moduleTimerSubmitDoneRef.current = false;
+        wasTimerPausedRef.current = false;
+        setTimeLeft(remaining);
+    }, [attempt?.current_module_details?.id, attempt?.current_module_start_time, attempt?.current_module_details?.time_limit_minutes]);
+
+    // After resume from pause, realign virtual start so remaining time matches the frozen display (no wall-clock jump).
+    useEffect(() => {
+        const paused = isPaused && !mockFlow;
+        if (!attempt?.current_module_details || !attempt?.current_module_start_time) return;
+        const limitSec = attempt.current_module_details.time_limit_minutes * 60;
+        if (wasTimerPausedRef.current && !paused) {
+            const rem = timeLeftRef.current;
+            virtualModuleStartMsRef.current = Date.now() - (limitSec - rem) * 1000;
+            lastRenderedSecRef.current = -1;
+        }
+        wasTimerPausedRef.current = paused;
+    }, [isPaused, mockFlow, attempt?.current_module_details?.id, attempt?.current_module_details?.time_limit_minutes, attempt?.current_module_start_time]);
+
+    // rAF-driven timer: checks every frame, updates React only when the whole-second display changes.
+    useEffect(() => {
+        if (!attempt?.current_module_details || !attempt?.current_module_start_time) return;
+        if (isPaused && !mockFlow) return;
+
+        const limitSec = attempt.current_module_details.time_limit_minutes * 60;
+        let rafId = 0;
+
+        const loop = () => {
+            const elapsedSec = Math.floor((Date.now() - virtualModuleStartMsRef.current) / 1000);
+            const remaining = Math.max(0, limitSec - elapsedSec);
+
+            if (lastRenderedSecRef.current !== remaining) {
+                lastRenderedSecRef.current = remaining;
+                setTimeLeft(remaining);
+            }
+
+            if (remaining <= 0) {
+                if (!moduleTimerSubmitDoneRef.current) {
+                    moduleTimerSubmitDoneRef.current = true;
+                    void handleSubmitModule();
                 }
-                return prev - 1;
-            });
-        }, 1000);
-        return () => clearInterval(timer);
-    }, [timeLeft, isPaused, mockFlow, handleSubmitModule]);
+                return;
+            }
+
+            rafId = requestAnimationFrame(loop);
+        };
+
+        rafId = requestAnimationFrame(loop);
+        return () => cancelAnimationFrame(rafId);
+    }, [
+        attempt?.current_module_details?.id,
+        attempt?.current_module_start_time,
+        attempt?.current_module_details?.time_limit_minutes,
+        isPaused,
+        mockFlow,
+        handleSubmitModule,
+    ]);
 
     useEffect(() => {
         const moduleId = attempt?.current_module_details?.id;

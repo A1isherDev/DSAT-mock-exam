@@ -6,6 +6,7 @@ import string
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import models
+from django.db.models import Q
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.utils import timezone
@@ -54,6 +55,12 @@ class Classroom(models.Model):
     )
     join_code = models.CharField(max_length=12, unique=True, db_index=True)
     is_active = models.BooleanField(default=True, db_index=True)
+    schedule_summary = models.CharField(
+        max_length=240,
+        blank=True,
+        default="Tuesday, Thursday, Saturday",
+        help_text="Weekly meeting pattern shown on the class page (edit to match your center).",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -305,9 +312,13 @@ def grant_practice_test_library_access_for_user_in_classroom(classroom: Classroo
 class Submission(models.Model):
     STATUS_DRAFT = "DRAFT"
     STATUS_SUBMITTED = "SUBMITTED"
+    STATUS_REVIEWED = "REVIEWED"
+    STATUS_RETURNED = "RETURNED"
     STATUS_CHOICES = [
         (STATUS_DRAFT, "Draft"),
         (STATUS_SUBMITTED, "Submitted"),
+        (STATUS_REVIEWED, "Reviewed"),
+        (STATUS_RETURNED, "Returned for revision"),
     ]
 
     assignment = models.ForeignKey(
@@ -316,9 +327,7 @@ class Submission(models.Model):
     student = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="assignment_submissions"
     )
-    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=STATUS_DRAFT, db_index=True)
-    text_response = models.TextField(blank=True)
-    upload_file = models.FileField(upload_to="homework_submissions/", null=True, blank=True)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_DRAFT, db_index=True)
 
     # Optional link to an attempt in the existing exam system
     attempt = models.ForeignKey(
@@ -326,6 +335,11 @@ class Submission(models.Model):
     )
 
     submitted_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    # Set when teacher returns work; student may edit again without extending submitted_at until resubmit.
+    returned_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    return_note = models.TextField(blank=True, help_text="Visible to student when status is RETURNED.")
+    # Monotonic counter bumped on each successful mutation (files, attempt, status, teacher actions).
+    revision = models.PositiveIntegerField(default=0, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -334,38 +348,191 @@ class Submission(models.Model):
         unique_together = [("assignment", "student")]
         ordering = ["-submitted_at", "-updated_at"]
 
-    def mark_submitted(self):
+    def mark_submitted(self) -> None:
+        """Finalize student work (draft or returned → submitted). Idempotent if already final."""
+        if self.status in (self.STATUS_SUBMITTED, self.STATUS_REVIEWED):
+            return
+        if self.status not in (self.STATUS_DRAFT, self.STATUS_RETURNED):
+            raise ValueError(f"Cannot submit from status {self.status}")
         self.status = self.STATUS_SUBMITTED
         self.submitted_at = timezone.now()
+        self.returned_at = None
+        self.return_note = ""
 
 
-class Grade(models.Model):
-    submission = models.OneToOneField(
-        Submission, on_delete=models.CASCADE, related_name="grade"
+class SubmissionFile(models.Model):
+    """One row per uploaded file; submissions support many files without overwriting."""
+
+    submission = models.ForeignKey(
+        Submission, on_delete=models.CASCADE, related_name="files"
     )
-    graded_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="given_grades"
-    )
-    score = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
-    feedback = models.TextField(blank=True)
-    graded_at = models.DateTimeField(auto_now=True, db_index=True)
+    file = models.FileField(upload_to="homework_submissions/%Y/%m/")
+    file_name = models.CharField(max_length=255, blank=True)
+    file_type = models.CharField(max_length=120, blank=True)
+    # Idempotency: SHA-256 of stored bytes; optional per-file client token for retry dedupe.
+    content_sha256 = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    upload_token = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        db_table = "class_grades"
+        db_table = "class_submission_files"
+        ordering = ["id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("submission", "upload_token"),
+                name="uniq_submission_file_upload_token_nonempty",
+                condition=Q(upload_token__gt=""),
+            ),
+            models.UniqueConstraint(
+                fields=("submission", "content_sha256"),
+                name="uniq_submission_file_sha_nonempty",
+                condition=Q(content_sha256__gt=""),
+            ),
+        ]
+
+    def delete(self, using=None, keep_parents=False):
+        """Remove storage file then DB row; retry storage delete to reduce orphan files."""
+        from .submission_file_storage import delete_submission_file_storage, record_stale_storage_blob
+
+        name = self.file.name if self.file else ""
+        ok = delete_submission_file_storage(self.file)
+        if not ok and name:
+            record_stale_storage_blob(name, reason="delete_failed_after_retries")
+        return super().delete(using=using, keep_parents=keep_parents)
+
+
+class StaleStorageBlob(models.Model):
+    """
+    Storage path that could not be deleted after retries (S3/network glitch, etc.).
+    Safe to delete rows after confirming the object is gone from storage.
+    """
+
+    storage_name = models.CharField(max_length=512, db_index=True)
+    reason = models.TextField(blank=True)
+    retry_count = models.PositiveIntegerField(default=0)
+    consecutive_failures = models.PositiveIntegerField(default=0)
+    last_error = models.TextField(blank=True)
+    last_attempt_at = models.DateTimeField(null=True, blank=True)
+    alert_logged_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When we emitted a CRITICAL log for this row (repeated delete failures).",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "class_stale_storage_blobs"
+        ordering = ["-created_at"]
+
+
+class HomeworkStagedUpload(models.Model):
+    """
+    Tracks blob lifecycle between streaming to storage and DB attach (optional observability).
+
+    * staging — bytes written; row not yet linked by ``SubmissionFile``
+    * attached — ``SubmissionFile`` row points at ``storage_path``
+    * abandoned — compensation deleted the object or duplicate skipped upload
+    """
+
+    STATUS_STAGING = "staging"
+    STATUS_ATTACHED = "attached"
+    STATUS_ABANDONED = "abandoned"
+    STATUS_CHOICES = [
+        (STATUS_STAGING, "Staging"),
+        (STATUS_ATTACHED, "Attached"),
+        (STATUS_ABANDONED, "Abandoned"),
+    ]
+
+    submission = models.ForeignKey(
+        "Submission",
+        on_delete=models.CASCADE,
+        related_name="staged_uploads",
+    )
+    storage_path = models.CharField(max_length=512)
+    upload_token = models.CharField(max_length=64, blank=True, default="")
+    content_sha256 = models.CharField(max_length=64, blank=True, default="")
+    deterministic = models.BooleanField(
+        default=False,
+        help_text="True when path was derived from a client upload_token (retry overwrites same key).",
+    )
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_STAGING, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "class_homework_staged_uploads"
+        ordering = ["-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("submission", "storage_path"),
+                name="uniq_homework_staged_path_per_submission",
+            ),
+        ]
+
+
+class SubmissionReview(models.Model):
+    """Teacher feedback and optional score for a homework submission."""
+
+    submission = models.OneToOneField(
+        Submission, on_delete=models.CASCADE, related_name="review"
+    )
+    teacher = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="given_submission_reviews",
+    )
+    grade = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    feedback = models.TextField(blank=True)
+    reviewed_at = models.DateTimeField(auto_now=True, db_index=True)
+
+    class Meta:
+        db_table = "class_submission_reviews"
+
+
+class SubmissionAuditEvent(models.Model):
+    """Immutable event log for submission lifecycle (status, files, reviews)."""
+
+    EVENT_STATUS_CHANGE = "status_change"
+    EVENT_FILE_ADD = "file_add"
+    EVENT_FILE_REMOVE = "file_remove"
+    EVENT_REVIEW_UPSERT = "review_upsert"
+    EVENT_RETURN = "return_for_revision"
+    EVENT_ATTEMPT_CHANGE = "attempt_change"
+
+    submission = models.ForeignKey(
+        Submission, on_delete=models.CASCADE, related_name="audit_events"
+    )
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="submission_audit_events",
+    )
+    event_type = models.CharField(max_length=40, db_index=True)
+    payload = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "class_submission_audit_events"
+        ordering = ["-created_at", "-id"]
 
 
 def submission_workflow_status(submission: Submission | None) -> str:
     """
-    Product lifecycle for classwork (does not replace DB ``Submission.status``):
-    NOT_STARTED → SUBMITTED → GRADED.
+    UI lifecycle for classwork (aligned with ``Submission.status``).
     """
     if submission is None:
         return "NOT_STARTED"
-    if submission.status != Submission.STATUS_SUBMITTED:
+    if submission.status == Submission.STATUS_DRAFT:
         return "NOT_STARTED"
-    if Grade.objects.filter(submission_id=submission.pk).exists():
+    if submission.status == Submission.STATUS_RETURNED:
+        return "RETURNED"
+    if submission.status == Submission.STATUS_REVIEWED:
         return "GRADED"
-    return "SUBMITTED"
+    if submission.status == Submission.STATUS_SUBMITTED:
+        return "SUBMITTED"
+    return "NOT_STARTED"
 
 
 class ClassroomStreamItem(models.Model):

@@ -6,7 +6,10 @@ from .models import (
     ClassPost,
     Assignment,
     Submission,
-    Grade,
+    SubmissionFile,
+    SubmissionReview,
+    SubmissionAuditEvent,
+    StaleStorageBlob,
     ClassroomStreamItem,
     ClassComment,
 )
@@ -47,11 +50,50 @@ class SubmissionAdmin(admin.ModelAdmin):
     list_filter = ("status", "submitted_at")
 
 
-@admin.register(Grade)
-class GradeAdmin(admin.ModelAdmin):
-    list_display = ("id", "submission", "graded_by", "score", "graded_at")
-    search_fields = ("submission__assignment__title", "submission__student__email", "graded_by__email")
-    list_filter = ("graded_at",)
+@admin.register(SubmissionFile)
+class SubmissionFileAdmin(admin.ModelAdmin):
+    list_display = ("id", "submission", "file_name", "created_at")
+    search_fields = ("file_name", "submission__assignment__title", "submission__student__email")
+
+
+@admin.register(SubmissionReview)
+class SubmissionReviewAdmin(admin.ModelAdmin):
+    list_display = ("id", "submission", "teacher", "grade", "reviewed_at")
+    search_fields = ("submission__assignment__title", "submission__student__email", "teacher__email")
+    list_filter = ("reviewed_at",)
+
+
+@admin.register(StaleStorageBlob)
+class StaleStorageBlobAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "storage_name",
+        "retry_count",
+        "consecutive_failures",
+        "last_attempt_at",
+        "created_at",
+    )
+    search_fields = ("storage_name", "reason", "last_error")
+    readonly_fields = (
+        "storage_name",
+        "reason",
+        "retry_count",
+        "consecutive_failures",
+        "last_error",
+        "last_attempt_at",
+        "alert_logged_at",
+        "created_at",
+    )
+    ordering = ("-created_at",)
+
+
+@admin.register(SubmissionAuditEvent)
+class SubmissionAuditEventAdmin(admin.ModelAdmin):
+    list_display = ("id", "submission", "event_type", "actor", "created_at")
+    list_filter = ("event_type", "created_at")
+    search_fields = ("submission__assignment__title", "submission__student__email")
+    readonly_fields = ("submission", "actor", "event_type", "payload", "created_at")
+    ordering = ("-created_at",)
 
 
 @admin.register(ClassroomStreamItem)

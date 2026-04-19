@@ -12,6 +12,31 @@ import {
   Users,
 } from "lucide-react";
 
+export type HomeworkGradeLeaderboard = {
+  description: string;
+  class_average_review_grade: number | null;
+  /** Minimum reviewed homework count required before `rank` is shown (fair ranking). */
+  effective_min_reviewed_for_rank?: number;
+  /** Total class assignments (denominator for completion rate). */
+  classwork_assignment_count?: number;
+  ranking_note?: string;
+  rows: {
+    /** Official rank when confidence is high; null when sample size is too small. */
+    rank: number | null;
+    /** Sort order among classmates (always set). */
+    rank_ordinal: number;
+    rank_confidence?: "high" | "low";
+    user_id: number;
+    first_name: string;
+    last_name: string;
+    email: string;
+    average_review_grade: number | null;
+    graded_submission_count: number;
+    classwork_turn_in_count?: number;
+    homework_completion_rate_pct?: number | null;
+  }[];
+};
+
 export type LeaderboardPayload = {
   classroom_id: number;
   classroom_name: string;
@@ -19,6 +44,7 @@ export type LeaderboardPayload = {
   practice_assignment_count: number;
   class_practice_average: number | null;
   overall_group_mean_of_assignments: number | null;
+  homework_grade_leaderboard?: HomeworkGradeLeaderboard;
   assignments_summary: {
     assignment_id: number;
     title: string;
@@ -52,6 +78,8 @@ export type LeaderboardPayload = {
     practice_average: number | null;
     practice_completed_count: number;
     practice_total_assigned: number;
+    average_review_grade?: number | null;
+    review_graded_count?: number;
   }[];
 };
 
@@ -116,6 +144,10 @@ export default function ClassLeaderboard({ classId }: Props) {
   if (!data) return null;
 
   const hasPractice = data.practice_assignment_count > 0;
+  const hw = data.homework_grade_leaderboard;
+  const hasHomeworkGrades =
+    !!hw?.rows?.length &&
+    hw.rows.some((r) => r.average_review_grade != null || r.graded_submission_count > 0);
 
   return (
     <div className="space-y-10">
@@ -191,6 +223,91 @@ export default function ClassLeaderboard({ classId }: Props) {
           <p className="mt-1 text-xs text-muted-foreground">Homework items with a pastpaper test</p>
         </div>
       </div>
+
+      {hasHomeworkGrades && hw ? (
+        <section className="rounded-3xl border border-border bg-card/80 p-6 shadow-sm backdrop-blur-sm md:p-8">
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Teacher grades</p>
+              <h3 className="mt-1 text-xl font-black tracking-tight text-foreground">Homework review scores</h3>
+              <p className="mt-2 max-w-2xl text-sm text-muted-foreground">{hw.description}</p>
+              {hw.ranking_note ? (
+                <p className="mt-2 max-w-2xl text-xs text-muted-foreground/90">{hw.ranking_note}</p>
+              ) : null}
+            </div>
+            <div className="rounded-2xl border border-primary/20 bg-primary/10 px-5 py-3 text-right">
+              <p className="text-[10px] font-black uppercase tracking-widest text-primary">Class avg (grades)</p>
+              <p className="text-2xl font-black tabular-nums text-foreground">
+                {hw.class_average_review_grade != null ? hw.class_average_review_grade : "—"}
+              </p>
+            </div>
+          </div>
+          <div className="overflow-hidden rounded-2xl border border-border">
+            <div className="divide-y divide-border">
+              {hw.rows.map((r) => (
+                <div
+                  key={r.user_id}
+                  className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between md:p-5"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span
+                      className="flex h-10 w-10 shrink-0 flex-col items-center justify-center rounded-xl bg-surface-2 text-sm font-black text-label-foreground"
+                      title={r.rank == null ? "Provisional — not enough graded homework for an official rank" : undefined}
+                    >
+                      {r.rank != null ? (
+                        <>
+                          {medal(r.rank) ? (
+                            <span className="text-xl leading-none" aria-hidden>
+                              {medal(r.rank)}
+                            </span>
+                          ) : (
+                            <span className="tabular-nums">#{r.rank}</span>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-[10px] font-bold leading-tight text-muted-foreground">~{r.rank_ordinal}</span>
+                          <span className="text-[9px] font-semibold uppercase tracking-tighter text-amber-700 dark:text-amber-400">
+                            low
+                          </span>
+                        </>
+                      )}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate font-extrabold text-foreground">
+                        {r.first_name || r.last_name ? `${r.first_name} ${r.last_name}`.trim() : r.email}
+                      </p>
+                      <p className="truncate text-xs text-muted-foreground">{r.email}</p>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap items-baseline gap-4 text-sm">
+                    <span className="tabular-nums">
+                      <span className="font-bold text-foreground">
+                        {r.average_review_grade != null ? r.average_review_grade : "—"}
+                      </span>
+                      <span className="ml-1 text-muted-foreground">avg</span>
+                    </span>
+                    <span className="text-muted-foreground">
+                      {r.graded_submission_count} graded item{r.graded_submission_count === 1 ? "" : "s"}
+                      {r.homework_completion_rate_pct != null && r.classwork_turn_in_count != null ? (
+                        <span className="ml-1">
+                          · {r.homework_completion_rate_pct}% turn-in ({r.classwork_turn_in_count}/
+                          {hw.classwork_assignment_count ?? "—"})
+                        </span>
+                      ) : null}
+                      {hw.effective_min_reviewed_for_rank != null && r.rank == null ? (
+                        <span className="ml-1 text-amber-800/90 dark:text-amber-300/90">
+                          (need {hw.effective_min_reviewed_for_rank}+ for rank)
+                        </span>
+                      ) : null}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       {!hasPractice ? (
         <div className="rounded-2xl border border-dashed border-border bg-surface-2/80 p-10 text-center backdrop-blur-sm">

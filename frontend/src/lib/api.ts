@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { type AxiosError, type AxiosResponse } from 'axios';
 import Cookies from 'js-cookie';
 
 const API_URL = '/api';
@@ -81,6 +81,37 @@ async function persistMeCookie(rememberMe: boolean) {
 const api = axios.create({
     baseURL: API_URL,
 });
+
+/** POST with retries on 429 (and transient 503): exponential backoff, honors Retry-After when present. */
+async function axiosPostWith429Backoff<T>(
+    call: () => Promise<AxiosResponse<T>>,
+    options?: { maxRetries?: number; baseDelayMs?: number; maxDelayMs?: number },
+): Promise<AxiosResponse<T>> {
+    const maxRetries = options?.maxRetries ?? 5;
+    const baseDelayMs = options?.baseDelayMs ?? 800;
+    const maxDelayMs = options?.maxDelayMs ?? 30_000;
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+            return await call();
+        } catch (err: unknown) {
+            lastError = err;
+            const ax = err as AxiosError;
+            const status = ax.response?.status;
+            const retryable = status === 429 || status === 503;
+            if (retryable && attempt < maxRetries) {
+                const ra = ax.response?.headers?.['retry-after'];
+                const raSec = ra != null ? parseInt(String(ra), 10) : NaN;
+                const fromHeader = Number.isFinite(raSec) && raSec > 0 ? raSec * 1000 : null;
+                const backoff = fromHeader ?? Math.min(maxDelayMs, baseDelayMs * 2 ** attempt);
+                await new Promise((r) => setTimeout(r, backoff));
+                continue;
+            }
+            break;
+        }
+    }
+    throw lastError;
+}
 
 /** DRF may return a bare array or a paginated ``{ results: [...] }`` object. */
 function unwrapAdminList<T>(data: unknown): T[] {
@@ -404,7 +435,13 @@ export const classesApi = {
         await api.delete(`/classes/${classId}/assignments/${assignmentId}/`);
     },
     submitAssignment: async (classId: number, assignmentId: number, payload: any, isFormData = true) => {
-        const r = await api.post(`/classes/${classId}/assignments/${assignmentId}/submit/`, payload, isFormData ? {} : {});
+        const r = await axiosPostWith429Backoff(() =>
+            api.post(
+                `/classes/${classId}/assignments/${assignmentId}/submit/`,
+                payload,
+                isFormData ? {} : {},
+            ),
+        );
         return r.data;
     },
     getMySubmission: async (classId: number, assignmentId: number) => {
@@ -416,8 +453,25 @@ export const classesApi = {
         const r = await api.get(`/classes/${classId}/assignments/${assignmentId}/submissions/`);
         return r.data;
     },
-    gradeSubmission: async (submissionId: number, payload: { score?: string | number | null; feedback?: string }) => {
+    gradeSubmission: async (
+        submissionId: number,
+        payload: {
+            grade?: string | number | null;
+            score?: string | number | null;
+            feedback?: string;
+            expected_revision?: number;
+        },
+    ) => {
         const r = await api.post(`/classes/submissions/${submissionId}/grade/`, payload);
+        return r.data;
+    },
+    /** Teacher returns work so the student can edit and resubmit (SUBMITTED or REVIEWED only). */
+    returnSubmission: async (submissionId: number, payload?: { note?: string; expected_revision?: number }) => {
+        const r = await api.post(`/classes/submissions/${submissionId}/return/`, payload ?? {});
+        return r.data;
+    },
+    getSubmissionAuditLog: async (submissionId: number) => {
+        const r = await api.get(`/classes/submissions/${submissionId}/audit-log/`);
         return r.data;
     },
 };

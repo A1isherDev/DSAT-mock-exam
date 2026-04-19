@@ -6,6 +6,12 @@ import Link from "next/link";
 import { classesApi } from "@/lib/api";
 import { subscribeRealtime } from "@/lib/realtime";
 import ClassLeaderboard from "@/components/ClassLeaderboard";
+
+function memberAvatarInitials(u: { first_name?: string; last_name?: string; email?: string }) {
+  const a = (u.first_name?.trim()?.[0] || u.email?.trim()?.[0] || "?").toUpperCase();
+  const b = (u.last_name?.trim()?.[0] || "").toUpperCase();
+  return b ? `${a}${b}` : a;
+}
 import CreateAssignmentModal from "@/components/CreateAssignmentModal";
 import SafeHtml from "@/components/SafeHtml";
 import {
@@ -35,14 +41,14 @@ export default function ClassDetailPage() {
   const { classId } = useParams();
   const id = Number(classId);
 
-  const [tab, setTab] = useState<ClassroomTabItem["id"]>("stream");
+  const [tab, setTab] = useState<ClassroomTabItem["id"]>("leaderboard");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [klass, setKlass] = useState<any>(null);
   const isClassAdmin = klass?.my_role === "ADMIN";
 
   const [postText, setPostText] = useState("");
-  const [streamData, setStreamData] = useState<{ results?: any[]; count?: number } | null>(null);
+  const [announcements, setAnnouncements] = useState<any[]>([]);
   const [workspace, setWorkspace] = useState<{
     your_assignments?: any[];
     due_soon?: any[];
@@ -60,10 +66,9 @@ export default function ClassDetailPage() {
 
   const tabItems = useMemo<ClassroomTabItem[]>(
     () => [
-      { id: "stream", label: "Stream", icon: Megaphone },
+      { id: "leaderboard", label: "Leaderboard", icon: Trophy },
       { id: "classwork", label: "Classwork", icon: ClipboardList },
       { id: "people", label: "People", icon: Users },
-      { id: "leaderboard", label: "Leaderboard", icon: Trophy },
       { id: "grades", label: "Grades", icon: GraduationCap },
     ],
     [],
@@ -73,17 +78,17 @@ export default function ClassDetailPage() {
     setError(null);
     setLoading(true);
     try {
-      const [k, streamPage, ws, pe] = await Promise.all([
+      const [k, ws, pe, posts] = await Promise.all([
         classesApi.get(id),
-        classesApi.getStream(id),
         classesApi.getStudentWorkspace(id),
         classesApi.people(id),
+        classesApi.listPosts(id).catch(() => []),
       ]);
       setKlass(k);
-      setStreamData(streamPage && typeof streamPage === "object" ? streamPage : { results: [] });
       setWorkspace(ws && typeof ws === "object" ? ws : null);
       setAssignments(Array.isArray(ws?.your_assignments) ? ws.your_assignments : []);
       setPeople(Array.isArray(pe) ? pe : []);
+      setAnnouncements(Array.isArray(posts) ? posts : []);
     } catch (e: unknown) {
       const ax = e as { response?: { status?: number; data?: { detail?: string } } };
       const st = ax.response?.status;
@@ -94,7 +99,7 @@ export default function ClassDetailPage() {
         setError(typeof detail === "string" ? detail : "Could not load class.");
       }
       setKlass(null);
-      setStreamData(null);
+      setAnnouncements([]);
       setWorkspace(null);
       setAssignments([]);
       setPeople([]);
@@ -117,23 +122,11 @@ export default function ClassDetailPage() {
         // Delivery-only: refetch canonical APIs.
         if (ev.type === "resync") {
           const data = ev.data as { refresh?: string[]; classroom_id?: number };
-          const hints = Array.isArray(data.refresh) ? data.refresh : ["stream", "workspace", "comments"];
+          const hints = Array.isArray(data.refresh) ? data.refresh : ["workspace", "comments"];
           const scoped = data.classroom_id == null || Number(data.classroom_id) === id;
           if (!scoped) return;
-          const needStream = hints.includes("stream");
           const needWorkspace = hints.includes("workspace");
-          if (needStream && needWorkspace) {
-            const [streamPage, ws] = await Promise.all([
-              classesApi.getStream(id),
-              classesApi.getStudentWorkspace(id),
-            ]);
-            setStreamData(streamPage && typeof streamPage === "object" ? streamPage : { results: [] });
-            setWorkspace(ws && typeof ws === "object" ? ws : null);
-            setAssignments(Array.isArray((ws as any)?.your_assignments) ? (ws as any).your_assignments : []);
-          } else if (needStream) {
-            const streamPage = await classesApi.getStream(id);
-            setStreamData(streamPage && typeof streamPage === "object" ? streamPage : { results: [] });
-          } else if (needWorkspace) {
+          if (needWorkspace) {
             const ws = await classesApi.getStudentWorkspace(id);
             setWorkspace(ws && typeof ws === "object" ? ws : null);
             setAssignments(Array.isArray((ws as any)?.your_assignments) ? (ws as any).your_assignments : []);
@@ -143,16 +136,14 @@ export default function ClassDetailPage() {
         if (ev.type === "stream.updated") {
           const cid = Number((ev.data as any)?.classroom_id);
           if (cid && cid === id) {
-            const refresh = (ev.data as any)?.refresh as string[] | undefined;
-            const needWs = !refresh || refresh.includes("workspace");
-            const [streamPage, ws] = await Promise.all([
-              classesApi.getStream(id),
-              needWs ? classesApi.getStudentWorkspace(id) : Promise.resolve(null),
-            ]);
-            setStreamData(streamPage && typeof streamPage === "object" ? streamPage : { results: [] });
-            if (needWs && ws && typeof ws === "object") {
-              setWorkspace(ws);
-              setAssignments(Array.isArray((ws as any)?.your_assignments) ? (ws as any).your_assignments : []);
+            const ws = await classesApi.getStudentWorkspace(id);
+            setWorkspace(ws && typeof ws === "object" ? ws : null);
+            setAssignments(Array.isArray((ws as any)?.your_assignments) ? (ws as any).your_assignments : []);
+            try {
+              const posts = await classesApi.listPosts(id);
+              setAnnouncements(Array.isArray(posts) ? posts : []);
+            } catch {
+              /* ignore */
             }
           }
         }
@@ -176,10 +167,10 @@ export default function ClassDetailPage() {
     try {
       await classesApi.createPost(id, { content: postText });
       setPostText("");
-      const [streamPage, ws] = await Promise.all([classesApi.getStream(id), classesApi.getStudentWorkspace(id)]);
-      setStreamData(streamPage && typeof streamPage === "object" ? streamPage : { results: [] });
+      const [ws, posts] = await Promise.all([classesApi.getStudentWorkspace(id), classesApi.listPosts(id)]);
       setWorkspace(ws && typeof ws === "object" ? ws : null);
       setAssignments(Array.isArray(ws?.your_assignments) ? ws.your_assignments : []);
+      setAnnouncements(Array.isArray(posts) ? posts : []);
     } catch (e: unknown) {
       const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       setError(typeof d === "string" ? d : "Could not post.");
@@ -195,10 +186,10 @@ export default function ClassDetailPage() {
     }
   };
 
-  const streamItems = Array.isArray(streamData?.results) ? streamData!.results : [];
   const wfLabel = (w?: string | null) => {
     if (w === "GRADED") return { text: "Graded", className: "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300" };
     if (w === "SUBMITTED") return { text: "Submitted", className: "bg-sky-500/15 text-sky-800 dark:text-sky-200" };
+    if (w === "RETURNED") return { text: "Returned", className: "bg-violet-500/15 text-violet-900 dark:text-violet-200" };
     if (w === "NOT_STARTED") return { text: "Your work", className: "bg-amber-500/15 text-amber-900 dark:text-amber-200" };
     return null;
   };
@@ -260,6 +251,37 @@ export default function ClassDetailPage() {
 
       <ClassroomTabs items={tabItems} value={tab} onChange={setTab} className="mb-8" />
 
+      {!loading && klass ? (
+        <div className="mb-8 grid gap-4 lg:grid-cols-2">
+          <ClassroomCard padding="lg" className="min-h-[140px] shadow-sm">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Weekly schedule
+            </p>
+            <p className="mt-4 text-xl font-bold leading-snug text-slate-900 dark:text-slate-50">
+              {klass.schedule_summary || "Tuesday, Thursday, Saturday"}
+            </p>
+            {klass.lesson_days || klass.lesson_time || klass.lesson_hours ? (
+              <p className="mt-3 text-sm text-slate-600 dark:text-slate-400">
+                {klass.lesson_days ? <span>{klass.lesson_days} days</span> : null}
+                {klass.lesson_time ? <span>{klass.lesson_days ? " · " : ""}{klass.lesson_time}</span> : null}
+                {klass.lesson_hours ? <span> · {klass.lesson_hours}h sessions</span> : null}
+              </p>
+            ) : null}
+          </ClassroomCard>
+          <ClassroomCard padding="lg" className="min-h-[140px] shadow-sm">
+            <div className="flex items-center gap-2">
+              <KeyRound className="h-5 w-5 text-indigo-500" />
+              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Join code
+              </p>
+            </div>
+            <p className="mt-4 font-mono text-2xl font-bold tracking-wider text-slate-900 dark:text-slate-50">
+              {klass.join_code || "—"}
+            </p>
+          </ClassroomCard>
+        </div>
+      ) : null}
+
       {loading ? (
         <ClassroomDetailSkeleton />
       ) : (
@@ -269,128 +291,23 @@ export default function ClassDetailPage() {
           aria-labelledby={`classroom-tab-${tab}`}
           className="transition-opacity duration-200"
         >
-          {tab === "stream" ? (
+          {tab === "leaderboard" ? (
             <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
-              <div className="space-y-4 lg:col-span-2">
-                {streamItems.length === 0 ? (
-                  <ClassroomEmptyState
-                    icon={Megaphone}
-                    title="Nothing in the stream yet"
-                    description={
-                      isClassAdmin
-                        ? "Post an announcement or create classwork — activity will appear here in one timeline."
-                        : "When your teacher posts or assigns work, it will show up here."
-                    }
-                  />
-                ) : (
-                  streamItems.map((item: any) => (
-                    <ClassroomCard key={`${item.type}-${item.id}`} padding="md" className="border-slate-200/80">
-                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                        <span className="rounded-md bg-slate-500/10 px-2 py-0.5 text-[10px] text-slate-600 dark:text-slate-300">
-                          {item.type === "post" ? "Announcement" : item.type === "assignment" ? "Assignment" : "Turned in"}
-                        </span>
-                        <span className="tabular-nums text-slate-500">{formatDue(item.created_at)}</span>
-                      </div>
-                      {item.type === "post" && item.post ? (
-                        <>
-                          <p className="mb-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
-                            {item.actor?.first_name || item.actor?.email || "Member"}
-                          </p>
-                          <SafeHtml className="prose prose-slate max-w-none text-sm dark:prose-invert" html={item.post.content} />
-                        </>
-                      ) : null}
-                      {item.type === "assignment" && item.assignment ? (
-                        <div>
-                          <p className="text-sm font-bold text-slate-900 dark:text-slate-50">{item.assignment.title}</p>
-                          <p className="mt-1 text-xs text-slate-500">{formatDue(item.assignment.due_at)}</p>
-                          <Link
-                            href={`/classes/${id}/assignments/${item.assignment.id}`}
-                            className="mt-3 inline-flex text-sm font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
-                          >
-                            View assignment →
-                          </Link>
-                        </div>
-                      ) : null}
-                      {item.type === "submission" && item.submission ? (
-                        <div>
-                          <p className="text-sm text-slate-700 dark:text-slate-200">
-                            <span className="font-semibold">{item.actor?.first_name || item.actor?.email || "Student"}</span>{" "}
-                            turned in{" "}
-                            <span className="font-medium">{item.assignment_preview?.title || "assignment"}</span>
-                          </p>
-                          <Link
-                            href={`/classes/${id}/assignments/${item.assignment_preview?.id}`}
-                            className="mt-2 inline-flex text-sm font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
-                          >
-                            Open assignment →
-                          </Link>
-                        </div>
-                      ) : null}
-                    </ClassroomCard>
-                  ))
-                )}
+              <div className="space-y-6 lg:col-span-2">
+                <ClassLeaderboard classId={id} />
               </div>
-
-              <div className="space-y-4">
+              <div className="space-y-5">
                 <ClassroomCard padding="md">
                   <div className="flex items-center gap-2">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
-                      <KeyRound className="h-4 w-4" />
-                    </div>
+                    <KeyRound className="h-4 w-4 text-indigo-500" />
                     <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       Join code
                     </p>
                   </div>
-                  <p className="mt-3 font-mono text-xl font-bold tracking-wider text-slate-900 dark:text-slate-50">
+                  <p className="mt-3 font-mono text-lg font-bold tracking-wider text-slate-900 dark:text-slate-50">
                     {klass?.join_code || "—"}
                   </p>
-                  {(klass?.room_number || klass?.start_date || klass?.telegram_chat_id) && (
-                    <dl className="mt-4 space-y-2 border-t border-slate-200/70 pt-4 text-sm text-slate-600 dark:border-slate-700/70 dark:text-slate-300">
-                      {klass?.room_number ? (
-                        <div className="flex justify-between gap-2">
-                          <dt className="font-semibold text-slate-500 dark:text-slate-400">Room</dt>
-                          <dd>{klass.room_number}</dd>
-                        </div>
-                      ) : null}
-                      {klass?.start_date ? (
-                        <div className="flex justify-between gap-2">
-                          <dt className="font-semibold text-slate-500 dark:text-slate-400">Start</dt>
-                          <dd>{klass.start_date}</dd>
-                        </div>
-                      ) : null}
-                      {klass?.telegram_chat_id ? (
-                        <div className="flex flex-col gap-0.5">
-                          <dt className="font-semibold text-slate-500 dark:text-slate-400">Telegram</dt>
-                          <dd className="break-all font-mono text-xs">{klass.telegram_chat_id}</dd>
-                        </div>
-                      ) : null}
-                    </dl>
-                  )}
-                  {isClassAdmin ? (
-                    <ClassroomButton
-                      variant="ghost"
-                      size="sm"
-                      className="mt-4 w-full justify-center"
-                      disabled={codeBusy}
-                      onClick={async () => {
-                        setError(null);
-                        setCodeBusy(true);
-                        try {
-                          const r = await classesApi.regenerateCode(id);
-                          setKlass((k: any) => ({ ...(k || {}), join_code: r?.join_code }));
-                        } catch (e: unknown) {
-                          const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-                          setError(typeof d === "string" ? d : "Could not regenerate code.");
-                        } finally {
-                          setCodeBusy(false);
-                        }
-                      }}
-                    >
-                      {codeBusy ? "Updating…" : "Regenerate code"}
-                    </ClassroomButton>
-                  ) : null}
                 </ClassroomCard>
-
                 {workspace?.is_student ? (
                   <>
                     <ClassroomCard padding="md">
@@ -417,10 +334,10 @@ export default function ClassDetailPage() {
                     </ClassroomCard>
                     <ClassroomCard padding="md">
                       <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                        Recently graded
+                        Recently reviewed
                       </p>
                       {(workspace.recently_graded || []).length === 0 ? (
-                        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">No grades yet.</p>
+                        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">No feedback yet.</p>
                       ) : (
                         <ul className="mt-3 space-y-2">
                           {(workspace.recently_graded || []).map((row: any) => (
@@ -431,62 +348,15 @@ export default function ClassDetailPage() {
                               >
                                 {row.assignment?.title}
                               </Link>
-                              {row.grade?.score != null ? (
-                                <p className="text-xs text-slate-600 dark:text-slate-300">Score: {row.grade.score}</p>
+                              {row.review?.grade != null ? (
+                                <p className="text-xs text-slate-600 dark:text-slate-300">Score: {row.review.grade}</p>
                               ) : null}
                             </li>
                           ))}
                         </ul>
                       )}
                     </ClassroomCard>
-                    <ClassroomCard padding="md">
-                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                        New posts
-                      </p>
-                      {(workspace.new_posts || []).length === 0 ? (
-                        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">No recent announcements.</p>
-                      ) : (
-                        <ul className="mt-3 space-y-2 text-sm text-slate-700 dark:text-slate-200">
-                          {(workspace.new_posts || []).slice(0, 5).map((p: any) => {
-                            const plain = String(p.content || "").replace(/<[^>]*>/g, "").trim();
-                            return (
-                              <li key={p.id} className="border-b border-slate-100 pb-2 last:border-0 dark:border-slate-800">
-                                <span className="text-xs text-slate-400">{formatDue(p.created_at)}</span>
-                                <p className="mt-0.5 line-clamp-2 text-sm text-slate-700 dark:text-slate-200">
-                                  {plain.slice(0, 120)}
-                                  {plain.length > 120 ? "…" : ""}
-                                </p>
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      )}
-                    </ClassroomCard>
                   </>
-                ) : null}
-
-                {isClassAdmin ? (
-                  <ClassroomCard padding="md">
-                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                      New announcement
-                    </p>
-                    <textarea
-                      value={postText}
-                      onChange={(e) => setPostText(e.target.value)}
-                      placeholder="Write an announcement (HTML supported)"
-                      rows={5}
-                      className="mt-3 w-full resize-y rounded-xl border border-slate-200/90 bg-white/90 px-4 py-3 text-sm text-slate-900 shadow-sm transition-[border-color,box-shadow] duration-200 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-600 dark:bg-slate-900/60 dark:text-slate-100 dark:placeholder:text-slate-500"
-                    />
-                    <ClassroomButton
-                      variant="primary"
-                      size="md"
-                      className="mt-3 w-full"
-                      onClick={handlePost}
-                      disabled={!postText.trim()}
-                    >
-                      Post announcement
-                    </ClassroomButton>
-                  </ClassroomCard>
                 ) : null}
               </div>
             </div>
@@ -494,6 +364,44 @@ export default function ClassDetailPage() {
 
           {tab === "classwork" ? (
             <div className="space-y-6">
+              <ClassroomCard padding="md">
+                  <div className="flex items-center gap-2">
+                    <Megaphone className="h-5 w-5 text-indigo-500" />
+                    <h2 className="text-base font-bold text-slate-900 dark:text-slate-50">Announcements</h2>
+                  </div>
+                  {isClassAdmin ? (
+                    <>
+                      <textarea
+                        value={postText}
+                        onChange={(e) => setPostText(e.target.value)}
+                        placeholder="Write an announcement (HTML supported)"
+                        rows={4}
+                        className="mt-4 w-full resize-y rounded-xl border border-slate-200/90 bg-white/90 px-4 py-3 text-sm text-slate-900 shadow-sm transition-[border-color,box-shadow] duration-200 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-600 dark:bg-slate-900/60 dark:text-slate-100 dark:placeholder:text-slate-500"
+                      />
+                      <ClassroomButton
+                        variant="primary"
+                        size="md"
+                        className="mt-3 w-full sm:w-auto"
+                        onClick={handlePost}
+                        disabled={!postText.trim()}
+                      >
+                        Post announcement
+                      </ClassroomButton>
+                    </>
+                  ) : null}
+                  {announcements.length === 0 && !isClassAdmin ? (
+                    <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">No announcements yet.</p>
+                  ) : (
+                    <ul className="mt-4 space-y-4">
+                      {announcements.map((p: any) => (
+                        <li key={p.id} className="rounded-xl border border-slate-100/90 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/30">
+                          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">{formatDue(p.created_at)}</p>
+                          <SafeHtml className="prose prose-slate mt-2 max-w-none text-sm dark:prose-invert" html={p.content} />
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+              </ClassroomCard>
               {isClassAdmin ? (
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
@@ -605,13 +513,7 @@ export default function ClassDetailPage() {
                               if (!confirm(`Delete homework “${a.title}”? Submissions will be removed.`)) return;
                               try {
                                 await classesApi.deleteAssignment(id, a.id);
-                                const [streamPage, ws] = await Promise.all([
-                                  classesApi.getStream(id),
-                                  classesApi.getStudentWorkspace(id),
-                                ]);
-                                setStreamData(
-                                  streamPage && typeof streamPage === "object" ? streamPage : { results: [] },
-                                );
+                                const ws = await classesApi.getStudentWorkspace(id);
                                 setWorkspace(ws && typeof ws === "object" ? ws : null);
                                 setAssignments(Array.isArray(ws?.your_assignments) ? ws.your_assignments : []);
                               } catch (e: unknown) {
@@ -639,8 +541,7 @@ export default function ClassDetailPage() {
                   setEditingAssignment(null);
                 }}
                 onSuccess={async () => {
-                  const [streamPage, ws] = await Promise.all([classesApi.getStream(id), classesApi.getStudentWorkspace(id)]);
-                  setStreamData(streamPage && typeof streamPage === "object" ? streamPage : { results: [] });
+                  const ws = await classesApi.getStudentWorkspace(id);
                   setWorkspace(ws && typeof ws === "object" ? ws : null);
                   setAssignments(Array.isArray(ws?.your_assignments) ? ws.your_assignments : []);
                   setTab("classwork");
@@ -662,11 +563,27 @@ export default function ClassDetailPage() {
                 <ul className="divide-y divide-slate-100 dark:divide-slate-800/80">
                   {people.map((m) => (
                     <li key={m.id} className="flex items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/30">
-                      <div className="min-w-0">
-                        <p className="truncate font-semibold text-slate-900 dark:text-slate-50">
-                          {m.user?.first_name || m.user?.email} {m.user?.last_name || ""}
-                        </p>
-                        <p className="truncate text-sm text-slate-500 dark:text-slate-400">{m.user?.email}</p>
+                      <div className="flex min-w-0 flex-1 items-center gap-3">
+                        {m.user?.profile_image_url ? (
+                          <img
+                            src={m.user.profile_image_url}
+                            alt=""
+                            className="h-11 w-11 shrink-0 rounded-full object-cover ring-2 ring-slate-200/80 dark:ring-slate-700"
+                          />
+                        ) : (
+                          <div
+                            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-indigo-500/15 text-sm font-bold text-indigo-800 ring-2 ring-indigo-500/20 dark:bg-indigo-950/60 dark:text-indigo-200 dark:ring-indigo-500/30"
+                            aria-hidden
+                          >
+                            {memberAvatarInitials(m.user || {})}
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold text-slate-900 dark:text-slate-50">
+                            {m.user?.first_name || m.user?.email} {m.user?.last_name || ""}
+                          </p>
+                          <p className="truncate text-sm text-slate-500 dark:text-slate-400">{m.user?.email}</p>
+                        </div>
                       </div>
                       <span
                         className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${
@@ -683,8 +600,6 @@ export default function ClassDetailPage() {
               )}
             </ClassroomCard>
           ) : null}
-
-          {tab === "leaderboard" ? <ClassLeaderboard classId={id} /> : null}
 
           {tab === "grades" ? (
             <ClassroomCard padding="lg">

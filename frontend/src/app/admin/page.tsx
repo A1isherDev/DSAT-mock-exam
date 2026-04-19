@@ -97,7 +97,10 @@ const MathRenderer = ({ html, id = 'math-preview' }: { html: string, id?: string
             }
             // MathJax 3
             if (typeof window !== 'undefined' && (window as any).MathJax && (window as any).MathJax.typesetPromise) {
-                (window as any).MathJax.typesetPromise([document.getElementById(id)]);
+                const mjEl = document.getElementById(id);
+                if (mjEl) {
+                    (window as any).MathJax.typesetPromise([mjEl]).catch(() => {});
+                }
             }
         };
         render();
@@ -115,6 +118,7 @@ const MathRenderer = ({ html, id = 'math-preview' }: { html: string, id?: string
 
     return (
         <SafeHtml
+            id={id}
             className="p-5 bg-indigo-50/30 rounded-2xl border border-indigo-100 text-sm min-h-[60px] prose prose-indigo max-w-none text-slate-800 leading-relaxed transition-all shadow-inner mathjax-process"
             html={processedHtml.replace(/\n/g, "<br/>") || '<span class="text-slate-300 italic">Example: The value of \\( x^2 \\) is...</span>'}
         />
@@ -453,28 +457,28 @@ export default function AdminPage() {
     const fetchMockExams = useCallback(async () => {
         try {
             const data = await adminApi.getMockExams();
-            setMockExams(data);
-            if (data.length > 0 && !didInitMockSelection.current) {
+            const list = Array.isArray(data) ? data : [];
+            setMockExams(list);
+            if (list.length > 0 && !didInitMockSelection.current) {
                 didInitMockSelection.current = true;
-                setSelectedMockId((prev) => prev ?? data[0].id);
+                setSelectedMockId((prev) => prev ?? list[0].id);
             }
         } catch (e: any) {
             const d = e?.response?.data;
             const msg = d?.detail || 'Could not load mock exams.';
             showToast(String(msg));
-            setMockExams([]);
+            // Do not clear mockExams — transient 403/network errors were wiping the UI and looked like data loss.
         }
     }, []);
 
     const fetchStandaloneTests = useCallback(async () => {
         try {
             const data = await adminApi.getPracticeTestsAdmin(true);
-            setStandaloneTests(data);
+            setStandaloneTests(Array.isArray(data) ? data : []);
         } catch (e: any) {
             const d = e?.response?.data;
             const msg = d?.detail || 'Could not load pastpaper sections.';
             showToast(String(msg));
-            setStandaloneTests([]);
         }
     }, []);
 
@@ -486,7 +490,6 @@ export default function AdminPage() {
             const d = e?.response?.data;
             const msg = d?.detail || 'Could not load pastpaper cards.';
             showToast(String(msg));
-            setPastpaperPacks([]);
         }
     }, []);
 
@@ -1248,13 +1251,25 @@ export default function AdminPage() {
 
         setSaving(true);
         try {
-            await adminApi.addTestToExam(targetMockId, subject, label, formType);
+            const created = await adminApi.addTestToExam(targetMockId, subject, label, formType);
+            // Keep the new section visible even if the list refetch fails (same root cause as empty-on-error above).
+            if (created && typeof created === "object" && created.id != null) {
+                setMockExams((prev) =>
+                    prev.map((m) =>
+                        Number(m.id) === Number(targetMockId)
+                            ? { ...m, tests: [...coalesceArray(m.tests), created] }
+                            : m,
+                    ),
+                );
+            }
             await fetchMockExams();
             showToast(`${subject === 'READING_WRITING' ? 'English' : 'Math'} test added ✓`);
-            
+
             // Reset only for this mock
-            setNewTestLabels(prev => ({ ...prev, [targetMockId]: '' }));
-        } finally { setSaving(false); }
+            setNewTestLabels((prev) => ({ ...prev, [targetMockId]: "" }));
+        } finally {
+            setSaving(false);
+        }
     };
 
     const handleRemoveTest = async (testId: number, mockId?: number) => {

@@ -1,14 +1,20 @@
 from collections import defaultdict
+import json
 import logging
+import mimetypes
+import os
 from datetime import timedelta
 from statistics import mean
 
-from django.db.models import Count, Q
+from django.conf import settings
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import IntegrityError, transaction
+from django.db.models import Avg, Count, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
-from rest_framework.exceptions import NotFound, PermissionDenied
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError as DRFValidationError
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -23,6 +29,8 @@ from access.services import authorize
 from exams.models import PracticeTest, TestAttempt
 from users.permissions import IsAuthenticatedAndNotFrozen
 
+from .submission_validation import validate_submission_upload
+
 from .models import (
     Classroom,
     ClassroomMembership,
@@ -30,13 +38,90 @@ from .models import (
     Assignment,
     AssignmentExtraAttachment,
     Submission,
-    Grade,
+    SubmissionFile,
+    HomeworkStagedUpload,
+    SubmissionReview,
+    SubmissionAuditEvent,
     ClassroomStreamItem,
     ClassComment,
     assignment_target_practice_test_ids,
     submission_workflow_status,
 )
+from .submission_audit import audit_submission_event
+from .stale_storage_cleanup import get_homework_storage_observability
+from .db_retry import db_retry_operation
+from .metrics import record_homework_submit_attempt, record_homework_submit_error, record_homework_submit_success
+from .submission_limits import max_batch_upload_bytes, max_files_per_submission
+from .submission_uploads import abandon_staged_uploads, stream_upload_to_storage
+from .throttles import HomeworkSubmitClassThrottle, HomeworkSubmitGlobalThrottle, HomeworkSubmitThrottle
+from .submission_state import (
+    assert_student_edit_allowed,
+    assert_teacher_grade_allowed,
+    assert_teacher_return_allowed,
+)
 logger = logging.getLogger("security.classes")
+
+
+class SubmitFlowError(Exception):
+    """Nested submit phases raise this to return a DRF Response without deep returns."""
+
+    __slots__ = ("response",)
+
+    def __init__(self, response: Response):
+        self.response = response
+
+
+def _audit(sub: Submission, user, event_type: str, payload: dict | None = None) -> None:
+    """Append-only audit with submission revision for traceability."""
+    audit_submission_event(
+        sub.pk,
+        getattr(user, "pk", None),
+        event_type,
+        payload,
+        submission_revision=sub.revision,
+    )
+
+
+def _revision_conflict_response(s: Submission) -> Response:
+    return Response(
+        {"detail": "Submission was modified. Refresh and try again.", "revision": s.revision},
+        status=status.HTTP_409_CONFLICT,
+    )
+
+
+def _emit_grade_realtime(classroom_id: int, student_id: int) -> None:
+    from realtime.services import emit_to_classroom_members, emit_to_user
+
+    emit_to_classroom_members(
+        classroom_id=classroom_id,
+        event_type="stream.updated",
+        payload={"classroom_id": classroom_id, "reason": "grade"},
+    )
+    emit_to_user(
+        user_id=student_id,
+        event_type="workspace.updated",
+        payload={"classroom_id": classroom_id, "reason": "grade"},
+    )
+    emit_to_user(
+        user_id=student_id,
+        event_type="notifications.updated",
+        payload={"reason": "graded", "classroom_id": classroom_id},
+    )
+
+
+def _emit_return_realtime(classroom_id: int, student_id: int) -> None:
+    from realtime.services import emit_to_classroom_members, emit_to_user
+
+    emit_to_classroom_members(
+        classroom_id=classroom_id,
+        event_type="stream.updated",
+        payload={"classroom_id": classroom_id, "reason": "submission_returned"},
+    )
+    emit_to_user(
+        user_id=student_id,
+        event_type="workspace.updated",
+        payload={"classroom_id": classroom_id, "reason": "submission_returned"},
+    )
 
 
 class StreamPagination(PageNumberPagination):
@@ -65,9 +150,9 @@ def _build_stream_payload(items: list, request):
     assigns = {a.id: a for a in Assignment.objects.filter(pk__in=assign_ids).select_related("created_by")}
     subs = {
         s.id: s
-        for s in Submission.objects.filter(pk__in=sub_ids).select_related(
-            "student", "assignment", "attempt", "grade"
-        )
+        for s in Submission.objects.filter(pk__in=sub_ids)
+        .select_related("student", "assignment", "attempt", "attempt__practice_test", "review")
+        .prefetch_related("files")
     }
 
     out = []
@@ -126,7 +211,9 @@ from .serializers import (
     AssignmentSerializer,
     SubmissionSerializer,
     SubmitSerializer,
-    GradeUpsertSerializer,
+    SubmissionReviewUpsertSerializer,
+    SubmissionReturnSerializer,
+    SubmissionAuditEventReadSerializer,
     ClassCommentSerializer,
 )
 
@@ -253,6 +340,19 @@ class ClassroomViewSet(ModelViewSet):
         classroom = self.get_object()
         memberships = classroom.memberships.select_related("user").all().order_by("role", "-joined_at")
         return Response(ClassroomMembershipSerializer(memberships, many=True, context={"request": request}).data)
+
+    @action(
+        detail=True,
+        methods=["get"],
+        permission_classes=[IsAuthenticatedAndNotFrozen],
+        url_path="homework-storage-metrics",
+    )
+    def homework_storage_metrics(self, request, pk=None):
+        """Stale homework blob cleanup backlog and retry stats (platform-wide; class admins only)."""
+        classroom = self.get_object()
+        if not classroom.memberships.filter(user=request.user, role="ADMIN").exists():
+            return Response({"detail": "Not allowed."}, status=status.HTTP_403_FORBIDDEN)
+        return Response(get_homework_storage_observability())
 
     @action(detail=True, methods=["get"], permission_classes=[IsAuthenticatedAndNotFrozen], url_path="assignment-options")
     def assignment_options(self, request, pk=None):
@@ -388,6 +488,83 @@ class ClassroomViewSet(ModelViewSet):
                 }
             )
 
+        # Teacher homework grades: mean of SubmissionReview.grade (non-null) + count of all reviewed submissions.
+        review_stats = (
+            Submission.objects.filter(
+                assignment__classroom=classroom,
+                student_id__in=student_ids,
+                status=Submission.STATUS_REVIEWED,
+            )
+            .exclude(review__grade__isnull=True)
+            .values("student_id")
+            .annotate(avg_grade=Avg("review__grade"))
+        )
+        review_avg_by_student: dict[int, float | None] = {
+            r["student_id"]: float(r["avg_grade"]) if r["avg_grade"] is not None else None for r in review_stats
+        }
+        reviewed_count_by_student = {
+            r["student_id"]: r["n"]
+            for r in Submission.objects.filter(
+                assignment__classroom=classroom,
+                student_id__in=student_ids,
+                status=Submission.STATUS_REVIEWED,
+            )
+            .values("student_id")
+            .annotate(n=Count("id"))
+        }
+        max_review_cnt = max(reviewed_count_by_student.values(), default=0)
+        min_cfg = int(getattr(settings, "CLASSROOM_LEADERBOARD_MIN_REVIEWED_FOR_RANK", 2))
+        effective_min_for_rank = min(min_cfg, max_review_cnt) if max_review_cnt else min_cfg
+
+        homework_assignment_count = Assignment.objects.filter(classroom=classroom).count()
+        turn_in_rows = (
+            Submission.objects.filter(assignment__classroom=classroom, student_id__in=student_ids)
+            .exclude(status=Submission.STATUS_DRAFT)
+            .values("student_id")
+            .annotate(n=Count("id"))
+        )
+        turn_in_by_student = {row["student_id"]: row["n"] for row in turn_in_rows}
+
+        homework_grade_rows: list[dict] = []
+        for mem in student_memberships:
+            uid = mem.user_id
+            avg_g = review_avg_by_student.get(uid)
+            cnt = reviewed_count_by_student.get(uid, 0)
+            turn_in = turn_in_by_student.get(uid, 0)
+            completion_pct = (
+                round(100.0 * turn_in / homework_assignment_count, 1) if homework_assignment_count else None
+            )
+            homework_grade_rows.append(
+                {
+                    "user_id": uid,
+                    "first_name": mem.user.first_name or "",
+                    "last_name": mem.user.last_name or "",
+                    "email": mem.user.email or "",
+                    "average_review_grade": round(avg_g, 2) if avg_g is not None else None,
+                    "graded_submission_count": cnt,
+                    "classwork_turn_in_count": turn_in,
+                    "homework_completion_rate_pct": completion_pct,
+                }
+            )
+        homework_grade_rows.sort(
+            key=lambda r: (
+                -(r["average_review_grade"] if r["average_review_grade"] is not None else -1.0),
+                -r["graded_submission_count"],
+                -(r["homework_completion_rate_pct"] or 0),
+                -r["classwork_turn_in_count"],
+                (r["first_name"] or r["email"]).lower(),
+            )
+        )
+        for i, r in enumerate(homework_grade_rows, start=1):
+            r["rank_ordinal"] = i
+            confident = (
+                r["graded_submission_count"] >= effective_min_for_rank and r["average_review_grade"] is not None
+            )
+            r["rank_confidence"] = "high" if confident else "low"
+            r["rank"] = i if confident else None
+        review_avgs = [r["average_review_grade"] for r in homework_grade_rows if r["average_review_grade"] is not None]
+        class_average_review_grade = round(mean(review_avgs), 2) if review_avgs else None
+
         rows = []
         for mem in student_memberships:
             u = mem.user
@@ -420,6 +597,8 @@ class ClassroomViewSet(ModelViewSet):
                 }
 
             practice_average = round(sum(scores_list) / len(scores_list), 1) if scores_list else None
+            ravg = review_avg_by_student.get(u.id)
+            rcnt = reviewed_count_by_student.get(u.id, 0)
             rows.append(
                 {
                     "user_id": u.id,
@@ -431,6 +610,8 @@ class ClassroomViewSet(ModelViewSet):
                     "practice_average": practice_average,
                     "practice_completed_count": len(scores_list),
                     "practice_total_assigned": len(practice_assignments),
+                    "average_review_grade": round(ravg, 2) if ravg is not None else None,
+                    "review_graded_count": rcnt,
                 }
             )
 
@@ -460,6 +641,23 @@ class ClassroomViewSet(ModelViewSet):
                 "overall_group_mean_of_assignments": overall_assignment_mean,
                 "assignments_summary": assignments_summary,
                 "students": rows,
+                "homework_grade_leaderboard": {
+                    "description": (
+                        "Rankings by average teacher grade (SubmissionReview.grade) across "
+                        "submissions marked reviewed in this class. Ties use graded count, then "
+                        "classwork completion rate, then number of non-draft turn-ins."
+                    ),
+                    "class_average_review_grade": class_average_review_grade,
+                    "classwork_assignment_count": homework_assignment_count,
+                    "effective_min_reviewed_for_rank": effective_min_for_rank,
+                    "ranking_note": (
+                        f"Rank is shown only when a student has at least {effective_min_for_rank} "
+                        "graded homework item(s) in this class and a numeric average; "
+                        "otherwise rank is null (rank_ordinal still reflects sort order). "
+                        "Completion rate is non-draft submissions ÷ total class assignments."
+                    ),
+                    "rows": homework_grade_rows,
+                },
             }
         )
 
@@ -503,7 +701,7 @@ class ClassroomViewSet(ModelViewSet):
             subs_map = {
                 s.assignment_id: s
                 for s in Submission.objects.filter(student=user, assignment__classroom=classroom).select_related(
-                    "grade"
+                    "review"
                 )
             }
 
@@ -530,23 +728,22 @@ class ClassroomViewSet(ModelViewSet):
                 Submission.objects.filter(
                     student=user,
                     assignment__classroom=classroom,
-                    status=Submission.STATUS_SUBMITTED,
+                    status=Submission.STATUS_REVIEWED,
                 )
-                .select_related("assignment", "grade")
-                .filter(grade__isnull=False)
-                .order_by("-grade__graded_at")[:25]
+                .select_related("assignment", "review")
+                .order_by("-review__reviewed_at")[:25]
             )
             for s in graded_subs:
-                g = s.grade
+                g = s.review
                 recently_graded.append(
                     {
                         "assignment": {"id": s.assignment_id, "title": s.assignment.title},
                         "submission_id": s.id,
                         "workflow_status": submission_workflow_status(s),
-                        "grade": {
-                            "score": str(g.score) if g.score is not None else None,
+                        "review": {
+                            "grade": str(g.grade) if g.grade is not None else None,
                             "feedback": g.feedback,
-                            "graded_at": g.graded_at.isoformat() if g.graded_at else None,
+                            "reviewed_at": g.reviewed_at.isoformat() if g.reviewed_at else None,
                         },
                     }
                 )
@@ -710,48 +907,329 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
             raise PermissionDenied("Only class admins can edit assignments.")
         serializer.save()
 
-    @action(detail=True, methods=["post"], url_path="submit")
+    def _parse_remove_file_ids(self, request) -> list[int]:
+        raw = request.data.get("remove_file_ids")
+        if raw in (None, "", []):
+            return []
+        if isinstance(raw, list):
+            ids = raw
+        else:
+            s = str(raw).strip()
+            try:
+                ids = json.loads(s) if s.startswith("[") else [int(x) for x in s.split(",") if x.strip().isdigit()]
+            except (json.JSONDecodeError, TypeError, ValueError):
+                return []
+        out: list[int] = []
+        for x in ids:
+            try:
+                out.append(int(x))
+            except (TypeError, ValueError):
+                continue
+        return out
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="submit",
+        throttle_classes=[
+            HomeworkSubmitThrottle,
+            HomeworkSubmitGlobalThrottle,
+            HomeworkSubmitClassThrottle,
+        ],
+    )
     def submit(self, request, classroom_pk=None, pk=None):
         classroom = self.get_classroom()
         if not classroom.memberships.filter(user=request.user).exists():
             return Response({"detail": "Not a member."}, status=status.HTTP_403_FORBIDDEN)
         assignment = get_object_or_404(Assignment, pk=pk, classroom=classroom)
-        is_admin = classroom.memberships.filter(user=request.user, role="ADMIN").exists()
-        if assignment.due_at and timezone.now() > assignment.due_at and not is_admin:
+
+        student = request.user
+        if not classroom.memberships.filter(user=student, role=ClassroomMembership.ROLE_STUDENT).exists():
             return Response(
-                {"detail": "The due date has passed. You can no longer change your submission."},
+                {"detail": "Only students can submit homework for this assignment."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        new_files = list(request.FILES.getlist("files"))
+        if not new_files:
+            new_files = list(request.FILES.getlist("file"))
+        for f in new_files:
+            try:
+                validate_submission_upload(f)
+            except DjangoValidationError as e:
+                msg = e.messages[0] if getattr(e, "messages", None) else str(e)
+                return Response({"detail": msg}, status=status.HTTP_400_BAD_REQUEST)
+
+        remove_ids = self._parse_remove_file_ids(request)
+
+        try:
+            sub, _ = Submission.objects.get_or_create(assignment=assignment, student=student)
+        except IntegrityError:
+            sub = Submission.objects.get(assignment=assignment, student=student)
+
+        batch_max = max_batch_upload_bytes()
+        batch_total = 0
+        for f in new_files:
+            sz = getattr(f, "size", None)
+            if sz is None:
+                try:
+                    pos = f.tell()
+                    f.seek(0, os.SEEK_END)
+                    sz = f.tell()
+                    f.seek(pos)
+                except (OSError, AttributeError):
+                    sz = 0
+            batch_total += int(sz or 0)
+        if batch_total > batch_max:
+            record_homework_submit_error()
+            return Response(
+                {
+                    "detail": (
+                        f"Total upload size for this request ({batch_total} bytes) exceeds "
+                        f"the maximum allowed ({batch_max} bytes)."
+                    )
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        serializer = SubmitSerializer(data=request.data)
+
+        serializer = SubmitSerializer(
+            data=request.data,
+            context={
+                "new_files_count": len(new_files),
+                "submission_id": sub.pk,
+                "remove_file_ids": remove_ids,
+            },
+        )
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+        record_homework_submit_attempt()
 
-        sub, _ = Submission.objects.get_or_create(assignment=assignment, student=request.user)
-        if "text_response" in data:
-            sub.text_response = data.get("text_response") or ""
-        if data.get("upload_file") is not None:
-            # If upload_file is provided, update it. (Clearing can be added later.)
-            sub.upload_file = data.get("upload_file")
+        past_due = assignment.due_at and timezone.now() > assignment.due_at
 
+        resolved_attempt = None
         if "attempt_id" in data:
             attempt_id = data.get("attempt_id")
             if attempt_id is None:
-                sub.attempt = None
+                resolved_attempt = None
             else:
-                att = TestAttempt.objects.filter(id=attempt_id, student=request.user).first()
+                att = TestAttempt.objects.filter(id=attempt_id, student=student).first()
                 if not att:
-                    return Response({"detail": "Invalid attempt id for your account."}, status=status.HTTP_400_BAD_REQUEST)
+                    record_homework_submit_error()
+                    return Response(
+                        {"detail": "Invalid attempt id for this student."}, status=status.HTTP_400_BAD_REQUEST
+                    )
                 targets = assignment_target_practice_test_ids(assignment)
                 if targets and att.practice_test_id not in targets:
+                    record_homework_submit_error()
                     return Response(
                         {"detail": "That attempt does not belong to a practice test linked to this homework."},
                         status=status.HTTP_400_BAD_REQUEST,
                     )
-                sub.attempt = att
+                resolved_attempt = att
 
-        if data.get("submit", True):
-            sub.mark_submitted()
-        sub.save()
+        file_tokens_list: list[str] = data.get("file_tokens_list") or []
+        expected_revision = data.get("expected_revision")
+
+        max_files = max_files_per_submission()
+        remaining_slots = SubmissionFile.objects.filter(submission=sub).exclude(pk__in=remove_ids).count()
+        if remaining_slots + len(new_files) > max_files:
+            record_homework_submit_error()
+            return Response(
+                {
+                    "detail": (
+                        f"Too many files for one submission (would exceed {max_files}). "
+                        "Remove files or submit fewer at once."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        staged_paths: list[str] = []
+        staged_uploads = []
+        for i, uf in enumerate(new_files):
+            tok = file_tokens_list[i] if i < len(file_tokens_list) else None
+            if tok and SubmissionFile.objects.filter(submission_id=sub.pk, upload_token=tok[:64]).exists():
+                continue
+            su = stream_upload_to_storage(sub.pk, uf, upload_token=tok)
+            staged_uploads.append(su)
+            staged_paths.append(su.storage_path)
+            HomeworkStagedUpload.objects.update_or_create(
+                submission_id=sub.pk,
+                storage_path=su.storage_path,
+                defaults={
+                    "upload_token": (su.upload_token or "")[:64],
+                    "content_sha256": su.content_sha256 or "",
+                    "deterministic": True,
+                    "status": HomeworkStagedUpload.STATUS_STAGING,
+                },
+            )
+
+        do_submit = data.get("submit", True)
+
+        def commit_all():
+            nonlocal sub
+            with transaction.atomic():
+                s = Submission.objects.select_for_update().get(pk=sub.pk)
+                if expected_revision is not None and int(expected_revision) != s.revision:
+                    raise SubmitFlowError(_revision_conflict_response(s))
+                try:
+                    assert_student_edit_allowed(s)
+                except DRFValidationError as e:
+                    raise SubmitFlowError(Response(e.detail, status=status.HTTP_400_BAD_REQUEST))
+                if past_due and s.status != Submission.STATUS_RETURNED:
+                    raise SubmitFlowError(
+                        Response(
+                            {"detail": "The due date has passed. You can no longer change your submission."},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+                    )
+
+                prev_attempt_id = s.attempt_id
+                to_delete = list(SubmissionFile.objects.filter(pk__in=remove_ids, submission=s))
+                delete_pks = {sf.pk for sf in to_delete}
+                attempt_changed = False
+                if "attempt_id" in data:
+                    new_att = resolved_attempt
+                    if s.attempt_id != getattr(new_att, "id", None):
+                        attempt_changed = True
+                    s.attempt = new_att
+
+                remaining_qs = s.files.exclude(pk__in=delete_pks) if delete_pks else s.files.all()
+                remaining_file_count = remaining_qs.count()
+                existing_sha = set(
+                    remaining_qs.exclude(content_sha256="").values_list("content_sha256", flat=True)
+                )
+                existing_tokens = set(
+                    remaining_qs.exclude(upload_token="").values_list("upload_token", flat=True)
+                )
+
+                would_attach = 0
+                for su in staged_uploads:
+                    if su.content_sha256 and su.content_sha256 in existing_sha:
+                        abandon_staged_uploads(s.pk, [su.storage_path])
+                        continue
+                    tok = (su.upload_token or "")[:64]
+                    if tok and tok in existing_tokens:
+                        abandon_staged_uploads(s.pk, [su.storage_path])
+                        continue
+                    would_attach += 1
+                    if su.content_sha256:
+                        existing_sha.add(su.content_sha256)
+                    if tok:
+                        existing_tokens.add(tok)
+
+                prospective_file_count = remaining_file_count + would_attach
+                if do_submit and prospective_file_count == 0 and s.attempt_id is None:
+                    raise SubmitFlowError(
+                        Response(
+                            {"detail": "Submit at least one file or link a test attempt."},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+                    )
+
+                prev_status = s.status
+                submit_will_transition = do_submit and prev_status in (
+                    Submission.STATUS_DRAFT,
+                    Submission.STATUS_RETURNED,
+                )
+                need_revision_bump = (
+                    bool(to_delete)
+                    or attempt_changed
+                    or would_attach > 0
+                    or submit_will_transition
+                )
+                if need_revision_bump:
+                    s.revision += 1
+                rev = s.revision
+
+                for sf in to_delete:
+                    audit_submission_event(
+                        s.pk,
+                        request.user.pk,
+                        SubmissionAuditEvent.EVENT_FILE_REMOVE,
+                        {"file_id": sf.pk},
+                        submission_revision=rev,
+                    )
+                    sf.delete()
+
+                if attempt_changed:
+                    audit_submission_event(
+                        s.pk,
+                        request.user.pk,
+                        SubmissionAuditEvent.EVENT_ATTEMPT_CHANGE,
+                        {
+                            "from_attempt_id": prev_attempt_id,
+                            "to_attempt_id": s.attempt_id,
+                        },
+                        submission_revision=rev,
+                    )
+
+                for su in staged_uploads:
+                    if SubmissionFile.objects.filter(submission=s, content_sha256=su.content_sha256).exists():
+                        abandon_staged_uploads(s.pk, [su.storage_path])
+                        continue
+                    tok = (su.upload_token or "")[:64]
+                    if tok and SubmissionFile.objects.filter(submission=s, upload_token=tok).exists():
+                        abandon_staged_uploads(s.pk, [su.storage_path])
+                        continue
+                    row = SubmissionFile(
+                        submission=s,
+                        file_name=su.file_name,
+                        file_type=su.file_type,
+                        content_sha256=su.content_sha256,
+                        upload_token=tok,
+                    )
+                    row.file.name = su.storage_path
+                    try:
+                        row.save()
+                    except IntegrityError:
+                        abandon_staged_uploads(s.pk, [su.storage_path])
+                        continue
+                    HomeworkStagedUpload.objects.filter(
+                        submission_id=s.pk,
+                        storage_path=su.storage_path,
+                    ).update(status=HomeworkStagedUpload.STATUS_ATTACHED, content_sha256=su.content_sha256 or "")
+                    audit_submission_event(
+                        s.pk,
+                        request.user.pk,
+                        SubmissionAuditEvent.EVENT_FILE_ADD,
+                        {"submission_file_id": row.pk, "file_name": row.file_name},
+                        submission_revision=rev,
+                    )
+
+                if do_submit:
+                    try:
+                        s.mark_submitted()
+                    except ValueError as e:
+                        raise SubmitFlowError(Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST))
+                    _audit(
+                        s,
+                        request.user,
+                        SubmissionAuditEvent.EVENT_STATUS_CHANGE,
+                        {"from": prev_status, "to": s.status},
+                    )
+
+                s.save()
+                sub = s
+
+        try:
+            db_retry_operation(commit_all)
+        except SubmitFlowError as e:
+            record_homework_submit_error()
+            abandon_staged_uploads(sub.pk, staged_paths)
+            return e.response
+        except Exception:
+            record_homework_submit_error()
+            abandon_staged_uploads(sub.pk, staged_paths)
+            raise
+
+        record_homework_submit_success()
+        sub = (
+            Submission.objects.filter(pk=sub.pk)
+            .select_related("student", "attempt", "attempt__practice_test", "review", "review__teacher")
+            .prefetch_related("files")
+            .first()
+        )
         return Response(SubmissionSerializer(sub, context={"request": request}).data)
 
     @action(detail=True, methods=["get"], url_path="my-submission")
@@ -762,7 +1240,8 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         assignment = get_object_or_404(Assignment, pk=pk, classroom=classroom)
         sub = (
             Submission.objects.filter(assignment=assignment, student=request.user)
-            .select_related("attempt", "grade")
+            .select_related("attempt", "attempt__practice_test", "review", "review__teacher")
+            .prefetch_related("files")
             .first()
         )
         if not sub:
@@ -775,7 +1254,11 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         if not classroom.memberships.filter(user=request.user, role="ADMIN").exists():
             return Response({"detail": "Only class admins can view submissions."}, status=status.HTTP_403_FORBIDDEN)
         assignment = get_object_or_404(Assignment, pk=pk, classroom=classroom)
-        qs = Submission.objects.filter(assignment=assignment).select_related("student").select_related("grade")
+        qs = (
+            Submission.objects.filter(assignment=assignment)
+            .select_related("student", "attempt", "attempt__practice_test", "review", "review__teacher")
+            .prefetch_related("files")
+        )
         return Response(SubmissionSerializer(qs, many=True, context={"request": request}).data)
 
 
@@ -794,7 +1277,10 @@ class SubmissionAdminViewSet(ReadOnlyModelViewSet):
         ).values_list("classroom_id", flat=True)
         return (
             Submission.objects.filter(assignment__classroom_id__in=admin_class_ids)
-            .select_related("assignment__classroom", "student", "grade")
+            .select_related(
+                "assignment__classroom", "student", "attempt", "attempt__practice_test", "review", "review__teacher"
+            )
+            .prefetch_related("files")
             .distinct()
         )
 
@@ -827,41 +1313,152 @@ class SubmissionAdminViewSet(ReadOnlyModelViewSet):
         if not classroom.memberships.filter(user=request.user, role="ADMIN").exists():
             return Response({"detail": "Only class admins can grade."}, status=status.HTTP_403_FORBIDDEN)
 
-        serializer = GradeUpsertSerializer(data=request.data)
+        serializer = SubmissionReviewUpsertSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        grade, _ = Grade.objects.get_or_create(submission=submission, defaults={"graded_by": request.user})
-        # if existing grade created by someone else, keep graded_by but update score/feedback
-        if "score" in data:
-            grade.score = data["score"]
-        if "feedback" in data:
-            grade.feedback = data["feedback"]
-        grade.graded_by = request.user
-        grade.graded_at = timezone.now()
-        grade.save()
+        review = None
+        prev_status = None
 
-        submission.refresh_from_db()
-        # Realtime delivery hints: teacher stream + student workspace/notifications.
-        from realtime.services import emit_to_classroom_members, emit_to_user
+        def _grade_tx():
+            nonlocal submission, review, prev_status
+            with transaction.atomic():
+                submission = (
+                    Submission.objects.select_for_update()
+                    .select_related("assignment", "assignment__classroom")
+                    .get(pk=submission.pk)
+                )
+                expected_revision = data.get("expected_revision")
+                if expected_revision is not None and int(expected_revision) != submission.revision:
+                    raise SubmitFlowError(_revision_conflict_response(submission))
+                try:
+                    assert_teacher_grade_allowed(submission)
+                except DRFValidationError as e:
+                    raise SubmitFlowError(Response(e.detail, status=status.HTTP_400_BAD_REQUEST))
+
+                prev_status = submission.status
+                review, _ = SubmissionReview.objects.get_or_create(
+                    submission=submission, defaults={"teacher": request.user}
+                )
+                if "grade" in data:
+                    review.grade = data["grade"]
+                if "feedback" in data:
+                    review.feedback = data["feedback"]
+                review.teacher = request.user
+                review.save()
+
+                submission.status = Submission.STATUS_REVIEWED
+                submission.revision += 1
+                submission.save(update_fields=["status", "updated_at", "revision"])
+
+                _audit(
+                    submission,
+                    request.user,
+                    SubmissionAuditEvent.EVENT_REVIEW_UPSERT,
+                    {
+                        "previous_status": prev_status,
+                        "grade": str(review.grade) if review.grade is not None else None,
+                        "feedback_chars": len(review.feedback or ""),
+                    },
+                )
+                if prev_status != Submission.STATUS_REVIEWED:
+                    _audit(
+                        submission,
+                        request.user,
+                        SubmissionAuditEvent.EVENT_STATUS_CHANGE,
+                        {"from": prev_status, "to": submission.status},
+                    )
+
+        try:
+            db_retry_operation(_grade_tx)
+        except SubmitFlowError as e:
+            return e.response
 
         classroom_id = submission.assignment.classroom_id
-        emit_to_classroom_members(
-            classroom_id=classroom_id,
-            event_type="stream.updated",
-            payload={"classroom_id": classroom_id, "reason": "grade"},
-        )
-        emit_to_user(
-            user_id=submission.student_id,
-            event_type="workspace.updated",
-            payload={"classroom_id": classroom_id, "reason": "grade"},
-        )
-        emit_to_user(
-            user_id=submission.student_id,
-            event_type="notifications.updated",
-            payload={"reason": "graded", "classroom_id": classroom_id},
+        student_id = submission.student_id
+        transaction.on_commit(lambda: _emit_grade_realtime(classroom_id, student_id))
+
+        submission = (
+            Submission.objects.filter(pk=submission.pk)
+            .select_related("student", "attempt", "attempt__practice_test", "review", "review__teacher")
+            .prefetch_related("files")
+            .first()
         )
         return Response(SubmissionSerializer(submission, context={"request": request}).data)
+
+    @action(detail=True, methods=["post"], url_path="return")
+    def return_for_revision(self, request, pk=None):
+        """Teacher returns submitted/reviewed work so the student can edit and resubmit."""
+        submission = self.get_object()
+        classroom = submission.assignment.classroom
+        if not classroom.memberships.filter(user=request.user, role=ClassroomMembership.ROLE_ADMIN).exists():
+            return Response({"detail": "Only class admins can return submissions."}, status=status.HTTP_403_FORBIDDEN)
+
+        ser = SubmissionReturnSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        note = (ser.validated_data.get("note") or "").strip()
+
+        prev = None
+
+        def _return_tx():
+            nonlocal submission, prev
+            with transaction.atomic():
+                submission = (
+                    Submission.objects.select_for_update()
+                    .select_related("assignment", "assignment__classroom")
+                    .get(pk=submission.pk)
+                )
+                expected_revision = ser.validated_data.get("expected_revision")
+                if expected_revision is not None and int(expected_revision) != submission.revision:
+                    raise SubmitFlowError(_revision_conflict_response(submission))
+                try:
+                    assert_teacher_return_allowed(submission)
+                except DRFValidationError as e:
+                    raise SubmitFlowError(Response(e.detail, status=status.HTTP_400_BAD_REQUEST))
+
+                prev = submission.status
+                submission.status = Submission.STATUS_RETURNED
+                submission.returned_at = timezone.now()
+                submission.return_note = note[:10000]
+                submission.revision += 1
+                submission.save(
+                    update_fields=["status", "returned_at", "return_note", "updated_at", "revision"]
+                )
+
+                _audit(
+                    submission,
+                    request.user,
+                    SubmissionAuditEvent.EVENT_RETURN,
+                    {"from_status": prev, "to_status": Submission.STATUS_RETURNED, "note": note[:5000]},
+                )
+
+        try:
+            db_retry_operation(_return_tx)
+        except SubmitFlowError as e:
+            return e.response
+
+        cid = submission.assignment.classroom_id
+        sid = submission.student_id
+        transaction.on_commit(lambda: _emit_return_realtime(cid, sid))
+
+        submission = (
+            Submission.objects.filter(pk=submission.pk)
+            .select_related("student", "attempt", "attempt__practice_test", "review", "review__teacher")
+            .prefetch_related("files")
+            .first()
+        )
+        return Response(SubmissionSerializer(submission, context={"request": request}).data)
+
+    @action(detail=True, methods=["get"], url_path="audit-log")
+    def audit_log(self, request, pk=None):
+        submission = self.get_object()
+        classroom = submission.assignment.classroom
+        is_teacher = classroom.memberships.filter(user=request.user, role=ClassroomMembership.ROLE_ADMIN).exists()
+        is_owner = request.user.pk == submission.student_id
+        if not (is_teacher or is_owner):
+            return Response({"detail": "Not allowed."}, status=status.HTTP_403_FORBIDDEN)
+        qs = submission.audit_events.all()[:300]
+        return Response(SubmissionAuditEventReadSerializer(qs, many=True).data)
 
 
 class ClassCommentListCreateView(APIView):

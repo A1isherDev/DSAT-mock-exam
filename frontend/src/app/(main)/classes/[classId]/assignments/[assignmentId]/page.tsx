@@ -16,9 +16,22 @@ import {
   ClassroomSkeleton,
   crInputClass,
   crSelectClass,
-  crTextareaClass,
 } from "@/components/classroom";
-import { ArrowLeft, ClipboardCheck, ExternalLink, FileQuestion, RefreshCw, Save, Send, Trophy } from "lucide-react";
+import {
+  ArrowLeft,
+  ClipboardCheck,
+  ExternalLink,
+  FileImage,
+  FileQuestion,
+  FileText,
+  History,
+  RefreshCw,
+  RotateCcw,
+  Save,
+  Send,
+  Trash2,
+  Trophy,
+} from "lucide-react";
 
 type BundleRow = { id: number; subject: string; title?: string };
 
@@ -46,6 +59,18 @@ function formatAttemptOption(a: { id: number; practice_test?: number; practice_t
   return `#${a.id} · ${sub} · ${head} · ${status}`;
 }
 
+function fileKindIcon(fileType: string | undefined, fileName: string) {
+  const ft = (fileType || "").toLowerCase();
+  const fn = fileName.toLowerCase();
+  if (ft.startsWith("image/") || /\.(png|jpe?g|gif|webp|svg)$/i.test(fn)) {
+    return FileImage;
+  }
+  if (ft.includes("pdf") || fn.endsWith(".pdf")) {
+    return FileText;
+  }
+  return FileText;
+}
+
 export default function AssignmentDetailPage() {
   const router = useRouter();
   const { classId, assignmentId } = useParams();
@@ -58,8 +83,7 @@ export default function AssignmentDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [assignment, setAssignment] = useState<any>(null);
   const [mySubmission, setMySubmission] = useState<any>(null);
-  const [responseText, setResponseText] = useState("");
-  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [selectedAttemptId, setSelectedAttemptId] = useState<number | null>(null);
   const [myAttempts, setMyAttempts] = useState<any[]>([]);
   const [attemptsLoading, setAttemptsLoading] = useState(false);
@@ -67,7 +91,13 @@ export default function AssignmentDetailPage() {
   const [saving, setSaving] = useState(false);
 
   const [submissions, setSubmissions] = useState<any[]>([]);
-  const [grading, setGrading] = useState<Record<string, { score?: string; feedback?: string }>>({});
+  const [grading, setGrading] = useState<Record<string, { grade?: string; feedback?: string }>>({});
+  const [returnDraft, setReturnDraft] = useState<Record<string, string>>({});
+  const [returningId, setReturningId] = useState<number | null>(null);
+  const [auditOpen, setAuditOpen] = useState<Record<string, boolean>>({});
+  const [auditById, setAuditById] = useState<Record<number, any[] | undefined>>({});
+  const [auditLoadingId, setAuditLoadingId] = useState<number | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const refresh = async () => {
     setError(null);
@@ -82,13 +112,27 @@ export default function AssignmentDetailPage() {
       const mine = await classesApi.getMySubmission(cid, aid);
       const sub = mine && typeof mine === "object" && "id" in mine && mine.id != null ? mine : null;
       setMySubmission(sub);
-      setResponseText(sub?.text_response || "");
+      setPendingFiles([]);
       setSelectedAttemptId(submissionAttemptPk(sub));
 
       if (cls?.my_role === "ADMIN") {
         setMyAttempts([]);
         const subs = await classesApi.listSubmissions(cid, aid);
-        setSubmissions(Array.isArray(subs) ? subs : []);
+        const list = Array.isArray(subs) ? subs : [];
+        setSubmissions(list);
+        setGrading((prev) => {
+          const n = { ...prev };
+          for (const s of list) {
+            const id = String(s.id);
+            if (!n[id] && s.review) {
+              n[id] = {
+                grade: s.review.grade != null ? String(s.review.grade) : "",
+                feedback: s.review.feedback ?? "",
+              };
+            }
+          }
+          return n;
+        });
       } else {
         setSubmissions([]);
         setAttemptsLoading(true);
@@ -110,6 +154,17 @@ export default function AssignmentDetailPage() {
     }
   };
 
+  const refetchMySubmissionOnly = async () => {
+    try {
+      const mine = await classesApi.getMySubmission(cid, aid);
+      const sub = mine && typeof mine === "object" && "id" in mine && mine.id != null ? mine : null;
+      setMySubmission(sub);
+      setSelectedAttemptId(submissionAttemptPk(sub));
+    } catch {
+      /* ignore */
+    }
+  };
+
   useEffect(() => {
     if (!Number.isFinite(cid) || !Number.isFinite(aid)) return;
     refresh();
@@ -119,18 +174,73 @@ export default function AssignmentDetailPage() {
   const submit = async (finalSubmit: boolean) => {
     setSaving(true);
     setError(null);
+    setSuccessMsg(null);
     try {
       const fd = new FormData();
-      fd.append("text_response", responseText);
       fd.append("submit", finalSubmit ? "true" : "false");
       fd.append("attempt_id", selectedAttemptId != null ? String(selectedAttemptId) : "");
-      if (uploadFile) fd.append("upload_file", uploadFile);
+      if (mySubmission != null && typeof mySubmission.revision === "number") {
+        fd.append("expected_revision", String(mySubmission.revision));
+      }
+      const tokens: string[] = [];
+      for (const f of pendingFiles) {
+        fd.append("files", f);
+        tokens.push(crypto.randomUUID());
+      }
+      if (tokens.length) {
+        fd.append("file_tokens", JSON.stringify(tokens));
+      }
       const res = await classesApi.submitAssignment(cid, aid, fd as any);
       setMySubmission(res);
+      setPendingFiles([]);
       setSelectedAttemptId(submissionAttemptPk(res));
+      if (finalSubmit) {
+        setSuccessMsg("Homework submitted successfully.");
+        window.setTimeout(() => setSuccessMsg(null), 5000);
+      }
     } catch (e: unknown) {
-      const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      const ax = e as { response?: { status?: number; data?: { detail?: string } } };
+      if (ax.response?.status === 409) {
+        setError(
+          typeof ax.response.data?.detail === "string"
+            ? ax.response.data.detail
+            : "Submission changed. Try again after refreshing."
+        );
+        await refetchMySubmissionOnly();
+        return;
+      }
+      const d = ax.response?.data?.detail;
       setError(typeof d === "string" ? d : "Could not submit.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeServerFile = async (fileId: number) => {
+    setSaving(true);
+    setError(null);
+    try {
+      const fd = new FormData();
+      fd.append("submit", "false");
+      fd.append("remove_file_ids", JSON.stringify([fileId]));
+      if (mySubmission != null && typeof mySubmission.revision === "number") {
+        fd.append("expected_revision", String(mySubmission.revision));
+      }
+      const res = await classesApi.submitAssignment(cid, aid, fd as any);
+      setMySubmission(res);
+    } catch (e: unknown) {
+      const ax = e as { response?: { status?: number; data?: { detail?: string } } };
+      if (ax.response?.status === 409) {
+        setError(
+          typeof ax.response.data?.detail === "string"
+            ? ax.response.data.detail
+            : "Submission changed. Try again after refreshing."
+        );
+        await refetchMySubmissionOnly();
+        return;
+      }
+      const d = ax.response?.data?.detail;
+      setError(typeof d === "string" ? d : "Could not remove file.");
     } finally {
       setSaving(false);
     }
@@ -200,8 +310,88 @@ export default function AssignmentDetailPage() {
 
   const gradeOne = async (submissionId: number) => {
     const g = grading[String(submissionId)] || {};
-    await classesApi.gradeSubmission(submissionId, { score: g.score ?? null, feedback: g.feedback ?? "" });
-    await refresh();
+    setError(null);
+    try {
+      const row = submissions.find((s) => Number(s.id) === submissionId);
+      await classesApi.gradeSubmission(submissionId, {
+        grade: g.grade === "" || g.grade == null ? null : g.grade,
+        feedback: g.feedback ?? "",
+        ...(typeof row?.revision === "number" ? { expected_revision: row.revision } : {}),
+      });
+      await refresh();
+    } catch (e: unknown) {
+      const ax = e as { response?: { status?: number; data?: { detail?: string } } };
+      if (ax.response?.status === 409) {
+        setError(
+          typeof ax.response.data?.detail === "string" ? ax.response.data.detail : "Submission changed. Refreshed."
+        );
+        await refresh();
+        return;
+      }
+      const d = ax.response?.data?.detail;
+      setError(typeof d === "string" ? d : "Could not save grade.");
+    }
+  };
+
+  const returnOne = async (submissionId: number) => {
+    const note = (returnDraft[String(submissionId)] ?? "").trim();
+    setReturningId(submissionId);
+    setError(null);
+    try {
+      const row = submissions.find((s) => Number(s.id) === submissionId);
+      await classesApi.returnSubmission(submissionId, {
+        ...(note ? { note } : {}),
+        ...(typeof row?.revision === "number" ? { expected_revision: row.revision } : {}),
+      });
+      setSuccessMsg("Returned to student for revision.");
+      window.setTimeout(() => setSuccessMsg(null), 5000);
+      await refresh();
+    } catch (e: unknown) {
+      const ax = e as { response?: { status?: number; data?: { detail?: string } } };
+      if (ax.response?.status === 409) {
+        setError(
+          typeof ax.response.data?.detail === "string" ? ax.response.data.detail : "Submission changed. Refreshed."
+        );
+        await refresh();
+        return;
+      }
+      const d = ax.response?.data?.detail;
+      setError(typeof d === "string" ? d : "Could not return submission.");
+    } finally {
+      setReturningId(null);
+    }
+  };
+
+  const toggleAudit = async (submissionId: number) => {
+    const key = String(submissionId);
+    const willOpen = !auditOpen[key];
+    setAuditOpen((p) => ({ ...p, [key]: willOpen }));
+    if (!willOpen) return;
+    if (auditById[submissionId] !== undefined || auditLoadingId === submissionId) return;
+    setAuditLoadingId(submissionId);
+    setError(null);
+    try {
+      const data = await classesApi.getSubmissionAuditLog(submissionId);
+      const list = Array.isArray(data) ? data : [];
+      setAuditById((p) => ({ ...p, [submissionId]: list }));
+    } catch (e: unknown) {
+      const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setError(typeof d === "string" ? d : "Could not load activity.");
+    } finally {
+      setAuditLoadingId(null);
+    }
+  };
+
+  const canEditSubmission =
+    !mySubmission?.status || mySubmission.status === "DRAFT" || mySubmission.status === "RETURNED";
+
+  const formatShortWhen = (iso?: string | null) => {
+    if (!iso) return "";
+    try {
+      return new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    } catch {
+      return iso;
+    }
   };
 
   const linkBtn =
@@ -221,6 +411,15 @@ export default function AssignmentDetailPage() {
       {error ? (
         <div className="mb-6">
           <ClassroomAlert tone="error">{error}</ClassroomAlert>
+        </div>
+      ) : null}
+
+      {successMsg ? (
+        <div
+          className="mb-6 rounded-xl border border-emerald-200/90 bg-emerald-50/90 px-4 py-3 text-sm font-semibold text-emerald-900 shadow-sm dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-100"
+          role="status"
+        >
+          {successMsg}
         </div>
       ) : null}
 
@@ -323,9 +522,8 @@ export default function AssignmentDetailPage() {
                       </p>
                       <h3 className="mt-1 text-base font-bold text-slate-900 dark:text-slate-50">Turn in your work</h3>
                       <p className="mt-1 max-w-2xl text-sm text-slate-600 dark:text-slate-300">
-                        Write your answer in the box below. You can <strong>save a draft</strong> and come back, or press{" "}
-                        <strong>Submit</strong> when you are finished. If your teacher asked for a test attempt, add the ID in
-                        the field — otherwise you can leave it blank.
+                        Upload your files and/or link a practice test attempt. You can <strong>save a draft</strong> and come
+                        back, or press <strong>Submit</strong> when you are finished.
                       </p>
                     </div>
                   </div>
@@ -341,40 +539,123 @@ export default function AssignmentDetailPage() {
                       <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-200">
                         2
                       </span>
-                      <span>
-                        Type your response clearly (use paragraphs; you can paste from a document). Aim to answer the
-                        question directly and give examples or reasoning where it helps.
-                      </span>
+                      <span>Add one or more files (you can add more later). Each upload is kept — nothing is overwritten.</span>
                     </li>
                     <li className="flex gap-2">
                       <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-200">
                         3
                       </span>
-                      <span>Optional: upload a file or link your test attempt below, then save or submit.</span>
+                      <span>Optionally link a test attempt, then save or submit.</span>
                     </li>
                   </ol>
 
-                  <div className="mt-6 rounded-2xl border border-slate-200/95 bg-slate-50/90 p-4 shadow-inner dark:border-slate-600 dark:bg-slate-900/40">
-                    <ClassroomField
-                      label="Your written response"
-                      htmlFor="response-txt"
-                      hint="This box has a solid background so your typing is always easy to read."
+                  {mySubmission?.status === "RETURNED" ? (
+                    <div
+                      className="mt-5 rounded-xl border border-violet-300/90 bg-violet-50/95 px-4 py-3 text-sm text-violet-950 shadow-sm dark:border-violet-800/80 dark:bg-violet-950/40 dark:text-violet-100"
+                      role="status"
                     >
-                      <textarea
-                        id="response-txt"
-                        value={responseText}
-                        onChange={(e) => setResponseText(e.target.value)}
-                        placeholder={"Start typing here.\n\nTip: main idea → evidence → short conclusion."}
-                        rows={10}
-                        spellCheck
-                        className={crTextareaClass}
-                        aria-describedby="response-txt-counter"
-                      />
-                      <p id="response-txt-counter" className="mt-2 text-right text-xs font-medium text-slate-500 dark:text-slate-400">
-                        {responseText.length.toLocaleString()} characters
+                      <p className="font-bold">Returned for revision</p>
+                      {mySubmission.returned_at ? (
+                        <p className="mt-1 text-xs font-medium text-violet-800/90 dark:text-violet-300/90">
+                          {formatShortWhen(mySubmission.returned_at)}
+                        </p>
+                      ) : null}
+                      {mySubmission.return_note ? (
+                        <p className="mt-2 whitespace-pre-wrap leading-relaxed text-violet-900 dark:text-violet-100/95">
+                          {mySubmission.return_note}
+                        </p>
+                      ) : (
+                        <p className="mt-2 text-xs text-violet-800/80 dark:text-violet-300/80">
+                          Update your files or attempt, then submit again.
+                        </p>
+                      )}
+                    </div>
+                  ) : null}
+
+                  {!canEditSubmission ? (
+                    <div className="mt-5 rounded-xl border border-sky-200/90 bg-sky-50/90 px-4 py-3 text-sm text-sky-950 dark:border-sky-900/50 dark:bg-sky-950/35 dark:text-sky-100">
+                      <p className="font-semibold">Submission locked</p>
+                      <p className="mt-1 text-sky-900/90 dark:text-sky-200/90">
+                        Your teacher has this copy ({mySubmission?.status}). You cannot change files until it is returned for
+                        revision.
                       </p>
-                    </ClassroomField>
-                  </div>
+                    </div>
+                  ) : null}
+
+                  <ClassroomField
+                    label="Your files"
+                    htmlFor="sub-files"
+                    className="mt-6"
+                    hint="PDF, images, or other documents. Multiple files allowed."
+                  >
+                    <input
+                      id="sub-files"
+                      type="file"
+                      multiple
+                      disabled={!canEditSubmission}
+                      onChange={(e) => {
+                        const list = e.target.files ? Array.from(e.target.files) : [];
+                        setPendingFiles((p) => [...p, ...list]);
+                        e.target.value = "";
+                      }}
+                      className="w-full text-sm text-slate-600 file:mr-3 file:rounded-xl file:border-0 file:bg-indigo-500/10 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-indigo-700 disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-400 dark:file:text-indigo-200"
+                    />
+                    <ul className="mt-4 space-y-2">
+                      {(Array.isArray(mySubmission?.files) ? mySubmission.files : []).map((f: { id: number; url: string; file_name?: string; file_type?: string }) => {
+                        const Icon = fileKindIcon(f.file_type, f.file_name || "");
+                        const label = (f.file_name || "File").trim() || "File";
+                        return (
+                          <li
+                            key={f.id}
+                            className="flex items-center justify-between gap-3 rounded-xl border border-slate-200/80 bg-white/90 px-3 py-2 dark:border-slate-600 dark:bg-slate-900/50"
+                          >
+                            <a
+                              href={f.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="flex min-w-0 flex-1 items-center gap-2 text-sm font-semibold text-indigo-600 hover:underline dark:text-indigo-400"
+                            >
+                              <Icon className="h-4 w-4 shrink-0 text-slate-500" aria-hidden />
+                              <span className="truncate">{label}</span>
+                            </a>
+                            <button
+                              type="button"
+                              className="shrink-0 rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-rose-600 dark:hover:bg-slate-800"
+                              onClick={() => void removeServerFile(f.id)}
+                              disabled={saving || !canEditSubmission}
+                              aria-label={`Remove ${label}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </li>
+                        );
+                      })}
+                      {pendingFiles.map((f, i) => (
+                        <li
+                          key={`pending-${i}-${f.name}`}
+                          className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-indigo-200/80 bg-indigo-50/50 px-3 py-2 text-sm dark:border-indigo-900/50 dark:bg-indigo-950/20"
+                        >
+                          <span className="flex min-w-0 items-center gap-2 font-medium text-slate-800 dark:text-slate-200">
+                            {(() => {
+                              const Icon = fileKindIcon(f.type, f.name);
+                              return <Icon className="h-4 w-4 shrink-0 text-slate-500" aria-hidden />;
+                            })()}
+                            <span className="truncate">{f.name}</span>
+                            <span className="shrink-0 text-xs text-slate-500">Not uploaded yet</span>
+                          </span>
+                          <button
+                            type="button"
+                            className="shrink-0 rounded-lg p-1.5 text-slate-500 hover:bg-white/80 hover:text-rose-600"
+                            onClick={() => setPendingFiles((p) => p.filter((_, j) => j !== i))}
+                            disabled={!canEditSubmission}
+                            aria-label="Remove from queue"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </ClassroomField>
 
                   <div className="mt-6 rounded-2xl border border-slate-200/95 bg-white/80 p-4 dark:border-slate-600 dark:bg-slate-950/40">
                     <ClassroomField
@@ -396,13 +677,14 @@ export default function AssignmentDetailPage() {
                           autoComplete="off"
                           className={`${crInputClass} sm:min-w-[200px] sm:flex-1`}
                           aria-label="Filter test attempts"
+                          disabled={!canEditSubmission}
                         />
                         <ClassroomButton
                           type="button"
                           variant="secondary"
                           size="md"
                           className="shrink-0"
-                          disabled={attemptsLoading}
+                          disabled={attemptsLoading || !canEditSubmission}
                           onClick={() => void refetchAttempts()}
                         >
                           <RefreshCw className={`h-4 w-4 ${attemptsLoading ? "animate-spin" : ""}`} />
@@ -417,7 +699,7 @@ export default function AssignmentDetailPage() {
                           const v = e.target.value;
                           setSelectedAttemptId(v === "" ? null : Number(v));
                         }}
-                        disabled={attemptsLoading && myAttempts.length === 0}
+                        disabled={(attemptsLoading && myAttempts.length === 0) || !canEditSubmission}
                       >
                         <option value="">Don&apos;t link a test attempt</option>
                         {displayAttempts.map((a) => (
@@ -441,28 +723,6 @@ export default function AssignmentDetailPage() {
                     </ClassroomField>
                   </div>
 
-                  <ClassroomField label="Upload file (optional)" htmlFor="sub-file" className="mt-4">
-                    <input
-                      id="sub-file"
-                      type="file"
-                      onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-                      className="w-full text-sm text-slate-600 file:mr-3 file:rounded-xl file:border-0 file:bg-indigo-500/10 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-indigo-700 dark:text-slate-400 dark:file:text-indigo-200"
-                    />
-                    {mySubmission?.upload_file_url ? (
-                      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                        Existing:{" "}
-                        <a
-                          className="font-semibold text-indigo-600 hover:underline dark:text-indigo-400"
-                          href={mySubmission.upload_file_url}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          Open
-                        </a>
-                      </p>
-                    ) : null}
-                  </ClassroomField>
-
                   <div className="mt-6 flex flex-col gap-3 rounded-xl border border-dashed border-slate-200/90 bg-white/60 px-4 py-3 dark:border-slate-600 dark:bg-slate-950/30">
                     <p className="text-xs text-slate-600 dark:text-slate-400">
                       <strong className="text-slate-800 dark:text-slate-200">Save draft</strong> keeps your work for later.
@@ -470,27 +730,54 @@ export default function AssignmentDetailPage() {
                       (you can still save again after if allowed).
                     </p>
                     <div className="flex flex-wrap gap-2">
-                      <ClassroomButton variant="secondary" size="md" onClick={() => submit(false)} disabled={saving}>
+                      <ClassroomButton variant="secondary" size="md" onClick={() => submit(false)} disabled={saving || !canEditSubmission}>
                         <Save className="h-4 w-4" />
                         Save draft
                       </ClassroomButton>
-                      <ClassroomButton variant="primary" size="md" onClick={() => submit(true)} disabled={saving}>
+                      <ClassroomButton variant="primary" size="md" onClick={() => submit(true)} disabled={saving || !canEditSubmission}>
                         <Send className="h-4 w-4" />
                         Submit to teacher
                       </ClassroomButton>
                     </div>
                   </div>
 
-                  {mySubmission?.grade ? (
-                    <div className="mt-6 rounded-xl border border-emerald-200/90 bg-emerald-50/90 p-4 dark:border-emerald-900/50 dark:bg-emerald-950/30">
-                      <div className="flex items-center gap-2 text-sm font-bold text-emerald-800 dark:text-emerald-200">
-                        <Trophy className="h-4 w-4" /> Graded
+                  {mySubmission?.review ? (
+                    <div
+                      className={`mt-6 rounded-xl border p-4 ${
+                        mySubmission.status === "RETURNED"
+                          ? "border-violet-200/90 bg-violet-50/80 dark:border-violet-900/50 dark:bg-violet-950/25"
+                          : "border-emerald-200/90 bg-emerald-50/90 dark:border-emerald-900/50 dark:bg-emerald-950/30"
+                      }`}
+                    >
+                      <div
+                        className={`flex items-center gap-2 text-sm font-bold ${
+                          mySubmission.status === "RETURNED"
+                            ? "text-violet-900 dark:text-violet-200"
+                            : "text-emerald-800 dark:text-emerald-200"
+                        }`}
+                      >
+                        <Trophy className="h-4 w-4" />{" "}
+                        {mySubmission.status === "RETURNED" ? "Previous review" : "Reviewed"}
                       </div>
-                      <p className="mt-2 text-2xl font-extrabold text-emerald-900 dark:text-emerald-100">
-                        {mySubmission.grade.score ?? "—"}
+                      <p
+                        className={`mt-2 text-2xl font-extrabold ${
+                          mySubmission.status === "RETURNED"
+                            ? "text-violet-950 dark:text-violet-50"
+                            : "text-emerald-900 dark:text-emerald-100"
+                        }`}
+                      >
+                        {mySubmission.review.grade ?? "—"}
                       </p>
-                      {mySubmission.grade.feedback ? (
-                        <p className="mt-2 text-sm text-emerald-800 dark:text-emerald-200">{mySubmission.grade.feedback}</p>
+                      {mySubmission.review.feedback ? (
+                        <p
+                          className={`mt-2 text-sm ${
+                            mySubmission.status === "RETURNED"
+                              ? "text-violet-900/95 dark:text-violet-100/95"
+                              : "text-emerald-800 dark:text-emerald-200"
+                          }`}
+                        >
+                          {mySubmission.review.feedback}
+                        </p>
                       ) : null}
                     </div>
                   ) : null}
@@ -525,26 +812,47 @@ export default function AssignmentDetailPage() {
                             {s.student?.first_name || s.student?.email} {s.student?.last_name || ""}
                           </p>
                           <p className="text-xs text-slate-500 dark:text-slate-400">{s.status}</p>
-                          {s.text_response ? (
-                            <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-300">{s.text_response}</p>
-                          ) : null}
+                          <ul className="mt-3 space-y-2">
+                            {(Array.isArray(s.files) ? s.files : []).map((f: { id: number; url: string; file_name?: string; file_type?: string }) => {
+                              const Icon = fileKindIcon(f.file_type, f.file_name || "");
+                              const label = (f.file_name || "File").trim() || "File";
+                              return (
+                                <li key={f.id}>
+                                  <a
+                                    href={f.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex max-w-full items-center gap-2 text-sm font-semibold text-indigo-600 hover:underline dark:text-indigo-400"
+                                  >
+                                    <Icon className="h-4 w-4 shrink-0 text-slate-500" aria-hidden />
+                                    <span className="truncate">{label}</span>
+                                  </a>
+                                </li>
+                              );
+                            })}
+                          </ul>
                           {s.attempt != null ? (
-                            <p className="mt-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400">Attempt ID: {s.attempt}</p>
+                            <p className="mt-2 text-xs font-semibold text-indigo-600 dark:text-indigo-400">
+                              Linked test:{" "}
+                              {typeof s.attempt === "object" && s.attempt !== null && "practice_test_name" in s.attempt
+                                ? String((s.attempt as { practice_test_name?: string }).practice_test_name)
+                                : `Attempt #${s.attempt}`}
+                            </p>
                           ) : null}
                           <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
                             <input
-                              value={grading[String(s.id)]?.score ?? (s.grade?.score ?? "")}
+                              value={grading[String(s.id)]?.grade ?? (s.review?.grade ?? "")}
                               onChange={(e) =>
                                 setGrading((p) => ({
                                   ...p,
-                                  [String(s.id)]: { ...(p[String(s.id)] || {}), score: e.target.value },
+                                  [String(s.id)]: { ...(p[String(s.id)] || {}), grade: e.target.value },
                                 }))
                               }
-                              placeholder="Score"
+                              placeholder="Score / grade"
                               className={crInputClass}
                             />
                             <input
-                              value={grading[String(s.id)]?.feedback ?? (s.grade?.feedback ?? "")}
+                              value={grading[String(s.id)]?.feedback ?? (s.review?.feedback ?? "")}
                               onChange={(e) =>
                                 setGrading((p) => ({
                                   ...p,
@@ -556,8 +864,73 @@ export default function AssignmentDetailPage() {
                             />
                           </div>
                           <ClassroomButton variant="primary" size="sm" className="mt-3 w-full" onClick={() => gradeOne(s.id)}>
-                            Save grade
+                            Save review
                           </ClassroomButton>
+                          {(s.status === "SUBMITTED" || s.status === "REVIEWED") && (
+                            <div className="mt-4 space-y-2 rounded-xl border border-violet-200/80 bg-white/80 p-3 dark:border-violet-900/50 dark:bg-slate-900/40">
+                              <p className="text-[11px] font-bold uppercase tracking-wide text-violet-800 dark:text-violet-200">
+                                Return for revision
+                              </p>
+                              <p className="text-xs text-slate-600 dark:text-slate-400">
+                                Student can edit files and resubmit. Optional note (shown to the student).
+                              </p>
+                              <textarea
+                                value={returnDraft[String(s.id)] ?? ""}
+                                onChange={(e) =>
+                                  setReturnDraft((p) => ({ ...p, [String(s.id)]: e.target.value }))
+                                }
+                                placeholder="What should they change?"
+                                rows={2}
+                                className={`${crInputClass} min-h-[4rem] resize-y`}
+                              />
+                              <ClassroomButton
+                                variant="secondary"
+                                size="sm"
+                                className="w-full"
+                                disabled={returningId === s.id}
+                                onClick={() => void returnOne(s.id)}
+                              >
+                                <RotateCcw className="h-4 w-4" />
+                                Return to student
+                              </ClassroomButton>
+                            </div>
+                          )}
+                          <button
+                            type="button"
+                            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200/90 bg-slate-50/90 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800/60 dark:text-slate-200 dark:hover:bg-slate-800"
+                            onClick={() => void toggleAudit(s.id)}
+                          >
+                            <History className="h-3.5 w-3.5" />
+                            {auditOpen[String(s.id)] ? "Hide activity" : "Activity log"}
+                          </button>
+                          {auditOpen[String(s.id)] ? (
+                            <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border border-slate-200/80 bg-white/90 p-2 text-xs dark:border-slate-600 dark:bg-slate-950/50">
+                              {auditLoadingId === s.id ? (
+                                <p className="p-2 text-slate-500">Loading…</p>
+                              ) : (auditById[s.id] ?? []).length === 0 ? (
+                                <p className="p-2 text-slate-500">No logged events yet.</p>
+                              ) : (
+                                <ul className="space-y-2">
+                                  {(auditById[s.id] ?? []).map((ev: { id: number; event_type?: string; created_at?: string; actor_id?: number | null; payload?: unknown }) => (
+                                    <li key={ev.id} className="rounded border border-slate-100/90 px-2 py-1.5 dark:border-slate-700/80">
+                                      <span className="font-mono text-[10px] text-slate-500">
+                                        {ev.created_at ? formatShortWhen(ev.created_at) : ""}
+                                      </span>{" "}
+                                      <span className="font-semibold text-slate-800 dark:text-slate-100">{ev.event_type}</span>
+                                      {ev.actor_id != null ? (
+                                        <span className="text-slate-500"> · actor {ev.actor_id}</span>
+                                      ) : null}
+                                      {ev.payload != null && typeof ev.payload === "object" ? (
+                                        <pre className="mt-1 max-h-20 overflow-auto whitespace-pre-wrap break-all text-[10px] text-slate-600 dark:text-slate-400">
+                                          {JSON.stringify(ev.payload)}
+                                        </pre>
+                                      ) : null}
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                          ) : null}
                         </li>
                       ))}
                     </ul>

@@ -1,10 +1,13 @@
 import json
 
+from django.core.exceptions import ObjectDoesNotExist, ValidationError as DjangoValidationError
 from rest_framework import serializers
 from urllib.parse import urlparse
 from django.core.validators import URLValidator
 
 from exams.models import MockExam, PastpaperPack, PracticeTest
+
+from .submission_validation import validate_submission_grade
 
 from .models import (
     Classroom,
@@ -12,7 +15,8 @@ from .models import (
     ClassPost,
     Assignment,
     Submission,
-    Grade,
+    SubmissionFile,
+    SubmissionAuditEvent,
     ClassComment,
     assignment_target_practice_test_ids,
     filter_practice_targets_by_scope,
@@ -44,6 +48,7 @@ class ClassroomSerializer(serializers.ModelSerializer):
             "teacher_details",
             "join_code",
             "is_active",
+            "schedule_summary",
             "created_at",
             "members_count",
             "my_role",
@@ -126,6 +131,7 @@ class ClassroomCreateSerializer(serializers.ModelSerializer):
             "max_students",
             "teacher",
             "is_active",
+            "schedule_summary",
             "join_code",
             "created_at",
         ]
@@ -404,10 +410,27 @@ class AssignmentSerializer(serializers.ModelSerializer):
         return normalized
 
 
+class SubmissionFileSerializer(serializers.ModelSerializer):
+    url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SubmissionFile
+        fields = ["id", "url", "file_name", "file_type", "created_at"]
+        read_only_fields = fields
+
+    def get_url(self, obj):
+        request = self.context.get("request")
+        url = obj.file.url
+        if request:
+            return request.build_absolute_uri(url)
+        return url
+
+
 class SubmissionSerializer(serializers.ModelSerializer):
     student = serializers.SerializerMethodField()
-    grade = serializers.SerializerMethodField()
-    upload_file_url = serializers.SerializerMethodField(read_only=True)
+    files = SubmissionFileSerializer(many=True, read_only=True)
+    attempt = serializers.SerializerMethodField()
+    review = serializers.SerializerMethodField()
     workflow_status = serializers.SerializerMethodField()
 
     class Meta:
@@ -415,17 +438,28 @@ class SubmissionSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "status",
-            "text_response",
-            "upload_file",
-            "upload_file_url",
+            "revision",
+            "return_note",
+            "returned_at",
+            "files",
             "attempt",
             "submitted_at",
             "updated_at",
             "student",
-            "grade",
+            "review",
             "workflow_status",
         ]
-        read_only_fields = ["id", "submitted_at", "updated_at", "student", "grade", "workflow_status"]
+        read_only_fields = [
+            "id",
+            "revision",
+            "submitted_at",
+            "updated_at",
+            "student",
+            "review",
+            "workflow_status",
+            "return_note",
+            "returned_at",
+        ]
 
     def get_workflow_status(self, obj):
         return submission_workflow_status(obj)
@@ -440,27 +474,56 @@ class SubmissionSerializer(serializers.ModelSerializer):
             "last_name": u.last_name,
         }
 
-    def get_grade(self, obj):
-        if not hasattr(obj, "grade") or obj.grade is None:
+    def get_review(self, obj):
+        try:
+            r = obj.review
+        except ObjectDoesNotExist:
             return None
-        g = obj.grade
-        return {"score": str(g.score) if g.score is not None else None, "feedback": g.feedback, "graded_at": g.graded_at}
+        t = r.teacher
+        # When status is RETURNED, the linked review (if any) is from the prior cycle — not the active grade.
+        if obj.status == Submission.STATUS_RETURNED:
+            review_context = "previous_cycle"
+        elif obj.status == Submission.STATUS_REVIEWED:
+            review_context = "current"
+        else:
+            review_context = "historical"
+        return {
+            "grade": str(r.grade) if r.grade is not None else None,
+            "feedback": r.feedback,
+            "reviewed_at": r.reviewed_at,
+            "review_context": review_context,
+            "teacher": {
+                "id": t.id,
+                "email": t.email,
+                "first_name": t.first_name,
+                "last_name": t.last_name,
+            },
+        }
 
-    def get_upload_file_url(self, obj):
-        if not obj.upload_file:
+    def get_attempt(self, obj):
+        a = obj.attempt
+        if not a:
             return None
-        request = self.context.get("request")
-        url = obj.upload_file.url
-        if request:
-            return request.build_absolute_uri(url)
-        return url
+        pt = a.practice_test
+        name = (getattr(pt, "title", None) or "").strip() or None
+        return {
+            "id": a.id,
+            "practice_test": pt.id,
+            "practice_test_name": name or f"Test #{pt.id}",
+            "is_completed": a.is_completed,
+            "score": a.score,
+            "submitted_at": a.submitted_at,
+        }
 
 
 class SubmitSerializer(serializers.Serializer):
-    text_response = serializers.CharField(required=False, allow_blank=True, max_length=100_000)
-    upload_file = serializers.FileField(required=False, allow_null=True)
     # Accept "" from multipart forms to clear the linked attempt; integers still allowed.
     attempt_id = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    remove_file_ids = serializers.CharField(required=False, allow_blank=True)
+    # Optimistic locking: last known ``Submission.revision`` from GET my-submission.
+    expected_revision = serializers.IntegerField(required=False, allow_null=True)
+    # JSON array of per-file tokens (same order as ``files``) for idempotent retries.
+    file_tokens = serializers.CharField(required=False, allow_blank=True)
 
     def validate_attempt_id(self, value):
         if value in (None, ""):
@@ -472,10 +535,99 @@ class SubmitSerializer(serializers.Serializer):
 
     submit = serializers.BooleanField(required=False, default=True)
 
+    def validate(self, attrs):
+        import json
 
-class GradeUpsertSerializer(serializers.Serializer):
-    score = serializers.DecimalField(required=False, max_digits=6, decimal_places=2, allow_null=True)
+        raw = attrs.get("file_tokens")
+        tokens: list[str] = []
+        if raw:
+            try:
+                if isinstance(raw, str):
+                    arr = json.loads(raw) if raw.strip().startswith("[") else []
+                else:
+                    arr = raw
+                if isinstance(arr, list):
+                    tokens = [str(x)[:64] for x in arr]
+            except (json.JSONDecodeError, TypeError, ValueError):
+                tokens = []
+        attrs["file_tokens_list"] = tokens
+
+        n = self.context.get("new_files_count")
+        if n is not None and int(n) > 0:
+            need = int(n)
+            if len(tokens) < need:
+                raise serializers.ValidationError(
+                    {
+                        "file_tokens": (
+                            f"Required: exactly one upload token per file ({need} token(s) for {need} file(s)); "
+                            "send JSON array of strings (each at least 8 characters)."
+                        )
+                    }
+                )
+            need_tokens: list[str] = []
+            for i, t in enumerate(tokens[:need]):
+                ts = str(t).strip()
+                if len(ts) < 8:
+                    raise serializers.ValidationError(
+                        {"file_tokens": f"Token at index {i} must be at least 8 characters."}
+                    )
+                need_tokens.append(ts[:64])
+
+            if len(set(need_tokens)) < len(need_tokens):
+                raise serializers.ValidationError(
+                    {"file_tokens": "Duplicate upload_token values in the same request are not allowed."}
+                )
+
+            sub_id = self.context.get("submission_id")
+            remove_pks = self.context.get("remove_file_ids") or []
+            if sub_id is not None:
+                from .models import SubmissionFile
+
+                existing_qs = SubmissionFile.objects.filter(submission_id=sub_id).exclude(upload_token="")
+                if remove_pks:
+                    existing_qs = existing_qs.exclude(pk__in=remove_pks)
+                used = set(existing_qs.values_list("upload_token", flat=True))
+                for i, tok in enumerate(need_tokens):
+                    if tok in used:
+                        raise serializers.ValidationError(
+                            {
+                                "file_tokens": (
+                                    f"Token at index {i} is already used by another file on this submission. "
+                                    "Use a new token per upload, or remove the existing file first."
+                                )
+                            }
+                        )
+        return attrs
+
+
+class SubmissionReturnSerializer(serializers.Serializer):
+    note = serializers.CharField(required=False, allow_blank=True, max_length=10_000)
+    expected_revision = serializers.IntegerField(required=False, allow_null=True)
+
+
+class SubmissionAuditEventReadSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SubmissionAuditEvent
+        fields = ["id", "event_type", "payload", "created_at", "actor_id"]
+        read_only_fields = fields
+
+
+class SubmissionReviewUpsertSerializer(serializers.Serializer):
+    grade = serializers.DecimalField(required=False, max_digits=6, decimal_places=2, allow_null=True)
     feedback = serializers.CharField(required=False, allow_blank=True)
+    score = serializers.DecimalField(required=False, max_digits=6, decimal_places=2, allow_null=True)
+    expected_revision = serializers.IntegerField(required=False, allow_null=True)
+
+    def validate(self, attrs):
+        if "score" in attrs and "grade" not in attrs:
+            attrs["grade"] = attrs.get("score")
+        g = attrs.get("grade")
+        if g is not None:
+            try:
+                validate_submission_grade(g)
+            except DjangoValidationError as e:
+                raise serializers.ValidationError({"grade": e.messages[0] if e.messages else str(e)})
+        return attrs
 
 
 class ClassCommentSerializer(serializers.ModelSerializer):
