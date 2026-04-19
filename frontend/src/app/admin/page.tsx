@@ -5,6 +5,7 @@ import AuthGuard from '@/components/AuthGuard';
 import { adminApi, authApi, usersApi } from '@/lib/api';
 import {
     can,
+    canAuthorTestsUi,
     canManageMockExamShell,
     canCreateTestForSubject,
     canEditQuestionsForSubject,
@@ -1268,8 +1269,8 @@ export default function AdminPage() {
     };
 
     const handleSavePack = async () => {
-        if (!can("manage_tests") && !editingPack?.id) return;
-        if (editingPack?.id && !can("manage_tests")) return;
+        if (!canAuthorTestsUi() && !editingPack?.id) return;
+        if (editingPack?.id && !canAuthorTestsUi()) return;
         const sig = pastpaperPackSignatureFromForm({
             title: packForm.title,
             practice_date: packForm.practice_date,
@@ -1337,7 +1338,7 @@ export default function AdminPage() {
     };
 
     const handleMoveSectionToPack = async (testId: number, packId: number | null) => {
-        if (!can("manage_tests")) return;
+        if (!canAuthorTestsUi()) return;
         setSaving(true);
         try {
             await adminApi.updatePracticeTest(testId, { pastpaper_pack: packId });
@@ -1571,7 +1572,7 @@ export default function AdminPage() {
             { key: 'examdates', label: 'Exam dates', icon: <Calendar className="w-4 h-4" /> },
             { key: 'users', label: 'Users', icon: <Users className="w-4 h-4" /> },
         ];
-        const testArea = can("*") || can("manage_tests");
+        const testArea = can("*") || canAuthorTestsUi();
         const filtered = all.filter((item) => {
             if (consoleMode === "admin") {
                 return item.key === "assignments" || item.key === "users" || item.key === "examdates";
@@ -1583,10 +1584,10 @@ export default function AdminPage() {
             if (item.key === "users") return can("manage_users") || can("assign_access");
             if (item.key === 'questions') return canUseGlobalQuestionsTab();
             if (item.key === 'mocks') {
-                return can("*") || can("manage_tests") || can("assign_access");
+                return can("*") || canAuthorTestsUi() || can("assign_access");
             }
             if (item.key === 'midterms') {
-                return canManageMockExamShell() || can("assign_access") || can("manage_tests");
+                return canManageMockExamShell() || can("assign_access") || canAuthorTestsUi();
             }
             return testArea;
         });
@@ -1688,7 +1689,7 @@ export default function AdminPage() {
                                                 <Users className="w-4 h-4" /> Bulk assign pastpapers
                                             </button>
                                         )}
-                                        {can("manage_tests") && (
+                                        {canAuthorTestsUi() && (
                                             <button
                                                 className={BTN_PRIMARY}
                                                 onClick={() => {
@@ -1841,7 +1842,7 @@ export default function AdminPage() {
                                             <button
                                                 className={BTN_PRIMARY}
                                                 onClick={() => void handleSavePack()}
-                                                disabled={saving || !can("manage_tests")}
+                                                disabled={saving || !canAuthorTestsUi()}
                                             >
                                                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save card
                                             </button>
@@ -1970,7 +1971,7 @@ export default function AdminPage() {
                                                         </p>
                                                     </div>
                                                     <div className="flex items-center gap-2 shrink-0">
-                                                        {can("edit_test") && (
+                                                        {canAuthorTestsUi() && (
                                                             <button
                                                                 type="button"
                                                                 className={BTN_GHOST + " bg-white shadow-sm border border-slate-100"}
@@ -1987,7 +1988,7 @@ export default function AdminPage() {
                                                                 <Pencil className="w-3.5 h-3.5" /> Edit card
                                                             </button>
                                                         )}
-                                                        {((sections.length === 0 && can("edit_test")) ||
+                                                        {((sections.length === 0 && canAuthorTestsUi()) ||
                                                             (sections.length > 0 &&
                                                                 sections.every((s: any) => canDeletePracticeTestFromMock(s.subject)))) && (
                                                             <button
@@ -2036,7 +2037,7 @@ export default function AdminPage() {
                                                                 </span>
                                                             </button>
                                                             <div className="flex flex-col gap-2 shrink-0 w-full sm:w-auto">
-                                                                {can("edit_test") && (
+                                                                {canAuthorTestsUi() && (
                                                                     <label className="flex flex-col gap-0.5">
                                                                         <span className="text-[9px] font-bold text-slate-400 uppercase">Move to card</span>
                                                                         <select
@@ -2073,7 +2074,7 @@ export default function AdminPage() {
                                                                     >
                                                                         Questions
                                                                     </button>
-                                                                    {can("edit_test") && canEditQuestionsForSubject(practiceTestRowSubject(t)) && (
+                                                                    {canEditQuestionsForSubject(practiceTestRowSubject(t)) && (
                                                                         <button
                                                                             type="button"
                                                                             className={BTN_GHOST + " !py-1.5"}
@@ -2238,7 +2239,7 @@ export default function AdminPage() {
                                                                         </span>
                                                                     </button>
                                                                     <div className="flex flex-col gap-2 shrink-0 w-full sm:w-auto">
-                                                                        {can("edit_test") && (
+                                                                        {canAuthorTestsUi() && (
                                                                             <label className="flex flex-col gap-0.5">
                                                                                 <span className="text-[9px] font-bold text-slate-400 uppercase">
                                                                                     Move to card
@@ -2277,7 +2278,7 @@ export default function AdminPage() {
                                                                             >
                                                                                 Questions
                                                                             </button>
-                                                                            {can("edit_test") && canEditQuestionsForSubject(practiceTestRowSubject(t)) && (
+                                                                            {canEditQuestionsForSubject(practiceTestRowSubject(t)) && (
                                                                                 <button
                                                                                     type="button"
                                                                                     className={BTN_GHOST + " !py-1.5"}
@@ -2591,7 +2592,7 @@ export default function AdminPage() {
                                                             midterm_target_question_count: mock.midterm_target_question_count ?? 0,
                                                         }); }}><Pencil className="w-3.5 h-3.5" /> Edit</button>
                                                     )}
-                                                    {can('delete_test') && (
+                                                    {canAuthorTestsUi() && (
                                                         <button className={BTN_DANGER + " bg-white shadow-sm border border-slate-100"} onClick={e => { e.stopPropagation(); handleDeleteMock(mock.id); }}><Trash2 className="w-3.5 h-3.5" /> Delete</button>
                                                     )}
                                                 </div>
@@ -2934,7 +2935,7 @@ export default function AdminPage() {
                                                                 <Pencil className="w-3.5 h-3.5" /> Edit
                                                             </button>
                                                         )}
-                                                        {can("delete_test") && (
+                                                        {canAuthorTestsUi() && (
                                                             <button
                                                                 className={BTN_DANGER + " bg-white shadow-sm border border-slate-100"}
                                                                 onClick={(e) => {

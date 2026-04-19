@@ -31,9 +31,29 @@ export function getRole(): string {
   return (Cookies.get("role") || "").trim().toLowerCase();
 }
 
-/** Test admin: subject-scoped authoring (math or english); matches backend ABAC + `lms_subject`. */
+/** Role is test_admin (backend: global test library staff). */
 export function isTestAdmin(): boolean {
   return getRole() === "test_admin";
+}
+
+/**
+ * Matches backend `/api/exams/admin` — any non-student may create/edit/delete tests and questions.
+ * Use so test_admin (often no `lms_subject`) and staff without granular `lms_permissions` still get UI affordances.
+ */
+export function canManageQuestionsConsole(): boolean {
+  if (can("*")) return true;
+  const r = getRole();
+  return (
+    r === "super_admin" ||
+    r === "admin" ||
+    r === "test_admin" ||
+    r === "teacher"
+  );
+}
+
+/** Prefer this in admin UI over `can("manage_tests")` alone — includes staff roles when cookies omit codenames. */
+export function canAuthorTestsUi(): boolean {
+  return canManageQuestionsConsole() || can("manage_tests");
 }
 
 /**
@@ -136,7 +156,7 @@ export function can(codename: string): boolean {
     ],
     manage_users: ["access_lms_admin"],
 
-    // Legacy -> canonical equivalents
+    // Legacy -> canonical equivalents (UI often calls can("edit_test") etc.)
     manage_roles: ["assign_access"],
     assign_test_access: ["assign_access"],
     manage_classrooms: ["create_classroom"],
@@ -158,9 +178,9 @@ export function can(codename: string): boolean {
   return false;
 }
 
-/** Timed mock / test admin surfaces are part of manage_tests. */
+/** Timed mock / questions authoring surfaces (mocks, sections, modules). */
 export function canManageMockExamShell(): boolean {
-  return can("*") || can("manage_tests");
+  return can("*") || canManageQuestionsConsole() || can("manage_tests");
 }
 
 /**
@@ -188,20 +208,23 @@ export function defaultBulkPastpaperSubjectScope(): "BOTH" | "MATH" | "READING_W
 }
 
 export function canCreateTestForSubject(subject: "READING_WRITING" | "MATH"): boolean {
+  if (canManageQuestionsConsole()) return true;
   return can("manage_tests") && canAbacTestSubject(subject);
 }
 
 export function canEditQuestionsForSubject(subject: string | undefined): boolean {
+  if (canManageQuestionsConsole()) return true;
   if (!subject) return false;
   return can("manage_tests") && canAbacTestSubject(subject);
 }
 
 export function canDeletePracticeTestFromMock(subject: string | undefined): boolean {
+  if (canManageQuestionsConsole()) return true;
   if (!subject) return false;
   return can("manage_tests") && canAbacTestSubject(subject);
 }
 
 /** Global Questions admin tab (not midterm-only flows). */
 export function canUseGlobalQuestionsTab(): boolean {
-  return can("*") || can("manage_tests");
+  return can("*") || canManageQuestionsConsole() || can("manage_tests");
 }
