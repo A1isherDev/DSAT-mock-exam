@@ -4,13 +4,14 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import AuthGuard from "@/components/AuthGuard";
-import { LayoutDashboard, ClipboardList, Users, Menu, X, Search } from "lucide-react";
+import { LayoutDashboard, ClipboardCheck, ClipboardList, Users, Menu, X, Search } from "lucide-react";
 import { IconButton } from "@/components/ui/IconButton";
 import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/lib/cn";
 
 const nav = [
   { href: "/teacher", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/teacher/homework/grading", label: "Grade homework", icon: ClipboardCheck },
   { href: "/teacher/homework", label: "Homework", icon: ClipboardList },
   { href: "/teacher/students", label: "Students", icon: Users },
 ];
@@ -31,8 +32,14 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
   }, [q]);
 
   const title =
-    nav.find((n) => (n.href === "/teacher" ? pathname === "/teacher" : pathname.startsWith(n.href)))?.label ??
-    "Teacher";
+    nav.find((n) => {
+      if (n.href === "/teacher") return pathname === "/teacher";
+      if (n.href === "/teacher/homework/grading") return pathname.startsWith("/teacher/homework/grading");
+      if (n.href === "/teacher/homework") {
+        return pathname.startsWith("/teacher/homework") && !pathname.startsWith("/teacher/homework/grading");
+      }
+      return pathname.startsWith(n.href);
+    })?.label ?? "Teacher";
 
   const linkCls = (active: boolean) =>
     cn(
@@ -90,7 +97,14 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
 
           <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-hidden px-3 py-4 md:px-4" aria-label="Teacher">
             {filtered.map(({ href, label, icon: Icon }) => {
-              const active = href === "/teacher" ? pathname === "/teacher" : pathname.startsWith(href);
+              const active =
+                href === "/teacher"
+                  ? pathname === "/teacher"
+                  : href === "/teacher/homework/grading"
+                    ? pathname.startsWith("/teacher/homework/grading")
+                    : href === "/teacher/homework"
+                      ? pathname.startsWith("/teacher/homework") && !pathname.startsWith("/teacher/homework/grading")
+                      : pathname.startsWith(href);
               return (
                 <Link
                   key={href}

@@ -91,7 +91,7 @@ export default function TeacherDashboardPage() {
                 <Link href="/teacher/homework" className="btn-primary">
                   Manage homework
                 </Link>
-                <Link href="/teacher/homework/grading" className="btn-secondary">
+                <Link href="/classes/grade-homework" className="btn-secondary">
                   Grade homework
                 </Link>
                 <Link href="/teacher/students" className="btn-secondary">View students</Link>

@@ -9,6 +9,7 @@ import { useTheme } from "next-themes";
 import {
   LayoutDashboard,
   BookOpenCheck,
+  ClipboardCheck,
   ClipboardList,
   FileWarning,
   Users,
@@ -39,6 +40,7 @@ const nav = [
   { href: "/mock-exam", label: "Timed mock", icon: ClipboardList },
   { href: "/midterm", label: "Midterm", icon: FileWarning },
   { href: "/classes", label: "Classes", icon: Users },
+  { href: "/classes/grade-homework", label: "Grade homework", icon: ClipboardCheck },
   { href: "/profile", label: "Profile", icon: UserCircle },
 ];
 
@@ -46,17 +48,23 @@ const quickLinks = [
   { href: "/practice-tests", label: "Practice" },
   { href: "/mock-exam", label: "Mock" },
   { href: "/classes", label: "Classes" },
+  { href: "/classes/grade-homework", label: "Grade homework" },
 ];
 
 function pageTitle(pathname: string): string {
   if (pathname === "/") return "Dashboard";
-  const item = nav.find((n) =>
-    n.href === "/"
-      ? false
-      : n.href === "/practice-tests"
-        ? pathname === "/practice-tests" || pathname.startsWith("/practice-test/")
-        : pathname.startsWith(n.href),
-  );
+  if (pathname.startsWith("/classes/grade-homework")) return "Grade homework";
+  const item = nav.find((n) => {
+    if (n.href === "/") return false;
+    if (n.href === "/practice-tests") {
+      return pathname === "/practice-tests" || pathname.startsWith("/practice-test/");
+    }
+    if (n.href === "/classes/grade-homework") return pathname.startsWith("/classes/grade-homework");
+    if (n.href === "/classes") {
+      return pathname.startsWith("/classes") && !pathname.startsWith("/classes/grade-homework");
+    }
+    return pathname.startsWith(n.href);
+  });
   return item?.label ?? "MasterSAT";
 }
 
@@ -284,7 +292,11 @@ export default function StudentShell({ children }: { children: React.ReactNode }
                     ? pathname === "/"
                     : href === "/practice-tests"
                       ? pathname === "/practice-tests" || pathname.startsWith("/practice-test/")
-                      : pathname.startsWith(href);
+                      : href === "/classes/grade-homework"
+                        ? pathname.startsWith("/classes/grade-homework")
+                        : href === "/classes"
+                          ? pathname.startsWith("/classes") && !pathname.startsWith("/classes/grade-homework")
+                          : pathname.startsWith(href);
                 return (
                   <Link
                     key={href}

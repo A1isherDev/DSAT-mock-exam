@@ -1,9 +1,11 @@
 /**
- * EVEN groups: show concrete weekdays in the header/meta; the weekly card uses "EVEN".
+ * Human-readable weekdays for class meta (matches center schedule).
+ * EVEN = Tue/Thu/Sat; ODD = Mon/Wed/Fri.
  */
 export function formatLessonDaysMeta(lessonDays: string | undefined | null): string {
   if (!lessonDays) return "";
-  if (lessonDays === "EVEN") return "Monday, Saturday";
+  if (lessonDays === "EVEN") return "Tuesday, Thursday, Saturday";
+  if (lessonDays === "ODD") return "Monday, Wednesday, Friday";
   return lessonDays;
 }
 
@@ -13,14 +15,3 @@ export function lessonDaysMetaSuffix(lessonDays: string | undefined | null): str
   return d ? ` · ${d}` : "";
 }
 
-/** Large "Weekly schedule" title: EVEN classes always show EVEN; ODD uses custom summary or a sensible default. */
-export function weeklyScheduleTitle(
-  lessonDays: string | undefined | null,
-  scheduleSummary: string | undefined | null,
-): string {
-  if (lessonDays === "EVEN") return "EVEN";
-  const s = (scheduleSummary || "").trim();
-  if (s) return s;
-  if (lessonDays === "ODD") return "Monday, Wednesday, Friday";
-  return "—";
-}

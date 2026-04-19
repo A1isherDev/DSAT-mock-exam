@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { classesApi } from "@/lib/api";
-import { formatLessonDaysMeta, weeklyScheduleTitle } from "@/lib/classroomSchedule";
+import { cn } from "@/lib/cn";
+import { formatLessonDaysMeta } from "@/lib/classroomSchedule";
 import { subscribeRealtime } from "@/lib/realtime";
 import ClassLeaderboard from "@/components/ClassLeaderboard";
 
@@ -26,6 +27,7 @@ import {
   type ClassroomTabItem,
 } from "@/components/classroom";
 import {
+  ClipboardCheck,
   ClipboardList,
   GraduationCap,
   KeyRound,
@@ -237,10 +239,25 @@ export default function ClassDetailPage() {
           title={klass?.name || "Group"}
           meta={klass ? metaLine : null}
           actions={
-            <ClassroomButton variant="secondary" size="md" onClick={refresh} disabled={loading}>
-              <RefreshCcw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-              Refresh
-            </ClassroomButton>
+            <div className="flex flex-wrap items-center gap-2">
+              {isClassAdmin ? (
+                <Link
+                  href="/classes/grade-homework"
+                  className={cn(
+                    "inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-semibold text-foreground shadow-sm",
+                    "hover:border-primary/35 hover:bg-surface-2",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/90 focus-visible:ring-offset-2",
+                  )}
+                >
+                  <ClipboardCheck className="h-4 w-4" />
+                  Grade homework
+                </Link>
+              ) : null}
+              <ClassroomButton variant="secondary" size="md" onClick={refresh} disabled={loading}>
+                <RefreshCcw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+                Refresh
+              </ClassroomButton>
+            </div>
           }
         />
       </div>
@@ -254,36 +271,7 @@ export default function ClassDetailPage() {
       <ClassroomTabs items={tabItems} value={tab} onChange={setTab} className="mb-8" />
 
       {!loading && klass ? (
-        <div className="mb-8 grid gap-4 lg:grid-cols-2">
-          <ClassroomCard padding="lg" className="min-h-[140px] shadow-sm">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Weekly schedule
-            </p>
-            <p className="mt-4 text-xl font-bold leading-snug text-slate-900 dark:text-slate-50">
-              {weeklyScheduleTitle(klass.lesson_days, klass.schedule_summary)}
-            </p>
-            {klass.lesson_days || klass.lesson_time || klass.lesson_hours ? (
-              <p className="mt-3 text-sm text-slate-600 dark:text-slate-400">
-                {klass.lesson_days && klass.lesson_days !== "EVEN" ? (
-                  <span>{klass.lesson_days} days</span>
-                ) : null}
-                {klass.lesson_time ? (
-                  <span>
-                    {klass.lesson_days && klass.lesson_days !== "EVEN" ? " · " : null}
-                    {klass.lesson_time}
-                  </span>
-                ) : null}
-                {klass.lesson_hours ? (
-                  <span>
-                    {klass.lesson_time || (klass.lesson_days && klass.lesson_days !== "EVEN")
-                      ? " · "
-                      : null}
-                    {klass.lesson_hours}h sessions
-                  </span>
-                ) : null}
-              </p>
-            ) : null}
-          </ClassroomCard>
+        <div className="mb-8 max-w-lg">
           <ClassroomCard padding="lg" className="min-h-[140px] shadow-sm">
             <div className="flex items-center gap-2">
               <KeyRound className="h-5 w-5 text-indigo-500" />
