@@ -207,6 +207,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
         default=Assignment.PRACTICE_SCOPE_BOTH,
     )
     practice_bundle_tests = serializers.SerializerMethodField(read_only=True)
+    locks_file_upload = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Assignment
@@ -221,6 +222,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "practice_test_ids",
             "practice_scope",
             "practice_bundle_tests",
+            "locks_file_upload",
             "module",
             "external_url",
             "attachment_file",
@@ -236,8 +238,13 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "created_by",
             "submissions_count",
             "practice_bundle_tests",
+            "locks_file_upload",
             "attachment_urls",
         ]
+
+    def get_locks_file_upload(self, obj):
+        """Homework tied to practice/mock sections is turned in via test completion, not file uploads."""
+        return bool(assignment_target_practice_test_ids(obj))
 
     def get_created_by(self, obj):
         u = obj.created_by

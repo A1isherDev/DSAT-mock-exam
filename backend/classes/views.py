@@ -53,6 +53,7 @@ from .db_retry import db_retry_operation
 from .metrics import record_homework_submit_attempt, record_homework_submit_error, record_homework_submit_success
 from .submission_limits import max_batch_upload_bytes, max_files_per_submission
 from .submission_uploads import abandon_staged_uploads, stream_upload_to_storage
+from .homework_auto_submit import sync_practice_submission_for_assignment
 from .throttles import HomeworkSubmitClassThrottle, HomeworkSubmitGlobalThrottle, HomeworkSubmitThrottle
 from .submission_state import (
     assert_student_edit_allowed,
@@ -1004,6 +1005,19 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         data = serializer.validated_data
         record_homework_submit_attempt()
 
+        practice_targets = assignment_target_practice_test_ids(assignment)
+        if practice_targets and new_files:
+            record_homework_submit_error()
+            return Response(
+                {
+                    "detail": (
+                        "This assignment uses assigned tests. Complete the tests in the app; "
+                        "file uploads are not used for this homework."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         past_due = assignment.due_at and timezone.now() > assignment.due_at
 
         resolved_attempt = None
@@ -1238,6 +1252,17 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         if not classroom.memberships.filter(user=request.user).exists():
             return Response({"detail": "Not a member."}, status=status.HTTP_403_FORBIDDEN)
         assignment = get_object_or_404(Assignment, pk=pk, classroom=classroom)
+        if classroom.memberships.filter(
+            user=request.user, role=ClassroomMembership.ROLE_STUDENT
+        ).exists():
+            try:
+                sync_practice_submission_for_assignment(request.user, assignment)
+            except Exception:
+                logger.exception(
+                    "sync_practice_submission_failed assignment_id=%s user_id=%s",
+                    assignment.pk,
+                    request.user.pk,
+                )
         sub = (
             Submission.objects.filter(assignment=assignment, student=request.user)
             .select_related("attempt", "attempt__practice_test", "review", "review__teacher")
@@ -1254,6 +1279,25 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         if not classroom.memberships.filter(user=request.user, role="ADMIN").exists():
             return Response({"detail": "Only class admins can view submissions."}, status=status.HTTP_403_FORBIDDEN)
         assignment = get_object_or_404(Assignment, pk=pk, classroom=classroom)
+        if assignment_target_practice_test_ids(assignment):
+            student_ids = classroom.memberships.filter(
+                role=ClassroomMembership.ROLE_STUDENT
+            ).values_list("user_id", flat=True)
+            from django.contrib.auth import get_user_model
+
+            User = get_user_model()
+            for uid in student_ids:
+                u = User.objects.filter(pk=uid).first()
+                if not u:
+                    continue
+                try:
+                    sync_practice_submission_for_assignment(u, assignment)
+                except Exception:
+                    logger.exception(
+                        "sync_practice_submission_failed assignment_id=%s student_id=%s",
+                        assignment.pk,
+                        uid,
+                    )
         qs = (
             Submission.objects.filter(assignment=assignment)
             .select_related("student", "attempt", "attempt__practice_test", "review", "review__teacher")

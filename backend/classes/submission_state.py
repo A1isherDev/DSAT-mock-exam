@@ -25,6 +25,20 @@ def transition_student_may_edit_files(status: str) -> bool:
     return status in (Submission.STATUS_DRAFT, Submission.STATUS_RETURNED)
 
 
+def student_may_edit_submission_before_deadline(submission: "Submission") -> bool:
+    """SUBMITTED work can be changed until the assignment due time (if any)."""
+    from django.utils import timezone
+
+    from .models import Submission
+
+    if submission.status != Submission.STATUS_SUBMITTED:
+        return False
+    due = submission.assignment.due_at
+    if due is None:
+        return True
+    return timezone.now() <= due
+
+
 def transition_teacher_may_grade(status: str) -> bool:
     from .models import Submission
 
@@ -60,8 +74,13 @@ def assert_teacher_return_allowed(submission: Submission) -> None:
 def assert_student_edit_allowed(submission: Submission) -> None:
     from rest_framework.exceptions import ValidationError
 
-    if not transition_student_may_edit_files(submission.status):
-        raise ValidationError(
-            {"detail": f"This submission is locked (status {submission.status})."},
-            code="locked",
-        )
+    from .models import Submission
+
+    if transition_student_may_edit_files(submission.status):
+        return
+    if submission.status == Submission.STATUS_SUBMITTED and student_may_edit_submission_before_deadline(submission):
+        return
+    raise ValidationError(
+        {"detail": f"This submission is locked (status {submission.status})."},
+        code="locked",
+    )

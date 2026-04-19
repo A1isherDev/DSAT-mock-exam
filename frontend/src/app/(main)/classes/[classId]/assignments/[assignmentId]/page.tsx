@@ -17,6 +17,8 @@ import {
   crInputClass,
   crSelectClass,
 } from "@/components/classroom";
+import HomeworkFilePreviewTile from "@/components/classroom/HomeworkFilePreviewTile";
+import { fileNameFromUrl } from "@/lib/homeworkFileDisplay";
 import {
   ArrowLeft,
   ClipboardCheck,
@@ -29,7 +31,6 @@ import {
   RotateCcw,
   Save,
   Send,
-  Trash2,
   Trophy,
 } from "lucide-react";
 
@@ -263,6 +264,8 @@ export default function AssignmentDetailPage() {
     : [];
   const hasPastpaperBundle = bundleTests.length > 0;
   const legacyPracticeTestId = assignment?.practice_test;
+  /** Assigned practice/mock sections: turn-in is automatic when tests are completed — no file upload. */
+  const locksFileUpload = Boolean(assignment?.locks_file_upload);
 
   const allowedPracticeTestIdSet = useMemo(() => {
     if (!bundleTests.length) return null;
@@ -382,8 +385,21 @@ export default function AssignmentDetailPage() {
     }
   };
 
-  const canEditSubmission =
-    !mySubmission?.status || mySubmission.status === "DRAFT" || mySubmission.status === "RETURNED";
+  const isBeforeAssignmentDeadline = useMemo(() => {
+    const raw = assignment?.due_at;
+    if (raw == null || raw === "") return true;
+    const t = new Date(String(raw)).getTime();
+    return Number.isFinite(t) && t >= Date.now();
+  }, [assignment?.due_at]);
+
+  /** Draft / returned always; submitted again only until due (matches backend). */
+  const canEditSubmission = useMemo(() => {
+    const st = mySubmission?.status;
+    if (!st) return true;
+    if (st === "DRAFT" || st === "RETURNED") return true;
+    if (st === "SUBMITTED" && isBeforeAssignmentDeadline) return true;
+    return false;
+  }, [mySubmission?.status, isBeforeAssignmentDeadline]);
 
   const formatShortWhen = (iso?: string | null) => {
     if (!iso) return "";
@@ -499,18 +515,23 @@ export default function AssignmentDetailPage() {
                       Open link
                     </button>
                   ) : null}
-                  {homeworkAttachmentUrls.map((url, i) => (
-                    <button
-                      key={`${url}-${i}`}
-                      type="button"
-                      onClick={() => window.open(url, "_blank", "noopener,noreferrer")}
-                      className={`${linkBtn} border-border bg-card text-foreground hover:bg-surface-2`}
-                    >
-                      <ExternalLink className="h-4 w-4" />
-                      {homeworkAttachmentUrls.length > 1 ? `File ${i + 1}` : "Attached file"}
-                    </button>
-                  ))}
                 </div>
+                {homeworkAttachmentUrls.length > 0 ? (
+                  <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {homeworkAttachmentUrls.map((url, i) => {
+                      const displayName = fileNameFromUrl(url);
+                      return (
+                        <HomeworkFilePreviewTile
+                          key={`${url}-${i}`}
+                          name={displayName}
+                          remoteUrl={url}
+                          href={url}
+                          fileType={undefined}
+                        />
+                      );
+                    })}
+                  </div>
+                ) : null}
               </ClassroomCard>
 
               {!isClassAdmin && (
@@ -520,34 +541,72 @@ export default function AssignmentDetailPage() {
                       <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                         Your submission
                       </p>
-                      <h3 className="mt-1 text-base font-bold text-slate-900 dark:text-slate-50">Turn in your work</h3>
+                      <h3 className="mt-1 text-base font-bold text-slate-900 dark:text-slate-50">
+                        {locksFileUpload ? "Assigned test completion" : "Turn in your work"}
+                      </h3>
                       <p className="mt-1 max-w-2xl text-sm text-slate-600 dark:text-slate-300">
-                        Upload your files and/or link a practice test attempt. You can <strong>save a draft</strong> and come
-                        back, or press <strong>Submit</strong> when you are finished.
+                        {locksFileUpload ? (
+                          <>
+                            Finish the assigned practice or mock sections using the buttons above. When every required
+                            section is completed in the app, your homework is <strong>turned in automatically</strong> — you
+                            do not upload files or attach the test here.
+                          </>
+                        ) : (
+                          <>
+                            Upload your files and/or link a practice test attempt. You can <strong>save a draft</strong> and
+                            come back, or press <strong>Submit</strong> when you are finished.
+                          </>
+                        )}
                       </p>
                     </div>
                   </div>
 
-                  <ol className="mt-5 space-y-1 text-sm text-slate-600 dark:text-slate-300">
-                    <li className="flex gap-2">
-                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-200">
-                        1
-                      </span>
-                      <span>Read the instructions and any attached files or practice links above.</span>
-                    </li>
-                    <li className="flex gap-2">
-                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-200">
-                        2
-                      </span>
-                      <span>Add one or more files (you can add more later). Each upload is kept — nothing is overwritten.</span>
-                    </li>
-                    <li className="flex gap-2">
-                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-200">
-                        3
-                      </span>
-                      <span>Optionally link a test attempt, then save or submit.</span>
-                    </li>
-                  </ol>
+                  {locksFileUpload ? (
+                    <ol className="mt-5 space-y-1 text-sm text-slate-600 dark:text-slate-300">
+                      <li className="flex gap-2">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-200">
+                          1
+                        </span>
+                        <span>Read the instructions and any materials above.</span>
+                      </li>
+                      <li className="flex gap-2">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-200">
+                          2
+                        </span>
+                        <span>Open each required section (English and/or Math if both are assigned) and complete it in the test player.</span>
+                      </li>
+                      <li className="flex gap-2">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-200">
+                          3
+                        </span>
+                        <span>
+                          Return here and tap <strong>Refresh status</strong> if the page does not update right away after you
+                          finish.
+                        </span>
+                      </li>
+                    </ol>
+                  ) : (
+                    <ol className="mt-5 space-y-1 text-sm text-slate-600 dark:text-slate-300">
+                      <li className="flex gap-2">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-200">
+                          1
+                        </span>
+                        <span>Read the instructions and any attached files or practice links above.</span>
+                      </li>
+                      <li className="flex gap-2">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-200">
+                          2
+                        </span>
+                        <span>Add one or more files (you can add more later). Each upload is kept — nothing is overwritten.</span>
+                      </li>
+                      <li className="flex gap-2">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-200">
+                          3
+                        </span>
+                        <span>Optionally link a test attempt, then save or submit.</span>
+                      </li>
+                    </ol>
+                  )}
 
                   {mySubmission?.status === "RETURNED" ? (
                     <div
@@ -566,7 +625,9 @@ export default function AssignmentDetailPage() {
                         </p>
                       ) : (
                         <p className="mt-2 text-xs text-violet-800/80 dark:text-violet-300/80">
-                          Update your files or attempt, then submit again.
+                          {locksFileUpload
+                            ? "Complete the assigned tests again; your homework will update automatically when finished."
+                            : "Update your files or attempt, then submit again."}
                         </p>
                       )}
                     </div>
@@ -576,12 +637,54 @@ export default function AssignmentDetailPage() {
                     <div className="mt-5 rounded-xl border border-sky-200/90 bg-sky-50/90 px-4 py-3 text-sm text-sky-950 dark:border-sky-900/50 dark:bg-sky-950/35 dark:text-sky-100">
                       <p className="font-semibold">Submission locked</p>
                       <p className="mt-1 text-sky-900/90 dark:text-sky-200/90">
-                        Your teacher has this copy ({mySubmission?.status}). You cannot change files until it is returned for
-                        revision.
+                        {mySubmission?.status === "REVIEWED"
+                          ? locksFileUpload
+                            ? "Your teacher has reviewed this homework. You can change it only if the work is returned for revision."
+                            : "Your teacher has reviewed this submission. You can change files only if the work is returned for revision."
+                          : mySubmission?.status === "SUBMITTED"
+                            ? locksFileUpload
+                              ? "The due date has passed. Your teacher can still see your completed test for this homework."
+                              : "The due date has passed. You can no longer change this submission."
+                            : `This copy is locked (${mySubmission?.status}). You cannot change files until work is returned for revision.`}
                       </p>
                     </div>
                   ) : null}
 
+                  {locksFileUpload ? (
+                    <div className="mt-6 space-y-4 rounded-2xl border border-emerald-200/90 bg-emerald-50/50 px-4 py-4 dark:border-emerald-900/40 dark:bg-emerald-950/25">
+                      <p className="text-sm text-slate-700 dark:text-slate-200">
+                        Your teacher sees this homework as turned in when the required test sections are completed in the app.
+                        If you just finished, refresh this page to update the status below.
+                      </p>
+                      <ClassroomButton
+                        type="button"
+                        variant="secondary"
+                        size="md"
+                        disabled={saving}
+                        onClick={() => void refresh()}
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                        Refresh status
+                      </ClassroomButton>
+                      {mySubmission?.attempt != null && typeof mySubmission.attempt === "object" ? (
+                        <p className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                          Linked attempt: #
+                          {String((mySubmission.attempt as { id?: number }).id ?? "")}
+                          {(mySubmission.attempt as { is_completed?: boolean }).is_completed ? " · Completed" : ""}
+                          {(mySubmission.attempt as { score?: number | null }).score != null
+                            ? ` · Score ${(mySubmission.attempt as { score?: number | null }).score}`
+                            : ""}
+                        </p>
+                      ) : mySubmission?.status === "DRAFT" || !mySubmission?.status ? (
+                        <p className="text-xs font-medium text-amber-800 dark:text-amber-200">
+                          Not turned in yet — finish every assigned section, then refresh.
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {!locksFileUpload ? (
+                    <>
                   <ClassroomField
                     label="Your files"
                     htmlFor="sub-files"
@@ -600,61 +703,33 @@ export default function AssignmentDetailPage() {
                       }}
                       className="w-full text-sm text-slate-600 file:mr-3 file:rounded-xl file:border-0 file:bg-indigo-500/10 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-indigo-700 disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-400 dark:file:text-indigo-200"
                     />
-                    <ul className="mt-4 space-y-2">
+                    <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                       {(Array.isArray(mySubmission?.files) ? mySubmission.files : []).map((f: { id: number; url: string; file_name?: string; file_type?: string }) => {
-                        const Icon = fileKindIcon(f.file_type, f.file_name || "");
-                        const label = (f.file_name || "File").trim() || "File";
+                        const label = (f.file_name || fileNameFromUrl(f.url) || "File").trim() || "File";
                         return (
-                          <li
+                          <HomeworkFilePreviewTile
                             key={f.id}
-                            className="flex items-center justify-between gap-3 rounded-xl border border-slate-200/80 bg-white/90 px-3 py-2 dark:border-slate-600 dark:bg-slate-900/50"
-                          >
-                            <a
-                              href={f.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="flex min-w-0 flex-1 items-center gap-2 text-sm font-semibold text-indigo-600 hover:underline dark:text-indigo-400"
-                            >
-                              <Icon className="h-4 w-4 shrink-0 text-slate-500" aria-hidden />
-                              <span className="truncate">{label}</span>
-                            </a>
-                            <button
-                              type="button"
-                              className="shrink-0 rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-rose-600 dark:hover:bg-slate-800"
-                              onClick={() => void removeServerFile(f.id)}
-                              disabled={saving || !canEditSubmission}
-                              aria-label={`Remove ${label}`}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </li>
+                            name={label}
+                            remoteUrl={f.url}
+                            href={f.url}
+                            fileType={f.file_type}
+                            onRemove={() => void removeServerFile(f.id)}
+                            removeDisabled={saving || !canEditSubmission}
+                          />
                         );
                       })}
                       {pendingFiles.map((f, i) => (
-                        <li
-                          key={`pending-${i}-${f.name}`}
-                          className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-indigo-200/80 bg-indigo-50/50 px-3 py-2 text-sm dark:border-indigo-900/50 dark:bg-indigo-950/20"
-                        >
-                          <span className="flex min-w-0 items-center gap-2 font-medium text-slate-800 dark:text-slate-200">
-                            {(() => {
-                              const Icon = fileKindIcon(f.type, f.name);
-                              return <Icon className="h-4 w-4 shrink-0 text-slate-500" aria-hidden />;
-                            })()}
-                            <span className="truncate">{f.name}</span>
-                            <span className="shrink-0 text-xs text-slate-500">Not uploaded yet</span>
-                          </span>
-                          <button
-                            type="button"
-                            className="shrink-0 rounded-lg p-1.5 text-slate-500 hover:bg-white/80 hover:text-rose-600"
-                            onClick={() => setPendingFiles((p) => p.filter((_, j) => j !== i))}
-                            disabled={!canEditSubmission}
-                            aria-label="Remove from queue"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </li>
+                        <HomeworkFilePreviewTile
+                          key={`pending-${i}-${f.name}-${f.size}`}
+                          name={f.name}
+                          localFile={f}
+                          fileType={f.type}
+                          badge="Not uploaded yet"
+                          onRemove={() => setPendingFiles((p) => p.filter((_, j) => j !== i))}
+                          removeDisabled={!canEditSubmission}
+                        />
                       ))}
-                    </ul>
+                    </div>
                   </ClassroomField>
 
                   <div className="mt-6 rounded-2xl border border-slate-200/95 bg-white/80 p-4 dark:border-slate-600 dark:bg-slate-950/40">
@@ -740,6 +815,8 @@ export default function AssignmentDetailPage() {
                       </ClassroomButton>
                     </div>
                   </div>
+                    </>
+                  ) : null}
 
                   {mySubmission?.review ? (
                     <div

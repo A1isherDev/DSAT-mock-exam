@@ -4,25 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { classesApi } from "@/lib/api";
 import { crInputClass } from "@/components/classroom";
-import {
-  ArrowLeft,
-  ClipboardCheck,
-  FileImage,
-  FileText,
-  Loader2,
-  RotateCcw,
-  Trophy,
-  User,
-} from "lucide-react";
-
-function fileKindIcon(fileType: string | undefined, fileName: string) {
-  const ft = (fileType || "").toLowerCase();
-  const fn = fileName.toLowerCase();
-  if (ft.startsWith("image/") || /\.(png|jpe?g|gif|webp|svg)$/i.test(fn)) {
-    return FileImage;
-  }
-  return FileText;
-}
+import HomeworkFilePreviewTile from "@/components/classroom/HomeworkFilePreviewTile";
+import { fileNameFromUrl } from "@/lib/homeworkFileDisplay";
+import { ArrowLeft, ClipboardCheck, Loader2, RotateCcw, Trophy, User } from "lucide-react";
 
 type Member = {
   role: string;
@@ -55,6 +39,7 @@ export default function HomeworkGradingAssignmentView({
   const [error, setError] = useState<string | null>(null);
   const [className, setClassName] = useState("");
   const [assignmentTitle, setAssignmentTitle] = useState("");
+  const [assignmentLocksFileUpload, setAssignmentLocksFileUpload] = useState(false);
   const [people, setPeople] = useState<Member[]>([]);
   const [submissions, setSubmissions] = useState<any[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
@@ -80,6 +65,7 @@ export default function HomeworkGradingAssignmentView({
       const list = Array.isArray(assigns) ? assigns : [];
       const a = list.find((x) => Number(x.id) === assignmentId);
       setAssignmentTitle(a?.title ? String(a.title) : `Assignment #${assignmentId}`);
+      setAssignmentLocksFileUpload(Boolean(a?.locks_file_upload));
 
       const [subs, plist] = await Promise.all([
         classesApi.listSubmissions(classId, assignmentId),
@@ -348,27 +334,26 @@ export default function HomeworkGradingAssignmentView({
                   <div className="mt-5">
                     <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Uploaded files</h3>
                     {(Array.isArray(selectedSub.files) ? selectedSub.files : []).length === 0 ? (
-                      <p className="mt-2 text-sm text-muted-foreground">No files uploaded.</p>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        {assignmentLocksFileUpload
+                          ? "No file uploads for this assignment — completion is recorded from assigned tests."
+                          : "No files uploaded."}
+                      </p>
                     ) : (
-                      <ul className="mt-2 space-y-2">
+                      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                         {(selectedSub.files as { id: number; url: string; file_name?: string; file_type?: string }[]).map((f) => {
-                          const Icon = fileKindIcon(f.file_type, f.file_name || "");
-                          const label = (f.file_name || "File").trim() || "File";
+                          const label = (f.file_name || fileNameFromUrl(f.url) || "File").trim() || "File";
                           return (
-                            <li key={f.id}>
-                              <a
-                                href={f.url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex max-w-full items-center gap-2 text-sm font-semibold text-primary hover:underline"
-                              >
-                                <Icon className="h-4 w-4 shrink-0" />
-                                <span className="truncate">{label}</span>
-                              </a>
-                            </li>
+                            <HomeworkFilePreviewTile
+                              key={f.id}
+                              name={label}
+                              remoteUrl={f.url}
+                              href={f.url}
+                              fileType={f.file_type}
+                            />
                           );
                         })}
-                      </ul>
+                      </div>
                     )}
                   </div>
 

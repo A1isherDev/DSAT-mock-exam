@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from rest_framework.test import APIClient
 
@@ -65,6 +66,65 @@ class AssignmentPracticeAccessSyncTests(TestCase):
         ser.is_valid(raise_exception=True)
         ser.save(classroom=self.classroom, created_by=self.admin)
         self.assertTrue(self.pt.assigned_users.filter(pk=self.student.pk).exists())
+
+
+class PracticeHomeworkAutoSubmitTests(TestCase):
+    """Practice-linked homework: no file uploads; completed attempts auto-submit."""
+
+    def setUp(self):
+        from exams.models import PracticeTest, TestAttempt
+
+        self.client = APIClient()
+        self.admin = User.objects.create_user("ph_auto_admin@test.com", "secret123")
+        self.student = User.objects.create_user("ph_auto_student@test.com", "secret123")
+        self.classroom = Classroom.objects.create(
+            name="Auto class",
+            subject=Classroom.SUBJECT_ENGLISH,
+            lesson_days=Classroom.DAYS_ODD,
+            created_by=self.admin,
+        )
+        ClassroomMembership.objects.create(
+            classroom=self.classroom, user=self.admin, role=ClassroomMembership.ROLE_ADMIN
+        )
+        ClassroomMembership.objects.create(
+            classroom=self.classroom, user=self.student, role=ClassroomMembership.ROLE_STUDENT
+        )
+        self.pt = PracticeTest.objects.create(
+            mock_exam=None,
+            pastpaper_pack=None,
+            subject="READING_WRITING",
+            title="Section",
+        )
+        self.assignment = Assignment.objects.create(
+            classroom=self.classroom,
+            created_by=self.admin,
+            title="Pastpaper HW",
+            practice_test=self.pt,
+        )
+        self._TestAttempt = TestAttempt
+
+    def test_completed_attempt_creates_submitted_submission(self):
+        att = self._TestAttempt.objects.create(
+            practice_test=self.pt,
+            student=self.student,
+            is_completed=True,
+        )
+        sub = Submission.objects.filter(assignment=self.assignment, student=self.student).first()
+        self.assertIsNotNone(sub)
+        self.assertEqual(sub.status, Submission.STATUS_SUBMITTED)
+        self.assertEqual(sub.attempt_id, att.pk)
+
+    def test_student_cannot_upload_files_for_practice_homework(self):
+        self.client.force_authenticate(self.student)
+        pdf = SimpleUploadedFile("work.pdf", b"%PDF-1.4 test", content_type="application/pdf")
+        url = f"/api/classes/{self.classroom.pk}/assignments/{self.assignment.pk}/submit/"
+        r = self.client.post(
+            url,
+            {"submit": "true", "files": pdf},
+            format="multipart",
+        )
+        self.assertEqual(r.status_code, 400)
+        self.assertIn(b"assigned tests", r.content.lower())
 
 
 class ClassroomSecurityTests(TestCase):
