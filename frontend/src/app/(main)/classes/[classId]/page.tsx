@@ -278,6 +278,20 @@ export default function ClassDetailPage() {
             <p className="mt-4 font-mono text-2xl font-bold tracking-wider text-slate-900 dark:text-slate-50">
               {klass.join_code || "—"}
             </p>
+            <div className="mt-4 border-t border-slate-200 pt-4 dark:border-slate-700">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Room number
+              </p>
+              <p className="mt-2 font-mono text-base font-semibold text-slate-800 dark:text-slate-200">
+                {(klass.room_number && String(klass.room_number).trim()) || "—"}
+              </p>
+              <p className="mt-4 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Telegram chat ID
+              </p>
+              <p className="mt-2 break-all font-mono text-sm font-semibold text-slate-800 dark:text-slate-200">
+                {(klass.telegram_chat_id && String(klass.telegram_chat_id).trim()) || "—"}
+              </p>
+            </div>
           </ClassroomCard>
         </div>
       ) : null}
@@ -307,6 +321,20 @@ export default function ClassDetailPage() {
                   <p className="mt-3 font-mono text-lg font-bold tracking-wider text-slate-900 dark:text-slate-50">
                     {klass?.join_code || "—"}
                   </p>
+                  <div className="mt-4 border-t border-slate-200 pt-4 dark:border-slate-700">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Room number
+                    </p>
+                    <p className="mt-2 font-mono text-sm font-semibold text-slate-800 dark:text-slate-200">
+                      {(klass?.room_number && String(klass.room_number).trim()) || "—"}
+                    </p>
+                    <p className="mt-4 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Telegram chat ID
+                    </p>
+                    <p className="mt-2 break-all font-mono text-sm font-semibold text-slate-800 dark:text-slate-200">
+                      {(klass?.telegram_chat_id && String(klass.telegram_chat_id).trim()) || "—"}
+                    </p>
+                  </div>
                 </ClassroomCard>
                 {workspace?.is_student ? (
                   <>
