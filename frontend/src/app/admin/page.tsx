@@ -443,7 +443,21 @@ export default function AdminPage() {
     const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
     // Fetch
-    const fetchUsers = useCallback(async () => { try { setUsers(await adminApi.getUsers()); } catch(e){} }, []);
+    const fetchUsers = useCallback(async () => {
+        try {
+            const data = await adminApi.getUsers();
+            setUsers(Array.isArray(data) ? data : []);
+        } catch (e: any) {
+            const status = e?.response?.status;
+            const d = e?.response?.data;
+            const msg = d?.detail || d?.message || d?.error || "Could not load users.";
+            showToast(status ? `${msg} (HTTP ${status})` : String(msg));
+            setUsers([]);
+            if (typeof window !== "undefined") {
+                console.warn("admin fetchUsers failed", { status, data: d });
+            }
+        }
+    }, []);
 
     const fetchExamDatesAdmin = useCallback(async () => {
         try {
