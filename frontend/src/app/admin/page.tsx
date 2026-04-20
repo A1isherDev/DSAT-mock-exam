@@ -515,7 +515,8 @@ export default function AdminPage() {
         fetchStandaloneTests();
         fetchPastpaperPacks();
         // Users API is intentionally admin-subdomain only; avoid 403/alerts on questions console.
-        if (consoleMode !== "questions" && (can("manage_users") || can("assign_access"))) {
+        // Do not rely on permission cookies on subdomains; backend enforces access.
+        if (consoleMode !== "questions" && Cookies.get("access_token")) {
             fetchUsers();
         }
         if (can("manage_users")) {
@@ -525,7 +526,7 @@ export default function AdminPage() {
 
     useEffect(() => {
         if (activeTab !== "assignments") return;
-        if (!can("assign_access")) return;
+        if (!Cookies.get("access_token")) return;
         void fetchUsers();
     }, [activeTab, fetchUsers]);
 
