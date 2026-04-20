@@ -69,8 +69,8 @@ export default function VocabularyDailyPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="brand">Learned: {payload?.stats.total_learned ?? "—"}</Badge>
-          <Badge variant="default">Accuracy: {payload?.stats.accuracy_percent ?? "—"}%</Badge>
-          <Badge variant="default">Streak: {payload?.stats.streak_days ?? "—"}d</Badge>
+          <Badge variant="neutral">Accuracy: {payload?.stats.accuracy_percent ?? "—"}%</Badge>
+          <Badge variant="neutral">Streak: {payload?.stats.streak_days ?? "—"}d</Badge>
         </div>
       </div>
 
