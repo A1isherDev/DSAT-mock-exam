@@ -68,7 +68,7 @@ class SubdomainAPIGuardMiddleware:
             return self.get_response(request)
 
         # Role-level gate (before endpoint allowlists).
-        # - testers (test_admin) may NOT use admin console subdomain
+        # - testers (test_admin) may use admin console for users/bulk-assign
         # - testers MAY use questions console subdomain
         u = getattr(request, "user", None)
         role = (
@@ -76,7 +76,7 @@ class SubdomainAPIGuardMiddleware:
             if u and getattr(u, "is_authenticated", False)
             else ""
         )
-        if kind == "admin" and role in ("test_admin", "student"):
+        if kind == "admin" and role in ("student",):
             return JsonResponse(
                 {"detail": "You cannot access admin console."}, status=403
             )
