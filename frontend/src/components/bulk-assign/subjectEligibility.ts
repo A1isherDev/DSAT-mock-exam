@@ -78,8 +78,8 @@ export function pastpaperRowEligibility(
   subjectsInContent: Set<PlatformSubject>,
 ): EligibilityRow {
   const g = grantsFromProfile(profile);
-  let canMath = subjectsInContent.has("MATH") && g.math;
-  let canRw = subjectsInContent.has("READING_WRITING") && g.english;
+  const canMath = subjectsInContent.has("MATH") && g.math;
+  const canRw = subjectsInContent.has("READING_WRITING") && g.english;
   if (subjectsInContent.size === 0) {
     return { selectable: false, reason: "No sections match the current subject scope" };
   }

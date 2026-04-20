@@ -78,6 +78,7 @@ INSTALLED_APPS = [
     'exams',
     'classes',
     'realtime',
+    'vocabulary',
 ]
 
 MIDDLEWARE = [

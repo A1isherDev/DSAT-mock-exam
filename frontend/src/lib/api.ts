@@ -636,4 +636,49 @@ export const adminApi = {
     },
 };
 
+export const vocabularyApi = {
+    listWords: async (params?: { q?: string; difficulty?: number; part_of_speech?: string }) => {
+        const r = await api.get("/vocabulary/words/", { params });
+        return r.data;
+    },
+    getDaily: async (params?: { target?: number }) => {
+        const r = await api.get("/vocabulary/daily/", { params });
+        return r.data;
+    },
+    review: async (payload: { word_id: number; result: "correct" | "wrong" }) => {
+        const r = await api.post("/vocabulary/review/", payload);
+        return r.data;
+    },
+    adminListWords: async () => {
+        const r = await api.get("/vocabulary/admin/words/");
+        return r.data;
+    },
+    adminCreateWord: async (payload: {
+        word: string;
+        meaning?: string;
+        example?: string;
+        part_of_speech?: string;
+        difficulty?: number;
+    }) => {
+        const r = await api.post("/vocabulary/admin/words/", payload);
+        return r.data;
+    },
+    adminUpdateWord: async (
+        id: number,
+        payload: Partial<{
+            word: string;
+            meaning: string;
+            example: string;
+            part_of_speech: string;
+            difficulty: number;
+        }>,
+    ) => {
+        const r = await api.patch(`/vocabulary/admin/words/${id}/`, payload);
+        return r.data;
+    },
+    adminDeleteWord: async (id: number) => {
+        await api.delete(`/vocabulary/admin/words/${id}/`);
+    },
+};
+
 export default api;
