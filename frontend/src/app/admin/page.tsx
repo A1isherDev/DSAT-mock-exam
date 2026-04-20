@@ -450,8 +450,15 @@ export default function AdminPage() {
         } catch (e: any) {
             const status = e?.response?.status;
             const d = e?.response?.data;
-            const msg = d?.detail || d?.message || d?.error || "Could not load users.";
-            showToast(status ? `${msg} (HTTP ${status})` : String(msg));
+            const detail = d?.detail;
+            const err = d?.error;
+            const message = d?.message;
+            // Prefer the server-provided exception details (when present) so 500s are actionable.
+            const msgCore =
+                status >= 500 && (message || err)
+                    ? [detail, err, message].filter(Boolean).join(" · ")
+                    : (detail || message || err || "Could not load users.");
+            showToast(status ? `${msgCore} (HTTP ${status})` : String(msgCore));
             setUsers([]);
             if (typeof window !== "undefined") {
                 console.warn("admin fetchUsers failed", { status, data: d });
