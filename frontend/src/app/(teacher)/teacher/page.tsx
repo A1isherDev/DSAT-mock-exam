@@ -3,14 +3,12 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { classesApi } from "@/lib/api";
-import { Megaphone, ClipboardList, Users } from "lucide-react";
-import SafeHtml from "@/components/SafeHtml";
+import { ClipboardList, Users } from "lucide-react";
 
 export default function TeacherDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [groups, setGroups] = useState<any[]>([]);
-  const [posts, setPosts] = useState<any[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -22,14 +20,6 @@ export default function TeacherDashboardPage() {
         const teacherGroups = (Array.isArray(all) ? all : []).filter((g) => g.my_role === "ADMIN");
         if (cancelled) return;
         setGroups(teacherGroups);
-
-        // Announcements: pull latest 1 per group (simple MVP)
-        const latest: any[] = [];
-        for (const g of teacherGroups.slice(0, 5)) {
-          const p = await classesApi.listPosts(g.id);
-          if (Array.isArray(p) && p[0]) latest.push({ group: g, post: p[0] });
-        }
-        if (!cancelled) setPosts(latest);
       } catch (e: any) {
         if (!cancelled) setError(e?.response?.data?.detail || "Could not load teacher dashboard.");
       } finally {
@@ -46,7 +36,7 @@ export default function TeacherDashboardPage() {
       <div className="mb-8 hero-shell p-8">
         <p className="eyebrow mb-2">Dashboard</p>
         <h1 className="title-xl">Teacher command desk</h1>
-        <p className="text-slate-600 mt-2">Group overview, announcements, and quick access to lessons.</p>
+        <p className="text-slate-600 mt-2">Group overview and quick access to lessons.</p>
       </div>
 
       {error && <div className="mb-6 p-4 rounded-2xl border border-red-200 bg-red-50 text-red-700 font-semibold text-sm">{error}</div>}
@@ -104,25 +94,6 @@ export default function TeacherDashboardPage() {
                 <strong>Mock exams</strong> for separate timed diagnostics (questions you build for that mock—not the practice bank).
               </p>
             </div>
-          </div>
-
-          <div className="metric-tile p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Megaphone className="w-4 h-4 text-slate-500" />
-              <p className="text-xs font-black text-slate-500 uppercase tracking-widest">Announcements</p>
-            </div>
-            {posts.length === 0 ? (
-              <p className="text-slate-600 text-sm">No announcements yet.</p>
-            ) : (
-              <div className="space-y-4">
-                {posts.map((x) => (
-                  <div key={x.post.id} className="p-4 rounded-2xl border border-slate-200 bg-slate-50/70">
-                    <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-2">{x.group.name}</p>
-                    <SafeHtml className="prose prose-slate max-w-none text-sm" html={x.post.content} />
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         </div>
       )}

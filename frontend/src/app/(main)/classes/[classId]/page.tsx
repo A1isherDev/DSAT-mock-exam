@@ -15,7 +15,6 @@ function memberAvatarInitials(u: { first_name?: string; last_name?: string; emai
   return b ? `${a}${b}` : a;
 }
 import CreateAssignmentModal from "@/components/CreateAssignmentModal";
-import SafeHtml from "@/components/SafeHtml";
 import {
   ClassroomAlert,
   ClassroomButton,
@@ -31,7 +30,6 @@ import {
   ClipboardList,
   GraduationCap,
   KeyRound,
-  Megaphone,
   Pencil,
   Plus,
   RefreshCcw,
@@ -50,13 +48,10 @@ export default function ClassDetailPage() {
   const [klass, setKlass] = useState<any>(null);
   const isClassAdmin = klass?.my_role === "ADMIN";
 
-  const [postText, setPostText] = useState("");
-  const [announcements, setAnnouncements] = useState<any[]>([]);
   const [workspace, setWorkspace] = useState<{
     your_assignments?: any[];
     due_soon?: any[];
     recently_graded?: any[];
-    new_posts?: any[];
     is_student?: boolean;
   } | null>(null);
 
@@ -81,17 +76,15 @@ export default function ClassDetailPage() {
     setError(null);
     setLoading(true);
     try {
-      const [k, ws, pe, posts] = await Promise.all([
+      const [k, ws, pe] = await Promise.all([
         classesApi.get(id),
         classesApi.getStudentWorkspace(id),
         classesApi.people(id),
-        classesApi.listPosts(id).catch(() => []),
       ]);
       setKlass(k);
       setWorkspace(ws && typeof ws === "object" ? ws : null);
       setAssignments(Array.isArray(ws?.your_assignments) ? ws.your_assignments : []);
       setPeople(Array.isArray(pe) ? pe : []);
-      setAnnouncements(Array.isArray(posts) ? posts : []);
     } catch (e: unknown) {
       const ax = e as { response?: { status?: number; data?: { detail?: string } } };
       const st = ax.response?.status;
@@ -102,7 +95,6 @@ export default function ClassDetailPage() {
         setError(typeof detail === "string" ? detail : "Could not load class.");
       }
       setKlass(null);
-      setAnnouncements([]);
       setWorkspace(null);
       setAssignments([]);
       setPeople([]);
@@ -142,12 +134,6 @@ export default function ClassDetailPage() {
             const ws = await classesApi.getStudentWorkspace(id);
             setWorkspace(ws && typeof ws === "object" ? ws : null);
             setAssignments(Array.isArray((ws as any)?.your_assignments) ? (ws as any).your_assignments : []);
-            try {
-              const posts = await classesApi.listPosts(id);
-              setAnnouncements(Array.isArray(posts) ? posts : []);
-            } catch {
-              /* ignore */
-            }
           }
         }
         if (ev.type === "workspace.updated") {
@@ -164,21 +150,6 @@ export default function ClassDetailPage() {
     );
     return () => unsub();
   }, [id]);
-
-  const handlePost = async () => {
-    setError(null);
-    try {
-      await classesApi.createPost(id, { content: postText });
-      setPostText("");
-      const [ws, posts] = await Promise.all([classesApi.getStudentWorkspace(id), classesApi.listPosts(id)]);
-      setWorkspace(ws && typeof ws === "object" ? ws : null);
-      setAssignments(Array.isArray(ws?.your_assignments) ? ws.your_assignments : []);
-      setAnnouncements(Array.isArray(posts) ? posts : []);
-    } catch (e: unknown) {
-      const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      setError(typeof d === "string" ? d : "Could not post.");
-    }
-  };
 
   const formatDue = (s?: string) => {
     if (!s) return "No due date";
@@ -270,35 +241,7 @@ export default function ClassDetailPage() {
 
       <ClassroomTabs items={tabItems} value={tab} onChange={setTab} className="mb-8" />
 
-      {!loading && klass ? (
-        <div className="mb-8 max-w-lg">
-          <ClassroomCard padding="lg" className="min-h-[140px] shadow-sm">
-            <div className="flex items-center gap-2">
-              <KeyRound className="h-5 w-5 text-indigo-500" />
-              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                Join code
-              </p>
-            </div>
-            <p className="mt-4 font-mono text-2xl font-bold tracking-wider text-slate-900 dark:text-slate-50">
-              {klass.join_code || "—"}
-            </p>
-            <div className="mt-4 border-t border-slate-200 pt-4 dark:border-slate-700">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                Room number
-              </p>
-              <p className="mt-2 font-mono text-base font-semibold text-slate-800 dark:text-slate-200">
-                {(klass.room_number && String(klass.room_number).trim()) || "—"}
-              </p>
-              <p className="mt-4 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                Telegram chat ID
-              </p>
-              <p className="mt-2 break-all font-mono text-sm font-semibold text-slate-800 dark:text-slate-200">
-                {(klass.telegram_chat_id && String(klass.telegram_chat_id).trim()) || "—"}
-              </p>
-            </div>
-          </ClassroomCard>
-        </div>
-      ) : null}
+      {/* Join code / room / Telegram info is shown only on Leaderboard (sidebar). */}
 
       {loading ? (
         <ClassroomDetailSkeleton />
@@ -319,13 +262,20 @@ export default function ClassDetailPage() {
                   <div className="flex items-center gap-2">
                     <KeyRound className="h-4 w-4 text-indigo-500" />
                     <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                      Join code
+                      Classroom info
                     </p>
                   </div>
-                  <p className="mt-3 font-mono text-lg font-bold tracking-wider text-slate-900 dark:text-slate-50">
-                    {klass?.join_code || "—"}
-                  </p>
-                  <div className="mt-4 border-t border-slate-200 pt-4 dark:border-slate-700">
+                  {isClassAdmin ? (
+                    <>
+                      <p className="mt-3 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        Join code
+                      </p>
+                      <p className="mt-2 font-mono text-lg font-bold tracking-wider text-slate-900 dark:text-slate-50">
+                        {klass?.join_code || "—"}
+                      </p>
+                    </>
+                  ) : null}
+                  <div className={`mt-4 border-t border-slate-200 pt-4 dark:border-slate-700 ${isClassAdmin ? "" : "border-t-0 pt-0"}`}>
                     <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       Room number
                     </p>
@@ -396,44 +346,6 @@ export default function ClassDetailPage() {
 
           {tab === "classwork" ? (
             <div className="space-y-6">
-              <ClassroomCard padding="md">
-                  <div className="flex items-center gap-2">
-                    <Megaphone className="h-5 w-5 text-indigo-500" />
-                    <h2 className="text-base font-bold text-slate-900 dark:text-slate-50">Announcements</h2>
-                  </div>
-                  {isClassAdmin ? (
-                    <>
-                      <textarea
-                        value={postText}
-                        onChange={(e) => setPostText(e.target.value)}
-                        placeholder="Write an announcement (HTML supported)"
-                        rows={4}
-                        className="mt-4 w-full resize-y rounded-xl border border-slate-200/90 bg-white/90 px-4 py-3 text-sm text-slate-900 shadow-sm transition-[border-color,box-shadow] duration-200 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-600 dark:bg-slate-900/60 dark:text-slate-100 dark:placeholder:text-slate-500"
-                      />
-                      <ClassroomButton
-                        variant="primary"
-                        size="md"
-                        className="mt-3 w-full sm:w-auto"
-                        onClick={handlePost}
-                        disabled={!postText.trim()}
-                      >
-                        Post announcement
-                      </ClassroomButton>
-                    </>
-                  ) : null}
-                  {announcements.length === 0 && !isClassAdmin ? (
-                    <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">No announcements yet.</p>
-                  ) : (
-                    <ul className="mt-4 space-y-4">
-                      {announcements.map((p: any) => (
-                        <li key={p.id} className="rounded-xl border border-slate-100/90 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/30">
-                          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">{formatDue(p.created_at)}</p>
-                          <SafeHtml className="prose prose-slate mt-2 max-w-none text-sm dark:prose-invert" html={p.content} />
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-              </ClassroomCard>
               {isClassAdmin ? (
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>

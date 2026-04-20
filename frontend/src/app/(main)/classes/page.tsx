@@ -292,7 +292,7 @@ export default function ClassesPage() {
           className="flex-1"
           eyebrow="Groups"
           title="Your learning spaces"
-          description="Join with a code, open a space for announcements, homework, submissions, and grades."
+          description="Join with a code, open a space for homework, submissions, and grades."
         />
         <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center lg:w-auto lg:shrink-0">
           <div className="relative min-w-[200px] flex-1 lg:max-w-xs">
