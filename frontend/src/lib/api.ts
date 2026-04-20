@@ -427,8 +427,17 @@ export const classesApi = {
         const r = await api.post(`/classes/${classId}/assignments/`, data, isFormData ? {} : {});
         return r.data;
     },
-    updateAssignment: async (classId: number, assignmentId: number, data: Record<string, unknown>) => {
-        const r = await api.patch(`/classes/${classId}/assignments/${assignmentId}/`, data);
+    updateAssignment: async (
+        classId: number,
+        assignmentId: number,
+        data: Record<string, unknown> | FormData,
+        isFormData = false,
+        options?: { replaceAttachments?: boolean },
+    ) => {
+        const r = await api.patch(`/classes/${classId}/assignments/${assignmentId}/`, data, {
+            ...(isFormData ? {} : {}),
+            ...(options?.replaceAttachments ? { params: { replace_attachments: '1' } } : {}),
+        });
         return r.data;
     },
     deleteAssignment: async (classId: number, assignmentId: number) => {

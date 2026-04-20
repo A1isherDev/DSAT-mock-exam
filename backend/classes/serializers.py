@@ -243,7 +243,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
         ]
 
     def get_locks_file_upload(self, obj):
-        """Homework tied to practice/mock sections is turned in via test completion, not file uploads."""
+        """True when this homework includes assigned practice/mock sections (auto turn-in when tests finish)."""
         return bool(assignment_target_practice_test_ids(obj))
 
     def get_created_by(self, obj):

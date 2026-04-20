@@ -336,7 +336,7 @@ export default function HomeworkGradingAssignmentView({
                     {(Array.isArray(selectedSub.files) ? selectedSub.files : []).length === 0 ? (
                       <p className="mt-2 text-sm text-muted-foreground">
                         {assignmentLocksFileUpload
-                          ? "No file uploads for this assignment — completion is recorded from assigned tests."
+                          ? "No extra files — student may rely on assigned test completion only."
                           : "No files uploaded."}
                       </p>
                     ) : (

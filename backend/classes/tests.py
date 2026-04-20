@@ -114,17 +114,18 @@ class PracticeHomeworkAutoSubmitTests(TestCase):
         self.assertEqual(sub.status, Submission.STATUS_SUBMITTED)
         self.assertEqual(sub.attempt_id, att.pk)
 
-    def test_student_cannot_upload_files_for_practice_homework(self):
+    def test_student_can_upload_files_alongside_practice_homework(self):
         self.client.force_authenticate(self.student)
         pdf = SimpleUploadedFile("work.pdf", b"%PDF-1.4 test", content_type="application/pdf")
         url = f"/api/classes/{self.classroom.pk}/assignments/{self.assignment.pk}/submit/"
         r = self.client.post(
             url,
-            {"submit": "true", "files": pdf},
+            {"submit": "false", "files": pdf},
             format="multipart",
         )
-        self.assertEqual(r.status_code, 400)
-        self.assertIn(b"assigned tests", r.content.lower())
+        self.assertEqual(r.status_code, 200)
+        data = r.json()
+        self.assertGreaterEqual(len(data.get("files") or []), 1)
 
 
 class ClassroomSecurityTests(TestCase):

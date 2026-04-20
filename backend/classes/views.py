@@ -358,8 +358,8 @@ class ClassroomViewSet(ModelViewSet):
     @action(detail=True, methods=["get"], permission_classes=[IsAuthenticatedAndNotFrozen], url_path="assignment-options")
     def assignment_options(self, request, pk=None):
         """
-        Mock exams + pastpaper practice tests the teacher may attach to homework (full test only).
-        Uses the same visibility rules as /exams/mock-exams/ and /exams/.
+        Pastpaper practice tests the teacher may attach to homework.
+        Uses the same visibility rules as /exams/ for the practice library.
         """
         classroom = self.get_object()
         if not classroom.memberships.filter(user=request.user, role="ADMIN").exists():
@@ -368,27 +368,12 @@ class ClassroomViewSet(ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        from exams.views import MockExamViewSet, PracticeTestViewSet
-
-        mvs = MockExamViewSet()
-        mvs.request = request
-        mvs.format_kwarg = None
-        mock_qs = mvs.get_queryset()
+        from exams.views import PracticeTestViewSet
 
         pvs = PracticeTestViewSet()
         pvs.request = request
         pvs.format_kwarg = None
         pt_qs = pvs.get_queryset().select_related("pastpaper_pack")
-
-        mock_exams = [
-            {
-                "id": m.id,
-                "title": m.title,
-                "practice_date": m.practice_date.isoformat() if m.practice_date else None,
-                "kind": m.kind,
-            }
-            for m in mock_qs
-        ]
 
         practice_tests = []
         for pt in pt_qs:
@@ -418,7 +403,7 @@ class ClassroomViewSet(ModelViewSet):
                 }
             )
 
-        return Response({"mock_exams": mock_exams, "practice_tests": practice_tests})
+        return Response({"practice_tests": practice_tests})
 
     @action(detail=True, methods=["get"], permission_classes=[IsAuthenticatedAndNotFrozen], url_path="leaderboard")
     def leaderboard(self, request, pk=None):
@@ -808,6 +793,16 @@ class JoinClassView(APIView):
         )
 
 
+def _clear_assignment_teacher_attachments(assignment: Assignment) -> None:
+    """Remove primary and extra teacher-uploaded files from an assignment."""
+    for ex in list(assignment.extra_attachments.all()):
+        ex.delete()
+    if assignment.attachment_file:
+        assignment.attachment_file.delete(save=False)
+    assignment.attachment_file = None
+    assignment.save(update_fields=["attachment_file", "updated_at"])
+
+
 class ClassPostViewSet(_ClassroomMemberGateMixin, ModelViewSet):
     permission_classes = [IsAuthenticatedAndNotFrozen]
     serializer_class = ClassPostSerializer
@@ -882,11 +877,14 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
     def update(self, request, *args, **kwargs):
         super().update(request, *args, **kwargs)
         assignment = self.get_object()
+        replace_all = str(request.query_params.get("replace_attachments", "")).lower() in ("1", "true", "yes", "on")
         files = list(request.FILES.getlist("attachment_file"))
         if not files:
             files = list(request.FILES.getlist("attachment_files"))
         if not files:
             files = list(request.FILES.getlist("attachment_file[]"))
+        if replace_all:
+            _clear_assignment_teacher_attachments(assignment)
         if files:
             assignment.attachment_file = files[0]
             assignment.save(update_fields=["attachment_file", "updated_at"])
@@ -1004,19 +1002,6 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         record_homework_submit_attempt()
-
-        practice_targets = assignment_target_practice_test_ids(assignment)
-        if practice_targets and new_files:
-            record_homework_submit_error()
-            return Response(
-                {
-                    "detail": (
-                        "This assignment uses assigned tests. Complete the tests in the app; "
-                        "file uploads are not used for this homework."
-                    )
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
 
         past_due = assignment.due_at and timezone.now() > assignment.due_at
 

@@ -21,8 +21,6 @@ import {
 } from "@/components/classroom";
 import { Loader2 } from "lucide-react";
 
-type AssignmentOptMock = { id: number; title: string; practice_date: string | null; kind: string };
-
 type PastpaperRow = Record<string, unknown> & {
   id: number;
   pastpaper_pack?: { id: number; title?: string; practice_date?: string | null; label?: string; form_type?: string } | null;
@@ -77,16 +75,17 @@ export default function CreateAssignmentModal({
     title: "",
     instructions: "",
     external_url: "",
-    mock_exam: "",
   });
   const [pastSel, setPastSel] = useState<PastSelection>({ mode: "none" });
   const [dueLocal, setDueLocal] = useState("");
   const [asgFiles, setAsgFiles] = useState<File[]>([]);
+  /** Edit mode: replace all teacher attachments before applying new uploads. */
+  const [replaceAttachments, setReplaceAttachments] = useState(false);
+  const [editAsgFiles, setEditAsgFiles] = useState<File[]>([]);
   const [practiceScope, setPracticeScope] = useState<PracticeScope>("BOTH");
   const [assignmentOptions, setAssignmentOptions] = useState<{
-    mock_exams: AssignmentOptMock[];
     practice_tests: PastpaperRow[];
-  }>({ mock_exams: [], practice_tests: [] });
+  }>({ practice_tests: [] });
   const [asgOptionsLoading, setAsgOptionsLoading] = useState(false);
   const [asgOptionsError, setAsgOptionsError] = useState<string | null>(null);
   const [creatingAsg, setCreatingAsg] = useState(false);
@@ -102,11 +101,12 @@ export default function CreateAssignmentModal({
       title: "",
       instructions: "",
       external_url: "",
-      mock_exam: "",
     });
     setPastSel({ mode: "none" });
     setDueLocal("");
     setAsgFiles([]);
+    setReplaceAttachments(false);
+    setEditAsgFiles([]);
     setPracticeScope("BOTH");
     setFormError(null);
   };
@@ -121,14 +121,13 @@ export default function CreateAssignmentModal({
         const d = await classesApi.getAssignmentOptions(classId);
         if (!cancelled) {
           setAssignmentOptions({
-            mock_exams: Array.isArray(d.mock_exams) ? d.mock_exams : [],
             practice_tests: Array.isArray(d.practice_tests) ? d.practice_tests : [],
           });
         }
       } catch (e: unknown) {
         const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
         if (!cancelled) {
-          setAssignmentOptions({ mock_exams: [], practice_tests: [] });
+          setAssignmentOptions({ practice_tests: [] });
           setAsgOptionsError(typeof msg === "string" ? msg : "Could not load test lists.");
         }
       } finally {
@@ -150,8 +149,6 @@ export default function CreateAssignmentModal({
       title: String(editingAssignment.title ?? ""),
       instructions: String(editingAssignment.instructions ?? ""),
       external_url: String(editingAssignment.external_url ?? ""),
-      mock_exam:
-        editingAssignment.mock_exam != null ? String((editingAssignment.mock_exam as { id?: number }).id ?? editingAssignment.mock_exam) : "",
     });
     const due = editingAssignment.due_at;
     if (due && typeof due === "string") {
@@ -185,6 +182,8 @@ export default function CreateAssignmentModal({
     if (ps === "ENGLISH" || ps === "MATH" || ps === "BOTH") setPracticeScope(ps);
     else setPracticeScope("BOTH");
     setAsgFiles([]);
+    setReplaceAttachments(false);
+    setEditAsgFiles([]);
     setFormError(null);
   }, [open, editingAssignment]);
 
@@ -213,7 +212,6 @@ export default function CreateAssignmentModal({
           instructions: newAsg.instructions,
           external_url: newAsg.external_url.trim() || "",
           due_at: null as string | null,
-          mock_exam: newAsg.mock_exam ? Number(newAsg.mock_exam) : null,
           pastpaper_pack: null,
           practice_test: null,
           practice_test_ids: null,
@@ -229,6 +227,11 @@ export default function CreateAssignmentModal({
         body.practice_scope = practiceScope;
 
         await classesApi.updateAssignment(classId, editId, body);
+        if (replaceAttachments || editAsgFiles.length > 0) {
+          const fd = new FormData();
+          for (const f of editAsgFiles) fd.append("attachment_file", f);
+          await classesApi.updateAssignment(classId, editId, fd, true, { replaceAttachments });
+        }
         resetForm();
         await onSuccess();
         onClose();
@@ -243,7 +246,6 @@ export default function CreateAssignmentModal({
         if (!Number.isNaN(t.getTime())) fd.append("due_at", t.toISOString());
       }
       if (newAsg.external_url.trim()) fd.append("external_url", newAsg.external_url.trim());
-      if (newAsg.mock_exam) fd.append("mock_exam", String(Number(newAsg.mock_exam)));
 
       if (pastSel.mode === "pack_db") fd.append("pastpaper_pack", String(pastSel.packId));
       else if (pastSel.mode === "pack_legacy") fd.append("practice_test_ids", JSON.stringify(pastSel.testIds));
@@ -281,7 +283,7 @@ export default function CreateAssignmentModal({
       titleId="create-asg-title"
       eyebrow={editingAssignment ? "Edit assignment" : "New assignment"}
       title={editingAssignment ? "Update homework" : "Create assignment"}
-      description="Mock is timed diagnostic; pastpaper cards match the student library. Title is required; links are optional."
+      description="Pastpaper cards match the student practice library. Title is required; links and files are optional."
       size="lg"
     >
       <div className="space-y-4">
@@ -334,24 +336,6 @@ export default function CreateAssignmentModal({
             placeholder="https://…"
             className={crInputClass}
           />
-        </ClassroomField>
-
-        <ClassroomField label="Mock exam" htmlFor="asg-mock">
-          <select
-            id="asg-mock"
-            value={newAsg.mock_exam}
-            onChange={(e) => setNewAsg((p) => ({ ...p, mock_exam: e.target.value }))}
-            className={crSelectClass}
-          >
-            <option value="">— None —</option>
-            {assignmentOptions.mock_exams.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.title}
-                {m.practice_date ? ` · ${m.practice_date}` : ""}
-                {m.kind === "MIDTERM" ? " (midterm)" : ""}
-              </option>
-            ))}
-          </select>
         </ClassroomField>
 
         <ClassroomField
@@ -411,10 +395,10 @@ export default function CreateAssignmentModal({
           </div>
         </ClassroomField>
 
-        {newAsg.mock_exam || pastSel.mode !== "none" ? (
+        {pastSel.mode !== "none" ? (
           <ClassroomField
             label="Sections to assign"
-            hint="Applies to the linked mock or pastpaper. Students only see the sections you choose."
+            hint="Applies to the linked pastpaper. Students only see the sections you choose."
           >
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
               {(
@@ -439,15 +423,53 @@ export default function CreateAssignmentModal({
         ) : null}
 
         <ClassroomField
-          label={editingAssignment ? "Attached files" : "Files (optional)"}
-          hint={editingAssignment ? undefined : "You can select multiple files at once (Ctrl/Cmd+click or Shift+click)."}
+          label={editingAssignment ? "Teacher attachments" : "Files (optional)"}
+          hint={
+            editingAssignment
+              ? "Replace removes every current attachment, then adds the files you pick. Without Replace, new files update the primary slot and add extras; existing extra files stay unless you replace."
+              : "You can select multiple files at once (Ctrl/Cmd+click or Shift+click)."
+          }
         >
           {editingAssignment ? (
-            <p className="rounded-xl border border-slate-200/90 bg-slate-50/90 px-3 py-2 text-xs text-slate-600 dark:border-slate-600 dark:bg-slate-800/50 dark:text-slate-300">
-              {Array.isArray(editingAssignment.attachment_urls) && editingAssignment.attachment_urls.length > 0
-                ? `${editingAssignment.attachment_urls.length} file(s) on this assignment. Editing does not replace files — create a new assignment if you need different attachments.`
-                : "No files on this assignment."}
-            </p>
+            <div className="space-y-3">
+              <p className="rounded-xl border border-slate-200/90 bg-slate-50/90 px-3 py-2 text-xs text-slate-600 dark:border-slate-600 dark:bg-slate-800/50 dark:text-slate-300">
+                {Array.isArray(editingAssignment.attachment_urls) && editingAssignment.attachment_urls.length > 0
+                  ? `${editingAssignment.attachment_urls.length} file(s) currently on this assignment.`
+                  : "No files on this assignment yet."}
+              </p>
+              <label className="flex cursor-pointer items-start gap-2 text-sm text-slate-700 dark:text-slate-200">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  checked={replaceAttachments}
+                  onChange={(e) => setReplaceAttachments(e.target.checked)}
+                />
+                <span>
+                  <span className="font-semibold">Replace all existing attachments</span>
+                  <span className="block text-xs font-normal text-slate-500 dark:text-slate-400">
+                    Check this before uploading if you want to remove current files and use only the new selection. You can
+                    also check this and leave the file picker empty to remove all attachments.
+                  </span>
+                </span>
+              </label>
+              <input
+                id="asg-files-edit"
+                name="attachment_file"
+                type="file"
+                multiple
+                onChange={(e) => setEditAsgFiles(Array.from(e.target.files || []))}
+                className="w-full text-sm text-slate-600 file:mr-3 file:rounded-xl file:border-0 file:bg-indigo-500/10 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-indigo-700 hover:file:bg-indigo-500/15 dark:text-slate-400 dark:file:bg-indigo-500/20 dark:file:text-indigo-200"
+              />
+              {editAsgFiles.length > 0 ? (
+                <ul className="max-h-28 list-inside list-disc space-y-0.5 overflow-y-auto text-[11px] text-slate-600 dark:text-slate-400">
+                  {editAsgFiles.map((f) => (
+                    <li key={`${f.name}-${f.size}-${f.lastModified}`} className="truncate">
+                      {f.name}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
           ) : (
             <>
               <input

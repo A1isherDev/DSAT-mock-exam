@@ -264,8 +264,8 @@ export default function AssignmentDetailPage() {
     : [];
   const hasPastpaperBundle = bundleTests.length > 0;
   const legacyPracticeTestId = assignment?.practice_test;
-  /** Assigned practice/mock sections: turn-in is automatic when tests are completed — no file upload. */
-  const locksFileUpload = Boolean(assignment?.locks_file_upload);
+  /** Homework includes assigned practice/mock sections (tests can turn in automatically when finished). */
+  const hasAssignedTests = Boolean(assignment?.locks_file_upload);
 
   const allowedPracticeTestIdSet = useMemo(() => {
     if (!bundleTests.length) return null;
@@ -541,15 +541,14 @@ export default function AssignmentDetailPage() {
                       <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                         Your submission
                       </p>
-                      <h3 className="mt-1 text-base font-bold text-slate-900 dark:text-slate-50">
-                        {locksFileUpload ? "Assigned test completion" : "Turn in your work"}
-                      </h3>
+                      <h3 className="mt-1 text-base font-bold text-slate-900 dark:text-slate-50">Turn in your work</h3>
                       <p className="mt-1 max-w-2xl text-sm text-slate-600 dark:text-slate-300">
-                        {locksFileUpload ? (
+                        {hasAssignedTests ? (
                           <>
                             Finish the assigned practice or mock sections using the buttons above. When every required
-                            section is completed in the app, your homework is <strong>turned in automatically</strong> — you
-                            do not upload files or attach the test here.
+                            section is completed in the app, your homework is <strong>turned in automatically</strong>. You
+                            can also <strong>upload extra materials</strong> (PDF, photos, notes) below — optional unless your
+                            teacher asks for them.
                           </>
                         ) : (
                           <>
@@ -561,7 +560,7 @@ export default function AssignmentDetailPage() {
                     </div>
                   </div>
 
-                  {locksFileUpload ? (
+                  {hasAssignedTests ? (
                     <ol className="mt-5 space-y-1 text-sm text-slate-600 dark:text-slate-300">
                       <li className="flex gap-2">
                         <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-200">
@@ -580,8 +579,17 @@ export default function AssignmentDetailPage() {
                           3
                         </span>
                         <span>
-                          Return here and tap <strong>Refresh status</strong> if the page does not update right away after you
-                          finish.
+                          Return here and tap <strong>Refresh status</strong> (below) if your status does not update after you
+                          finish the tests.
+                        </span>
+                      </li>
+                      <li className="flex gap-2">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-200">
+                          4
+                        </span>
+                        <span>
+                          Optionally add files or link an attempt, then use <strong>Save draft</strong> or{" "}
+                          <strong>Submit to teacher</strong> if you need to send work before or besides the online test.
                         </span>
                       </li>
                     </ol>
@@ -625,8 +633,8 @@ export default function AssignmentDetailPage() {
                         </p>
                       ) : (
                         <p className="mt-2 text-xs text-violet-800/80 dark:text-violet-300/80">
-                          {locksFileUpload
-                            ? "Complete the assigned tests again; your homework will update automatically when finished."
+                          {hasAssignedTests
+                            ? "Complete the assigned tests again and/or update your files; save or submit when ready."
                             : "Update your files or attempt, then submit again."}
                         </p>
                       )}
@@ -638,23 +646,23 @@ export default function AssignmentDetailPage() {
                       <p className="font-semibold">Submission locked</p>
                       <p className="mt-1 text-sky-900/90 dark:text-sky-200/90">
                         {mySubmission?.status === "REVIEWED"
-                          ? locksFileUpload
+                          ? hasAssignedTests
                             ? "Your teacher has reviewed this homework. You can change it only if the work is returned for revision."
                             : "Your teacher has reviewed this submission. You can change files only if the work is returned for revision."
                           : mySubmission?.status === "SUBMITTED"
-                            ? locksFileUpload
-                              ? "The due date has passed. Your teacher can still see your completed test for this homework."
+                            ? hasAssignedTests
+                              ? "The due date has passed. Your teacher can still see your completed test and uploads for this homework."
                               : "The due date has passed. You can no longer change this submission."
                             : `This copy is locked (${mySubmission?.status}). You cannot change files until work is returned for revision.`}
                       </p>
                     </div>
                   ) : null}
 
-                  {locksFileUpload ? (
+                  {hasAssignedTests ? (
                     <div className="mt-6 space-y-4 rounded-2xl border border-emerald-200/90 bg-emerald-50/50 px-4 py-4 dark:border-emerald-900/40 dark:bg-emerald-950/25">
                       <p className="text-sm text-slate-700 dark:text-slate-200">
-                        Your teacher sees this homework as turned in when the required test sections are completed in the app.
-                        If you just finished, refresh this page to update the status below.
+                        Your teacher sees this homework as turned in when the required test sections are completed in the app
+                        (uploads below are extra). If you just finished a section, refresh to update the status card.
                       </p>
                       <ClassroomButton
                         type="button"
@@ -677,19 +685,21 @@ export default function AssignmentDetailPage() {
                         </p>
                       ) : mySubmission?.status === "DRAFT" || !mySubmission?.status ? (
                         <p className="text-xs font-medium text-amber-800 dark:text-amber-200">
-                          Not turned in yet — finish every assigned section, then refresh.
+                          Tests or submission not final yet — finish assigned sections and/or add files, then refresh or submit.
                         </p>
                       ) : null}
                     </div>
                   ) : null}
 
-                  {!locksFileUpload ? (
-                    <>
                   <ClassroomField
                     label="Your files"
                     htmlFor="sub-files"
                     className="mt-6"
-                    hint="PDF, images, or other documents. Multiple files allowed."
+                    hint={
+                      hasAssignedTests
+                        ? "Optional extra materials (notes, scans, PDFs). Not a substitute for finishing the assigned tests unless your teacher says so."
+                        : "PDF, images, or other documents. Multiple files allowed."
+                    }
                   >
                     <input
                       id="sub-files"
@@ -815,8 +825,6 @@ export default function AssignmentDetailPage() {
                       </ClassroomButton>
                     </div>
                   </div>
-                    </>
-                  ) : null}
 
                   {mySubmission?.review ? (
                     <div
