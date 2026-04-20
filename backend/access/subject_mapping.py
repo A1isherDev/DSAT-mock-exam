@@ -76,6 +76,11 @@ def validate_authorize_subject(subject: str) -> None:
             "or subject_mapping.domain_subject_to_platform(domain)."
         )
     s = subject.strip()
+    # Accept platform subjects case-insensitively (canonicalize to uppercase for checks).
+    # IMPORTANT: check platform first, otherwise "MATH" lowercases to "math" and looks like a domain subject.
+    s_upper = s.upper()
+    if s_upper in PLATFORM_SUBJECTS:
+        return
     if looks_like_domain_subject(s):
         raise SubjectContractViolation(
             f"authorize(..., subject=...) received domain subject {s!r}. "
