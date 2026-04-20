@@ -97,6 +97,32 @@ class UserListView(generics.ListAPIView):
     serializer_class = UserSerializer
     permission_classes = [HasManageUsersOrAssignTestAccess]
 
+    def list(self, request, *args, **kwargs):
+        """
+        Defensive wrapper: this endpoint is heavily used by the admin console.
+        If a production schema/config drift causes an exception, return a structured 500 so
+        staff can report the exact failure quickly (backend logs also capture traceback).
+        """
+        try:
+            return super().list(request, *args, **kwargs)
+        except Exception as exc:
+            actor = getattr(request, "user", None)
+            role = normalized_role(actor)
+            logger.exception(
+                "users.list failed actor_id=%s role=%s host=%s path=%s",
+                getattr(actor, "pk", None),
+                role,
+                getattr(request, "get_host", lambda: "")(),
+                getattr(request, "path", ""),
+            )
+            # Only reveal exception details to superusers / super_admin (staff console only).
+            reveal = bool(getattr(actor, "is_superuser", False) or role == acc_const.ROLE_SUPER_ADMIN)
+            body = {"detail": "Could not load users."}
+            if reveal:
+                body["error"] = exc.__class__.__name__
+                body["message"] = str(exc)
+            return Response(body, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
     def get_queryset(self):
         qs = User.objects.all().order_by("-date_joined")
         user = self.request.user
