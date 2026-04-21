@@ -1,10 +1,12 @@
 "use client";
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from "next/link";
 import AuthGuard from '@/components/AuthGuard';
 import { adminApi, authApi, usersApi } from '@/lib/api';
 import {
     can,
+    canAuthorTestsUi,
     canManageMockExamShell,
     canCreateTestForSubject,
     canEditQuestionsForSubject,
@@ -71,7 +73,7 @@ function cookieDomain(): string | undefined {
 import {
     Users, BookOpen, ShieldCheck, LogOut, Plus, Pencil, Trash2, Save,
     X, Loader2, Layers, HelpCircle, Search, Upload, Image as ImageIcon, ArrowUp, ArrowDown, Lock, Unlock,
-    GraduationCap,
+    GraduationCap, LayoutGrid,
     Bold as BoldIcon, Italic as ItalicIcon, Underline as UnderlineIcon, Sigma, Percent, Variable, SlidersHorizontal, AlertTriangle,
     Calendar,
 } from 'lucide-react';
@@ -232,7 +234,16 @@ const RichTextEditor = ({ value, onChange, label, placeholder = "" }: { value: s
     );
 };
 
-type Tab = 'users' | 'assignments' | 'pastpapers' | 'mocks' | 'midterms' | 'modules' | 'questions' | 'examdates';
+type Tab =
+    | 'users'
+    | 'assignments'
+    | 'pastpapers'
+    | 'mocks'
+    | 'midterms'
+    | 'modules'
+    | 'questions'
+    | 'examdates'
+    | 'assessments';
 
 const MIDTERM_SCORE_OPTIONS = [1, 2, 3, 5, 8, 10] as const;
 
@@ -1567,20 +1578,34 @@ export default function AdminPage() {
             { key: 'mocks', label: 'Mock exams', icon: <Layers className="w-4 h-4" /> },
             { key: 'midterms', label: 'Midterm', icon: <GraduationCap className="w-4 h-4" /> },
             { key: 'questions', label: 'Questions', icon: <HelpCircle className="w-4 h-4" /> },
+            { key: 'assessments', label: 'Assessments', icon: <LayoutGrid className="w-4 h-4" /> },
             { key: 'assignments', label: 'Assignments', icon: <Users className="w-4 h-4" /> },
             { key: 'examdates', label: 'Exam dates', icon: <Calendar className="w-4 h-4" /> },
             { key: 'users', label: 'Users', icon: <Users className="w-4 h-4" /> },
         ];
         const testArea = can("*") || can("manage_tests");
+        const canAssessmentsUi = canAuthorTestsUi() || can("assign_access");
         const filtered = all.filter((item) => {
             if (consoleMode === "admin") {
-                return item.key === "assignments" || item.key === "users" || item.key === "examdates";
+                return (
+                    item.key === "assignments" ||
+                    item.key === "users" ||
+                    item.key === "examdates" ||
+                    (item.key === "assessments" && canAssessmentsUi)
+                );
             }
             if (consoleMode === "questions") {
-                return item.key === "pastpapers" || item.key === "mocks" || item.key === "midterms" || item.key === "questions";
+                return (
+                    item.key === "pastpapers" ||
+                    item.key === "mocks" ||
+                    item.key === "midterms" ||
+                    item.key === "questions" ||
+                    (item.key === "assessments" && canAssessmentsUi)
+                );
             }
             if (item.key === 'examdates') return can('manage_users');
             if (item.key === "users") return can("manage_users") || can("assign_access");
+            if (item.key === "assessments") return canAssessmentsUi;
             if (item.key === 'questions') return canUseGlobalQuestionsTab();
             if (item.key === 'mocks') {
                 return can("*") || can("manage_tests") || can("assign_access");
@@ -1665,6 +1690,39 @@ export default function AdminPage() {
                                 onConsumeIntent={() => setAssignmentsIntent(null)}
                                 defaultPastpaperScope={defaultBulkPastpaperSubjectScope()}
                             />
+                        )}
+                        {activeTab === "assessments" && (
+                            <div className="mx-auto max-w-3xl space-y-5">
+                                <div>
+                                    <h2 className="text-xl font-bold text-slate-900">Assessments</h2>
+                                    <p className="mt-1 text-xs text-slate-500">
+                                        Author assessment sets, assign them to classrooms, and run student attempts. The backend still enforces permissions on every API call.
+                                    </p>
+                                </div>
+
+                                <div className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                                    <p className="text-sm font-bold text-slate-800">Quick links</p>
+                                    <div className="grid gap-2 sm:grid-cols-2">
+                                        <Link
+                                            href="/builder/sets"
+                                            className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 hover:bg-white"
+                                        >
+                                            Assessment builder
+                                        </Link>
+                                        <Link
+                                            href="/assessments/assign"
+                                            className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 hover:bg-white"
+                                        >
+                                            Assign assessments
+                                        </Link>
+                                    </div>
+                                    {!canAuthorTestsUi() ? (
+                                        <p className="text-[11px] font-semibold text-slate-500">
+                                            Builder UI is intended for staff who can author tests. If you only assign, use “Assign assessments”.
+                                        </p>
+                                    ) : null}
+                                </div>
+                            </div>
                         )}
                         {activeTab === 'pastpapers' && (
                             <div className="space-y-6 max-w-4xl">
