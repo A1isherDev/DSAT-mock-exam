@@ -11,7 +11,6 @@ import { cn } from "@/lib/cn";
 
 const nav = [
   { href: "/teacher", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/assessments/assign", label: "Assessments", icon: ClipboardList },
   { href: "/teacher/homework/grading", label: "Grade homework", icon: ClipboardCheck },
   { href: "/teacher/homework", label: "Homework", icon: ClipboardList },
   { href: "/teacher/students", label: "Students", icon: Users },
@@ -35,7 +34,6 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
   const title =
     nav.find((n) => {
       if (n.href === "/teacher") return pathname === "/teacher";
-      if (n.href === "/assessments/assign") return pathname.startsWith("/assessments/assign");
       if (n.href === "/teacher/homework/grading") return pathname.startsWith("/teacher/homework/grading");
       if (n.href === "/teacher/homework") {
         return pathname.startsWith("/teacher/homework") && !pathname.startsWith("/teacher/homework/grading");
@@ -102,8 +100,6 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
               const active =
                 href === "/teacher"
                   ? pathname === "/teacher"
-                  : href === "/assessments/assign"
-                    ? pathname.startsWith("/assessments/assign")
                   : href === "/teacher/homework/grading"
                     ? pathname.startsWith("/teacher/homework/grading")
                     : href === "/teacher/homework"
