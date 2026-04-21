@@ -1,9 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from "next/link";
 import AuthGuard from '@/components/AuthGuard';
-import { adminApi, authApi, usersApi } from '@/lib/api';
+import { adminApi, assessmentsApi, authApi, classesApi, usersApi } from '@/lib/api';
 import {
     can,
     canAuthorTestsUi,
@@ -17,6 +15,7 @@ import {
     platformSubjectIsReadingWriting,
     practiceTestRowSubject,
     coalesceArray,
+    getSubject,
 } from '@/lib/permissions';
 import Cookies from "js-cookie";
 import SafeHtml from "@/components/SafeHtml";
@@ -275,8 +274,8 @@ export default function AdminPage() {
         | "admin"
         | "questions"
         | null;
-    const router = useRouter();
     const didInitMockSelection = useRef(false);
+    const assessmentAssignIdempotencyRef = useRef<string | null>(null);
     const [activeTab, setActiveTab] = useState<Tab>('pastpapers');
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -446,6 +445,40 @@ export default function AdminPage() {
     const [userSort, setUserSort] = useState<"NAME" | "EMAIL" | "ID">("NAME");
     const [selectedUserIds, setSelectedUserIds] = useState<number[]>([]);
 
+    /** LMS assessments (embedded console — same workflow style as pastpapers / mocks). */
+    const [assessmentSets, setAssessmentSets] = useState<any[]>([]);
+    const [assessmentSetsLoading, setAssessmentSetsLoading] = useState(false);
+    const [selectedAssessmentSetId, setSelectedAssessmentSetId] = useState<number | null>(null);
+    const [assessmentSetEdit, setAssessmentSetEdit] = useState({ title: "", category: "", description: "" });
+    const [assessmentNewOpen, setAssessmentNewOpen] = useState(false);
+    const [assessmentNewForm, setAssessmentNewForm] = useState({
+        subject: "math" as "math" | "english",
+        title: "",
+        category: "",
+        description: "",
+    });
+    const [aqDraft, setAqDraft] = useState<null | {
+        id: number | null;
+        prompt: string;
+        question_type: "multiple_choice" | "numeric" | "short_text" | "boolean";
+        points: number;
+        order: number;
+        choicesText: string;
+        correctAnswerText: string;
+        gradingConfigText: string;
+        is_active: boolean;
+    }>(null);
+
+    const [assClassrooms, setAssClassrooms] = useState<any[] | null>(null);
+    const [assClassroomLoading, setAssClassroomLoading] = useState(false);
+    const [assClassroomId, setAssClassroomId] = useState<number | null>(null);
+    const [assAssignTitle, setAssAssignTitle] = useState("");
+    const [assAssignInstructions, setAssAssignInstructions] = useState("");
+    const [assAssignDue, setAssAssignDue] = useState("");
+    const [assAssignSubmitting, setAssAssignSubmitting] = useState(false);
+    const [assAssignMsg, setAssAssignMsg] = useState<string | null>(null);
+    const [assDupAssignmentId, setAssDupAssignmentId] = useState<number | null>(null);
+
     const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
     // Fetch
@@ -500,6 +533,47 @@ export default function AdminPage() {
         }
     }, []);
 
+    const fetchAssessmentSets = useCallback(async () => {
+        setAssessmentSetsLoading(true);
+        try {
+            const dom = getSubject();
+            const data = await assessmentsApi.adminListSets(dom ? { subject: dom } : undefined);
+            setAssessmentSets(Array.isArray(data) ? data : []);
+        } catch (e: any) {
+            const d = e?.response?.data;
+            const msg = d?.detail || "Could not load assessment sets.";
+            showToast(String(msg));
+            setAssessmentSets([]);
+        } finally {
+            setAssessmentSetsLoading(false);
+        }
+    }, []);
+
+    const loadAssClassrooms = useCallback(async () => {
+        setAssClassroomLoading(true);
+        try {
+            const all = await classesApi.list();
+            setAssClassrooms(Array.isArray(all) ? all : []);
+        } catch {
+            setAssClassrooms([]);
+        } finally {
+            setAssClassroomLoading(false);
+        }
+    }, []);
+
+    const loadAssDupGuard = useCallback(async (cid: number, sid: number | null) => {
+        setAssDupAssignmentId(null);
+        if (!cid || !sid) return;
+        try {
+            const rows = await classesApi.listAssignments(cid);
+            const list = Array.isArray(rows) ? rows : [];
+            const hit = list.find((a: any) => Number(a?.assessment_homework?.set?.id) === Number(sid));
+            if (hit?.id) setAssDupAssignmentId(Number(hit.id));
+        } catch {
+            /* best-effort */
+        }
+    }, []);
+
     const fetchModules = useCallback(async () => {
         if (!selectedPracticeTestId) return [];
         try {
@@ -535,6 +609,56 @@ export default function AdminPage() {
         if (!can("assign_access")) return;
         void fetchUsers();
     }, [activeTab, fetchUsers]);
+
+    useEffect(() => {
+        if (activeTab !== "assessments") return;
+        void fetchAssessmentSets();
+    }, [activeTab, fetchAssessmentSets]);
+
+    useEffect(() => {
+        if (activeTab !== "assessments") return;
+        if (!can("assign_access")) return;
+        void loadAssClassrooms();
+    }, [activeTab, loadAssClassrooms]);
+
+    useEffect(() => {
+        assessmentAssignIdempotencyRef.current = null;
+    }, [assClassroomId, selectedAssessmentSetId]);
+
+    useEffect(() => {
+        if (activeTab !== "assessments") return;
+        if (!assessmentSets.length) {
+            setSelectedAssessmentSetId(null);
+            return;
+        }
+        if (selectedAssessmentSetId && assessmentSets.some((s) => Number(s.id) === Number(selectedAssessmentSetId))) return;
+        setSelectedAssessmentSetId(Number(assessmentSets[0].id));
+    }, [activeTab, assessmentSets, selectedAssessmentSetId]);
+
+    useEffect(() => {
+        if (activeTab !== "assessments") return;
+        const cid = assClassroomId;
+        const sid = selectedAssessmentSetId;
+        if (!cid || !sid) {
+            setAssDupAssignmentId(null);
+            return;
+        }
+        void loadAssDupGuard(cid, sid);
+    }, [activeTab, assClassroomId, selectedAssessmentSetId, loadAssDupGuard]);
+
+    useEffect(() => {
+        if (activeTab !== "assessments") return;
+        const s = assessmentSets.find((x) => Number(x.id) === Number(selectedAssessmentSetId));
+        if (!s) {
+            setAssessmentSetEdit({ title: "", category: "", description: "" });
+            return;
+        }
+        setAssessmentSetEdit({
+            title: String(s.title || ""),
+            category: String(s.category || ""),
+            description: String(s.description || ""),
+        });
+    }, [activeTab, assessmentSets, selectedAssessmentSetId]);
 
     const allSelectableTests = useMemo(() => {
         const rows: any[] = [];
@@ -1572,6 +1696,210 @@ export default function AdminPage() {
         ? predictedMidtermPoints > midtermPointsBudget
         : predictedSum > budget;
 
+    const selectedAssessmentSet = useMemo(
+        () => assessmentSets.find((s) => Number(s.id) === Number(selectedAssessmentSetId)) ?? null,
+        [assessmentSets, selectedAssessmentSetId],
+    );
+
+    const assessmentQuestionsSorted = useMemo(() => {
+        const qs = Array.isArray(selectedAssessmentSet?.questions) ? selectedAssessmentSet!.questions : [];
+        return [...qs].sort(
+            (a: any, b: any) => (Number(a.order) || 0) - (Number(b.order) || 0) || Number(a.id) - Number(b.id),
+        );
+    }, [selectedAssessmentSet]);
+
+    const parseJsonFlexible = (s: string, fallback: any) => {
+        try {
+            return JSON.parse(s);
+        } catch {
+            return fallback;
+        }
+    };
+
+    const normalizeAssClassroomSubject = (raw: unknown): "math" | "english" | null => {
+        const u = String(raw ?? "")
+            .trim()
+            .toUpperCase();
+        if (u === "MATH") return "math";
+        if (u === "ENGLISH") return "english";
+        return null;
+    };
+
+    const handleSaveAssessmentSetMeta = async () => {
+        if (!selectedAssessmentSetId || !canAuthorTestsUi()) return;
+        setSaving(true);
+        try {
+            await assessmentsApi.adminUpdateSet(selectedAssessmentSetId, {
+                title: assessmentSetEdit.title.trim(),
+                category: assessmentSetEdit.category.trim(),
+                description: assessmentSetEdit.description.trim(),
+            });
+            showToast("Set saved");
+            await fetchAssessmentSets();
+        } catch (e: any) {
+            const d = e?.response?.data;
+            const msg = d?.detail || d?.message || e?.message || "Save failed";
+            showToast(String(msg));
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleCreateAssessmentSet = async () => {
+        if (!canAuthorTestsUi()) return;
+        const t = assessmentNewForm.title.trim();
+        if (!t) {
+            showToast("Title is required.");
+            return;
+        }
+        setSaving(true);
+        try {
+            const created = await assessmentsApi.adminCreateSet({
+                subject: assessmentNewForm.subject,
+                title: t,
+                category: assessmentNewForm.category.trim() || undefined,
+                description: assessmentNewForm.description.trim() || undefined,
+            });
+            showToast("Assessment set created");
+            setAssessmentNewOpen(false);
+            setAssessmentNewForm({ subject: "math", title: "", category: "", description: "" });
+            await fetchAssessmentSets();
+            if (created?.id) setSelectedAssessmentSetId(Number(created.id));
+        } catch (e: any) {
+            const d = e?.response?.data;
+            const msg = d?.detail || d?.message || e?.message || "Create failed";
+            showToast(String(msg));
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleSaveAssessmentQuestion = async () => {
+        if (!selectedAssessmentSetId || !aqDraft || !canAuthorTestsUi()) return;
+        if (!aqDraft.prompt.trim()) {
+            showToast("Prompt is required.");
+            return;
+        }
+        setSaving(true);
+        try {
+            const payload: any = {
+                order: Number(aqDraft.order) || 0,
+                prompt: aqDraft.prompt.trim(),
+                question_type: aqDraft.question_type,
+                points: Number(aqDraft.points) || 1,
+                is_active: aqDraft.is_active,
+                choices: parseJsonFlexible(aqDraft.choicesText, []),
+                correct_answer: parseJsonFlexible(aqDraft.correctAnswerText, null),
+                grading_config: parseJsonFlexible(aqDraft.gradingConfigText, {}),
+            };
+            if (aqDraft.id) {
+                await assessmentsApi.adminUpdateQuestion(aqDraft.id, payload);
+            } else {
+                await assessmentsApi.adminCreateQuestion(selectedAssessmentSetId, payload);
+            }
+            showToast("Question saved");
+            setAqDraft(null);
+            await fetchAssessmentSets();
+        } catch (e: any) {
+            const d = e?.response?.data;
+            const msg = d?.detail || d?.message || e?.message || "Save failed";
+            showToast(String(msg));
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleDeleteAssessmentQuestion = async (id: number) => {
+        if (!canAuthorTestsUi()) return;
+        if (!confirm("Delete this assessment question?")) return;
+        setSaving(true);
+        try {
+            await assessmentsApi.adminDeleteQuestion(id);
+            showToast("Question deleted");
+            if (aqDraft?.id === id) setAqDraft(null);
+            await fetchAssessmentSets();
+        } catch (e: any) {
+            const d = e?.response?.data;
+            const msg = d?.detail || d?.message || e?.message || "Delete failed";
+            showToast(String(msg));
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleAssignAssessmentHomework = async () => {
+        if (!can("assign_access") || assAssignSubmitting) return;
+        const cid = assClassroomId;
+        const sid = selectedAssessmentSetId;
+        if (!cid || !sid) {
+            showToast("Pick a classroom and an assessment set.");
+            return;
+        }
+        const classroom = (assClassrooms || []).find((c: any) => Number(c.id) === Number(cid));
+        const cSub = normalizeAssClassroomSubject(classroom?.subject);
+        const setRow = assessmentSets.find((s) => Number(s.id) === Number(sid));
+        const sSub = setRow?.subject as string | undefined;
+        if (cSub && sSub && cSub !== sSub) {
+            showToast("Subject mismatch: pick a classroom that matches this set’s subject.");
+            return;
+        }
+        if (assDupAssignmentId) {
+            showToast("This set already appears assigned for that classroom (client check).");
+            return;
+        }
+        setAssAssignSubmitting(true);
+        setAssAssignMsg(null);
+        const idempotencyKey =
+            assessmentAssignIdempotencyRef.current ??
+            (typeof crypto !== "undefined" && "randomUUID" in crypto
+                ? crypto.randomUUID()
+                : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+        assessmentAssignIdempotencyRef.current = idempotencyKey;
+        try {
+            await assessmentsApi.assignHomework(
+                {
+                    classroom_id: cid,
+                    set_id: sid,
+                    title: assAssignTitle.trim() || undefined,
+                    instructions: assAssignInstructions.trim() || undefined,
+                    due_at: assAssignDue ? new Date(assAssignDue).toISOString() : null,
+                },
+                idempotencyKey,
+            );
+            assessmentAssignIdempotencyRef.current = null;
+            setAssAssignMsg("Assigned successfully.");
+            showToast("Assessment assigned");
+            await loadAssDupGuard(cid, sid);
+        } catch (e: any) {
+            const st = e?.response?.status;
+            const d = e?.response?.data;
+            const msg = d?.detail || d?.message || e?.message || "Assign failed";
+            showToast(String(msg));
+            if (st === 409 || st === 400) void loadAssDupGuard(cid, sid);
+            if (st >= 400 && st < 500 && st !== 409 && st !== 429) assessmentAssignIdempotencyRef.current = null;
+        } finally {
+            setAssAssignSubmitting(false);
+        }
+    };
+
+    const assSelectedClassroom = useMemo(
+        () => (assClassrooms || []).find((c: any) => Number(c.id) === Number(assClassroomId)) ?? null,
+        [assClassrooms, assClassroomId],
+    );
+
+    const assCanAssignHomework = useMemo(() => {
+        if (!can("assign_access")) return false;
+        const cid = assClassroomId;
+        const sid = selectedAssessmentSetId;
+        if (!cid || !sid) return false;
+        const cSub = normalizeAssClassroomSubject(assSelectedClassroom?.subject);
+        const sRow = assessmentSets.find((s) => Number(s.id) === Number(sid));
+        const sSub = sRow?.subject as string | undefined;
+        if (cSub && sSub && cSub !== sSub) return false;
+        if (assDupAssignmentId) return false;
+        return true;
+    }, [assClassroomId, selectedAssessmentSetId, assSelectedClassroom, assessmentSets, assDupAssignmentId]);
+
     const navItems: { key: Tab; label: string; icon: React.ReactNode }[] = (() => {
         const all: { key: Tab; label: string; icon: React.ReactNode }[] = [
             { key: 'pastpapers', label: 'Pastpaper tests', icon: <BookOpen className="w-4 h-4" /> },
@@ -1692,35 +2020,463 @@ export default function AdminPage() {
                             />
                         )}
                         {activeTab === "assessments" && (
-                            <div className="mx-auto max-w-3xl space-y-5">
-                                <div>
-                                    <h2 className="text-xl font-bold text-slate-900">Assessments</h2>
-                                    <p className="mt-1 text-xs text-slate-500">
-                                        Author assessment sets, assign them to classrooms, and run student attempts. The backend still enforces permissions on every API call.
-                                    </p>
+                            <div className="space-y-6 max-w-6xl">
+                                <div className="flex flex-wrap items-start justify-between gap-4">
+                                    <div>
+                                        <h2 className="text-xl font-bold text-slate-900">Assessments</h2>
+                                        <p className="mt-1 max-w-2xl text-xs text-slate-500">
+                                            Create assessment sets, add questions, and assign them to classrooms — same workflow style as pastpapers / mocks (single admin console).
+                                        </p>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                        {canAuthorTestsUi() ? (
+                                            <button
+                                                type="button"
+                                                className={BTN_GHOST}
+                                                onClick={() => setAssessmentNewOpen((v) => !v)}
+                                            >
+                                                <Plus className="h-4 w-4" /> {assessmentNewOpen ? "Close new set" : "New set"}
+                                            </button>
+                                        ) : null}
+                                        <button type="button" className={BTN_GHOST} onClick={() => void fetchAssessmentSets()}>
+                                            Refresh
+                                        </button>
+                                    </div>
                                 </div>
 
-                                <div className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                                    <p className="text-sm font-bold text-slate-800">Quick links</p>
-                                    <div className="grid gap-2 sm:grid-cols-2">
-                                        <Link
-                                            href="/builder/sets"
-                                            className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 hover:bg-white"
-                                        >
-                                            Assessment builder
-                                        </Link>
-                                        <Link
-                                            href="/assessments/assign"
-                                            className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 hover:bg-white"
-                                        >
-                                            Assign assessments
-                                        </Link>
+                                {assessmentNewOpen && canAuthorTestsUi() ? (
+                                    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                                        <p className="text-sm font-bold text-slate-900">New assessment set</p>
+                                        <div className="mt-4 grid gap-3 md:grid-cols-2">
+                                            <Field label="Subject">
+                                                <select
+                                                    className={INPUT}
+                                                    value={assessmentNewForm.subject}
+                                                    onChange={(e) =>
+                                                        setAssessmentNewForm((s) => ({
+                                                            ...s,
+                                                            subject: e.target.value === "english" ? "english" : "math",
+                                                        }))
+                                                    }
+                                                >
+                                                    <option value="math">Math</option>
+                                                    <option value="english">English</option>
+                                                </select>
+                                            </Field>
+                                            <Field label="Title">
+                                                <input
+                                                    className={INPUT}
+                                                    value={assessmentNewForm.title}
+                                                    onChange={(e) => setAssessmentNewForm((s) => ({ ...s, title: e.target.value }))}
+                                                />
+                                            </Field>
+                                            <Field label="Category (optional)">
+                                                <input
+                                                    className={INPUT}
+                                                    value={assessmentNewForm.category}
+                                                    onChange={(e) => setAssessmentNewForm((s) => ({ ...s, category: e.target.value }))}
+                                                />
+                                            </Field>
+                                            <Field label="Description (optional)">
+                                                <input
+                                                    className={INPUT}
+                                                    value={assessmentNewForm.description}
+                                                    onChange={(e) => setAssessmentNewForm((s) => ({ ...s, description: e.target.value }))}
+                                                />
+                                            </Field>
+                                        </div>
+                                        <div className="mt-4 flex flex-wrap gap-2">
+                                            <button
+                                                type="button"
+                                                className={BTN_PRIMARY}
+                                                disabled={saving}
+                                                onClick={() => void handleCreateAssessmentSet()}
+                                            >
+                                                Create set
+                                            </button>
+                                        </div>
                                     </div>
-                                    {!canAuthorTestsUi() ? (
-                                        <p className="text-[11px] font-semibold text-slate-500">
-                                            Builder UI is intended for staff who can author tests. If you only assign, use “Assign assessments”.
-                                        </p>
-                                    ) : null}
+                                ) : null}
+
+                                <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
+                                    <aside className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                                        <p className="text-[11px] font-black uppercase tracking-widest text-slate-400">Sets</p>
+                                        {assessmentSetsLoading ? <p className="mt-3 text-sm text-slate-500">Loading…</p> : null}
+                                        <div className="mt-3 space-y-2">
+                                            {assessmentSets.map((s: any) => {
+                                                const active = Number(s.id) === Number(selectedAssessmentSetId);
+                                                const qn = Array.isArray(s.questions) ? s.questions.length : 0;
+                                                return (
+                                                    <button
+                                                        key={s.id}
+                                                        type="button"
+                                                        onClick={() => setSelectedAssessmentSetId(Number(s.id))}
+                                                        className={`w-full rounded-xl border px-3 py-2 text-left text-sm font-bold transition ${
+                                                            active
+                                                                ? "border-indigo-200 bg-indigo-50 text-indigo-800"
+                                                                : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-white"
+                                                        }`}
+                                                    >
+                                                        <div className="flex items-center justify-between gap-2">
+                                                            <span className="truncate">#{s.id}</span>
+                                                            <span className="shrink-0 text-[10px] font-black uppercase text-slate-400">{String(s.subject || "")}</span>
+                                                        </div>
+                                                        <div className="mt-1 line-clamp-2 text-xs font-semibold text-slate-600">{String(s.title || "")}</div>
+                                                        <div className="mt-1 text-[10px] font-bold text-slate-400">{qn} questions</div>
+                                                    </button>
+                                                );
+                                            })}
+                                            {!assessmentSetsLoading && !assessmentSets.length ? (
+                                                <p className="text-sm text-slate-500">No sets yet.</p>
+                                            ) : null}
+                                        </div>
+                                    </aside>
+
+                                    <div className="space-y-4">
+                                        {selectedAssessmentSet ? (
+                                            <>
+                                                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                                                    <div className="flex flex-wrap items-start justify-between gap-3">
+                                                        <div>
+                                                            <p className="text-sm font-black uppercase tracking-widest text-slate-400">Set details</p>
+                                                            <p className="mt-1 text-lg font-bold text-slate-900">
+                                                                #{selectedAssessmentSet.id} · {String(selectedAssessmentSet.title || "")}
+                                                            </p>
+                                                            <p className="mt-1 text-xs text-slate-500">
+                                                                Subject <span className="font-bold">{String(selectedAssessmentSet.subject || "")}</span> ·{" "}
+                                                                {assessmentQuestionsSorted.length} questions
+                                                            </p>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                                                        <Field label="Title">
+                                                            <input
+                                                                className={INPUT}
+                                                                value={assessmentSetEdit.title}
+                                                                onChange={(e) => setAssessmentSetEdit((s) => ({ ...s, title: e.target.value }))}
+                                                                disabled={!canAuthorTestsUi()}
+                                                            />
+                                                        </Field>
+                                                        <Field label="Category">
+                                                            <input
+                                                                className={INPUT}
+                                                                value={assessmentSetEdit.category}
+                                                                onChange={(e) => setAssessmentSetEdit((s) => ({ ...s, category: e.target.value }))}
+                                                                disabled={!canAuthorTestsUi()}
+                                                            />
+                                                        </Field>
+                                                        <Field label="Description">
+                                                            <textarea
+                                                                className={`${INPUT} min-h-[90px]`}
+                                                                value={assessmentSetEdit.description}
+                                                                onChange={(e) => setAssessmentSetEdit((s) => ({ ...s, description: e.target.value }))}
+                                                                disabled={!canAuthorTestsUi()}
+                                                            />
+                                                        </Field>
+                                                    </div>
+
+                                                    <div className="mt-4">
+                                                        <button
+                                                            type="button"
+                                                            className={BTN_PRIMARY}
+                                                            disabled={!canAuthorTestsUi() || saving}
+                                                            onClick={() => void handleSaveAssessmentSetMeta()}
+                                                        >
+                                                            Save set
+                                                        </button>
+                                                        {!canAuthorTestsUi() ? (
+                                                            <p className="mt-2 text-[11px] font-semibold text-slate-500">
+                                                                Read-only: your role can assign, but not edit sets here.
+                                                            </p>
+                                                        ) : null}
+                                                    </div>
+                                                </div>
+
+                                                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                                        <div>
+                                                            <p className="text-sm font-black uppercase tracking-widest text-slate-400">Questions</p>
+                                                            <p className="mt-1 text-xs text-slate-500">
+                                                                MCQ uses JSON choices; correct answer is JSON (e.g. <span className="font-mono">"A"</span> or{" "}
+                                                                <span className="font-mono">1</span>).
+                                                            </p>
+                                                        </div>
+                                                        {canAuthorTestsUi() ? (
+                                                            <button
+                                                                type="button"
+                                                                className={BTN_GHOST}
+                                                                onClick={() =>
+                                                                    setAqDraft({
+                                                                        id: null,
+                                                                        prompt: "",
+                                                                        question_type: "multiple_choice",
+                                                                        points: 1,
+                                                                        order: assessmentQuestionsSorted.length,
+                                                                        choicesText: "[]",
+                                                                        correctAnswerText: "null",
+                                                                        gradingConfigText: "{}",
+                                                                        is_active: true,
+                                                                    })
+                                                                }
+                                                            >
+                                                                <Plus className="h-4 w-4" /> Add question
+                                                            </button>
+                                                        ) : null}
+                                                    </div>
+
+                                                    <div className="mt-4 space-y-2">
+                                                        {assessmentQuestionsSorted.map((q: any) => (
+                                                            <div
+                                                                key={q.id}
+                                                                className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3"
+                                                            >
+                                                                <div className="min-w-0 flex-1">
+                                                                    <p className="text-xs font-black text-slate-400">
+                                                                        #{q.id} · {String(q.question_type)} · {Number(q.points ?? 1)}pt · order{" "}
+                                                                        {Number(q.order ?? 0)}
+                                                                    </p>
+                                                                    <p className="mt-1 line-clamp-3 text-sm font-semibold text-slate-800">{String(q.prompt || "")}</p>
+                                                                </div>
+                                                                {canAuthorTestsUi() ? (
+                                                                    <div className="flex shrink-0 flex-wrap gap-2">
+                                                                        <button
+                                                                            type="button"
+                                                                            className={BTN_GHOST}
+                                                                            onClick={() =>
+                                                                                setAqDraft({
+                                                                                    id: Number(q.id),
+                                                                                    prompt: String(q.prompt || ""),
+                                                                                    question_type: (q.question_type || "multiple_choice") as any,
+                                                                                    points: Number(q.points ?? 1),
+                                                                                    order: Number(q.order ?? 0),
+                                                                                    choicesText: JSON.stringify(q.choices ?? [], null, 2),
+                                                                                    correctAnswerText: JSON.stringify(q.correct_answer ?? null, null, 2),
+                                                                                    gradingConfigText: JSON.stringify(q.grading_config ?? {}, null, 2),
+                                                                                    is_active: Boolean(q.is_active ?? true),
+                                                                                })
+                                                                            }
+                                                                        >
+                                                                            Edit
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            className={BTN_DANGER}
+                                                                            onClick={() => void handleDeleteAssessmentQuestion(Number(q.id))}
+                                                                        >
+                                                                            Delete
+                                                                        </button>
+                                                                    </div>
+                                                                ) : null}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+
+                                                    {aqDraft ? (
+                                                        <div className="mt-4 rounded-xl border border-indigo-100 bg-indigo-50/40 p-4">
+                                                            <p className="text-sm font-bold text-slate-900">{aqDraft.id ? "Edit question" : "New question"}</p>
+                                                            <div className="mt-3 grid gap-3 md:grid-cols-2">
+                                                                <Field label="Type">
+                                                                    <select
+                                                                        className={INPUT}
+                                                                        value={aqDraft.question_type}
+                                                                        onChange={(e) =>
+                                                                            setAqDraft((d) =>
+                                                                                d
+                                                                                    ? {
+                                                                                          ...d,
+                                                                                          question_type: e.target.value as any,
+                                                                                      }
+                                                                                    : d,
+                                                                            )
+                                                                        }
+                                                                    >
+                                                                        <option value="multiple_choice">multiple_choice</option>
+                                                                        <option value="numeric">numeric</option>
+                                                                        <option value="short_text">short_text</option>
+                                                                        <option value="boolean">boolean</option>
+                                                                    </select>
+                                                                </Field>
+                                                                <Field label="Order">
+                                                                    <input
+                                                                        className={INPUT}
+                                                                        value={String(aqDraft.order)}
+                                                                        onChange={(e) =>
+                                                                            setAqDraft((d) => (d ? { ...d, order: Number(e.target.value) } : d))
+                                                                        }
+                                                                    />
+                                                                </Field>
+                                                                <Field label="Points">
+                                                                    <input
+                                                                        className={INPUT}
+                                                                        value={String(aqDraft.points)}
+                                                                        onChange={(e) =>
+                                                                            setAqDraft((d) => (d ? { ...d, points: Number(e.target.value) } : d))
+                                                                        }
+                                                                    />
+                                                                </Field>
+                                                                <Field label="Active">
+                                                                    <select
+                                                                        className={INPUT}
+                                                                        value={String(aqDraft.is_active)}
+                                                                        onChange={(e) =>
+                                                                            setAqDraft((d) =>
+                                                                                d ? { ...d, is_active: e.target.value === "true" } : d,
+                                                                            )
+                                                                        }
+                                                                    >
+                                                                        <option value="true">true</option>
+                                                                        <option value="false">false</option>
+                                                                    </select>
+                                                                </Field>
+                                                            </div>
+                                                            <div className="mt-3">
+                                                                <Field label="Prompt">
+                                                                    <textarea
+                                                                        className={`${INPUT} min-h-[110px]`}
+                                                                        value={aqDraft.prompt}
+                                                                        onChange={(e) => setAqDraft((d) => (d ? { ...d, prompt: e.target.value } : d))}
+                                                                    />
+                                                                </Field>
+                                                            </div>
+                                                            {aqDraft.question_type === "multiple_choice" ? (
+                                                                <div className="mt-3">
+                                                                    <Field label="Choices (JSON array)">
+                                                                        <textarea
+                                                                            className={`${INPUT} min-h-[120px] font-mono text-xs`}
+                                                                            value={aqDraft.choicesText}
+                                                                            onChange={(e) =>
+                                                                                setAqDraft((d) => (d ? { ...d, choicesText: e.target.value } : d))
+                                                                            }
+                                                                        />
+                                                                    </Field>
+                                                                </div>
+                                                            ) : null}
+                                                            <div className="mt-3 grid gap-3 md:grid-cols-2">
+                                                                <Field label="Correct answer (JSON)">
+                                                                    <textarea
+                                                                        className={`${INPUT} min-h-[90px] font-mono text-xs`}
+                                                                        value={aqDraft.correctAnswerText}
+                                                                        onChange={(e) =>
+                                                                            setAqDraft((d) => (d ? { ...d, correctAnswerText: e.target.value } : d))
+                                                                        }
+                                                                    />
+                                                                </Field>
+                                                                <Field label="Grading config (JSON object)">
+                                                                    <textarea
+                                                                        className={`${INPUT} min-h-[90px] font-mono text-xs`}
+                                                                        value={aqDraft.gradingConfigText}
+                                                                        onChange={(e) =>
+                                                                            setAqDraft((d) => (d ? { ...d, gradingConfigText: e.target.value } : d))
+                                                                        }
+                                                                    />
+                                                                </Field>
+                                                            </div>
+                                                            <div className="mt-4 flex flex-wrap gap-2">
+                                                                <button
+                                                                    type="button"
+                                                                    className={BTN_PRIMARY}
+                                                                    disabled={saving}
+                                                                    onClick={() => void handleSaveAssessmentQuestion()}
+                                                                >
+                                                                    Save question
+                                                                </button>
+                                                                <button type="button" className={BTN_GHOST} onClick={() => setAqDraft(null)}>
+                                                                    Cancel
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    ) : null}
+                                                </div>
+
+                                                {can("assign_access") ? (
+                                                    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                                                        <p className="text-sm font-black uppercase tracking-widest text-slate-400">Assign</p>
+                                                        <p className="mt-1 text-xs text-slate-500">
+                                                            Creates classroom homework from the selected assessment set (same API as the old standalone assign page).
+                                                        </p>
+
+                                                        {assClassroomLoading ? <p className="mt-3 text-sm text-slate-500">Loading classrooms…</p> : null}
+
+                                                        <div className="mt-4 grid gap-3 md:grid-cols-2">
+                                                            <Field label="Classroom">
+                                                                <select
+                                                                    className={INPUT}
+                                                                    value={assClassroomId ? String(assClassroomId) : ""}
+                                                                    onChange={(e) => {
+                                                                        const n = Number(e.target.value);
+                                                                        setAssClassroomId(Number.isFinite(n) ? n : null);
+                                                                    }}
+                                                                >
+                                                                    <option value="">Select classroom…</option>
+                                                                    {(assClassrooms || []).map((c: any) => (
+                                                                        <option key={c.id} value={String(c.id)}>
+                                                                            #{c.id} · {String(c.name || "Class")} · {String(c.subject || "").toLowerCase()}
+                                                                        </option>
+                                                                    ))}
+                                                                </select>
+                                                            </Field>
+                                                            <Field label="Due at (optional)">
+                                                                <input
+                                                                    className={INPUT}
+                                                                    type="datetime-local"
+                                                                    value={assAssignDue}
+                                                                    onChange={(e) => setAssAssignDue(e.target.value)}
+                                                                />
+                                                            </Field>
+                                                            <Field label="Title override (optional)">
+                                                                <input
+                                                                    className={INPUT}
+                                                                    value={assAssignTitle}
+                                                                    onChange={(e) => setAssAssignTitle(e.target.value)}
+                                                                />
+                                                            </Field>
+                                                            <Field label="Instructions (optional)">
+                                                                <textarea
+                                                                    className={`${INPUT} min-h-[90px]`}
+                                                                    value={assAssignInstructions}
+                                                                    onChange={(e) => setAssAssignInstructions(e.target.value)}
+                                                                />
+                                                            </Field>
+                                                        </div>
+
+                                                        {assDupAssignmentId ? (
+                                                            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                                                                This classroom already has an assignment linked to this assessment set (assignment #
+                                                                {assDupAssignmentId}). The server may still reject duplicates.
+                                                            </div>
+                                                        ) : null}
+
+                                                        {assAssignMsg ? <p className="mt-3 text-xs font-bold text-emerald-700">{assAssignMsg}</p> : null}
+
+                                                        <div className="mt-4 flex flex-wrap gap-2">
+                                                            <button
+                                                                type="button"
+                                                                className={BTN_PRIMARY}
+                                                                disabled={!assCanAssignHomework || assAssignSubmitting}
+                                                                onClick={() => void handleAssignAssessmentHomework()}
+                                                            >
+                                                                {assAssignSubmitting ? "Assigning…" : "Assign to classroom"}
+                                                            </button>
+                                                            {!assCanAssignHomework ? (
+                                                                <p className="text-xs font-semibold text-slate-500">
+                                                                    Complete classroom + set selection (and resolve subject mismatch / duplicate warnings) to enable.
+                                                                </p>
+                                                            ) : null}
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-600 shadow-sm">
+                                                        Assignments require <span className="font-bold">assign access</span>. You can still author sets/questions if permitted.
+                                                    </div>
+                                                )}
+                                            </>
+                                        ) : (
+                                            <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600 shadow-sm">
+                                                Select a set on the left, or create a new one.
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         )}

@@ -744,6 +744,21 @@ export const assessmentsApi = {
     adminDeleteQuestion: async (id: number) => {
         await api.delete(`/assessments/admin/questions/${id}/`);
     },
+    assignHomework: async (
+        payload: {
+            classroom_id: number;
+            set_id: number;
+            title?: string;
+            instructions?: string;
+            due_at?: string | null;
+        },
+        idempotencyKey?: string,
+    ) => {
+        const r = await api.post("/assessments/homework/assign/", payload, {
+            headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+        });
+        return r.data;
+    },
 };
 
 export default api;
