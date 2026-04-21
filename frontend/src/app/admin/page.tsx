@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import AuthGuard from '@/components/AuthGuard';
-import { adminApi, assessmentsApi, authApi, classesApi, usersApi } from '@/lib/api';
+import { adminApi, assessmentsApi, authApi, usersApi } from '@/lib/api';
 import {
     can,
     canAuthorTestsUi,
@@ -35,6 +35,7 @@ import {
     pastpaperSectionSummary,
 } from '@/lib/adminAssignFormat';
 import { BulkAssignWizard } from '@/components/bulk-assign/BulkAssignWizard';
+import { AssessmentClassroomAssignPanel } from "@/components/bulk-assign/AssessmentClassroomAssignPanel";
 
 const getImageUrl = (path: string | null | undefined) => {
     if (!path) return '';
@@ -275,7 +276,6 @@ export default function AdminPage() {
         | "questions"
         | null;
     const didInitMockSelection = useRef(false);
-    const assessmentAssignIdempotencyRef = useRef<string | null>(null);
     const [activeTab, setActiveTab] = useState<Tab>('pastpapers');
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -469,16 +469,6 @@ export default function AdminPage() {
         is_active: boolean;
     }>(null);
 
-    const [assClassrooms, setAssClassrooms] = useState<any[] | null>(null);
-    const [assClassroomLoading, setAssClassroomLoading] = useState(false);
-    const [assClassroomId, setAssClassroomId] = useState<number | null>(null);
-    const [assAssignTitle, setAssAssignTitle] = useState("");
-    const [assAssignInstructions, setAssAssignInstructions] = useState("");
-    const [assAssignDue, setAssAssignDue] = useState("");
-    const [assAssignSubmitting, setAssAssignSubmitting] = useState(false);
-    const [assAssignMsg, setAssAssignMsg] = useState<string | null>(null);
-    const [assDupAssignmentId, setAssDupAssignmentId] = useState<number | null>(null);
-
     const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
     // Fetch
@@ -549,31 +539,6 @@ export default function AdminPage() {
         }
     }, []);
 
-    const loadAssClassrooms = useCallback(async () => {
-        setAssClassroomLoading(true);
-        try {
-            const all = await classesApi.list();
-            setAssClassrooms(Array.isArray(all) ? all : []);
-        } catch {
-            setAssClassrooms([]);
-        } finally {
-            setAssClassroomLoading(false);
-        }
-    }, []);
-
-    const loadAssDupGuard = useCallback(async (cid: number, sid: number | null) => {
-        setAssDupAssignmentId(null);
-        if (!cid || !sid) return;
-        try {
-            const rows = await classesApi.listAssignments(cid);
-            const list = Array.isArray(rows) ? rows : [];
-            const hit = list.find((a: any) => Number(a?.assessment_homework?.set?.id) === Number(sid));
-            if (hit?.id) setAssDupAssignmentId(Number(hit.id));
-        } catch {
-            /* best-effort */
-        }
-    }, []);
-
     const fetchModules = useCallback(async () => {
         if (!selectedPracticeTestId) return [];
         try {
@@ -617,16 +582,6 @@ export default function AdminPage() {
 
     useEffect(() => {
         if (activeTab !== "assessments") return;
-        if (!can("assign_access")) return;
-        void loadAssClassrooms();
-    }, [activeTab, loadAssClassrooms]);
-
-    useEffect(() => {
-        assessmentAssignIdempotencyRef.current = null;
-    }, [assClassroomId, selectedAssessmentSetId]);
-
-    useEffect(() => {
-        if (activeTab !== "assessments") return;
         if (!assessmentSets.length) {
             setSelectedAssessmentSetId(null);
             return;
@@ -634,17 +589,6 @@ export default function AdminPage() {
         if (selectedAssessmentSetId && assessmentSets.some((s) => Number(s.id) === Number(selectedAssessmentSetId))) return;
         setSelectedAssessmentSetId(Number(assessmentSets[0].id));
     }, [activeTab, assessmentSets, selectedAssessmentSetId]);
-
-    useEffect(() => {
-        if (activeTab !== "assessments") return;
-        const cid = assClassroomId;
-        const sid = selectedAssessmentSetId;
-        if (!cid || !sid) {
-            setAssDupAssignmentId(null);
-            return;
-        }
-        void loadAssDupGuard(cid, sid);
-    }, [activeTab, assClassroomId, selectedAssessmentSetId, loadAssDupGuard]);
 
     useEffect(() => {
         if (activeTab !== "assessments") return;
@@ -1716,15 +1660,6 @@ export default function AdminPage() {
         }
     };
 
-    const normalizeAssClassroomSubject = (raw: unknown): "math" | "english" | null => {
-        const u = String(raw ?? "")
-            .trim()
-            .toUpperCase();
-        if (u === "MATH") return "math";
-        if (u === "ENGLISH") return "english";
-        return null;
-    };
-
     const handleSaveAssessmentSetMeta = async () => {
         if (!selectedAssessmentSetId || !canAuthorTestsUi()) return;
         setSaving(true);
@@ -1827,79 +1762,6 @@ export default function AdminPage() {
         }
     };
 
-    const handleAssignAssessmentHomework = async () => {
-        if (!can("assign_access") || assAssignSubmitting) return;
-        const cid = assClassroomId;
-        const sid = selectedAssessmentSetId;
-        if (!cid || !sid) {
-            showToast("Pick a classroom and an assessment set.");
-            return;
-        }
-        const classroom = (assClassrooms || []).find((c: any) => Number(c.id) === Number(cid));
-        const cSub = normalizeAssClassroomSubject(classroom?.subject);
-        const setRow = assessmentSets.find((s) => Number(s.id) === Number(sid));
-        const sSub = setRow?.subject as string | undefined;
-        if (cSub && sSub && cSub !== sSub) {
-            showToast("Subject mismatch: pick a classroom that matches this set’s subject.");
-            return;
-        }
-        if (assDupAssignmentId) {
-            showToast("This set already appears assigned for that classroom (client check).");
-            return;
-        }
-        setAssAssignSubmitting(true);
-        setAssAssignMsg(null);
-        const idempotencyKey =
-            assessmentAssignIdempotencyRef.current ??
-            (typeof crypto !== "undefined" && "randomUUID" in crypto
-                ? crypto.randomUUID()
-                : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
-        assessmentAssignIdempotencyRef.current = idempotencyKey;
-        try {
-            await assessmentsApi.assignHomework(
-                {
-                    classroom_id: cid,
-                    set_id: sid,
-                    title: assAssignTitle.trim() || undefined,
-                    instructions: assAssignInstructions.trim() || undefined,
-                    due_at: assAssignDue ? new Date(assAssignDue).toISOString() : null,
-                },
-                idempotencyKey,
-            );
-            assessmentAssignIdempotencyRef.current = null;
-            setAssAssignMsg("Assigned successfully.");
-            showToast("Assessment assigned");
-            await loadAssDupGuard(cid, sid);
-        } catch (e: any) {
-            const st = e?.response?.status;
-            const d = e?.response?.data;
-            const msg = d?.detail || d?.message || e?.message || "Assign failed";
-            showToast(String(msg));
-            if (st === 409 || st === 400) void loadAssDupGuard(cid, sid);
-            if (st >= 400 && st < 500 && st !== 409 && st !== 429) assessmentAssignIdempotencyRef.current = null;
-        } finally {
-            setAssAssignSubmitting(false);
-        }
-    };
-
-    const assSelectedClassroom = useMemo(
-        () => (assClassrooms || []).find((c: any) => Number(c.id) === Number(assClassroomId)) ?? null,
-        [assClassrooms, assClassroomId],
-    );
-
-    const assCanAssignHomework = useMemo(() => {
-        if (!can("assign_access")) return false;
-        const cid = assClassroomId;
-        const sid = selectedAssessmentSetId;
-        if (!cid || !sid) return false;
-        const cSub = normalizeAssClassroomSubject(assSelectedClassroom?.subject);
-        const sRow = assessmentSets.find((s) => Number(s.id) === Number(sid));
-        const sSub = sRow?.subject as string | undefined;
-        if (cSub && sSub && cSub !== sSub) return false;
-        if (assDupAssignmentId) return false;
-        return true;
-    }, [assClassroomId, selectedAssessmentSetId, assSelectedClassroom, assessmentSets, assDupAssignmentId]);
-
     const navItems: { key: Tab; label: string; icon: React.ReactNode }[] = (() => {
         const all: { key: Tab; label: string; icon: React.ReactNode }[] = [
             { key: 'pastpapers', label: 'Pastpaper tests', icon: <BookOpen className="w-4 h-4" /> },
@@ -1915,12 +1777,7 @@ export default function AdminPage() {
         const canAssessmentsUi = canAuthorTestsUi() || can("assign_access");
         const filtered = all.filter((item) => {
             if (consoleMode === "admin") {
-                return (
-                    item.key === "assignments" ||
-                    item.key === "users" ||
-                    item.key === "examdates" ||
-                    (item.key === "assessments" && canAssessmentsUi)
-                );
+                return item.key === "assignments" || item.key === "users" || item.key === "examdates";
             }
             if (consoleMode === "questions") {
                 return (
@@ -2001,23 +1858,36 @@ export default function AdminPage() {
 
                     <main className="flex-1 p-8 overflow-y-auto">
                         {activeTab === "assignments" && (
-                            <BulkAssignWizard
-                                canAssign={can("assign_access")}
-                                users={users}
-                                mockExams={mockExams}
-                                pastpaperPacks={pastpaperPacks}
-                                loadingUsers={false}
-                                showToast={showToast}
-                                onAfterSuccess={async () => {
-                                    await fetchMockExams();
-                                    await fetchStandaloneTests();
-                                    await fetchPastpaperPacks();
-                                    await fetchUsers();
-                                }}
-                                intent={assignmentsIntent}
-                                onConsumeIntent={() => setAssignmentsIntent(null)}
-                                defaultPastpaperScope={defaultBulkPastpaperSubjectScope()}
-                            />
+                            <>
+                                <BulkAssignWizard
+                                    canAssign={can("assign_access")}
+                                    users={users}
+                                    mockExams={mockExams}
+                                    pastpaperPacks={pastpaperPacks}
+                                    loadingUsers={false}
+                                    showToast={showToast}
+                                    onAfterSuccess={async () => {
+                                        await fetchMockExams();
+                                        await fetchStandaloneTests();
+                                        await fetchPastpaperPacks();
+                                        await fetchUsers();
+                                    }}
+                                    intent={assignmentsIntent}
+                                    onConsumeIntent={() => setAssignmentsIntent(null)}
+                                    defaultPastpaperScope={defaultBulkPastpaperSubjectScope()}
+                                />
+                                {consoleMode === "admin" ? (
+                                    <div className="mt-10 max-w-6xl space-y-3 border-t border-slate-200 pt-10">
+                                        <div>
+                                            <h2 className="text-lg font-bold text-slate-900">LMS assessments (homework)</h2>
+                                            <p className="mt-1 text-xs text-slate-500">
+                                                Assign assessment sets to classrooms from the same Assignments area as pastpapers and timed mocks.
+                                            </p>
+                                        </div>
+                                        <AssessmentClassroomAssignPanel canAssign={can("assign_access")} showToast={showToast} />
+                                    </div>
+                                ) : null}
+                            </>
                         )}
                         {activeTab === "assessments" && (
                             <div className="space-y-6 max-w-6xl">
@@ -2389,87 +2259,9 @@ export default function AdminPage() {
                                                     ) : null}
                                                 </div>
 
-                                                {can("assign_access") ? (
-                                                    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                                                        <p className="text-sm font-black uppercase tracking-widest text-slate-400">Assign</p>
-                                                        <p className="mt-1 text-xs text-slate-500">
-                                                            Creates classroom homework from the selected assessment set (same API as the old standalone assign page).
-                                                        </p>
-
-                                                        {assClassroomLoading ? <p className="mt-3 text-sm text-slate-500">Loading classrooms…</p> : null}
-
-                                                        <div className="mt-4 grid gap-3 md:grid-cols-2">
-                                                            <Field label="Classroom">
-                                                                <select
-                                                                    className={INPUT}
-                                                                    value={assClassroomId ? String(assClassroomId) : ""}
-                                                                    onChange={(e) => {
-                                                                        const n = Number(e.target.value);
-                                                                        setAssClassroomId(Number.isFinite(n) ? n : null);
-                                                                    }}
-                                                                >
-                                                                    <option value="">Select classroom…</option>
-                                                                    {(assClassrooms || []).map((c: any) => (
-                                                                        <option key={c.id} value={String(c.id)}>
-                                                                            #{c.id} · {String(c.name || "Class")} · {String(c.subject || "").toLowerCase()}
-                                                                        </option>
-                                                                    ))}
-                                                                </select>
-                                                            </Field>
-                                                            <Field label="Due at (optional)">
-                                                                <input
-                                                                    className={INPUT}
-                                                                    type="datetime-local"
-                                                                    value={assAssignDue}
-                                                                    onChange={(e) => setAssAssignDue(e.target.value)}
-                                                                />
-                                                            </Field>
-                                                            <Field label="Title override (optional)">
-                                                                <input
-                                                                    className={INPUT}
-                                                                    value={assAssignTitle}
-                                                                    onChange={(e) => setAssAssignTitle(e.target.value)}
-                                                                />
-                                                            </Field>
-                                                            <Field label="Instructions (optional)">
-                                                                <textarea
-                                                                    className={`${INPUT} min-h-[90px]`}
-                                                                    value={assAssignInstructions}
-                                                                    onChange={(e) => setAssAssignInstructions(e.target.value)}
-                                                                />
-                                                            </Field>
-                                                        </div>
-
-                                                        {assDupAssignmentId ? (
-                                                            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                                                                This classroom already has an assignment linked to this assessment set (assignment #
-                                                                {assDupAssignmentId}). The server may still reject duplicates.
-                                                            </div>
-                                                        ) : null}
-
-                                                        {assAssignMsg ? <p className="mt-3 text-xs font-bold text-emerald-700">{assAssignMsg}</p> : null}
-
-                                                        <div className="mt-4 flex flex-wrap gap-2">
-                                                            <button
-                                                                type="button"
-                                                                className={BTN_PRIMARY}
-                                                                disabled={!assCanAssignHomework || assAssignSubmitting}
-                                                                onClick={() => void handleAssignAssessmentHomework()}
-                                                            >
-                                                                {assAssignSubmitting ? "Assigning…" : "Assign to classroom"}
-                                                            </button>
-                                                            {!assCanAssignHomework ? (
-                                                                <p className="text-xs font-semibold text-slate-500">
-                                                                    Complete classroom + set selection (and resolve subject mismatch / duplicate warnings) to enable.
-                                                                </p>
-                                                            ) : null}
-                                                        </div>
-                                                    </div>
-                                                ) : (
-                                                    <div className="rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-600 shadow-sm">
-                                                        Assignments require <span className="font-bold">assign access</span>. You can still author sets/questions if permitted.
-                                                    </div>
-                                                )}
+                                                <div className="mt-4">
+                                                    <AssessmentClassroomAssignPanel canAssign={can("assign_access")} showToast={showToast} />
+                                                </div>
                                             </>
                                         ) : (
                                             <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600 shadow-sm">
