@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useAssessmentSetsList, useDeleteAssessmentQuestion, useUpsertAssessmentQuestion, useUpsertAssessmentSet } from "@/features/assessments/hooks";
-import type { AssessmentQuestion, AssessmentSet } from "@/features/assessments/types";
+import { AssessmentCategorySelect } from "@/features/assessments/components/AssessmentCategorySelect";
+import { AssessmentQuestionEditorFields } from "@/features/assessments/components/AssessmentQuestionEditorFields";
+import type { AssessmentQuestion, AssessmentQuestionType, AssessmentSet } from "@/features/assessments/types";
 import { normalizeApiError } from "@/lib/apiError";
 import ErrorPanel from "@/components/ErrorPanel";
 import { useToast } from "@/components/ToastProvider";
@@ -219,6 +221,15 @@ export default function BuilderSetEditorContainer() {
         toast.push({ tone: "error", message: "Prompt is required." });
         return;
       }
+      if (payload.question_type === "multiple_choice") {
+        const ids = new Set((payload.choices || []).map((c: { id?: unknown }) => String(c?.id ?? "").trim()).filter(Boolean));
+        const ca = payload.correct_answer;
+        const cStr = typeof ca === "string" ? ca : ca != null ? String(ca) : "";
+        if (!cStr || !ids.has(cStr)) {
+          toast.push({ tone: "error", message: "Multiple choice: pick a correct answer that matches a choice id." });
+          return;
+        }
+      }
       const res = await upsertQuestion.mutateAsync({ id: editing.questionId, payload });
       toast.push({ tone: "success", message: "Question saved." });
       selectQuestion((res as any).id);
@@ -236,8 +247,12 @@ export default function BuilderSetEditorContainer() {
       order: questions.length ? (questions[questions.length - 1].order ?? 0) + 1 : 0,
       points: 1,
       is_active: true,
-      choicesText: "[]",
-      correctAnswerText: "null",
+      choicesText: JSON.stringify(
+        ["A", "B", "C", "D"].map((id) => ({ id, text: "" })),
+        null,
+        2,
+      ),
+      correctAnswerText: JSON.stringify("A"),
       gradingConfigText: "{}",
     });
   };
@@ -418,56 +433,22 @@ export default function BuilderSetEditorContainer() {
         </p>
 
         <div className="mt-3 grid gap-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <p className="mb-1 text-xs font-bold uppercase tracking-wider text-label-foreground">Order</p>
-              <input className={INPUT} value={String(editing.order)} onChange={(e) => setEditing({ ...editing, order: Number(e.target.value) })} />
-            </div>
-            <div>
-              <p className="mb-1 text-xs font-bold uppercase tracking-wider text-label-foreground">Points</p>
-              <input className={INPUT} value={String(editing.points)} onChange={(e) => setEditing({ ...editing, points: Number(e.target.value) })} />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <p className="mb-1 text-xs font-bold uppercase tracking-wider text-label-foreground">Type</p>
-              <select className={INPUT} value={editing.question_type} onChange={(e) => setEditing({ ...editing, question_type: e.target.value })}>
-                <option value="multiple_choice">multiple_choice</option>
-                <option value="numeric">numeric</option>
-                <option value="short_text">short_text</option>
-              </select>
-            </div>
-            <div>
-              <p className="mb-1 text-xs font-bold uppercase tracking-wider text-label-foreground">Active</p>
-              <select className={INPUT} value={String(editing.is_active)} onChange={(e) => setEditing({ ...editing, is_active: e.target.value === "true" })}>
-                <option value="true">true</option>
-                <option value="false">false</option>
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <p className="mb-1 text-xs font-bold uppercase tracking-wider text-label-foreground">Prompt</p>
-            <textarea className={`${INPUT} min-h-[120px]`} value={editing.prompt} onChange={(e) => setEditing({ ...editing, prompt: e.target.value })} />
-          </div>
-
-          {editing.question_type === "multiple_choice" ? (
-            <div>
-              <p className="mb-1 text-xs font-bold uppercase tracking-wider text-label-foreground">Choices (JSON array)</p>
-              <textarea className={`${INPUT} min-h-[120px] font-mono`} value={editing.choicesText} onChange={(e) => setEditing({ ...editing, choicesText: e.target.value })} />
-            </div>
-          ) : null}
-
-          <div>
-            <p className="mb-1 text-xs font-bold uppercase tracking-wider text-label-foreground">Correct answer (JSON)</p>
-            <textarea className={`${INPUT} min-h-[80px] font-mono`} value={editing.correctAnswerText} onChange={(e) => setEditing({ ...editing, correctAnswerText: e.target.value })} />
-          </div>
-
-          <div>
-            <p className="mb-1 text-xs font-bold uppercase tracking-wider text-label-foreground">Grading config (JSON)</p>
-            <textarea className={`${INPUT} min-h-[80px] font-mono`} value={editing.gradingConfigText} onChange={(e) => setEditing({ ...editing, gradingConfigText: e.target.value })} />
-          </div>
+          <AssessmentQuestionEditorFields
+            draft={{
+              prompt: editing.prompt,
+              question_type: editing.question_type as AssessmentQuestionType,
+              order: editing.order,
+              points: editing.points,
+              is_active: editing.is_active,
+              choicesText: editing.choicesText,
+              correctAnswerText: editing.correctAnswerText,
+              gradingConfigText: editing.gradingConfigText,
+            }}
+            onPatch={(p) => setEditing((e) => ({ ...e, ...p }))}
+            inputClassName={INPUT}
+            disabled={upsertQuestion.isPending || versionOutdated}
+            fieldLabelClass="mb-1 text-xs font-bold uppercase tracking-wider text-label-foreground"
+          />
 
           <button
             type="button"
@@ -488,7 +469,13 @@ export default function BuilderSetEditorContainer() {
             </div>
             <div>
               <p className="mb-1 text-xs font-bold uppercase tracking-wider text-label-foreground">Category</p>
-              <input className={INPUT} value={String(view.category || "")} onChange={(e) => patchSetTracked({ category: e.target.value })} />
+              <AssessmentCategorySelect
+                subject={view.subject === "math" ? "math" : "english"}
+                value={String(view.category || "")}
+                onChange={(v) => patchSetTracked({ category: v })}
+                className={INPUT}
+                disabled={upsertSet.isPending || versionOutdated}
+              />
             </div>
             <div>
               <p className="mb-1 text-xs font-bold uppercase tracking-wider text-label-foreground">Description</p>

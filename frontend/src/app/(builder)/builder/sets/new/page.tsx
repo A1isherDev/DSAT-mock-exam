@@ -6,6 +6,7 @@ import { useUpsertAssessmentSet } from "@/features/assessments/hooks";
 import type { Subject } from "@/features/assessments/types";
 import { normalizeApiError } from "@/lib/apiError";
 import { getSubject } from "@/lib/permissions";
+import { AssessmentCategorySelect } from "@/features/assessments/components/AssessmentCategorySelect";
 
 const INPUT =
   "ui-input w-full rounded-xl border border-border bg-surface-2/80 px-3 py-2 text-sm shadow-sm";
@@ -98,10 +99,11 @@ export default function NewAssessmentSetPage() {
         </div>
         <div>
           <p className="mb-1 text-xs font-bold uppercase tracking-wider text-label-foreground">Category</p>
-          <input
-            className={INPUT}
+          <AssessmentCategorySelect
+            subject={form.subject}
             value={form.category}
-            onChange={(e) => setForm({ ...form, category: e.target.value })}
+            onChange={(v) => setForm({ ...form, category: v })}
+            className={INPUT}
           />
         </div>
         <div>

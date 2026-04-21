@@ -14,7 +14,7 @@ class AssessmentSet(models.Model):
     ]
 
     subject = models.CharField(max_length=16, choices=SUBJECT_CHOICES, db_index=True)
-    category = models.CharField(max_length=120, db_index=True, blank=True, default="")
+    category = models.CharField(max_length=255, db_index=True, blank=True, default="")
     title = models.CharField(max_length=200, db_index=True)
     description = models.TextField(blank=True, default="")
     is_active = models.BooleanField(default=True, db_index=True)

@@ -36,6 +36,8 @@ import {
 } from '@/lib/adminAssignFormat';
 import { BulkAssignWizard } from '@/components/bulk-assign/BulkAssignWizard';
 import { AssessmentClassroomAssignPanel } from "@/components/bulk-assign/AssessmentClassroomAssignPanel";
+import { AssessmentCategorySelect } from "@/features/assessments/components/AssessmentCategorySelect";
+import { AssessmentQuestionEditorFields } from "@/features/assessments/components/AssessmentQuestionEditorFields";
 
 const getImageUrl = (path: string | null | undefined) => {
     if (!path) return '';
@@ -1727,6 +1729,16 @@ export default function AdminPage() {
                 correct_answer: parseJsonFlexible(aqDraft.correctAnswerText, null),
                 grading_config: parseJsonFlexible(aqDraft.gradingConfigText, {}),
             };
+            if (payload.question_type === "multiple_choice") {
+                const ids = new Set((payload.choices || []).map((c: { id?: unknown }) => String(c?.id ?? "").trim()).filter(Boolean));
+                const ca = payload.correct_answer;
+                const cStr = typeof ca === "string" ? ca : ca != null ? String(ca) : "";
+                if (!cStr || !ids.has(cStr)) {
+                    showToast("Multiple choice: pick a correct answer that matches one of the choice ids.");
+                    setSaving(false);
+                    return;
+                }
+            }
             if (aqDraft.id) {
                 await assessmentsApi.adminUpdateQuestion(aqDraft.id, payload);
             } else {
@@ -1930,10 +1942,11 @@ export default function AdminPage() {
                                                 />
                                             </Field>
                                             <Field label="Category (optional)">
-                                                <input
-                                                    className={INPUT}
+                                                <AssessmentCategorySelect
+                                                    subject={assessmentNewForm.subject}
                                                     value={assessmentNewForm.category}
-                                                    onChange={(e) => setAssessmentNewForm((s) => ({ ...s, category: e.target.value }))}
+                                                    onChange={(v) => setAssessmentNewForm((s) => ({ ...s, category: v }))}
+                                                    className={INPUT}
                                                 />
                                             </Field>
                                             <Field label="Description (optional)">
@@ -2018,10 +2031,15 @@ export default function AdminPage() {
                                                             />
                                                         </Field>
                                                         <Field label="Category">
-                                                            <input
-                                                                className={INPUT}
+                                                            <AssessmentCategorySelect
+                                                                subject={
+                                                                    String(selectedAssessmentSet?.subject || "math").toLowerCase() === "english"
+                                                                        ? "english"
+                                                                        : "math"
+                                                                }
                                                                 value={assessmentSetEdit.category}
-                                                                onChange={(e) => setAssessmentSetEdit((s) => ({ ...s, category: e.target.value }))}
+                                                                onChange={(v) => setAssessmentSetEdit((s) => ({ ...s, category: v }))}
+                                                                className={INPUT}
                                                                 disabled={!canAuthorTestsUi()}
                                                             />
                                                         </Field>
@@ -2057,8 +2075,8 @@ export default function AdminPage() {
                                                         <div>
                                                             <p className="text-sm font-black uppercase tracking-widest text-slate-400">Questions</p>
                                                             <p className="mt-1 text-xs text-slate-500">
-                                                                MCQ uses JSON choices; correct answer is JSON (e.g. <span className="font-mono">"A"</span> or{" "}
-                                                                <span className="font-mono">1</span>).
+                                                                Same style as practice questions: stem, typed choices, and correct answer — optional{" "}
+                                                                <span className="font-mono">JSON</span> under Advanced.
                                                             </p>
                                                         </div>
                                                         {canAuthorTestsUi() ? (
@@ -2072,8 +2090,12 @@ export default function AdminPage() {
                                                                         question_type: "multiple_choice",
                                                                         points: 1,
                                                                         order: assessmentQuestionsSorted.length,
-                                                                        choicesText: "[]",
-                                                                        correctAnswerText: "null",
+                                                                        choicesText: JSON.stringify(
+                                                                            ["A", "B", "C", "D"].map((id) => ({ id, text: "" })),
+                                                                            null,
+                                                                            2,
+                                                                        ),
+                                                                        correctAnswerText: JSON.stringify("A"),
                                                                         gradingConfigText: "{}",
                                                                         is_active: true,
                                                                     })
@@ -2134,102 +2156,13 @@ export default function AdminPage() {
                                                     {aqDraft ? (
                                                         <div className="mt-4 rounded-xl border border-indigo-100 bg-indigo-50/40 p-4">
                                                             <p className="text-sm font-bold text-slate-900">{aqDraft.id ? "Edit question" : "New question"}</p>
-                                                            <div className="mt-3 grid gap-3 md:grid-cols-2">
-                                                                <Field label="Type">
-                                                                    <select
-                                                                        className={INPUT}
-                                                                        value={aqDraft.question_type}
-                                                                        onChange={(e) =>
-                                                                            setAqDraft((d) =>
-                                                                                d
-                                                                                    ? {
-                                                                                          ...d,
-                                                                                          question_type: e.target.value as any,
-                                                                                      }
-                                                                                    : d,
-                                                                            )
-                                                                        }
-                                                                    >
-                                                                        <option value="multiple_choice">multiple_choice</option>
-                                                                        <option value="numeric">numeric</option>
-                                                                        <option value="short_text">short_text</option>
-                                                                        <option value="boolean">boolean</option>
-                                                                    </select>
-                                                                </Field>
-                                                                <Field label="Order">
-                                                                    <input
-                                                                        className={INPUT}
-                                                                        value={String(aqDraft.order)}
-                                                                        onChange={(e) =>
-                                                                            setAqDraft((d) => (d ? { ...d, order: Number(e.target.value) } : d))
-                                                                        }
-                                                                    />
-                                                                </Field>
-                                                                <Field label="Points">
-                                                                    <input
-                                                                        className={INPUT}
-                                                                        value={String(aqDraft.points)}
-                                                                        onChange={(e) =>
-                                                                            setAqDraft((d) => (d ? { ...d, points: Number(e.target.value) } : d))
-                                                                        }
-                                                                    />
-                                                                </Field>
-                                                                <Field label="Active">
-                                                                    <select
-                                                                        className={INPUT}
-                                                                        value={String(aqDraft.is_active)}
-                                                                        onChange={(e) =>
-                                                                            setAqDraft((d) =>
-                                                                                d ? { ...d, is_active: e.target.value === "true" } : d,
-                                                                            )
-                                                                        }
-                                                                    >
-                                                                        <option value="true">true</option>
-                                                                        <option value="false">false</option>
-                                                                    </select>
-                                                                </Field>
-                                                            </div>
                                                             <div className="mt-3">
-                                                                <Field label="Prompt">
-                                                                    <textarea
-                                                                        className={`${INPUT} min-h-[110px]`}
-                                                                        value={aqDraft.prompt}
-                                                                        onChange={(e) => setAqDraft((d) => (d ? { ...d, prompt: e.target.value } : d))}
-                                                                    />
-                                                                </Field>
-                                                            </div>
-                                                            {aqDraft.question_type === "multiple_choice" ? (
-                                                                <div className="mt-3">
-                                                                    <Field label="Choices (JSON array)">
-                                                                        <textarea
-                                                                            className={`${INPUT} min-h-[120px] font-mono text-xs`}
-                                                                            value={aqDraft.choicesText}
-                                                                            onChange={(e) =>
-                                                                                setAqDraft((d) => (d ? { ...d, choicesText: e.target.value } : d))
-                                                                            }
-                                                                        />
-                                                                    </Field>
-                                                                </div>
-                                                            ) : null}
-                                                            <div className="mt-3 grid gap-3 md:grid-cols-2">
-                                                                <Field label="Correct answer (JSON)">
-                                                                    <textarea
-                                                                        className={`${INPUT} min-h-[90px] font-mono text-xs`}
-                                                                        value={aqDraft.correctAnswerText}
-                                                                        onChange={(e) =>
-                                                                            setAqDraft((d) => (d ? { ...d, correctAnswerText: e.target.value } : d))
-                                                                        }
-                                                                    />
-                                                                </Field>
-                                                                <Field label="Grading config (JSON object)">
-                                                                    <textarea
-                                                                        className={`${INPUT} min-h-[90px] font-mono text-xs`}
-                                                                        value={aqDraft.gradingConfigText}
-                                                                        onChange={(e) =>
-                                                                            setAqDraft((d) => (d ? { ...d, gradingConfigText: e.target.value } : d))
-                                                                        }
-                                                                    />
-                                                                </Field>
+                                                                <AssessmentQuestionEditorFields
+                                                                    draft={aqDraft}
+                                                                    onPatch={(p) => setAqDraft((d) => (d ? { ...d, ...p } : d))}
+                                                                    inputClassName={INPUT}
+                                                                    disabled={saving || !canAuthorTestsUi()}
+                                                                />
                                                             </div>
                                                             <div className="mt-4 flex flex-wrap gap-2">
                                                                 <button
