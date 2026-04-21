@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   ClipboardList,
   Layers,
+  ListChecks,
   Loader2,
   ShieldCheck,
   Users,
@@ -19,6 +20,7 @@ import {
   formatPastpaperPackAdminLabel,
   pastpaperSectionSummary,
 } from "@/lib/adminAssignFormat";
+import { AssessmentClassroomAssignPanel } from "./AssessmentClassroomAssignPanel";
 import { AssignmentHistoryPanel } from "./AssignmentHistoryPanel";
 import { SearchableSelect, type SearchableOption } from "./SearchableSelect";
 import type {
@@ -133,6 +135,8 @@ export function BulkAssignWizard({
   const [step, setStep] = useState(1);
   const [kind, setKind] = useState<BulkAssignKind | null>(null);
 
+  const maxStep = useMemo(() => (kind === "assessment_homework" ? 2 : 5), [kind]);
+
   const [mockExamId, setMockExamId] = useState<number | null>(null);
   const [pastpaperPackId, setPastpaperPackId] = useState<number | null>(null);
   const [pastpaperScope, setPastpaperScope] = useState<PastpaperScope>("BOTH");
@@ -179,6 +183,10 @@ export function BulkAssignWizard({
     }
     onConsumeIntent();
   }, [intent, onConsumeIntent, defaultPastpaperScope]);
+
+  useEffect(() => {
+    if (kind === "assessment_homework" && step > 2) setStep(2);
+  }, [kind, step]);
 
   const resetFlow = useCallback(
     (opts?: { keepResult?: boolean }) => {
@@ -250,6 +258,9 @@ export function BulkAssignWizard({
       if (kind === "timed_mock") {
         return mockRowEligibility(u.bulk_assign_profile, subjectsForMock);
       }
+      if (kind === "assessment_homework") {
+        return { selectable: false, reason: "Use the assessment homework form (step 2)." };
+      }
       return { selectable: true };
     },
     [kind, subjectsForPastpaper, subjectsForMock],
@@ -289,6 +300,7 @@ export function BulkAssignWizard({
   const canGoNext = useMemo(() => {
     if (step === 1) return !!kind;
     if (step === 2) {
+      if (kind === "assessment_homework") return false;
       if (kind === "timed_mock") return mockExamId != null;
       if (kind === "pastpaper") return pastpaperPackId != null && resolvedPastpaperSectionIds.length > 0;
     }
@@ -297,7 +309,7 @@ export function BulkAssignWizard({
     return true;
   }, [step, kind, mockExamId, pastpaperPackId, resolvedPastpaperSectionIds.length, selectedUserIds.length]);
 
-  const goNext = () => setStep((s) => Math.min(5, s + 1));
+  const goNext = () => setStep((s) => Math.min(maxStep, s + 1));
   const goBack = () => setStep((s) => Math.max(1, s - 1));
 
   const selectEligibleInView = () => {
@@ -406,6 +418,7 @@ export function BulkAssignWizard({
 
   const submit = async () => {
     if (!canAssign || !kind) return;
+    if (kind === "assessment_homework") return;
     if (selectedUserIds.length === 0) {
       showToast("Select at least one student");
       return;
@@ -597,6 +610,8 @@ export function BulkAssignWizard({
           <li
             key={s.id}
             className={`flex-1 min-w-[120px] rounded-xl border px-3 py-2 text-left transition ${
+              kind === "assessment_homework" && s.id > maxStep ? "opacity-40 border-slate-100 bg-slate-50" : ""
+            } ${
               step === s.id
                 ? "border-indigo-300 bg-indigo-50/90 shadow-sm"
                 : s.id < step
@@ -619,7 +634,7 @@ export function BulkAssignWizard({
       ) : null}
 
       {step === 1 && (
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <button
             type="button"
             onClick={() => {
@@ -649,6 +664,30 @@ export function BulkAssignWizard({
             <h3 className="text-lg font-bold text-slate-900">Timed mock</h3>
             <p className="text-sm text-slate-600 mt-1">Published or draft mock shell — pick sections (full / math / English).</p>
           </button>
+          <button
+            type="button"
+            onClick={() => setKind("assessment_homework")}
+            className={`rounded-2xl border p-6 text-left transition shadow-sm sm:col-span-2 xl:col-span-1 ${
+              kind === "assessment_homework"
+                ? "border-violet-400 bg-violet-50/80 ring-2 ring-violet-200"
+                : "border-slate-200 bg-white hover:border-violet-200"
+            }`}
+          >
+            <ListChecks className="w-8 h-8 text-violet-600 mb-3" />
+            <h3 className="text-lg font-bold text-slate-900">Assessments</h3>
+            <p className="text-sm text-slate-600 mt-1">
+              Published LMS assessment set → homework on a classroom (not the same as bulk student grants).
+            </p>
+          </button>
+        </div>
+      )}
+
+      {step === 2 && kind === "assessment_homework" && (
+        <div className="space-y-3">
+          <p className="text-xs text-slate-500">
+            Assign below. When you are done, use <strong>Done</strong> to return to the type step, or <strong>Reset wizard</strong> at the top.
+          </p>
+          <AssessmentClassroomAssignPanel canAssign={canAssign} showToast={showToast} />
         </div>
       )}
 
@@ -964,7 +1003,16 @@ export function BulkAssignWizard({
         <button type="button" className={BTN_GHOST} disabled={step <= 1} onClick={goBack}>
           <ArrowLeft className="w-4 h-4" /> Back
         </button>
-        {step < 5 ? (
+        {kind === "assessment_homework" && step === 2 ? (
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <p className="text-xs text-slate-500 max-w-md text-right">
+              Student bulk steps do not apply to this path — the panel above talks to the homework API directly.
+            </p>
+            <button type="button" className={BTN_PRIMARY} onClick={() => resetFlow()}>
+              Done
+            </button>
+          </div>
+        ) : step < maxStep ? (
           <button type="button" className={BTN_PRIMARY} disabled={!canGoNext} onClick={goNext}>
             Next <ArrowRight className="w-4 h-4" />
           </button>

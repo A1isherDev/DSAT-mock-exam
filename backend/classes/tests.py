@@ -3,6 +3,9 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from rest_framework.test import APIClient
 
+from access import constants as acc_const
+from access.models import UserAccess
+
 from classes.models import (
     Classroom,
     ClassroomMembership,
@@ -183,3 +186,48 @@ class ClassroomSecurityTests(TestCase):
         r = self.client.delete(f"/api/classes/{self.classroom.pk}/posts/{post.pk}/")
         self.assertEqual(r.status_code, 403)
         self.assertTrue(ClassPost.objects.filter(pk=post.pk).exists())
+
+
+class ClassroomListDirectoryTests(TestCase):
+    """Global assign staff should list all classrooms for homework / admin flows."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.owner = User.objects.create_user(
+            email="dir_owner@example.com",
+            password="secret123",
+            role=acc_const.ROLE_TEACHER,
+            subject=acc_const.DOMAIN_MATH,
+        )
+        UserAccess.objects.create(
+            user=self.owner,
+            subject=acc_const.DOMAIN_MATH,
+            classroom=None,
+            granted_by=self.owner,
+        )
+        self.super_admin = User.objects.create_user(
+            email="dir_super@example.com",
+            password="secret123",
+            role=acc_const.ROLE_SUPER_ADMIN,
+        )
+        self.classroom = Classroom.objects.create(
+            name="Remote class",
+            subject=Classroom.SUBJECT_MATH,
+            lesson_days=Classroom.DAYS_ODD,
+            created_by=self.owner,
+        )
+        ClassroomMembership.objects.create(
+            classroom=self.classroom, user=self.owner, role=ClassroomMembership.ROLE_ADMIN
+        )
+
+    def test_super_admin_lists_all_classrooms_without_membership(self):
+        self.assertFalse(
+            ClassroomMembership.objects.filter(classroom=self.classroom, user=self.super_admin).exists()
+        )
+        self.client.force_authenticate(self.super_admin)
+        r = self.client.get("/api/classes/")
+        self.assertEqual(r.status_code, 200, r.content)
+        data = r.json()
+        self.assertIsInstance(data, list)
+        ids = {row["id"] for row in data}
+        self.assertIn(self.classroom.pk, ids)

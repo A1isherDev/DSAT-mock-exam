@@ -24,7 +24,12 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
 from access import constants as acc_const
 from access.models import UserAccess
-from access.services import authorize
+from access.services import (
+    actor_subject_probe_for_domain_perm,
+    authorize,
+    is_global_scope_staff,
+    normalized_role,
+)
 
 from exams.models import PracticeTest, TestAttempt
 from users.permissions import IsAuthenticatedAndNotFrozen
@@ -230,11 +235,29 @@ class ClassroomViewSet(ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        return (
+        member_qs = (
             Classroom.objects.filter(memberships__user=user)
             .annotate(members_count=Count("memberships"))
             .distinct()
         )
+        # LIST: teachers and students only see classrooms they belong to. Global staff with
+        # assign / user-directory permissions need every classroom for homework + admin flows
+        # (e.g. super_admin is rarely enrolled as a class member).
+        if getattr(self, "action", None) != "list":
+            return member_qs
+        probe = actor_subject_probe_for_domain_perm(user)
+        if not probe:
+            return member_qs
+        can_directory = authorize(user, acc_const.PERM_ASSIGN_ACCESS, subject=probe) or authorize(
+            user, acc_const.PERM_MANAGE_USERS, subject=probe
+        )
+        if not can_directory:
+            return member_qs
+        if getattr(user, "is_superuser", False) or normalized_role(user) == acc_const.ROLE_SUPER_ADMIN:
+            return Classroom.objects.annotate(members_count=Count("memberships")).distinct()
+        if is_global_scope_staff(user) and normalized_role(user) != acc_const.ROLE_TEACHER:
+            return Classroom.objects.annotate(members_count=Count("memberships")).distinct()
+        return member_qs
 
     def get_serializer_class(self):
         if self.action in ("create", "update", "partial_update"):

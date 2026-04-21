@@ -351,7 +351,15 @@ export const examsApi = {
 };
 
 export const classesApi = {
-    list: async () => { const r = await api.get('/classes/'); return r.data; },
+    list: async () => {
+        const r = await api.get('/classes/');
+        const d = r.data;
+        if (Array.isArray(d)) return d;
+        if (d && typeof d === 'object' && Array.isArray((d as { results?: unknown }).results)) {
+            return (d as { results: unknown[] }).results;
+        }
+        return [];
+    },
     /** Single classroom (member only); 404 if not enrolled or invalid id. */
     get: async (classId: number) => {
         const r = await api.get(`/classes/${classId}/`);

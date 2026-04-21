@@ -71,9 +71,18 @@ export function AssessmentClassroomAssignPanel({ canAssign, showToast }: Assessm
     try {
       const all = await classesApi.list();
       setClassrooms(Array.isArray(all) ? all : []);
-    } catch {
+    } catch (e: unknown) {
       setClassrooms([]);
-      showToast("Could not load classrooms.");
+      const ax = e as { response?: { status?: number; data?: { detail?: string } } };
+      const detail = ax?.response?.data?.detail;
+      const st = ax?.response?.status;
+      const suffix =
+        typeof detail === "string" && detail.trim()
+          ? ` ${detail.trim()}`
+          : st != null
+            ? ` (HTTP ${st})`
+            : "";
+      showToast(`Could not load classrooms.${suffix}`);
     } finally {
       setClassroomLoading(false);
     }

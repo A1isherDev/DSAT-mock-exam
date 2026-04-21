@@ -1876,17 +1876,6 @@ export default function AdminPage() {
                                     onConsumeIntent={() => setAssignmentsIntent(null)}
                                     defaultPastpaperScope={defaultBulkPastpaperSubjectScope()}
                                 />
-                                {consoleMode === "admin" ? (
-                                    <div className="mt-10 max-w-6xl space-y-3 border-t border-slate-200 pt-10">
-                                        <div>
-                                            <h2 className="text-lg font-bold text-slate-900">LMS assessments (homework)</h2>
-                                            <p className="mt-1 text-xs text-slate-500">
-                                                Assign assessment sets to classrooms from the same Assignments area as pastpapers and timed mocks.
-                                            </p>
-                                        </div>
-                                        <AssessmentClassroomAssignPanel canAssign={can("assign_access")} showToast={showToast} />
-                                    </div>
-                                ) : null}
                             </>
                         )}
                         {activeTab === "assessments" && (

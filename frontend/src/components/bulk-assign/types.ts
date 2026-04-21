@@ -2,7 +2,7 @@ export type PlatformSubject = "MATH" | "READING_WRITING";
 
 export type PastpaperScope = "BOTH" | "MATH" | "READING_WRITING";
 
-export type BulkAssignKind = "pastpaper" | "timed_mock";
+export type BulkAssignKind = "pastpaper" | "timed_mock" | "assessment_homework";
 
 export type BulkAssignProfile = {
   subject_grants: { math: boolean; english: boolean };
