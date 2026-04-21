@@ -19,4 +19,5 @@ urlpatterns = [
     path('api/access/', include('access.urls')),
     path('api/realtime/', include('realtime.urls')),
     path('api/vocabulary/', include('vocabulary.urls')),
+    path('api/assessments/', include('assessments.urls')),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

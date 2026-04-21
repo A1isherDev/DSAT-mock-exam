@@ -680,7 +680,9 @@ class ClassroomViewSet(ModelViewSet):
         two_weeks_ago = now - timedelta(days=14)
 
         assignments_qs = (
-            Assignment.objects.filter(classroom=classroom).select_related("created_by").order_by("-created_at")
+            Assignment.objects.filter(classroom=classroom)
+            .select_related("created_by", "assessment_homework__assessment_set")
+            .order_by("-created_at")
         )
         subs_map = {}
         if is_student:
@@ -691,10 +693,66 @@ class ClassroomViewSet(ModelViewSet):
                 )
             }
 
+        # Assessment results keyed by Assignment.id for the current student.
+        assessment_summary_by_assignment: dict[int, dict] = {}
+        if is_student:
+            try:
+                from assessments.models import HomeworkAssignment as AssessHW, AssessmentAttempt, AssessmentResult
+
+                hw_rows = list(
+                    AssessHW.objects.filter(classroom=classroom).select_related("assessment_set", "assignment")
+                )
+                if hw_rows:
+                    hw_by_assignment = {h.assignment_id: h for h in hw_rows}
+                    atts = (
+                        AssessmentAttempt.objects.filter(
+                            student=user,
+                            homework_id__in=[h.id for h in hw_rows],
+                        )
+                        .order_by("-started_at", "-id")
+                    )
+                    latest_by_hw: dict[int, AssessmentAttempt] = {}
+                    for a in atts:
+                        if a.homework_id not in latest_by_hw:
+                            latest_by_hw[a.homework_id] = a
+                    res_by_attempt = {
+                        r.attempt_id: r
+                        for r in AssessmentResult.objects.filter(attempt_id__in=[a.id for a in latest_by_hw.values()])
+                    }
+                    for assign_id, h in hw_by_assignment.items():
+                        a = latest_by_hw.get(h.id)
+                        r = res_by_attempt.get(a.id) if a else None
+                        assessment_summary_by_assignment[assign_id] = {
+                            "attempt_id": a.id if a else None,
+                            "status": (a.status if a else "not_started"),
+                            "submitted_at": a.submitted_at.isoformat() if a and a.submitted_at else None,
+                            "total_time_seconds": int(a.total_time_seconds) if a else 0,
+                            "result": (
+                                {
+                                    "score_points": str(r.score_points),
+                                    "max_points": str(r.max_points),
+                                    "percent": str(r.percent),
+                                    "correct_count": r.correct_count,
+                                    "total_questions": r.total_questions,
+                                    "graded_at": r.graded_at.isoformat() if r.graded_at else None,
+                                }
+                                if r
+                                else None
+                            ),
+                        }
+            except Exception:
+                logger.exception(
+                    "assessment_workspace_hydration_failed classroom_id=%s user_id=%s",
+                    classroom.pk,
+                    request.user.pk,
+                )
+
         def assignment_dict(a: Assignment):
             ser = AssignmentSerializer(a, context={"request": request})
             d = dict(ser.data)
             d["workflow_status"] = submission_workflow_status(subs_map.get(a.id)) if is_student else None
+            if is_student:
+                d["assessment"] = assessment_summary_by_assignment.get(a.id)
             return d
 
         your_assignments = [assignment_dict(a) for a in assignments_qs]
@@ -733,6 +791,24 @@ class ClassroomViewSet(ModelViewSet):
                         },
                     }
                 )
+            # Add assessment results (auto graded) to the same panel.
+            try:
+                for a in assignments_qs:
+                    if a.id not in assessment_summary_by_assignment:
+                        continue
+                    summary = assessment_summary_by_assignment[a.id]
+                    if not summary or not summary.get("result"):
+                        continue
+                    recently_graded.append(
+                        {
+                            "assignment": {"id": a.id, "title": a.title},
+                            "submission_id": None,
+                            "workflow_status": "GRADED",
+                            "assessment_result": summary["result"],
+                        }
+                    )
+            except Exception:
+                pass
 
         new_posts = [
             ClassPostSerializer(p, context={"request": request}).data

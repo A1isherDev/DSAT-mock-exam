@@ -105,6 +105,22 @@ class SubdomainAPIGuardMiddleware:
                     },
                     status=403,
                 )
+            # Assessments: admin assigns sets as homework + needs to list sets.
+            if path.startswith("/api/assessments/"):
+                # Allow homework assignment and read-only browsing on admin console.
+                if path.startswith("/api/assessments/homework/assign/"):
+                    return self.get_response(request)
+                if path.startswith("/api/assessments/admin/"):
+                    if method == "GET":
+                        return self.get_response(request)
+                    return JsonResponse(
+                        {"detail": "Assessment authoring is disabled on admin subdomain. Use questions subdomain."},
+                        status=403,
+                    )
+                # Student attempt flows live on main domain; block on admin for clarity.
+                return JsonResponse(
+                    {"detail": "This assessments endpoint is not available on admin subdomain."}, status=403
+                )
             return JsonResponse(
                 {"detail": "This endpoint is not available on admin subdomain."}, status=403
             )
@@ -112,6 +128,9 @@ class SubdomainAPIGuardMiddleware:
         # Questions subdomain: exams admin CRUD endpoints.
         if kind == "questions":
             if path.startswith("/api/exams/admin/"):
+                return self.get_response(request)
+            # Assessments authoring CRUD endpoints live here (create/edit/delete sets/questions).
+            if path.startswith("/api/assessments/admin/"):
                 return self.get_response(request)
             # Still allow bulk assign if desired from questions (harmless), but not required.
             if path.startswith("/api/exams/bulk_assign"):

@@ -208,6 +208,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
     )
     practice_bundle_tests = serializers.SerializerMethodField(read_only=True)
     locks_file_upload = serializers.SerializerMethodField(read_only=True)
+    assessment_homework = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Assignment
@@ -223,6 +224,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "practice_scope",
             "practice_bundle_tests",
             "locks_file_upload",
+            "assessment_homework",
             "module",
             "external_url",
             "attachment_file",
@@ -244,7 +246,30 @@ class AssignmentSerializer(serializers.ModelSerializer):
 
     def get_locks_file_upload(self, obj):
         """True when this homework includes assigned practice/mock sections (auto turn-in when tests finish)."""
-        return bool(assignment_target_practice_test_ids(obj))
+        # Also lock for assessment homework (no file submissions / manual grading).
+        return bool(assignment_target_practice_test_ids(obj) or getattr(obj, "assessment_homework", None))
+
+    def get_assessment_homework(self, obj):
+        """
+        When this `classes.Assignment` is backed by an assessment homework, expose enough metadata
+        for the homework page to render a start/resume/result CTA.
+        """
+        hw = getattr(obj, "assessment_homework", None)
+        if not hw:
+            return None
+        aset = getattr(hw, "assessment_set", None)
+        if not aset:
+            return {"homework_id": hw.id, "set": None}
+        return {
+            "homework_id": hw.id,
+            "set": {
+                "id": aset.id,
+                "subject": aset.subject,
+                "category": aset.category,
+                "title": aset.title,
+                "description": aset.description,
+            },
+        }
 
     def get_created_by(self, obj):
         u = obj.created_by

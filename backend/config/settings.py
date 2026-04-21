@@ -4,6 +4,7 @@ Reads all configuration from environment variables.
 """
 
 import os
+import sys
 from pathlib import Path
 from datetime import timedelta
 from dotenv import load_dotenv
@@ -79,6 +80,7 @@ INSTALLED_APPS = [
     'classes',
     'realtime',
     'vocabulary',
+    'assessments.apps.AssessmentsConfig',
 ]
 
 MIDDLEWARE = [
@@ -121,6 +123,13 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Uses PostgreSQL in production (when DATABASE_URL is set), SQLite locally.
 
 DATABASE_URL = os.getenv('DATABASE_URL', '')
+
+# Local test safety: allow forcing SQLite even if DATABASE_URL points to Postgres
+# (useful when psycopg isn't installed locally).
+FORCE_SQLITE_FOR_TESTS = os.getenv("LMS_FORCE_SQLITE_FOR_TESTS", "").lower() in ("1", "true", "yes")
+RUNNING_TESTS = any(a in ("test", "pytest") for a in sys.argv)
+if RUNNING_TESTS and FORCE_SQLITE_FOR_TESTS:
+    DATABASE_URL = ""
 
 if not DEBUG and not DATABASE_URL:
     raise ValueError("DATABASE_URL must be set in production")
@@ -166,6 +175,11 @@ else:
 # Production: fail fast if Redis is not configured (LocMem breaks cross-worker throttles and metrics).
 CLASSROOM_ENFORCE_REDIS_CACHE = _env_bool(
     "CLASSROOM_ENFORCE_REDIS_CACHE",
+    default_when_unset=(not DEBUG),
+)
+# Assessments: same contract — assignment throttles + abuse counters require shared Redis in prod.
+ASSESSMENT_ENFORCE_REDIS_CACHE = _env_bool(
+    "ASSESSMENT_ENFORCE_REDIS_CACHE",
     default_when_unset=(not DEBUG),
 )
 # Homework submit counters require a shared backend; disable only for single-process local dev.
@@ -242,7 +256,96 @@ CELERY_BEAT_SCHEDULE = {
         "task": "classes.tasks.prune_homework_staged_uploads",
         "schedule": crontab(hour=3, minute=15),
     },
+    "assessments-abandon-inactive-attempts": {
+        "task": "assessments.tasks.abandon_inactive_attempts",
+        "schedule": crontab(minute="*/10"),
+    },
+    "assessments-prune-audit-events": {
+        "task": "assessments.tasks.prune_assessment_audit_events",
+        "schedule": crontab(hour=4, minute=10),
+    },
+    "assessments-dispatch-pending-grading": {
+        "task": "assessments.tasks.dispatch_pending_grading",
+        "schedule": crontab(minute="*/1"),
+    },
+    "assessments-alert-on-slo": {
+        "task": "assessments.tasks.alert_on_assessment_slo",
+        "schedule": crontab(minute="*/5"),
+    },
+    "assessments-homework-abuse-db": {
+        "task": "assessments.tasks.alert_homework_assignment_abuse_db",
+        "schedule": crontab(minute="*/5"),
+    },
+    "assessments-prune-security-alerts": {
+        "task": "assessments.tasks.prune_security_alerts",
+        "schedule": crontab(hour=4, minute=40),
+    },
 }
+
+# Assessments: attempt inactivity timeout (seconds) before auto-abandon.
+ASSESSMENT_ATTEMPT_INACTIVITY_TIMEOUT_SECONDS = int(
+    os.getenv("ASSESSMENT_ATTEMPT_INACTIVITY_TIMEOUT_SECONDS", "3600")
+)
+
+# Assessments: require an answer for every question before submit.
+ASSESSMENT_ENFORCE_COMPLETENESS = os.getenv("ASSESSMENT_ENFORCE_COMPLETENESS", "False").lower() == "true"
+
+# Assessments: active time tracking (seconds). We only count time between server-observed events,
+# capped per interaction and ignored after idle gaps.
+ASSESSMENT_ACTIVE_IDLE_THRESHOLD_SECONDS = int(os.getenv("ASSESSMENT_ACTIVE_IDLE_THRESHOLD_SECONDS", "90"))
+ASSESSMENT_ACTIVE_SLICE_CAP_SECONDS = int(os.getenv("ASSESSMENT_ACTIVE_SLICE_CAP_SECONDS", "45"))
+
+# Assessments: maximum lifetime for an attempt (seconds) before rejecting writes/submission.
+ASSESSMENT_MAX_ATTEMPT_LIFETIME_SECONDS = int(os.getenv("ASSESSMENT_MAX_ATTEMPT_LIFETIME_SECONDS", str(6 * 60 * 60)))
+
+# Assessments: grading retry policy (Celery).
+ASSESSMENT_GRADING_MAX_RETRIES = int(os.getenv("ASSESSMENT_GRADING_MAX_RETRIES", "3"))
+ASSESSMENT_GRADING_RETRY_COUNTDOWN_SECONDS = int(os.getenv("ASSESSMENT_GRADING_RETRY_COUNTDOWN_SECONDS", "10"))
+
+# Assessments: backpressure and dispatcher.
+ASSESSMENT_GRADING_MAX_INFLIGHT = int(os.getenv("ASSESSMENT_GRADING_MAX_INFLIGHT", "500"))
+ASSESSMENT_GRADING_DISPATCH_BATCH = int(os.getenv("ASSESSMENT_GRADING_DISPATCH_BATCH", "50"))
+ASSESSMENT_GRADING_MAX_ENQUEUE_PER_MINUTE = int(os.getenv("ASSESSMENT_GRADING_MAX_ENQUEUE_PER_MINUTE", "2000"))
+
+# Assessments: admin safety rails.
+ASSESSMENT_ADMIN_REQUEUE_COOLDOWN_SECONDS = int(os.getenv("ASSESSMENT_ADMIN_REQUEUE_COOLDOWN_SECONDS", "60"))
+ASSESSMENT_ADMIN_REQUEUE_MAX_PER_ATTEMPT = int(os.getenv("ASSESSMENT_ADMIN_REQUEUE_MAX_PER_ATTEMPT", "6"))
+
+# Assessments: ops alerting (optional). If unset, falls back to CLASSROOM_OPS_WEBHOOK_URL.
+ASSESSMENT_OPS_WEBHOOK_URL = os.getenv("ASSESSMENT_OPS_WEBHOOK_URL", "").strip()
+
+# Assessments: alert thresholds (SLO-based defaults).
+ASSESSMENT_ALERT_P90_LATENCY_SECONDS = float(os.getenv("ASSESSMENT_ALERT_P90_LATENCY_SECONDS", "30"))
+ASSESSMENT_ALERT_FAILURE_RATE_PCT = float(os.getenv("ASSESSMENT_ALERT_FAILURE_RATE_PCT", "0.5"))
+ASSESSMENT_ALERT_PENDING_OLDER_THAN_SECONDS = int(os.getenv("ASSESSMENT_ALERT_PENDING_OLDER_THAN_SECONDS", "600"))
+ASSESSMENT_ALERT_PENDING_OLDER_THAN_COUNT = int(os.getenv("ASSESSMENT_ALERT_PENDING_OLDER_THAN_COUNT", "200"))
+
+# Homework assignment abuse detection (cache buckets + optional DB backstop).
+ASSESSMENT_HW_ABUSE_WINDOW_SECONDS = int(os.getenv("ASSESSMENT_HW_ABUSE_WINDOW_SECONDS", "300"))
+ASSESSMENT_HW_ABUSE_ALERT_USER_COUNT = int(os.getenv("ASSESSMENT_HW_ABUSE_ALERT_USER_COUNT", "25"))
+ASSESSMENT_HW_ABUSE_ALERT_CLASS_COUNT = int(os.getenv("ASSESSMENT_HW_ABUSE_ALERT_CLASS_COUNT", "80"))
+ASSESSMENT_HW_ABUSE_ALERT_GLOBAL_COUNT = int(os.getenv("ASSESSMENT_HW_ABUSE_ALERT_GLOBAL_COUNT", "400"))
+ASSESSMENT_HW_ABUSE_DB_LOOKBACK_MINUTES = int(os.getenv("ASSESSMENT_HW_ABUSE_DB_LOOKBACK_MINUTES", "5"))
+ASSESSMENT_HW_ABUSE_DB_GLOBAL_THRESHOLD = int(os.getenv("ASSESSMENT_HW_ABUSE_DB_GLOBAL_THRESHOLD", "500"))
+
+# Optional auto-mitigation when sliding-window abuse thresholds fire (requires shared Redis cache).
+ASSESSMENT_HW_AUTO_MITIGATE = _env_bool("ASSESSMENT_HW_AUTO_MITIGATE", default_when_unset=False)
+ASSESSMENT_HW_MITIGATE_USER_BLOCK_SECONDS = int(os.getenv("ASSESSMENT_HW_MITIGATE_USER_BLOCK_SECONDS", "900"))
+ASSESSMENT_HW_MITIGATE_CLASS_STRICT_SECONDS = int(os.getenv("ASSESSMENT_HW_MITIGATE_CLASS_STRICT_SECONDS", "1800"))
+ASSESSMENT_HW_MITIGATE_GLOBAL_COOLDOWN_SECONDS = int(os.getenv("ASSESSMENT_HW_MITIGATE_GLOBAL_COOLDOWN_SECONDS", "120"))
+ASSESSMENT_HW_MITIGATE_GLOBAL_BLOCK_ASSIGN = _env_bool(
+    "ASSESSMENT_HW_MITIGATE_GLOBAL_BLOCK_ASSIGN",
+    default_when_unset=False,
+)
+
+# Sliding-window Redis ZSET memory cap (events per key).
+ASSESSMENT_SW_ZSET_MAX_EVENTS = int(os.getenv("ASSESSMENT_SW_ZSET_MAX_EVENTS", "5000"))
+
+# SecurityAlert retention (days).
+ASSESSMENT_SECURITY_ALERT_RETENTION_DAYS = int(os.getenv("ASSESSMENT_SECURITY_ALERT_RETENTION_DAYS", "180"))
+
+# Assessments: audit retention (days). Old rows are pruned by a periodic task (or cron).
+ASSESSMENT_AUDIT_RETENTION_DAYS = int(os.getenv("ASSESSMENT_AUDIT_RETENTION_DAYS", "180"))
 
 
 # ─── Password Validation ──────────────────────────────────────────────────────
@@ -365,6 +468,18 @@ REST_FRAMEWORK = {
         'homework_submit': os.getenv('CLASSROOM_HOMEWORK_SUBMIT_THROTTLE', '120/hour'),
         'homework_submit_global': os.getenv('CLASSROOM_HOMEWORK_SUBMIT_GLOBAL_THROTTLE', '5000/hour'),
         'homework_submit_class': os.getenv('CLASSROOM_HOMEWORK_SUBMIT_PER_CLASS_THROTTLE', '800/hour'),
+        # Assessments: per-attempt answer writes.
+        'assessment_answer': os.getenv('ASSESSMENT_ANSWER_THROTTLE', '60/minute'),
+        # Assessments: staff homework assignment actions.
+        'assessment_assign': os.getenv('ASSESSMENT_ASSIGN_THROTTLE', '30/minute'),
+        # Per classroom (all staff combined) and global (entire system).
+        'assessment_assign_classroom': os.getenv('ASSESSMENT_ASSIGN_CLASSROOM_THROTTLE', '120/hour'),
+        'assessment_assign_global': os.getenv('ASSESSMENT_ASSIGN_GLOBAL_THROTTLE', '2000/hour'),
+        # Tighter limit when a classroom is under mitigation (auto after abuse spike).
+        'assessment_assign_classroom_mitigated': os.getenv(
+            'ASSESSMENT_ASSIGN_CLASSROOM_MITIGATED_THROTTLE',
+            '40/hour',
+        ),
     }
 }
 

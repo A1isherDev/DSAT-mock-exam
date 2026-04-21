@@ -6,8 +6,11 @@ from rest_framework.permissions import BasePermission
 
 from . import constants
 from .services import (
+    can_edit_tests,
     actor_subject_probe_for_domain_perm,
     authorize,
+    can_view_tests,
+    can_assign_tests,
     can_manage_questions,
     get_effective_permission_codenames,
 )
@@ -76,3 +79,35 @@ class RequiresSubmitTest(BasePermission):
 
     def has_permission(self, request, view):
         return authorize(request.user, constants.PERM_SUBMIT_TEST)
+
+
+class CanViewTests(BasePermission):
+    """
+    View test-like library content (list/retrieve).
+    Uses access.services.can_view_tests with a safe platform-subject probe.
+    """
+
+    def has_permission(self, request, view):
+        subj = actor_subject_probe_for_domain_perm(request.user)
+        return bool(subj and can_view_tests(request.user, subj))
+
+
+class CanEditTests(BasePermission):
+    """
+    Edit test-like content (create/update/delete).
+    Uses access.services.can_edit_tests with a safe platform-subject probe.
+    """
+
+    def has_permission(self, request, view):
+        subj = actor_subject_probe_for_domain_perm(request.user)
+        return bool(subj and can_edit_tests(request.user, subj))
+
+
+class CanAssignTests(BasePermission):
+    """
+    Assign tests/sets into classrooms (homework).
+    """
+
+    def has_permission(self, request, view):
+        subj = actor_subject_probe_for_domain_perm(request.user)
+        return bool(subj and can_assign_tests(request.user, subj))

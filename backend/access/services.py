@@ -414,7 +414,8 @@ def can_edit_tests(user, platform_subject: str) -> bool:
     if normalized_role(user) == constants.ROLE_STUDENT:
         return False
     if is_global_scope_staff(user):
-        return constants.PERM_MANAGE_TESTS in perms
+        # Use authorize() so test_admin special-cases and subject contract are consistent.
+        return authorize(user, constants.PERM_EDIT_TESTS, subject=platform_subject)
     return authorize(user, constants.PERM_EDIT_TESTS, subject=platform_subject)
 
 
@@ -441,6 +442,28 @@ def can_view_tests(user, platform_subject: str) -> bool:
         return constants.PERM_MANAGE_TESTS in perms or constants.PERM_ASSIGN_ACCESS in perms
     if can_edit_tests(user, platform_subject):
         return True
+    return authorize(user, constants.PERM_ASSIGN_ACCESS, subject=platform_subject)
+
+
+def can_assign_tests(user, platform_subject: str) -> bool:
+    """
+    **Assign** tests/sets into classrooms (homework).
+
+    Semantics:
+    - teachers: must have subject-scoped ``assign_access`` for their platform subject
+    - global staff: must have ``assign_access`` (or wildcard); manage_tests alone is not enough
+    """
+    if not user or not getattr(user, "is_authenticated", False):
+        return False
+    if not isinstance(platform_subject, str) or not platform_subject.strip():
+        return False
+    platform_subject = platform_subject.strip()
+    perms = get_effective_permission_codenames(user)
+    if constants.WILDCARD in perms:
+        return True
+    if normalized_role(user) == constants.ROLE_STUDENT:
+        return False
+    # Use authorize so subject contract + role-specific rules stay centralized.
     return authorize(user, constants.PERM_ASSIGN_ACCESS, subject=platform_subject)
 
 
