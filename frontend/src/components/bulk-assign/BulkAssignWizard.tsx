@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
+  Building2,
   CheckCircle2,
   ClipboardList,
   Layers,
@@ -14,13 +15,13 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { adminApi } from "@/lib/api";
+import { adminApi, assessmentsApi, classesApi } from "@/lib/api";
+import { getSubject } from "@/lib/permissions";
 import {
   formatMockExamAdminLabel,
   formatPastpaperPackAdminLabel,
   pastpaperSectionSummary,
 } from "@/lib/adminAssignFormat";
-import { AssessmentClassroomAssignPanel } from "./AssessmentClassroomAssignPanel";
 import { AssignmentHistoryPanel } from "./AssignmentHistoryPanel";
 import { SearchableSelect, type SearchableOption } from "./SearchableSelect";
 import type {
@@ -68,17 +69,26 @@ function studentInClassroom(u: BulkAssignUserRow, classroomId: number): boolean 
   return (u.bulk_assign_profile?.classrooms || []).some((c) => c.id === classroomId);
 }
 
+function normalizeClassroomSubject(raw: unknown): "math" | "english" | null {
+  const u = String(raw ?? "")
+    .trim()
+    .toUpperCase();
+  if (u === "MATH") return "math";
+  if (u === "ENGLISH") return "english";
+  return null;
+}
+
 const BTN_PRIMARY =
   "btn-primary text-sm !px-4 !py-2.5 inline-flex items-center gap-2 justify-center font-bold disabled:opacity-50";
 const BTN_GHOST = "btn-secondary text-sm !px-4 !py-2.5 font-semibold";
 const INPUT = "input-modern";
 
 const STEP_META = [
-  { id: 1, title: "Assignment type", hint: "Pastpaper library or timed mock" },
-  { id: 2, title: "Content", hint: "Pick one exam or card" },
-  { id: 3, title: "Students", hint: "Filter, review access, multi-select" },
-  { id: 4, title: "Configuration", hint: "Sections and form filter (persisted with dispatch)" },
-  { id: 5, title: "Review", hint: "Confirm and grant access" },
+  { id: 1, title: "Assignment type", hint: "Pastpaper, timed mock, or assessments" },
+  { id: 2, title: "Content", hint: "Exam shell, card, or assessment set" },
+  { id: 3, title: "Recipients", hint: "Students (library) or classroom (homework)" },
+  { id: 4, title: "Configuration", hint: "Sections / filters, or due date & notes" },
+  { id: 5, title: "Review", hint: "Confirm and run" },
 ] as const;
 
 export type BulkAssignWizardProps = {
@@ -135,8 +145,6 @@ export function BulkAssignWizard({
   const [step, setStep] = useState(1);
   const [kind, setKind] = useState<BulkAssignKind | null>(null);
 
-  const maxStep = useMemo(() => (kind === "assessment_homework" ? 2 : 5), [kind]);
-
   const [mockExamId, setMockExamId] = useState<number | null>(null);
   const [pastpaperPackId, setPastpaperPackId] = useState<number | null>(null);
   const [pastpaperScope, setPastpaperScope] = useState<PastpaperScope>("BOTH");
@@ -151,6 +159,18 @@ export function BulkAssignWizard({
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [assessmentSets, setAssessmentSets] = useState<Array<Record<string, unknown>>>([]);
+  const [assessmentSetsLoading, setAssessmentSetsLoading] = useState(false);
+  const [assessmentSetId, setAssessmentSetId] = useState<number | null>(null);
+  const [assessmentClassrooms, setAssessmentClassrooms] = useState<Array<Record<string, unknown>> | null>(null);
+  const [assessmentClassroomsLoading, setAssessmentClassroomsLoading] = useState(false);
+  const [assessmentClassroomId, setAssessmentClassroomId] = useState<number | null>(null);
+  const [assessmentTitle, setAssessmentTitle] = useState("");
+  const [assessmentInstructions, setAssessmentInstructions] = useState("");
+  const [assessmentDue, setAssessmentDue] = useState("");
+  const [assessmentDupAssignmentId, setAssessmentDupAssignmentId] = useState<number | null>(null);
+  const assessmentIdempotencyRef = useRef<string | null>(null);
 
   const fetchHistory = useCallback(async () => {
     if (!canAssign) return;
@@ -184,9 +204,93 @@ export function BulkAssignWizard({
     onConsumeIntent();
   }, [intent, onConsumeIntent, defaultPastpaperScope]);
 
+  const fetchAssessmentSets = useCallback(async () => {
+    setAssessmentSetsLoading(true);
+    try {
+      const dom = getSubject();
+      const data = await assessmentsApi.adminListSets(dom ? { subject: dom } : undefined);
+      setAssessmentSets(Array.isArray(data) ? (data as Array<Record<string, unknown>>) : []);
+    } catch {
+      setAssessmentSets([]);
+      showToast("Could not load assessment sets.");
+    } finally {
+      setAssessmentSetsLoading(false);
+    }
+  }, [showToast]);
+
+  const fetchAssessmentClassrooms = useCallback(async () => {
+    setAssessmentClassroomsLoading(true);
+    try {
+      const all = await classesApi.list();
+      setAssessmentClassrooms(Array.isArray(all) ? (all as Array<Record<string, unknown>>) : []);
+    } catch (e: unknown) {
+      setAssessmentClassrooms([]);
+      const ax = e as { response?: { status?: number; data?: { detail?: string } } };
+      const detail = ax?.response?.data?.detail;
+      const st = ax?.response?.status;
+      const suffix =
+        typeof detail === "string" && detail.trim()
+          ? ` ${detail.trim()}`
+          : st != null
+            ? ` (HTTP ${st})`
+            : "";
+      showToast(`Could not load classrooms.${suffix}`);
+    } finally {
+      setAssessmentClassroomsLoading(false);
+    }
+  }, [showToast]);
+
   useEffect(() => {
-    if (kind === "assessment_homework" && step > 2) setStep(2);
-  }, [kind, step]);
+    if (!canAssign || kind !== "assessment_homework") return;
+    void fetchAssessmentSets();
+    void fetchAssessmentClassrooms();
+  }, [canAssign, kind, fetchAssessmentSets, fetchAssessmentClassrooms]);
+
+  useEffect(() => {
+    if (kind === "assessment_homework") {
+      setMockExamId(null);
+      setPastpaperPackId(null);
+      setSelectedUserIds([]);
+      setStudentQuery("");
+      setClassroomFilter("all");
+      setTrackFilter("ALL");
+      return;
+    }
+    setAssessmentSetId(null);
+    setAssessmentClassroomId(null);
+    setAssessmentTitle("");
+    setAssessmentInstructions("");
+    setAssessmentDue("");
+    setAssessmentDupAssignmentId(null);
+    assessmentIdempotencyRef.current = null;
+  }, [kind]);
+
+  useEffect(() => {
+    assessmentIdempotencyRef.current = null;
+  }, [assessmentClassroomId, assessmentSetId]);
+
+  useEffect(() => {
+    if (kind !== "assessment_homework" || !assessmentClassroomId || !assessmentSetId) {
+      setAssessmentDupAssignmentId(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const rows = await classesApi.listAssignments(assessmentClassroomId);
+        const list = Array.isArray(rows) ? rows : [];
+        const hit = list.find((a: { assessment_homework?: { set?: { id?: number } }; id?: number }) => {
+          return Number(a?.assessment_homework?.set?.id) === Number(assessmentSetId);
+        });
+        if (!cancelled) setAssessmentDupAssignmentId(hit?.id != null ? Number(hit.id) : null);
+      } catch {
+        if (!cancelled) setAssessmentDupAssignmentId(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [kind, assessmentClassroomId, assessmentSetId]);
 
   const resetFlow = useCallback(
     (opts?: { keepResult?: boolean }) => {
@@ -202,6 +306,13 @@ export function BulkAssignWizard({
       setClassroomFilter("all");
       setTrackFilter("ALL");
       setError(null);
+      setAssessmentSetId(null);
+      setAssessmentClassroomId(null);
+      setAssessmentTitle("");
+      setAssessmentInstructions("");
+      setAssessmentDue("");
+      setAssessmentDupAssignmentId(null);
+      assessmentIdempotencyRef.current = null;
       if (!opts?.keepResult) setLastResult(null);
     },
     [defaultPastpaperScope],
@@ -258,9 +369,6 @@ export function BulkAssignWizard({
       if (kind === "timed_mock") {
         return mockRowEligibility(u.bulk_assign_profile, subjectsForMock);
       }
-      if (kind === "assessment_homework") {
-        return { selectable: false, reason: "Use the assessment homework form (step 2)." };
-      }
       return { selectable: true };
     },
     [kind, subjectsForPastpaper, subjectsForMock],
@@ -297,19 +405,83 @@ export function BulkAssignWizard({
     [pastpaperPacks],
   );
 
+  const assessmentSetOptions: SearchableOption<number>[] = useMemo(
+    () =>
+      assessmentSets.map((s) => ({
+        value: Number(s.id),
+        primary: `#${s.id} · ${String(s.title || "")}`,
+        secondary: String(s.subject || ""),
+        keywords: `${s.id} ${s.title} ${s.subject}`,
+      })),
+    [assessmentSets],
+  );
+
+  const assessmentClassroomOptions: SearchableOption<number>[] = useMemo(
+    () =>
+      (assessmentClassrooms || []).map((c) => ({
+        value: Number(c.id),
+        primary: String(c.name || "Class"),
+        secondary: `#${c.id} · ${String(c.subject || "").toLowerCase()}`,
+        keywords: `${c.id} ${c.name} ${c.subject}`,
+      })),
+    [assessmentClassrooms],
+  );
+
+  const selectedAssessmentSet = useMemo(
+    () => assessmentSets.find((s) => Number(s.id) === Number(assessmentSetId)) ?? null,
+    [assessmentSets, assessmentSetId],
+  );
+
+  const selectedAssessmentClassroom = useMemo(
+    () => (assessmentClassrooms || []).find((c) => Number(c.id) === Number(assessmentClassroomId)) ?? null,
+    [assessmentClassrooms, assessmentClassroomId],
+  );
+
+  const assessmentSubjectMismatch = useMemo(() => {
+    if (!selectedAssessmentSet || !selectedAssessmentClassroom) return false;
+    const cSub = normalizeClassroomSubject(selectedAssessmentClassroom.subject);
+    const sSub = String(selectedAssessmentSet.subject || "").toLowerCase();
+    if (!cSub || !sSub) return false;
+    return cSub !== sSub;
+  }, [selectedAssessmentSet, selectedAssessmentClassroom]);
+
   const canGoNext = useMemo(() => {
     if (step === 1) return !!kind;
     if (step === 2) {
-      if (kind === "assessment_homework") return false;
+      if (kind === "assessment_homework") return assessmentSetId != null;
       if (kind === "timed_mock") return mockExamId != null;
       if (kind === "pastpaper") return pastpaperPackId != null && resolvedPastpaperSectionIds.length > 0;
     }
-    if (step === 3) return selectedUserIds.length > 0;
+    if (step === 3) {
+      if (kind === "assessment_homework") {
+        return assessmentClassroomId != null && !assessmentSubjectMismatch;
+      }
+      return selectedUserIds.length > 0;
+    }
     if (step === 4) return true;
+    if (step === 5 && kind === "assessment_homework") {
+      return (
+        assessmentSetId != null &&
+        assessmentClassroomId != null &&
+        !assessmentSubjectMismatch &&
+        !assessmentDupAssignmentId
+      );
+    }
     return true;
-  }, [step, kind, mockExamId, pastpaperPackId, resolvedPastpaperSectionIds.length, selectedUserIds.length]);
+  }, [
+    step,
+    kind,
+    mockExamId,
+    pastpaperPackId,
+    resolvedPastpaperSectionIds.length,
+    selectedUserIds.length,
+    assessmentSetId,
+    assessmentClassroomId,
+    assessmentSubjectMismatch,
+    assessmentDupAssignmentId,
+  ]);
 
-  const goNext = () => setStep((s) => Math.min(maxStep, s + 1));
+  const goNext = () => setStep((s) => Math.min(5, s + 1));
   const goBack = () => setStep((s) => Math.max(1, s - 1));
 
   const selectEligibleInView = () => {
@@ -418,7 +590,72 @@ export function BulkAssignWizard({
 
   const submit = async () => {
     if (!canAssign || !kind) return;
-    if (kind === "assessment_homework") return;
+
+    if (kind === "assessment_homework") {
+      if (!assessmentSetId || !assessmentClassroomId || assessmentSubjectMismatch) {
+        showToast("Pick an assessment set and a classroom with a matching subject.");
+        return;
+      }
+      if (assessmentDupAssignmentId) {
+        showToast("This classroom already has homework for that set. Change selection or remove the duplicate assignment first.");
+        return;
+      }
+      setSubmitting(true);
+      setError(null);
+      const idempotencyKey =
+        assessmentIdempotencyRef.current ??
+        (typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+      assessmentIdempotencyRef.current = idempotencyKey;
+      try {
+        await assessmentsApi.assignHomework(
+          {
+            classroom_id: assessmentClassroomId,
+            set_id: assessmentSetId,
+            title: assessmentTitle.trim() || undefined,
+            instructions: assessmentInstructions.trim() || undefined,
+            due_at: assessmentDue ? new Date(assessmentDue).toISOString() : null,
+          },
+          idempotencyKey,
+        );
+        assessmentIdempotencyRef.current = null;
+        showToast("Assessment homework assigned.");
+        setLastResult({
+          ok: true,
+          message: "Homework row created on the class stream.",
+        });
+        await onAfterSuccess();
+        resetFlow({ keepResult: true });
+      } catch (err: unknown) {
+        assessmentIdempotencyRef.current = null;
+        const ax = err as { response?: { status?: number; data?: { detail?: string } } };
+        const detail = ax?.response?.data?.detail;
+        const msg = typeof detail === "string" ? detail : "Failed to assign assessment homework.";
+        setError(msg);
+        showToast(msg);
+        const st = ax?.response?.status;
+        if (st === 409 || st === 400) {
+          if (assessmentClassroomId && assessmentSetId) {
+            try {
+              const rows = await classesApi.listAssignments(assessmentClassroomId);
+              const list = Array.isArray(rows) ? rows : [];
+              const hit = list.find(
+                (a: { assessment_homework?: { set?: { id?: number } }; id?: number }) =>
+                  Number(a?.assessment_homework?.set?.id) === Number(assessmentSetId),
+              );
+              setAssessmentDupAssignmentId(hit?.id != null ? Number(hit.id) : null);
+            } catch {
+              /* ignore */
+            }
+          }
+        }
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
     if (selectedUserIds.length === 0) {
       showToast("Select at least one student");
       return;
@@ -520,8 +757,9 @@ export function BulkAssignWizard({
         <div>
           <h2 className="text-xl font-bold text-slate-900">Bulk assignment</h2>
           <p className="text-xs text-slate-500 mt-1 max-w-2xl">
-            Guided flow to grant library access. Access is enforced server-side; students without subject grants still
-            skip sections they cannot receive.
+            Guided five-step flow for library access (pastpaper / timed mock) or classroom homework (assessments). For
+            library runs, access is enforced server-side; students without subject grants still skip sections they
+            cannot receive.
           </p>
         </div>
         <button type="button" className={BTN_GHOST} onClick={() => resetFlow()}>
@@ -610,8 +848,6 @@ export function BulkAssignWizard({
           <li
             key={s.id}
             className={`flex-1 min-w-[120px] rounded-xl border px-3 py-2 text-left transition ${
-              kind === "assessment_homework" && s.id > maxStep ? "opacity-40 border-slate-100 bg-slate-50" : ""
-            } ${
               step === s.id
                 ? "border-indigo-300 bg-indigo-50/90 shadow-sm"
                 : s.id < step
@@ -683,11 +919,22 @@ export function BulkAssignWizard({
       )}
 
       {step === 2 && kind === "assessment_homework" && (
-        <div className="space-y-3">
-          <p className="text-xs text-slate-500">
-            Assign below. When you are done, use <strong>Done</strong> to return to the type step, or <strong>Reset wizard</strong> at the top.
-          </p>
-          <AssessmentClassroomAssignPanel canAssign={canAssign} showToast={showToast} />
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-3">
+          <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Assessment set</label>
+          {assessmentSetsLoading ? (
+            <div className="flex items-center gap-2 text-sm text-slate-600 py-4">
+              <Loader2 className="w-5 h-5 animate-spin text-violet-600" />
+              Loading sets…
+            </div>
+          ) : (
+            <SearchableSelect
+              options={assessmentSetOptions}
+              value={assessmentSetId}
+              onChange={(id) => setAssessmentSetId(id)}
+              placeholder="Search published sets…"
+              emptyHint="No assessment sets (author on the questions console first)"
+            />
+          )}
         </div>
       )}
 
@@ -750,7 +997,44 @@ export function BulkAssignWizard({
         </div>
       )}
 
-      {step === 3 && (
+      {step === 3 && kind === "assessment_homework" && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+          <div>
+            <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Classroom</label>
+            <p className="text-xs text-slate-500 mt-1 max-w-2xl">
+              Homework is created for the whole class. Pick the group that should see this assignment on the class
+              stream.
+            </p>
+          </div>
+          {assessmentClassroomsLoading ? (
+            <div className="flex items-center gap-2 text-sm text-slate-600 py-4">
+              <Loader2 className="w-5 h-5 animate-spin text-violet-600" />
+              Loading classrooms…
+            </div>
+          ) : (
+            <SearchableSelect
+              options={assessmentClassroomOptions}
+              value={assessmentClassroomId}
+              onChange={(id) => setAssessmentClassroomId(id)}
+              placeholder="Search classrooms…"
+              emptyHint="No classrooms returned for your account"
+            />
+          )}
+          {assessmentSubjectMismatch ? (
+            <p className="text-xs font-semibold text-red-600">
+              Classroom subject does not match this set — pick a matching pair to continue.
+            </p>
+          ) : null}
+          {assessmentDupAssignmentId ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              This classroom already has an assignment linked to this assessment set (assignment #
+              {assessmentDupAssignmentId}). The server may reject creating another duplicate.
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {step === 3 && kind !== "assessment_homework" && (
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
           <div className="p-4 border-b border-slate-100 flex flex-wrap gap-3 items-end bg-slate-50/80">
             <div className="flex flex-col gap-1 min-w-[160px] flex-1">
@@ -956,7 +1240,80 @@ export function BulkAssignWizard({
         </div>
       )}
 
-      {step === 5 && kind && (
+      {step === 4 && kind === "assessment_homework" && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+          <p className="text-sm text-slate-700">Optional fields shown to students on the class homework card.</p>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="flex flex-col gap-1">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Due at (optional)</span>
+              <input className={INPUT} type="datetime-local" value={assessmentDue} onChange={(e) => setAssessmentDue(e.target.value)} />
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Title override (optional)</span>
+              <input className={INPUT} value={assessmentTitle} onChange={(e) => setAssessmentTitle(e.target.value)} />
+            </div>
+            <div className="flex flex-col gap-1 md:col-span-2">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Instructions (optional)</span>
+              <textarea className={`${INPUT} min-h-[90px]`} value={assessmentInstructions} onChange={(e) => setAssessmentInstructions(e.target.value)} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {step === 5 && kind === "assessment_homework" && (
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-2">
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <ListChecks className="w-4 h-4 text-violet-600" /> Assessment set
+            </h3>
+            <p className="text-sm text-slate-700">
+              {selectedAssessmentSet
+                ? `#${selectedAssessmentSet.id} · ${String(selectedAssessmentSet.title || "")}`
+                : "—"}
+            </p>
+            <p className="text-xs text-slate-500">Subject: {String(selectedAssessmentSet?.subject || "—")}</p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-2">
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <Building2 className="w-4 h-4 text-indigo-600" /> Classroom
+            </h3>
+            <p className="text-sm text-slate-700">
+              {selectedAssessmentClassroom
+                ? `${String(selectedAssessmentClassroom.name || "Class")} (#${selectedAssessmentClassroom.id})`
+                : "—"}
+            </p>
+            <p className="text-xs text-slate-500">Subject: {String(selectedAssessmentClassroom?.subject || "—")}</p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:col-span-2 space-y-2">
+            <h3 className="text-sm font-bold text-slate-900">Homework details</h3>
+            <p className="text-xs text-slate-600">
+              <span className="font-semibold text-slate-800">Due:</span>{" "}
+              {assessmentDue ? new Date(assessmentDue).toLocaleString() : "—"}
+            </p>
+            <p className="text-xs text-slate-600">
+              <span className="font-semibold text-slate-800">Title override:</span> {assessmentTitle.trim() || "—"}
+            </p>
+            <p className="text-xs text-slate-600 whitespace-pre-wrap">
+              <span className="font-semibold text-slate-800">Instructions:</span> {assessmentInstructions.trim() || "—"}
+            </p>
+          </div>
+          {assessmentDupAssignmentId ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 md:col-span-2">
+              Duplicate warning: assignment #{assessmentDupAssignmentId} already uses this set on this class. Confirm
+              may still fail server-side.
+            </div>
+          ) : null}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:col-span-2 space-y-2">
+            <h3 className="text-sm font-bold text-slate-900">What happens next</h3>
+            <p className="text-xs text-slate-600">
+              Confirm creates a homework row on the class stream (not a bulk library dispatch). Assignment history below
+              stays for pastpaper / timed mock runs only.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {step === 5 && kind && kind !== "assessment_homework" && (
         <div className="grid gap-4 md:grid-cols-2">
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-2">
             <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
@@ -1003,23 +1360,14 @@ export function BulkAssignWizard({
         <button type="button" className={BTN_GHOST} disabled={step <= 1} onClick={goBack}>
           <ArrowLeft className="w-4 h-4" /> Back
         </button>
-        {kind === "assessment_homework" && step === 2 ? (
-          <div className="flex flex-wrap items-center justify-end gap-3">
-            <p className="text-xs text-slate-500 max-w-md text-right">
-              Student bulk steps do not apply to this path — the panel above talks to the homework API directly.
-            </p>
-            <button type="button" className={BTN_PRIMARY} onClick={() => resetFlow()}>
-              Done
-            </button>
-          </div>
-        ) : step < maxStep ? (
+        {step < 5 ? (
           <button type="button" className={BTN_PRIMARY} disabled={!canGoNext} onClick={goNext}>
             Next <ArrowRight className="w-4 h-4" />
           </button>
         ) : (
           <button type="button" className={BTN_PRIMARY} disabled={submitting || !canGoNext} onClick={() => void submit()}>
             {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
-            {submitting ? "Granting…" : "Confirm & assign"}
+            {submitting ? (kind === "assessment_homework" ? "Assigning…" : "Granting…") : "Confirm & assign"}
           </button>
         )}
       </div>
