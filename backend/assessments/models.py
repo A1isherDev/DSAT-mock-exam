@@ -191,11 +191,19 @@ class SecurityAlert(models.Model):
         ]
 
 
+# NOTE: module-level constants so constraints can reference them safely
+# during class construction (Meta is evaluated before the class name exists).
+ASSESSMENT_ATTEMPT_STATUS_IN_PROGRESS = "in_progress"
+ASSESSMENT_ATTEMPT_STATUS_SUBMITTED = "submitted"
+ASSESSMENT_ATTEMPT_STATUS_GRADED = "graded"
+ASSESSMENT_ATTEMPT_STATUS_ABANDONED = "abandoned"
+
+
 class AssessmentAttempt(models.Model):
-    STATUS_IN_PROGRESS = "in_progress"
-    STATUS_SUBMITTED = "submitted"
-    STATUS_GRADED = "graded"
-    STATUS_ABANDONED = "abandoned"
+    STATUS_IN_PROGRESS = ASSESSMENT_ATTEMPT_STATUS_IN_PROGRESS
+    STATUS_SUBMITTED = ASSESSMENT_ATTEMPT_STATUS_SUBMITTED
+    STATUS_GRADED = ASSESSMENT_ATTEMPT_STATUS_GRADED
+    STATUS_ABANDONED = ASSESSMENT_ATTEMPT_STATUS_ABANDONED
     STATUS_CHOICES = [
         (STATUS_IN_PROGRESS, "In progress"),
         (STATUS_SUBMITTED, "Submitted"),
@@ -249,7 +257,7 @@ class AssessmentAttempt(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["homework", "student"],
-                condition=models.Q(status=AssessmentAttempt.STATUS_IN_PROGRESS),
+                condition=models.Q(status=ASSESSMENT_ATTEMPT_STATUS_IN_PROGRESS),
                 name="uniq_active_attempt_per_hw_student_in_progress",
             ),
         ]
