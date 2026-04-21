@@ -9,7 +9,6 @@ import { useTheme } from "next-themes";
 import {
   LayoutDashboard,
   BookOpenCheck,
-  ClipboardCheck,
   ClipboardList,
   FileWarning,
   Users,
@@ -36,44 +35,28 @@ const SIDEBAR_COLLAPSED_KEY = "mastersat.sidebarCollapsed";
 
 const nav = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/vocabulary/daily", label: "Vocabulary", icon: BookOpenCheck },
   { href: "/practice-tests", label: "Pastpaper tests", icon: BookOpenCheck },
   { href: "/mock-exam", label: "Timed mock", icon: ClipboardList },
   { href: "/midterm", label: "Midterm", icon: FileWarning },
   { href: "/classes", label: "Classes", icon: Users },
-  { href: "/teacher/homework", label: "Assessments", icon: ClipboardList },
-  { href: "/classes/grade-homework", label: "Grade homework", icon: ClipboardCheck },
   { href: "/profile", label: "Profile", icon: UserCircle },
 ];
 
 const quickLinks = [
-  { href: "/vocabulary/daily", label: "Vocabulary" },
   { href: "/practice-tests", label: "Practice" },
   { href: "/mock-exam", label: "Mock" },
   { href: "/classes", label: "Classes" },
-  { href: "/teacher/homework", label: "Assessments" },
-  { href: "/classes/grade-homework", label: "Grade homework" },
 ];
 
 function pageTitle(pathname: string): string {
   if (pathname === "/") return "Dashboard";
-  if (pathname.startsWith("/vocabulary")) return "Vocabulary";
-  if (pathname.startsWith("/assessments")) return "Assessments";
-  if (pathname.startsWith("/teacher/homework")) return "Assessments";
-  if (pathname.startsWith("/classes/grade-homework")) return "Grade homework";
-  const item = nav.find((n) => {
-    if (n.href === "/") return false;
-    if (n.href === "/practice-tests") {
-      return pathname === "/practice-tests" || pathname.startsWith("/practice-test/");
-    }
-    if (n.href === "/vocabulary/daily") return pathname.startsWith("/vocabulary");
-    if (n.href === "/teacher/homework") return pathname.startsWith("/teacher/homework") || pathname.startsWith("/assessments");
-    if (n.href === "/classes/grade-homework") return pathname.startsWith("/classes/grade-homework");
-    if (n.href === "/classes") {
-      return pathname.startsWith("/classes") && !pathname.startsWith("/classes/grade-homework");
-    }
-    return pathname.startsWith(n.href);
-  });
+  const item = nav.find((n) =>
+    n.href === "/"
+      ? false
+      : n.href === "/practice-tests"
+        ? pathname === "/practice-tests" || pathname.startsWith("/practice-test/")
+        : pathname.startsWith(n.href),
+  );
   return item?.label ?? "MasterSAT";
 }
 
@@ -301,11 +284,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
                     ? pathname === "/"
                     : href === "/practice-tests"
                       ? pathname === "/practice-tests" || pathname.startsWith("/practice-test/")
-                      : href === "/classes/grade-homework"
-                        ? pathname.startsWith("/classes/grade-homework")
-                        : href === "/classes"
-                          ? pathname.startsWith("/classes") && !pathname.startsWith("/classes/grade-homework")
-                          : pathname.startsWith(href);
+                      : pathname.startsWith(href);
                 return (
                   <Link
                     key={href}
