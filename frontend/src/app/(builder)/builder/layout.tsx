@@ -7,7 +7,11 @@ import { cn } from "@/lib/cn";
 import { canManageQuestionsConsole } from "@/lib/permissions";
 
 const nav = [
-  { href: "/builder/sets", label: "Assessment sets" },
+  { href: "/practice-tests", label: "Pastpaper tests" },
+  { href: "/mock-exam", label: "Timed mock" },
+  { href: "/midterm", label: "Midterm" },
+  { href: "/builder/sets", label: "Assessment builder" },
+  { href: "/assessments/assign", label: "Assign assessments" },
 ];
 
 export default function BuilderLayout({ children }: { children: React.ReactNode }) {
@@ -20,9 +24,9 @@ export default function BuilderLayout({ children }: { children: React.ReactNode 
         <div className="mx-auto w-full max-w-7xl px-3 py-4 md:px-6">
           <div className="mb-4 rounded-2xl border border-border bg-card p-4 shadow-sm">
             <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-ds-gold">Questions console</p>
-            <p className="mt-1 text-xl font-extrabold tracking-tight">Assessment Builder</p>
+            <p className="mt-1 text-xl font-extrabold tracking-tight">Tests + Builder</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              API-driven authoring. Backend permissions are authoritative.
+              Pastpapers, mock tests, midterm, and assessment authoring. Backend permissions are authoritative.
             </p>
           </div>
 
@@ -33,7 +37,10 @@ export default function BuilderLayout({ children }: { children: React.ReactNode 
               ) : (
                 <nav className="flex flex-col gap-1">
                   {nav.map((n) => {
-                    const active = pathname === n.href || pathname.startsWith(n.href + "/");
+                    const active =
+                      n.href === "/practice-tests"
+                        ? pathname === "/practice-tests" || pathname.startsWith("/practice-test/")
+                        : pathname === n.href || pathname.startsWith(n.href + "/");
                     return (
                       <Link
                         key={n.href}

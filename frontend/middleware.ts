@@ -26,7 +26,10 @@ export function middleware(req: NextRequest) {
   // Subdomain consoles land on their dedicated roots.
   if (console && req.nextUrl.pathname === "/") {
     const url = req.nextUrl.clone();
-    url.pathname = console === "questions" ? "/builder/sets" : "/assessments/assign";
+    // Keep consoles feature-complete:
+    // - questions.* should show the full testing console (pastpapers/mock/midterm) + builder
+    // - admin.* should show the full admin/teacher console + assessments
+    url.pathname = console === "questions" ? "/practice-tests" : "/teacher";
     return NextResponse.redirect(url, { headers: res.headers });
   }
 
