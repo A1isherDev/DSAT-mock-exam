@@ -249,7 +249,7 @@ class AssessmentAttempt(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["homework", "student"],
-                condition=models.Q(status=STATUS_IN_PROGRESS),
+                condition=models.Q(status=AssessmentAttempt.STATUS_IN_PROGRESS),
                 name="uniq_active_attempt_per_hw_student_in_progress",
             ),
         ]
