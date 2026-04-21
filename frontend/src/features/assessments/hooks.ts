@@ -1,0 +1,165 @@
+"use client";
+
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { normalizeApiError } from "@/lib/apiError";
+import { assessmentAuthoringApi, assessmentAttemptApi, assessmentHomeworkApi } from "./api";
+import { assessmentKeys } from "./queryKeys";
+import type { AssessmentQuestion, AssessmentSet, Attempt, HomeworkAssignmentCreateRequest, Subject } from "./types";
+
+export function useAssessmentSetsList(params?: { subject?: Subject; category?: string }) {
+  return useQuery({
+    queryKey: assessmentKeys.setsList(params),
+    queryFn: () => assessmentAuthoringApi.listSets(params),
+  });
+}
+
+export function useUpsertAssessmentSet() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (x: { id?: number | null; payload: any }) => {
+      if (x.id) return await assessmentAuthoringApi.updateSet(x.id, x.payload);
+      return await assessmentAuthoringApi.createSet(x.payload);
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: assessmentKeys.sets() });
+    },
+    onError: (e) => {
+      throw normalizeApiError(e);
+    },
+  });
+}
+
+export function useUpsertAssessmentQuestion(setId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (x: { id?: number | null; payload: any }) => {
+      if (x.id) return await assessmentAuthoringApi.updateQuestion(x.id, x.payload);
+      return await assessmentAuthoringApi.createQuestion(setId, x.payload);
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: assessmentKeys.sets() });
+      await qc.invalidateQueries({ queryKey: assessmentKeys.setDetail(setId) });
+    },
+    onError: (e) => {
+      throw normalizeApiError(e);
+    },
+  });
+}
+
+export function useDeleteAssessmentQuestion(setId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (questionId: number) => {
+      await assessmentAuthoringApi.deleteQuestion(questionId);
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: assessmentKeys.sets() });
+      await qc.invalidateQueries({ queryKey: assessmentKeys.setDetail(setId) });
+    },
+    onError: (e) => {
+      throw normalizeApiError(e);
+    },
+  });
+}
+
+export function useAssignAssessmentHomework() {
+  return useMutation({
+    mutationFn: async (vars: { payload: HomeworkAssignmentCreateRequest; idempotencyKey?: string }) => {
+      return await assessmentHomeworkApi.assign(vars.payload, vars.idempotencyKey);
+    },
+    onError: (e) => {
+      throw normalizeApiError(e);
+    },
+  });
+}
+
+export function useStartAttempt() {
+  return useMutation({
+    mutationFn: async (payload: { assignment_id: number }): Promise<Attempt> => {
+      return await assessmentAttemptApi.start(payload);
+    },
+    onError: (e) => {
+      throw normalizeApiError(e);
+    },
+  });
+}
+
+export function useSaveAnswer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: {
+      attempt_id: number;
+      question_id: number;
+      answer: any;
+      time_spent_seconds?: number;
+    }): Promise<Attempt> => {
+      return await assessmentAttemptApi.saveAnswer(payload);
+    },
+    onSuccess: async (_data, vars) => {
+      await qc.invalidateQueries({ queryKey: assessmentKeys.attemptBundle(vars.attempt_id) });
+    },
+    onError: (e) => {
+      throw normalizeApiError(e);
+    },
+  });
+}
+
+export function useSubmitAttempt() {
+  return useMutation({
+    mutationFn: async (payload: { attempt_id: number }): Promise<Attempt> => {
+      return await assessmentAttemptApi.submit(payload);
+    },
+    onError: (e) => {
+      throw normalizeApiError(e);
+    },
+  });
+}
+
+export function useMyAssessmentResult(assignmentId: number) {
+  return useQuery({
+    queryKey: assessmentKeys.myResult(assignmentId),
+    queryFn: () => assessmentAttemptApi.myResult(assignmentId),
+    enabled: Number.isFinite(assignmentId) && assignmentId > 0,
+    retry: (count, err: any) => {
+      const status = err?.response?.status;
+      if (status === 404) return false;
+      return count < 1;
+    },
+  });
+}
+
+export function useAttemptBundle(attemptId: number) {
+  return useQuery({
+    queryKey: assessmentKeys.attemptBundle(attemptId),
+    queryFn: () => assessmentAttemptApi.bundle(attemptId),
+    enabled: Number.isFinite(attemptId) && attemptId > 0,
+    staleTime: 15_000,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+  });
+}
+
+export type ValidationError = { scope: "set" | "question"; id?: number; field?: string; message: string };
+
+export function validateSetClientSide(set: AssessmentSet | null): ValidationError[] {
+  if (!set) return [{ scope: "set", message: "No set selected." }];
+  const errs: ValidationError[] = [];
+  if (!String(set.title || "").trim()) errs.push({ scope: "set", field: "title", message: "Title is required." });
+  if (!String(set.subject || "").trim()) errs.push({ scope: "set", field: "subject", message: "Subject is required." });
+  const qs = Array.isArray(set.questions) ? set.questions : [];
+  if (!qs.length) errs.push({ scope: "set", message: "Add at least 1 question before publishing." });
+  for (const q of qs) {
+    if (!String(q.prompt || "").trim()) errs.push({ scope: "question", id: q.id, field: "prompt", message: "Prompt is required." });
+    if (!String(q.question_type || "").trim()) errs.push({ scope: "question", id: q.id, field: "question_type", message: "Type is required." });
+    if (q.question_type === "multiple_choice") {
+      const choices = Array.isArray((q as any).choices) ? (q as any).choices : [];
+      if (choices.length < 2) errs.push({ scope: "question", id: q.id, field: "choices", message: "MCQ needs at least 2 choices." });
+    }
+    if (q.question_type === "numeric") {
+      // backend enforces correct_answer; we check for obvious missing value
+      if ((q as any).correct_answer == null) errs.push({ scope: "question", id: q.id, field: "correct_answer", message: "Numeric requires a correct answer." });
+    }
+  }
+  return errs;
+}
+

@@ -85,8 +85,8 @@ export default function TeacherDashboardPage() {
                   Grade homework
                 </Link>
                 <Link href="/teacher/students" className="btn-secondary">View students</Link>
-                <Link href="/admin" className="btn-secondary">
-                  Exams admin
+                <Link href="/assessments/assign" className="btn-secondary">
+                  Assign assessments
                 </Link>
               </div>
               <p className="text-xs text-slate-500 mt-3 leading-relaxed">

@@ -681,4 +681,69 @@ export const vocabularyApi = {
     },
 };
 
+export const assessmentsApi = {
+    adminListSets: async (params?: { subject?: "math" | "english"; category?: string }) => {
+        const r = await api.get("/assessments/admin/sets/", { params });
+        return r.data;
+    },
+    adminCreateSet: async (payload: {
+        subject: "math" | "english";
+        category?: string;
+        title: string;
+        description?: string;
+        is_active?: boolean;
+    }) => {
+        const r = await api.post("/assessments/admin/sets/", payload);
+        return r.data;
+    },
+    adminUpdateSet: async (
+        id: number,
+        payload: Partial<{
+            subject: "math" | "english";
+            category: string;
+            title: string;
+            description: string;
+            is_active: boolean;
+        }>,
+    ) => {
+        const r = await api.patch(`/assessments/admin/sets/${id}/`, payload);
+        return r.data;
+    },
+    adminCreateQuestion: async (
+        setId: number,
+        payload: {
+            order?: number;
+            prompt: string;
+            question_type: "multiple_choice" | "short_text" | "numeric" | "boolean";
+            choices?: any[];
+            correct_answer?: any;
+            grading_config?: Record<string, unknown>;
+            points?: number;
+            is_active?: boolean;
+        },
+    ) => {
+        const r = await api.post(`/assessments/admin/sets/${setId}/questions/`, payload);
+        return r.data;
+    },
+    adminUpdateQuestion: async (
+        id: number,
+        payload: Partial<{
+            order: number;
+            prompt: string;
+            question_type: "multiple_choice" | "short_text" | "numeric" | "boolean";
+            choices: any[];
+            correct_answer: any;
+            grading_config: Record<string, unknown>;
+            points: number;
+            is_active: boolean;
+        }>,
+    ) => {
+        const r = await api.patch(`/assessments/admin/questions/${id}/`, payload);
+        return r.data;
+    },
+    adminDeleteQuestion: async (id: number) => {
+        await api.delete(`/assessments/admin/questions/${id}/`);
+    },
+};
+
 export default api;

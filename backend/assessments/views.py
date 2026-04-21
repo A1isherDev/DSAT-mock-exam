@@ -56,6 +56,8 @@ from .serializers import (
     SubmitAttemptSerializer,
     AttemptSerializer,
     ResultSerializer,
+    AssessmentSetSerializer,
+    AssessmentQuestionSerializer,
 )
 
 
@@ -476,6 +478,43 @@ class StartAttemptView(APIView):
 
         att = AssessmentAttempt.objects.filter(pk=att.pk).prefetch_related("answers").first()
         return Response(AttemptSerializer(att).data, status=status.HTTP_200_OK)
+
+
+class AttemptBundleView(APIView):
+    """
+    Student-facing attempt bootstrap: return attempt + sanitized question list
+    (no correct answers), ordered by the per-attempt shuffle.
+    """
+
+    permission_classes = [IsAuthenticatedAndNotFrozen]
+
+    def get(self, request, attempt_id: int):
+        att = AssessmentAttempt.objects.select_related("homework__classroom", "homework__assessment_set").filter(
+            pk=attempt_id, student=request.user
+        ).first()
+        if not att:
+            return Response({"detail": "Attempt not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        hw = att.homework
+        if not hw.classroom.memberships.filter(user=request.user, role=ClassroomMembership.ROLE_STUDENT).exists():
+            return Response({"detail": "Only students can view this attempt."}, status=status.HTTP_403_FORBIDDEN)
+
+        aset = hw.assessment_set
+        base_questions = list(
+            AssessmentQuestion.objects.filter(assessment_set=aset, is_active=True).order_by("order", "id")
+        )
+        q_by_id = {q.id: q for q in base_questions}
+        order_ids = [int(x) for x in (att.question_order or []) if isinstance(x, (int, str)) and str(x).isdigit()]
+        questions = [q_by_id[qid] for qid in order_ids if qid in q_by_id] if order_ids else base_questions
+
+        att = AssessmentAttempt.objects.filter(pk=att.pk).prefetch_related("answers").first()
+        return Response(
+            {
+                "attempt": AttemptSerializer(att).data,
+                "set": AssessmentSetSerializer(aset).data,
+                "questions": AssessmentQuestionSerializer(questions, many=True).data,
+            }
+        )
 
 
 class SaveAnswerView(APIView):

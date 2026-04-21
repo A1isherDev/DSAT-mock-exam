@@ -39,6 +39,7 @@ urlpatterns = [
     path("homework/assign/", AssignAssessmentHomeworkView.as_view(), name="assessment-homework-assign"),
     # Student attempt flow
     path("attempts/start/", StartAttemptView.as_view(), name="assessment-attempt-start"),
+    path("attempts/<int:attempt_id>/bundle/", AttemptBundleView.as_view(), name="assessment-attempt-bundle"),
     path("attempts/answer/", SaveAnswerView.as_view(), name="assessment-attempt-answer"),
     path("attempts/submit/", SubmitAttemptView.as_view(), name="assessment-attempt-submit"),
     path("attempts/abandon/", AbandonAttemptView.as_view(), name="assessment-attempt-abandon"),

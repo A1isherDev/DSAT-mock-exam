@@ -3,6 +3,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import CursorRing from "@/components/CursorRing";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import QueryProvider from "@/components/QueryProvider";
+import { ToastProvider } from "@/components/ToastProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -39,8 +41,12 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-          <CursorRing />
-          {children}
+          <QueryProvider>
+            <ToastProvider>
+              <CursorRing />
+              {children}
+            </ToastProvider>
+          </QueryProvider>
         </ThemeProvider>
         <Script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" strategy="afterInteractive" />
         <Script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" strategy="afterInteractive" />

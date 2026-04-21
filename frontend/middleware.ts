@@ -23,10 +23,10 @@ export function middleware(req: NextRequest) {
     res.cookies.delete("lms_console");
   }
 
-  // Subdomain consoles land on /admin (single-page console for now).
+  // Subdomain consoles land on their dedicated roots.
   if (console && req.nextUrl.pathname === "/") {
     const url = req.nextUrl.clone();
-    url.pathname = "/admin";
+    url.pathname = console === "questions" ? "/builder/sets" : "/assessments/assign";
     return NextResponse.redirect(url, { headers: res.headers });
   }
 

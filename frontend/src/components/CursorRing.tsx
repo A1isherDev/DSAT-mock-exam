@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 
 function isCursorRingDisabled(pathname: string | null): boolean {
   if (!pathname) return false;
-  return pathname.startsWith("/admin") || pathname.startsWith("/exam") || pathname.startsWith("/profile");
+  return pathname.startsWith("/exam") || pathname.startsWith("/profile") || pathname.startsWith("/builder") || pathname.startsWith("/assessments/assign");
 }
 
 /**
