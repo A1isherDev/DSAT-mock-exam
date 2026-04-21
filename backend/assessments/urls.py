@@ -7,6 +7,7 @@ from .views import (
     AdminAssessmentQuestionDetailView,
     AssignAssessmentHomeworkView,
     StartAttemptView,
+    AttemptBundleView,
     SaveAnswerView,
     SubmitAttemptView,
     AbandonAttemptView,
