@@ -314,6 +314,14 @@ function ExamPlayerInner() {
     const [midtermMode, setMidtermMode] = useState(() => searchParams.get('midterm') === '1');
     const [attempt, setAttempt] = useState<any>(null);
     const [loading, setLoading] = useState(true);
+    const [transitioning, setTransitioning] = useState(false);
+    const prevModuleOrderRef = useRef<number | null>(null);
+    const serverOffsetMsRef = useRef<number>(0);
+    const scoringPollRef = useRef<any>(null);
+    const activePollRef = useRef<any>(null);
+    const submitLockRef = useRef<boolean>(false);
+    const multiTabRef = useRef<{ bc?: BroadcastChannel; id: string } | null>(null);
+    const [multiTabBlocked, setMultiTabBlocked] = useState(false);
 
     const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
     const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -356,6 +364,7 @@ function ExamPlayerInner() {
     const [isNavigating, setIsNavigating] = useState(false);
     const [showFiveMinuteWarning, setShowFiveMinuteWarning] = useState(false);
     const [warningShownForModule, setWarningShownForModule] = useState<number | null>(null);
+    const warningTimeoutRef = useRef<any>(null);
 
     const { current_module_details } = attempt || {};
     const questions = current_module_details?.questions || [];
@@ -365,6 +374,12 @@ function ExamPlayerInner() {
         const fetchAttempt = async () => {
             try {
                 const data = await examsApi.getAttemptStatus(Number(attemptId));
+                try {
+                    const sn = data?.server_now ? new Date(data.server_now).getTime() : NaN;
+                    if (Number.isFinite(sn)) serverOffsetMsRef.current = sn - Date.now();
+                } catch {
+                    /* ignore */
+                }
                 setAttempt(data);
                 // Set uniform zoom level to 100% (1.0) for both Math and English
                 setZoomLevel(1.0);
@@ -384,6 +399,164 @@ function ExamPlayerInner() {
         };
         fetchAttempt();
     }, [attemptId, router]);
+
+    // Minimal multi-tab guard: block UI if another tab is active for this attempt.
+    useEffect(() => {
+        const aid = String(attemptId || "");
+        if (!aid) return;
+        const myId = `${aid}.${Date.now()}.${Math.random().toString(16).slice(2)}`;
+        const ch = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("mastersat.examAttempt") : null;
+        multiTabRef.current = { bc: ch || undefined, id: myId };
+        try {
+            ch?.postMessage({ t: "hello", attemptId: aid, from: myId });
+        } catch {}
+
+        const onMessage = (ev: any) => {
+            const m = ev?.data;
+            if (!m || m.attemptId !== aid) return;
+            if (m.from && m.from !== myId) setMultiTabBlocked(true);
+        };
+        ch?.addEventListener("message", onMessage);
+        return () => {
+            try {
+                ch?.removeEventListener("message", onMessage);
+            } catch {}
+            try {
+                ch?.close();
+            } catch {}
+            multiTabRef.current = null;
+        };
+    }, [attemptId]);
+
+    // Resume: hydrate local answers + server saved answers (server wins)
+    useEffect(() => {
+        if (!attempt?.current_module_details?.id) return;
+        const key = `mastersat.examDraft.${attemptId}.${attempt.current_module_details.id}`;
+        let local: any = null;
+        try {
+            local = JSON.parse(localStorage.getItem(key) || "null");
+        } catch {
+            local = null;
+        }
+        const localV = local?.v ?? null;
+        const serverV = attempt?.version_number ?? null;
+        if (localV != null && serverV != null && Number(localV) !== Number(serverV)) {
+            // Stale draft; discard to avoid overwriting backend truth.
+            local = null;
+            try { localStorage.removeItem(key); } catch {}
+        }
+        const serverAnswers = attempt?.current_module_saved_answers || {};
+        const serverFlagged = Array.isArray(attempt?.current_module_flagged_questions)
+            ? attempt.current_module_flagged_questions
+            : [];
+        setAnswers({ ...(local?.answers || {}), ...serverAnswers });
+        setFlagged(Array.from(new Set([...(local?.flagged || []), ...serverFlagged])));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [attempt?.current_module_details?.id, attempt?.version_number]);
+
+    // Persist draft locally for refresh recovery
+    useEffect(() => {
+        if (!attempt?.current_module_details?.id) return;
+        const key = `mastersat.examDraft.${attemptId}.${attempt.current_module_details.id}`;
+        try {
+            localStorage.setItem(key, JSON.stringify({ answers, flagged, v: attempt?.version_number ?? null }));
+        } catch {
+            /* ignore */
+        }
+    }, [answers, flagged, attempt?.current_module_details?.id, attempt?.version_number, attemptId]);
+
+    // SCORING polling loop
+    useEffect(() => {
+        if (!attemptId) return;
+        if (attempt?.current_state !== "SCORING") return;
+        if (scoringPollRef.current) return;
+
+        let cancelled = false;
+        let delayMs = 1200;
+        const tick = async () => {
+            if (cancelled) return;
+            try {
+                const st = await examsApi.getAttemptStatus(Number(attemptId));
+                try {
+                    const sn = st?.server_now ? new Date(st.server_now).getTime() : NaN;
+                    if (Number.isFinite(sn)) serverOffsetMsRef.current = sn - Date.now();
+                } catch {}
+                setAttempt(st);
+                if (st?.is_completed) {
+                    // route based on existing mockFlow logic
+                    const meid = searchParams.get('mockExamId');
+                    const subj = st?.practice_test_details?.subject;
+                    if (mockFlow && meid && platformSubjectIsReadingWriting(subj)) {
+                        router.push(`/mock/${meid}/break?rwAttempt=${attemptId}`);
+                        return;
+                    }
+                    if (mockFlow && meid && platformSubjectIsMath(subj)) {
+                        const rw = searchParams.get('rwAttempt');
+                        const qs =
+                            rw && rw.length > 0
+                                ? `?rwAttempt=${encodeURIComponent(rw)}&mathAttempt=${attemptId}`
+                                : `?mathAttempt=${attemptId}`;
+                        router.push(`/mock/${meid}/results${qs}`);
+                        return;
+                    }
+                    router.push(`/review/${attemptId}`);
+                    return;
+                }
+                delayMs = 1200;
+            } catch (e) {
+                delayMs = Math.min(30_000, Math.floor(delayMs * 1.6));
+            }
+            scoringPollRef.current = setTimeout(tick, delayMs);
+        };
+        scoringPollRef.current = setTimeout(tick, 600);
+        return () => {
+            cancelled = true;
+            if (scoringPollRef.current) clearTimeout(scoringPollRef.current);
+            scoringPollRef.current = null;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [attempt?.current_state, attemptId, mockFlow, router, searchParams]);
+
+    // Active module polling: refresh backend truth + server_now offset periodically.
+    useEffect(() => {
+        if (!attemptId) return;
+        if (!attempt?.current_state) return;
+        if (attempt.current_state === "SCORING" || attempt.current_state === "COMPLETED") return;
+        if (activePollRef.current) return;
+
+        let cancelled = false;
+        let delayMs = 10_000;
+        const tick = async () => {
+            if (cancelled) return;
+            try {
+                const st = await examsApi.getAttemptStatus(Number(attemptId));
+                try {
+                    const sn = st?.server_now ? new Date(st.server_now).getTime() : NaN;
+                    if (Number.isFinite(sn)) serverOffsetMsRef.current = sn - Date.now();
+                } catch {}
+                setAttempt(st);
+                if (st?.is_completed) {
+                    router.push(`/review/${attemptId}`);
+                    return;
+                }
+                if (st?.is_expired) {
+                    router.push('/');
+                    return;
+                }
+                delayMs = 10_000;
+            } catch {
+                delayMs = Math.min(30_000, Math.floor(delayMs * 1.6));
+            }
+            activePollRef.current = setTimeout(tick, delayMs);
+        };
+
+        activePollRef.current = setTimeout(tick, 5000);
+        return () => {
+            cancelled = true;
+            if (activePollRef.current) clearTimeout(activePollRef.current);
+            activePollRef.current = null;
+        };
+    }, [attempt?.current_state, attemptId, router]);
 
     useEffect(() => {
         if (searchParams.get('midterm') === '1') setMidtermMode(true);
@@ -681,9 +854,14 @@ function ExamPlayerInner() {
 
     const handleSubmitModule = useCallback(async () => {
         if (!attempt || !attempt.current_module_details) return;
+        if (multiTabBlocked) return;
+        if (submitLockRef.current) return;
+        submitLockRef.current = true;
         setLoading(true);
         try {
-            await examsApi.submitModule(attempt.id, answers, flagged);
+            const prevOrder = Number(attempt?.current_module_details?.module_order || 0) || null;
+            const idem = `submit.${attempt.id}.${attempt.current_module_details.id}.${Date.now()}`;
+            await examsApi.submitModule(attempt.id, answers, flagged, { idempotencyKey: idem, expectedVersionNumber: attempt?.version_number });
             const updatedAttempt = await examsApi.getAttemptStatus(Number(attemptId));
             if (updatedAttempt.is_completed) {
                 const meid = searchParams.get('mockExamId');
@@ -703,6 +881,18 @@ function ExamPlayerInner() {
                 }
                 router.push(`/review/${attemptId}`);
             } else {
+                // Module 2 submit transitions to SCORING now (async); show scoring UI.
+                if (updatedAttempt?.current_state === "SCORING") {
+                    setAttempt(updatedAttempt);
+                    setLoading(false);
+                    return;
+                }
+                const nextOrder = Number(updatedAttempt?.current_module_details?.module_order || 0) || null;
+                if (prevOrder === 1 && nextOrder === 2) {
+                    prevModuleOrderRef.current = 2;
+                    setTransitioning(true);
+                    setTimeout(() => setTransitioning(false), 1800);
+                }
                 setAttempt(updatedAttempt);
                 setCurrentQuestionIndex(0);
                 setAnswers({});
@@ -711,12 +901,18 @@ function ExamPlayerInner() {
                 setQuestionHighlights({});
                 setShowAnswerPreview(false);
                 setLoading(false);
+                try {
+                    const key = `mastersat.examDraft.${attemptId}.${attempt.current_module_details.id}`;
+                    localStorage.removeItem(key);
+                } catch {}
             }
         } catch (err) {
             console.error(err);
             setLoading(false);
+        } finally {
+            submitLockRef.current = false;
         }
-    }, [attempt, attemptId, answers, flagged, router, mockFlow, searchParams]);
+    }, [attempt, attemptId, answers, flagged, router, mockFlow, searchParams, multiTabBlocked]);
 
     useEffect(() => {
         timeLeftRef.current = timeLeft;
@@ -728,7 +924,8 @@ function ExamPlayerInner() {
         const limitSec = attempt.current_module_details.time_limit_minutes * 60;
         const startMs = new Date(attempt.current_module_start_time).getTime();
         virtualModuleStartMsRef.current = startMs;
-        const elapsedSec = Math.floor((Date.now() - startMs) / 1000);
+        const nowMs = Date.now() + serverOffsetMsRef.current;
+        const elapsedSec = Math.floor((nowMs - startMs) / 1000);
         const remaining = Math.max(0, limitSec - elapsedSec);
         lastRenderedSecRef.current = remaining;
         moduleTimerSubmitDoneRef.current = false;
@@ -743,7 +940,8 @@ function ExamPlayerInner() {
         const limitSec = attempt.current_module_details.time_limit_minutes * 60;
         if (wasTimerPausedRef.current && !paused) {
             const rem = timeLeftRef.current;
-            virtualModuleStartMsRef.current = Date.now() - (limitSec - rem) * 1000;
+            const nowMs = Date.now() + serverOffsetMsRef.current;
+            virtualModuleStartMsRef.current = nowMs - (limitSec - rem) * 1000;
             lastRenderedSecRef.current = -1;
         }
         wasTimerPausedRef.current = paused;
@@ -758,7 +956,8 @@ function ExamPlayerInner() {
         let rafId = 0;
 
         const loop = () => {
-            const elapsedSec = Math.floor((Date.now() - virtualModuleStartMsRef.current) / 1000);
+            const nowMs = Date.now() + serverOffsetMsRef.current;
+            const elapsedSec = Math.floor((nowMs - virtualModuleStartMsRef.current) / 1000);
             const remaining = Math.max(0, limitSec - elapsedSec);
 
             if (lastRenderedSecRef.current !== remaining) {
@@ -791,11 +990,25 @@ function ExamPlayerInner() {
     useEffect(() => {
         const moduleId = attempt?.current_module_details?.id;
         if (!moduleId) return;
+        // Reset popup whenever module changes (prevents carry-over to Module 2).
+        setShowFiveMinuteWarning(false);
+        if (warningTimeoutRef.current) clearTimeout(warningTimeoutRef.current);
+        warningTimeoutRef.current = null;
+        setWarningShownForModule(null);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [attempt?.current_module_details?.id]);
+
+    useEffect(() => {
+        const moduleId = attempt?.current_module_details?.id;
+        if (!moduleId) return;
         if (timeLeft <= 300 && timeLeft > 0 && warningShownForModule !== moduleId) {
             setShowFiveMinuteWarning(true);
             setWarningShownForModule(moduleId);
-            const t = setTimeout(() => setShowFiveMinuteWarning(false), 5000);
-            return () => clearTimeout(t);
+            if (warningTimeoutRef.current) clearTimeout(warningTimeoutRef.current);
+            warningTimeoutRef.current = setTimeout(() => {
+                setShowFiveMinuteWarning(false);
+                warningTimeoutRef.current = null;
+            }, 15_000);
         }
     }, [timeLeft, attempt?.current_module_details?.id, warningShownForModule]);
 
@@ -807,6 +1020,61 @@ function ExamPlayerInner() {
 
     if (loading || !attempt || !attempt.current_module_details) {
         return <div className="min-h-screen flex items-center justify-center bg-white"><div className="animate-spin text-blue-600 w-8 h-8"><Pause className="w-full h-full" /></div></div>;
+    }
+
+    if (multiTabBlocked) {
+        return (
+            <AuthGuard>
+                <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white px-8">
+                    <div className="w-full max-w-xl text-center">
+                        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-amber-300">Session conflict</p>
+                        <h1 className="mt-4 text-4xl font-black tracking-tight">This attempt is open in another tab</h1>
+                        <p className="mt-3 text-slate-300 font-medium">
+                            Close the other tab to continue here. This prevents double submits and corrupted state.
+                        </p>
+                    </div>
+                </div>
+            </AuthGuard>
+        );
+    }
+
+    if (attempt?.current_state === "SCORING") {
+        return (
+            <AuthGuard>
+                <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white px-8">
+                    <div className="w-full max-w-xl text-center">
+                        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-ds-gold">Scoring</p>
+                        <h1 className="mt-4 text-4xl font-black tracking-tight">Calculating your score</h1>
+                        <p className="mt-3 text-slate-300 font-medium">
+                            Do not close this tab. If your connection drops, we will reconnect automatically.
+                        </p>
+                        <div className="mt-10 flex justify-center">
+                            <div className="w-10 h-10 border-4 border-white/25 border-t-white rounded-full animate-spin" />
+                        </div>
+                    </div>
+                </div>
+            </AuthGuard>
+        );
+    }
+
+    if (transitioning) {
+        const isMath = attemptPtSubjectIsMath(attempt);
+        const title = isMath ? "Module 2" : "Module 2";
+        const subtitle = isMath ? "Continue to the next module." : "Continue to the next module.";
+        return (
+            <AuthGuard>
+                <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white px-8">
+                    <div className="w-full max-w-xl text-center">
+                        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-emerald-300">Module transition</p>
+                        <h1 className="mt-4 text-4xl font-black tracking-tight">{title}</h1>
+                        <p className="mt-3 text-slate-300 font-medium">{subtitle}</p>
+                        <div className="mt-10 flex justify-center">
+                            <div className="w-10 h-10 border-4 border-white/25 border-t-white rounded-full animate-spin" />
+                        </div>
+                    </div>
+                </div>
+            </AuthGuard>
+        );
     }
 
     const goNext = () => {
@@ -834,7 +1102,8 @@ function ExamPlayerInner() {
     const handleSaveAndExit = async () => {
         try {
             setLoading(true);
-            await examsApi.saveAttempt(Number(attemptId), answers, flagged);
+            const idem = `save.${attemptId}.${attempt?.current_module_details?.id || "x"}.${Date.now()}`;
+            await examsApi.saveAttempt(Number(attemptId), answers, flagged, { idempotencyKey: idem, expectedVersionNumber: attempt?.version_number });
             router.push('/');
         } catch (err) {
             console.error(err);
@@ -896,6 +1165,30 @@ function ExamPlayerInner() {
         <AuthGuard>
             {/* Removed zoom: 1.5 to prevent layout breaking/scrolling, scaling fonts via Tailwind instead */}
             <div className={`min-h-screen bg-white flex flex-col font-sans text-slate-900 overflow-hidden relative ${highlighterActive ? 'annotate-mode' : ''}`}>
+                {/* 5-minute warning popup (15 seconds) */}
+                {showFiveMinuteWarning && (
+                    <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[80] w-full max-w-md px-6">
+                        <div className="rounded-2xl border border-red-200 bg-white shadow-2xl px-6 py-4">
+                            <div className="flex items-start gap-3">
+                                <div className="mt-0.5">
+                                    <AlertCircle className="w-5 h-5 text-red-600" />
+                                </div>
+                                <div className="flex-1">
+                                    <p className="text-xs font-black uppercase tracking-widest text-red-600">Time warning</p>
+                                    <p className="mt-1 text-sm font-bold text-slate-900">Only 5 minutes remaining.</p>
+                                    <p className="mt-1 text-xs font-medium text-slate-600">Make sure your answers are saved before time expires.</p>
+                                </div>
+                                <button
+                                    onClick={() => setShowFiveMinuteWarning(false)}
+                                    className="p-1 rounded-lg hover:bg-slate-50 text-slate-500"
+                                    aria-label="Dismiss"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
                 <header className="flex items-start justify-between px-6 py-2 bg-white relative z-10 w-full shadow-sm" style={{ zoom: 1.15 }}>
                     <div className="flex-1 flex items-center gap-4">
                         <img src="/images/logo.png" alt="Master SAT" className="w-9 h-9 object-contain" />
@@ -931,11 +1224,6 @@ function ExamPlayerInner() {
                                         Hide
                                     </button>
                                 </div>
-                                {showFiveMinuteWarning && (
-                                    <div className="mt-1 text-[10px] font-bold text-red-600 bg-red-50 border border-red-200 rounded-full px-3 py-1">
-                                        Warning: Only 5 minutes left.
-                                    </div>
-                                )}
                             </div>
                         ) : (
                             <div className="flex flex-col items-center">

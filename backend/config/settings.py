@@ -241,6 +241,9 @@ CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "")
 CELERY_TASK_ALWAYS_EAGER = os.getenv("CELERY_TASK_ALWAYS_EAGER", "False").lower() == "true"
 CELERY_TASK_EAGER_PROPAGATES = True
 
+# Exams: when Celery broker is not configured (local/dev), score inline so attempts can complete.
+EXAMS_SCORE_INLINE_IF_NO_CELERY = _env_bool("EXAMS_SCORE_INLINE_IF_NO_CELERY", default_when_unset=DEBUG)
+
 # Deadlock / serialization retries for classroom submission transactions.
 CLASSROOM_DB_DEADLOCK_MAX_ATTEMPTS = int(os.getenv("CLASSROOM_DB_DEADLOCK_MAX_ATTEMPTS", "4"))
 # Log CRITICAL when a StaleStorageBlob row fails this many times in a row.

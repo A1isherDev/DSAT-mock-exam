@@ -3,11 +3,15 @@ from rest_framework.views import APIView
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAdminUser
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import ValidationError as DRFValidationError
 import logging
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.db import transaction
+from django.conf import settings
+from django.http import HttpResponse
 from datetime import timedelta
 import hashlib
 import json
@@ -64,8 +68,38 @@ from .serializers import (
     BulkAssignmentDispatchSerializer,
     BulkAssignmentDispatchDetailSerializer,
 )
+from .idempotency import consume_idempotency_key
+from .tasks import score_attempt_async
+from .metrics import incr as metric_incr, get_counter
+from .prometheus import render_exams_prometheus_text
+from .attempt_timing import get_active_module_timing
 
 logger = logging.getLogger(__name__)
+
+def _expected_attempt_version(request) -> int | None:
+    raw = request.data.get("expected_version_number")
+    if raw is None:
+        raw = request.headers.get("If-Match")
+    if raw is None:
+        return None
+    try:
+        return int(str(raw).strip().strip('"'))
+    except (TypeError, ValueError):
+        return None
+
+
+def _version_conflict_response(view, request, *, attempt: TestAttempt) -> Response:
+    metric_incr("version_conflict")
+    # Always return canonical state so client can resync.
+    attempt = TestAttempt.objects.get(pk=attempt.pk)
+    return Response(
+        {
+            "error": "Version conflict.",
+            "detail": "Attempt was updated elsewhere; refresh required.",
+            "attempt": view.get_serializer(attempt).data,
+        },
+        status=status.HTTP_409_CONFLICT,
+    )
 
 def _is_student(user) -> bool:
     return str(getattr(user, "role", "") or "").strip().lower() == "student"
@@ -366,22 +400,76 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(attempt)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
+    @action(detail=True, methods=["get"])
+    def status(self, request, pk=None):
+        """
+        Canonical attempt state for polling/resume.
+        Frontend must render from this payload (includes server_now in serializer).
+        """
+        attempt = self.get_object()
+        serializer = self.get_serializer(attempt)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["post"])
+    def start(self, request, pk=None):
+        """
+        Start the attempt: always starts Module 1 (backend authoritative).
+        """
+        attempt = self.get_object()
+        if attempt.is_completed:
+            return Response({"error": "Cannot start a completed attempt."}, status=status.HTTP_400_BAD_REQUEST)
+
+        ensure_full_mock_practice_test_modules(attempt.practice_test)
+        m1 = attempt.practice_test.modules.filter(module_order=1).order_by("id").first()
+        if not m1:
+            return Response({"error": "Module 1 is missing."}, status=status.HTTP_400_BAD_REQUEST)
+
+        def _compute():
+            try:
+                with transaction.atomic():
+                    locked = TestAttempt.objects.select_for_update().get(pk=attempt.pk)
+                    locked.start_module(m1)
+                return Response(self.get_serializer(TestAttempt.objects.get(pk=attempt.pk)).data)
+            except Exception as exc:
+                return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        idem = request.headers.get("Idempotency-Key") or request.headers.get("X-Idempotency-Key")
+        return consume_idempotency_key(attempt=attempt, endpoint="start", key=idem, compute=_compute)
+
+        AuditLog.objects.create(
+            user=request.user,
+            action="START_TEST_ENGINE",
+            details=f"Started module 1 of {attempt.practice_test}",
+        )
+        serializer = self.get_serializer(TestAttempt.objects.get(pk=attempt.pk))
+        return Response(serializer.data)
+
     @action(detail=True, methods=['post'])
     def start_module(self, request, pk=None):
         attempt = self.get_object()
         module_id = request.data.get('module_id')
         
+        # Defensive: ensure full mock sections always have both modules provisioned.
+        ensure_full_mock_practice_test_modules(attempt.practice_test)
+
         module = get_object_or_404(Module, id=module_id, practice_test=attempt.practice_test)
         
         if attempt.is_completed:
             return Response({'error': 'Cannot start module for a completed test'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        if not attempt.started_at:
-            attempt.started_at = timezone.now()
-            
-        attempt.current_module = module
-        attempt.current_module_start_time = timezone.now()
-        attempt.save()
+
+        try:
+            # If current module is already expired, prevent arbitrary module hopping.
+            timing = get_active_module_timing(attempt)
+            if timing and timing.is_expired and attempt.current_state in (
+                TestAttempt.STATE_MODULE_1_ACTIVE,
+                TestAttempt.STATE_MODULE_2_ACTIVE,
+            ):
+                attempt.is_expired = True  # serializer reads this attribute
+                return Response({"error": "Module time expired."}, status=status.HTTP_409_CONFLICT)
+
+            attempt.start_module(module)
+        except Exception as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         
         AuditLog.objects.create(
             user=request.user,
@@ -394,52 +482,112 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def submit_module(self, request, pk=None):
-        attempt = self.get_object()
-        if not attempt.current_module:
-            return Response({'error': 'No active module to submit'}, status=status.HTTP_400_BAD_REQUEST)
-            
-        module_answers = request.data.get('answers', {})
-        flagged = request.data.get('flagged', [])
-        current_mod_order = attempt.current_module.module_order if attempt.current_module else "?"
-        
-        try:
-            attempt.submit_module(module_answers, flagged)
-            
-            AuditLog.objects.create(
-                user=request.user,
-                action="SUBMIT_MODULE",
-                details=f"Submitted module {current_mod_order} of {attempt.practice_test}"
-            )
-            
-            serializer = self.get_serializer(attempt)
-            return Response(serializer.data)
-        except Exception:
-            logger.exception(
-                "submit_module failed attempt_id=%s user_id=%s",
-                getattr(attempt, "id", None),
-                getattr(request.user, "id", None),
-            )
-            return Response({'error': 'Could not submit module.'}, status=status.HTTP_400_BAD_REQUEST)
+        attempt0 = self.get_object()
+        idem = request.headers.get("Idempotency-Key") or request.headers.get("X-Idempotency-Key")
+        expected_v = _expected_attempt_version(request)
+
+        def _compute():
+            try:
+                with transaction.atomic():
+                    # Lock row to prevent race conditions / duplicate submit advancing state twice.
+                    attempt = (
+                        TestAttempt.objects.select_for_update()
+                        .select_related("practice_test", "current_module")
+                        .get(pk=attempt0.pk)
+                    )
+                    if expected_v is not None and int(attempt.version_number or 0) != int(expected_v):
+                        return _version_conflict_response(self, request, attempt=attempt)
+                    if not attempt.current_module:
+                        return Response({'error': 'No active module to submit'}, status=status.HTTP_400_BAD_REQUEST)
+
+                    # Timer enforcement: if time elapsed, we still accept submission (finalizes the module),
+                    # but we mark the attempt payload as expired for the client to reconcile.
+                    timing = get_active_module_timing(attempt)
+                    expired = bool(timing and timing.is_expired)
+                        
+                    module_answers = request.data.get('answers', {})
+                    flagged = request.data.get('flagged', [])
+                    current_mod_order = attempt.current_module.module_order if attempt.current_module else "?"
+                    # Duplicate submit guard (server-side): safe under retries.
+                    if attempt.completed_modules.filter(pk=attempt.current_module_id).exists():
+                        metric_incr("submit_duplicate_prevented")
+                    else:
+                        attempt.submit_module(module_answers, flagged)
+
+                    # Module 2 submit now enters SCORING (async completion).
+                    if attempt.current_state == TestAttempt.STATE_MODULE_2_SUBMITTED:
+                        attempt.enter_scoring()
+                        # Enqueue scoring (safe to retry; task is idempotent).
+                        broker = str(getattr(settings, "CELERY_BROKER_URL", "") or "").strip()
+                        eager = bool(getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False))
+                        if broker or eager:
+                            score_attempt_async.delay(attempt.pk)
+                        else:
+                            # Local/dev safety: optionally score inline when no broker is configured.
+                            if bool(getattr(settings, "EXAMS_SCORE_INLINE_IF_NO_CELERY", False)):
+                                score_attempt_async(attempt.pk)
+                        metric_incr("scoring_enqueued")
+
+                AuditLog.objects.create(
+                    user=request.user,
+                    action="SUBMIT_MODULE",
+                    details=f"Submitted module {current_mod_order} of {attempt.practice_test}"
+                )
+
+                attempt = TestAttempt.objects.get(pk=attempt0.pk)
+                if expired:
+                    attempt.is_expired = True
+                metric_incr("submit_module")
+                return Response(self.get_serializer(attempt).data)
+            except Exception:
+                logger.exception(
+                    "submit_module failed attempt_id=%s user_id=%s",
+                    getattr(attempt0, "id", None),
+                    getattr(request.user, "id", None),
+                )
+                return Response({'error': 'Could not submit module.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        return consume_idempotency_key(attempt=attempt0, endpoint="submit_module", key=idem, compute=_compute)
 
     @action(detail=True, methods=['post'])
     def save_attempt(self, request, pk=None):
-        attempt = self.get_object()
-        if not attempt.current_module:
-            return Response({'error': 'No active module to save'}, status=status.HTTP_400_BAD_REQUEST)
-            
-        module_answers = request.data.get('answers', {})
-        flagged = request.data.get('flagged', [])
-        
-        attempt.module_answers[str(attempt.current_module.id)] = module_answers
-        attempt.flagged_questions[str(attempt.current_module.id)] = flagged
-        attempt.save()
-        
-        return Response({'status': 'saved'})
+        attempt0 = self.get_object()
+        idem = request.headers.get("Idempotency-Key") or request.headers.get("X-Idempotency-Key")
+        expected_v = _expected_attempt_version(request)
+
+        def _compute():
+            with transaction.atomic():
+                attempt = (
+                    TestAttempt.objects.select_for_update()
+                    .select_related("current_module")
+                    .get(pk=attempt0.pk)
+                )
+                if not attempt.current_module:
+                    return Response({'error': 'No active module to save'}, status=status.HTTP_400_BAD_REQUEST)
+                if expected_v is not None and int(attempt.version_number or 0) != int(expected_v):
+                    return _version_conflict_response(self, request, attempt=attempt)
+
+                timing = get_active_module_timing(attempt)
+                if timing and timing.is_expired:
+                    attempt.is_expired = True
+                    return Response({"error": "Module time expired."}, status=status.HTTP_409_CONFLICT)
+
+                module_answers = request.data.get('answers', {})
+                flagged = request.data.get('flagged', [])
+
+                attempt.module_answers[str(attempt.current_module.id)] = module_answers
+                attempt.flagged_questions[str(attempt.current_module.id)] = flagged
+                attempt.version_number = int(attempt.version_number or 0) + 1
+                attempt.save(update_fields=["module_answers", "flagged_questions", "version_number", "updated_at"])
+
+            return Response({'status': 'saved', 'version_number': attempt.version_number})
+
+        return consume_idempotency_key(attempt=attempt0, endpoint="save_attempt", key=idem, compute=_compute)
 
     @action(detail=True, methods=['get'])
     def review(self, request, pk=None):
         attempt = self.get_object()
-        if not getattr(attempt, "is_completed", False):
+        if attempt.current_state != TestAttempt.STATE_COMPLETED or not getattr(attempt, "is_completed", False):
             raise PermissionDenied("Review is available only after you submit the test.")
         module_id_param = request.query_params.get('module_id')
         
@@ -460,7 +608,8 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                 continue
                 
             module = modules_map.get(str(module_id))
-            if not module: continue
+            if not module:
+                continue
             
             for q in module.questions.all():
                 total_questions += 1
@@ -469,7 +618,8 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                 is_correct = q.check_answer(ans)
                 if ans is not None and str(ans).strip() != "": 
                     total_answered += 1
-                    if is_correct: total_correct += 1
+                    if is_correct:
+                        total_correct += 1
                 
                 questions_data.append({
                     'id': q.id,
@@ -497,6 +647,46 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
             'total_score': attempt.score,
             'score_percentage': (total_correct / total_questions * 100) if total_questions > 0 else 0
         })
+
+    @action(detail=True, methods=["get"])
+    def results(self, request, pk=None):
+        """
+        Final results payload (answers/analytics) only when COMPLETED.
+        """
+        attempt = self.get_object()
+        if attempt.current_state != TestAttempt.STATE_COMPLETED or not attempt.is_completed:
+            raise PermissionDenied("Results are available only after the attempt is completed.")
+        # Reuse existing review payload shape for now (single source for analytics).
+        # Frontend can call /results for gatekeeping without exposing review early.
+        return self.review(request, pk=pk)
+
+
+class ExamsMetricsView(APIView):
+    """Operational counters for the exam engine (staff)."""
+
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        return Response(
+            {
+                "submit_module": get_counter("submit_module"),
+                "idempotency_replay": get_counter("idempotency_replay"),
+                "submit_duplicate_prevented": get_counter("submit_duplicate_prevented"),
+                "version_conflict": get_counter("version_conflict"),
+                "scoring_enqueued": get_counter("scoring_enqueued"),
+                "scoring_completed": get_counter("scoring_completed"),
+            }
+        )
+
+
+class ExamsPrometheusMetricsView(APIView):
+    """Prometheus text exposition for exam engine counters (staff endpoint)."""
+
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        body = render_exams_prometheus_text()
+        return HttpResponse(body, content_type="text/plain; version=0.0.4; charset=utf-8")
 
 # ── Admin CRUD Viewsets ───────────────────────────────────────────────────────
 

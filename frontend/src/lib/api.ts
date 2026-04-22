@@ -330,15 +330,41 @@ export const examsApi = {
         return res.data;
     },
     getAttemptStatus: async (attemptId: number) => {
-        const res = await api.get(`/exams/attempts/${attemptId}/`);
+        // Canonical polling endpoint (new exam engine); fall back to legacy retrieve.
+        try {
+            const r = await api.get(`/exams/attempts/${attemptId}/status/`);
+            return r.data;
+        } catch {
+            const res = await api.get(`/exams/attempts/${attemptId}/`);
+            return res.data;
+        }
+    },
+    startAttemptEngine: async (attemptId: number, idempotencyKey?: string) => {
+        const res = await api.post(
+            `/exams/attempts/${attemptId}/start/`,
+            {},
+            { headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined },
+        );
         return res.data;
     },
-    submitModule: async (attemptId: number, answers: object, flagged: number[] = []) => {
-        const res = await api.post(`/exams/attempts/${attemptId}/submit_module/`, { answers, flagged });
+    submitModule: async (attemptId: number, answers: object, flagged: number[] = [], options?: { idempotencyKey?: string; expectedVersionNumber?: number }) => {
+        const headers: Record<string, string> = {};
+        if (options?.idempotencyKey) headers["Idempotency-Key"] = options.idempotencyKey;
+        const payload: any = { answers, flagged };
+        if (options?.expectedVersionNumber != null) payload.expected_version_number = options.expectedVersionNumber;
+        const res = await api.post(`/exams/attempts/${attemptId}/submit_module/`, payload, { headers: Object.keys(headers).length ? headers : undefined });
         return res.data;
     },
-    saveAttempt: async (attemptId: number, answers: object, flagged: number[] = []) => {
-        const res = await api.post(`/exams/attempts/${attemptId}/save_attempt/`, { answers, flagged });
+    saveAttempt: async (attemptId: number, answers: object, flagged: number[] = [], options?: { idempotencyKey?: string; expectedVersionNumber?: number }) => {
+        const headers: Record<string, string> = {};
+        if (options?.idempotencyKey) headers["Idempotency-Key"] = options.idempotencyKey;
+        const payload: any = { answers, flagged };
+        if (options?.expectedVersionNumber != null) payload.expected_version_number = options.expectedVersionNumber;
+        const res = await api.post(`/exams/attempts/${attemptId}/save_attempt/`, payload, { headers: Object.keys(headers).length ? headers : undefined });
+        return res.data;
+    },
+    getResults: async (attemptId: number) => {
+        const res = await api.get(`/exams/attempts/${attemptId}/results/`);
         return res.data;
     },
     getReview: async (attemptId: number, moduleId?: number) => {

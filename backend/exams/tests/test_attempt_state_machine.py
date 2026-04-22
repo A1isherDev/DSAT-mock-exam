@@ -1,0 +1,142 @@
+from django.contrib.auth import get_user_model
+from django.test import override_settings
+from rest_framework.test import APITestCase
+
+from exams.models import PracticeTest, Module, TestAttempt
+from exams.tasks import score_attempt_async
+
+
+@override_settings(CELERY_TASK_ALWAYS_EAGER=False, EXAMS_SCORE_INLINE_IF_NO_CELERY=False)
+class TestAttemptStateMachineTests(APITestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.user = User.objects.create_user(
+            username="student1",
+            email="student1@example.com",
+            password="pw12345678",
+            is_staff=True,
+            is_superuser=True,
+        )
+        self.client.force_authenticate(self.user)
+
+        self.test = PracticeTest.objects.create(
+            subject="READING_WRITING",
+            title="RW section",
+            form_type="INTERNATIONAL",
+        )
+        # Provision modules explicitly for test determinism.
+        self.m1 = Module.objects.create(practice_test=self.test, module_order=1, time_limit_minutes=1)
+        self.m2 = Module.objects.create(practice_test=self.test, module_order=2, time_limit_minutes=1)
+
+    def _start_attempt(self) -> dict:
+        r = self.client.post("/api/exams/attempts/", {"practice_test": self.test.id}, format="json")
+        self.assertIn(r.status_code, (200, 201))
+        return r.data
+
+    def test_module1_submit_advances_to_module2_not_review(self):
+        attempt = self._start_attempt()
+        attempt_id = attempt["id"]
+
+        r = self.client.post(
+            f"/api/exams/attempts/{attempt_id}/start_module/",
+            {"module_id": self.m1.id},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200)
+
+        r = self.client.post(
+            f"/api/exams/attempts/{attempt_id}/submit_module/",
+            {"answers": {"1": "A"}, "flagged": []},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(r.data.get("is_completed"))
+        self.assertEqual(r.data.get("current_module_details", {}).get("module_order"), 2)
+        self.assertEqual(r.data.get("current_state"), TestAttempt.STATE_MODULE_2_ACTIVE)
+
+        # Review must be forbidden until COMPLETED.
+        r = self.client.get(f"/api/exams/attempts/{attempt_id}/review/")
+        self.assertEqual(r.status_code, 403)
+
+    def test_cannot_start_module2_first(self):
+        attempt = self._start_attempt()
+        attempt_id = attempt["id"]
+
+        r = self.client.post(
+            f"/api/exams/attempts/{attempt_id}/start_module/",
+            {"module_id": self.m2.id},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 400)
+
+    def test_final_results_only_after_module2_submit(self):
+        attempt = self._start_attempt()
+        attempt_id = attempt["id"]
+
+        self.client.post(f"/api/exams/attempts/{attempt_id}/start_module/", {"module_id": self.m1.id}, format="json")
+        self.client.post(
+            f"/api/exams/attempts/{attempt_id}/submit_module/",
+            {"answers": {}, "flagged": []},
+            format="json",
+        )
+
+        r = self.client.get(f"/api/exams/attempts/{attempt_id}/")
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(r.data.get("is_completed"))
+
+        # Submit module 2 -> SCORING (async)
+        r = self.client.post(
+            f"/api/exams/attempts/{attempt_id}/submit_module/",
+            {"answers": {}, "flagged": []},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(r.data.get("is_completed"))
+        self.assertEqual(r.data.get("current_state"), TestAttempt.STATE_SCORING)
+
+        # Results still forbidden while scoring
+        r = self.client.get(f"/api/exams/attempts/{attempt_id}/review/")
+        self.assertEqual(r.status_code, 403)
+
+        # Simulate worker completion
+        score_attempt_async(attempt_id)
+        r = self.client.get(f"/api/exams/attempts/{attempt_id}/")
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.data.get("is_completed"))
+        self.assertEqual(r.data.get("current_state"), TestAttempt.STATE_COMPLETED)
+
+        # Review now allowed
+        r = self.client.get(f"/api/exams/attempts/{attempt_id}/review/")
+        self.assertEqual(r.status_code, 200)
+
+    def test_duplicate_submit_does_not_skip_modules(self):
+        attempt = self._start_attempt()
+        attempt_id = attempt["id"]
+        self.client.post(f"/api/exams/attempts/{attempt_id}/start_module/", {"module_id": self.m1.id}, format="json")
+
+        r1 = self.client.post(
+            f"/api/exams/attempts/{attempt_id}/submit_module/",
+            {"answers": {}, "flagged": []},
+            format="json",
+        )
+        self.assertEqual(r1.status_code, 200)
+        self.assertFalse(r1.data.get("is_completed"))
+        self.assertEqual(r1.data.get("current_module_details", {}).get("module_order"), 2)
+
+        # Submitting again (while module2 active) should not complete early unless module2 actually submitted.
+        # First, force the attempt back into module 1 idempotency scenario:
+        att = TestAttempt.objects.get(pk=attempt_id)
+        att.current_module = self.m1
+        att.save(update_fields=["current_module"])
+
+        r2 = self.client.post(
+            f"/api/exams/attempts/{attempt_id}/submit_module/",
+            {"answers": {}, "flagged": []},
+            format="json",
+        )
+        # Either 200 (idempotent no-op) or 400 (backend rejects invalid current state) are acceptable,
+        # but it must NOT mark completed.
+        self.assertIn(r2.status_code, (200, 400))
+        att.refresh_from_db()
+        self.assertFalse(att.is_completed)
+

@@ -310,10 +310,12 @@ class TestAttempt(TimestampedModel):
     practice_test = models.ForeignKey(PracticeTest, on_delete=models.CASCADE, related_name='attempts')
     student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='test_attempts')
     
+    # Legacy timestamps (kept for backward compatibility with existing clients/admin views).
     started_at = models.DateTimeField(null=True, blank=True, db_index=True)
     submitted_at = models.DateTimeField(null=True, blank=True)
     
     current_module = models.ForeignKey(Module, on_delete=models.SET_NULL, null=True, blank=True)
+    # Legacy (kept): corresponds to whichever module is active.
     current_module_start_time = models.DateTimeField(null=True, blank=True)
     
     completed_modules = models.ManyToManyField(Module, related_name='completed_attempts', blank=True)
@@ -321,6 +323,42 @@ class TestAttempt(TimestampedModel):
     module_answers = models.JSONField(default=dict, blank=True)
     flagged_questions = models.JSONField(default=dict, blank=True)
     
+    # ── Exam engine state machine (backend-authoritative) ────────────────────
+    STATE_NOT_STARTED = "NOT_STARTED"
+    STATE_MODULE_1_ACTIVE = "MODULE_1_ACTIVE"
+    STATE_MODULE_1_SUBMITTED = "MODULE_1_SUBMITTED"
+    STATE_MODULE_2_ACTIVE = "MODULE_2_ACTIVE"
+    STATE_MODULE_2_SUBMITTED = "MODULE_2_SUBMITTED"
+    STATE_SCORING = "SCORING"
+    STATE_COMPLETED = "COMPLETED"
+    STATE_CHOICES = [
+        (STATE_NOT_STARTED, "Not started"),
+        (STATE_MODULE_1_ACTIVE, "Module 1 active"),
+        (STATE_MODULE_1_SUBMITTED, "Module 1 submitted"),
+        (STATE_MODULE_2_ACTIVE, "Module 2 active"),
+        (STATE_MODULE_2_SUBMITTED, "Module 2 submitted"),
+        (STATE_SCORING, "Scoring"),
+        (STATE_COMPLETED, "Completed"),
+    ]
+    # NB: kept as a CharField so we can evolve the state machine without DB enum churn.
+    current_state = models.CharField(
+        max_length=24,
+        choices=STATE_CHOICES,
+        default=STATE_NOT_STARTED,
+        db_index=True,
+    )
+
+    # Per-module timestamps (server authoritative for timers/resume)
+    module_1_started_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    module_1_submitted_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    module_2_started_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    module_2_submitted_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    scoring_started_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    completed_at = models.DateTimeField(null=True, blank=True, db_index=True)
+
+    # Optimistic concurrency: bumped on every successful state mutation (start/autosave/submit/score).
+    version_number = models.PositiveIntegerField(default=0, db_index=True)
+
     is_completed = models.BooleanField(default=False, db_index=True)
     score = models.IntegerField(null=True, blank=True)
     
@@ -331,20 +369,88 @@ class TestAttempt(TimestampedModel):
     def __str__(self):
         return f"{self.student.email} - {self.practice_test}"
 
-    def start_test(self):
-        if self.started_at:
-            raise ValidationError("Section already started")
-            
-        self.started_at = timezone.now()
-        first_module = self.practice_test.modules.filter(module_order=1).first()
-        if first_module:
-            self.current_module = first_module
-            self.current_module_start_time = timezone.now()
-        self.save()
+    def _module_by_order(self, order: int) -> Module | None:
+        try:
+            order = int(order)
+        except (TypeError, ValueError):
+            return None
+        return self.practice_test.modules.filter(module_order=order).order_by("id").first()
+
+    def _set_active_module(self, module: Module) -> None:
+        self.current_module = module
+        now = timezone.now()
+        self.current_module_start_time = now
+        # Mirror into engine timestamps.
+        if module.module_order == 1:
+            self.module_1_started_at = self.module_1_started_at or now
+        elif module.module_order == 2:
+            self.module_2_started_at = self.module_2_started_at or now
+
+    def start_module(self, module: Module) -> None:
+        """
+        Enforced module sequencing for timed mock attempts.
+        - Cannot start Module 2 before Module 1 is submitted.
+        - Cannot start any module once COMPLETED.
+        - Starting Module 1 from NOT_STARTED transitions to MODULE_1_ACTIVE.
+        - Starting Module 2 after Module 1 transitions to MODULE_2_ACTIVE.
+        """
+        if self.is_completed or self.current_state == self.STATE_COMPLETED:
+            raise ValidationError("Cannot start module for a completed test")
+        if not module or module.practice_test_id != self.practice_test_id:
+            raise ValidationError("Invalid module for this attempt")
+
+        if not self.started_at:
+            self.started_at = timezone.now()
+
+        if module.module_order == 1:
+            if self.current_state not in (self.STATE_NOT_STARTED, self.STATE_MODULE_1_ACTIVE):
+                raise ValidationError(f"Cannot (re)start module 1 from state {self.current_state}")
+            self.current_state = self.STATE_MODULE_1_ACTIVE
+            self._set_active_module(module)
+            self.version_number = int(self.version_number or 0) + 1
+            self.save(
+                update_fields=[
+                    "started_at",
+                    "current_state",
+                    "current_module",
+                    "current_module_start_time",
+                    "module_1_started_at",
+                    "version_number",
+                    "updated_at",
+                ]
+            )
+            return
+
+        if module.module_order == 2:
+            if self.current_state not in (self.STATE_MODULE_1_SUBMITTED, self.STATE_MODULE_2_ACTIVE):
+                raise ValidationError("Cannot start module 2 before module 1 submission")
+            self.current_state = self.STATE_MODULE_2_ACTIVE
+            self._set_active_module(module)
+            self.version_number = int(self.version_number or 0) + 1
+            self.save(
+                update_fields=[
+                    "started_at",
+                    "current_state",
+                    "current_module",
+                    "current_module_start_time",
+                    "module_2_started_at",
+                    "version_number",
+                    "updated_at",
+                ]
+            )
+            return
+
+        raise ValidationError("Invalid module order")
 
     def submit_module(self, module_answers, flagged_questions=[]):
+        if self.is_completed or self.current_state == self.STATE_COMPLETED:
+            raise ValidationError("Attempt already completed")
         if not self.current_module:
             raise ValidationError("No current module to submit")
+
+        # Idempotency guard: if current module already marked completed, do not advance twice.
+        if self.completed_modules.filter(pk=self.current_module_id).exists():
+            return
             
         module_id = str(self.current_module.id)
         self.module_answers[module_id] = module_answers
@@ -352,29 +458,93 @@ class TestAttempt(TimestampedModel):
         
         # Mark as completed in the set
         self.completed_modules.add(self.current_module)
-        
-        # If this was module 2, or no module 2 exists, we might still want to mark test as completed
-        # but the user said "their choice". For now, we just clear current_module
-        # and let the user decide what to do next.
-        
-        # Check if all modules of this test are now in completed_modules
-        total_modules = self.practice_test.modules.count()
-        if self.completed_modules.count() >= total_modules:
-            self.complete_test()
-        else:
-            # Advance to next module automatically
-            next_module = self.practice_test.modules.exclude(id__in=self.completed_modules.all()).order_by('module_order').first()
-            if next_module:
-                self.current_module = next_module
-                self.current_module_start_time = timezone.now()
-                self.save()
+
+        mod_order = int(getattr(self.current_module, "module_order", 0) or 0)
+        if mod_order == 1:
+            # After Module 1 submission, strictly move to Module 2 (if it exists).
+            now = timezone.now()
+            self.module_1_submitted_at = self.module_1_submitted_at or now
+            self.current_state = self.STATE_MODULE_1_SUBMITTED
+            next_module = self._module_by_order(2)
+            if next_module is None:
+                # Data integrity issue: no Module 2 provisioned. Do NOT mark completed early.
+                self.current_module = None
+                self.current_module_start_time = None
+                self.version_number = int(self.version_number or 0) + 1
+                self.save(
+                    update_fields=[
+                        "module_answers",
+                        "flagged_questions",
+                        "current_state",
+                        "module_1_submitted_at",
+                        "current_module",
+                        "current_module_start_time",
+                        "version_number",
+                        "updated_at",
+                    ]
+                )
+                raise ValidationError("Module 2 is missing; cannot complete attempt after Module 1.")
+            self.current_state = self.STATE_MODULE_2_ACTIVE
+            self._set_active_module(next_module)
+            self.version_number = int(self.version_number or 0) + 1
+            self.save(
+                update_fields=[
+                    "module_answers",
+                    "flagged_questions",
+                    "current_state",
+                    "module_1_submitted_at",
+                    "current_module",
+                    "current_module_start_time",
+                    "module_2_started_at",
+                    "version_number",
+                    "updated_at",
+                ]
+            )
+            return
+
+        if mod_order == 2:
+            now = timezone.now()
+            self.module_2_submitted_at = self.module_2_submitted_at or now
+            self.current_state = self.STATE_MODULE_2_SUBMITTED
+            self.version_number = int(self.version_number or 0) + 1
+            self.save(
+                update_fields=[
+                    "module_answers",
+                    "flagged_questions",
+                    "current_state",
+                    "module_2_submitted_at",
+                    "version_number",
+                    "updated_at",
+                ]
+            )
+            return
+
+        raise ValidationError("Invalid current module order")
+
+    def enter_scoring(self):
+        """
+        Transition MODULE_2_SUBMITTED → SCORING (async worker will complete).
+        """
+        if self.is_completed or self.current_state == self.STATE_COMPLETED:
+            return
+        if self.current_state != self.STATE_MODULE_2_SUBMITTED:
+            raise ValidationError(f"Cannot enter scoring from state {self.current_state}")
+        now = timezone.now()
+        self.scoring_started_at = self.scoring_started_at or now
+        self.current_state = self.STATE_SCORING
+        self.version_number = int(self.version_number or 0) + 1
+        self.save(update_fields=["current_state", "scoring_started_at", "version_number", "updated_at"])
 
     def complete_test(self):
         if self.is_completed:
             return
             
-        self.submitted_at = timezone.now()
+        now = timezone.now()
+        self.submitted_at = self.submitted_at or now
         self.is_completed = True
+        self.current_state = self.STATE_COMPLETED
+        self.completed_at = self.completed_at or now
+        self.version_number = int(self.version_number or 0) + 1
 
         pt = self.practice_test
         mock = getattr(pt, "mock_exam", None)
@@ -393,7 +563,18 @@ class TestAttempt(TimestampedModel):
                         total_earned += question.score
             self.score = min(total_earned, 100)
             self.current_module = None
-            self.save()
+            self.save(
+                update_fields=[
+                    "submitted_at",
+                    "is_completed",
+                    "current_state",
+                    "completed_at",
+                    "version_number",
+                    "score",
+                    "current_module",
+                    "updated_at",
+                ]
+            )
             return
         
         # SAT Scoring Rules:
@@ -430,7 +611,18 @@ class TestAttempt(TimestampedModel):
         # Final Score = Base (200) + M1 earned + M2 earned
         self.score = min(200 + m1_earned + m2_earned, 800)
         self.current_module = None
-        self.save()
+        self.save(
+            update_fields=[
+                "submitted_at",
+                "is_completed",
+                "current_state",
+                "completed_at",
+                "version_number",
+                "score",
+                "current_module",
+                "updated_at",
+            ]
+        )
 
     def get_module_results(self):
         """Returns detailed results broken down by module for the review page."""
@@ -571,3 +763,23 @@ class BulkAssignmentDispatch(models.Model):
 
     def __str__(self) -> str:
         return f"BulkDispatch#{self.pk} {self.kind} by {self.assigned_by_id}"
+
+
+class AttemptIdempotencyKey(models.Model):
+    """
+    Stores responses for idempotent attempt mutations (submit/autosave/start).
+    """
+
+    attempt = models.ForeignKey(TestAttempt, on_delete=models.CASCADE, related_name="idempotency_keys")
+    endpoint = models.CharField(max_length=64, db_index=True)
+    key = models.CharField(max_length=128, db_index=True)
+    response_status = models.PositiveSmallIntegerField(default=200)
+    response_json = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    expires_at = models.DateTimeField(null=True, blank=True, db_index=True)
+
+    class Meta:
+        db_table = "exams_attempt_idempotency_keys"
+        constraints = [
+            models.UniqueConstraint(fields=["attempt", "endpoint", "key"], name="uniq_attempt_endpoint_key"),
+        ]

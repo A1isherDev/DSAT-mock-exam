@@ -240,22 +240,13 @@ class ClassroomViewSet(ModelViewSet):
             .annotate(members_count=Count("memberships"))
             .distinct()
         )
-        # LIST: teachers and students only see classrooms they belong to. Global staff with
-        # assign / user-directory permissions need every classroom for homework + admin flows
-        # (e.g. super_admin is rarely enrolled as a class member).
+        # Default visibility for classroom resources is membership-scoped. This keeps the
+        # student/teacher "Classes" UX private and prevents accidental directory-wide exposure.
+        #
+        # Superusers and super_admin may still need a global list for operational tasks.
         if getattr(self, "action", None) != "list":
             return member_qs
-        probe = actor_subject_probe_for_domain_perm(user)
-        if not probe:
-            return member_qs
-        can_directory = authorize(user, acc_const.PERM_ASSIGN_ACCESS, subject=probe) or authorize(
-            user, acc_const.PERM_MANAGE_USERS, subject=probe
-        )
-        if not can_directory:
-            return member_qs
         if getattr(user, "is_superuser", False) or normalized_role(user) == acc_const.ROLE_SUPER_ADMIN:
-            return Classroom.objects.annotate(members_count=Count("memberships")).distinct()
-        if is_global_scope_staff(user) and normalized_role(user) != acc_const.ROLE_TEACHER:
             return Classroom.objects.annotate(members_count=Count("memberships")).distinct()
         return member_qs
 

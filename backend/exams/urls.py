@@ -12,6 +12,8 @@ from .views import (
     MockExamViewSet,
     PracticeTestViewSet,
     TestAttemptViewSet,
+    ExamsMetricsView,
+    ExamsPrometheusMetricsView,
 )
 
 # ── Student routes ──────────────────────────────────────────────────────────
@@ -37,6 +39,8 @@ admin_question_router = DefaultRouter()
 admin_question_router.register(r'', AdminQuestionViewSet, basename='admin-questions')
 
 urlpatterns = [
+    path("metrics/", ExamsMetricsView.as_view(), name="exams-metrics"),
+    path("metrics/prometheus/", ExamsPrometheusMetricsView.as_view(), name="exams-metrics-prometheus"),
     path("assignments/history/", BulkAssignmentHistoryListView.as_view(), name="bulk-assignment-history"),
     path(
         "assignments/history/<int:pk>/",

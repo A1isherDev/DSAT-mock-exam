@@ -89,6 +89,11 @@ def forward(apps, schema_editor):
         old_role = Role.objects.filter(code=old_code).first()
         new_role = Role.objects.filter(code=new_code).first()
         if old_role and new_role:
+            # Older deployments may not have ``system_role`` fields on the User model.
+            try:
+                User._meta.get_field("system_role")
+            except Exception:
+                continue
             User.objects.filter(system_role_id=old_role.pk).update(system_role_id=new_role.pk)
 
     for obsolete in ("TEACHER", "ENGLISH_ADMIN", "MATH_ADMIN"):

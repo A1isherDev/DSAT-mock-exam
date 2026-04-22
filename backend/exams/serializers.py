@@ -5,6 +5,7 @@ from django.contrib.auth import get_user_model
 from django.db.models import Sum
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers
+from django.utils import timezone
 
 from .models import (
     BulkAssignmentDispatch,
@@ -168,12 +169,40 @@ class TestAttemptSerializer(serializers.ModelSerializer):
     student_details = UserSerializer(source='student', read_only=True)
     is_expired = serializers.SerializerMethodField()
     module_results = serializers.SerializerMethodField()
+    server_now = serializers.SerializerMethodField()
+    current_module_saved_answers = serializers.SerializerMethodField()
+    current_module_flagged_questions = serializers.SerializerMethodField()
 
     def get_is_expired(self, obj):
         return getattr(obj, 'is_expired', False)
         
     def get_module_results(self, obj):
         return obj.get_module_results() if obj.is_completed else None
+    
+    def get_server_now(self, obj):
+        return timezone.now().isoformat()
+
+    def get_current_module_saved_answers(self, obj):
+        """
+        Resume support: return saved answers for the currently active module only.
+        Never include correct answers; review endpoint remains gated behind completion.
+        """
+        mod = getattr(obj, "current_module", None)
+        if not mod:
+            return None
+        try:
+            return (obj.module_answers or {}).get(str(mod.id), {}) or {}
+        except Exception:
+            return {}
+
+    def get_current_module_flagged_questions(self, obj):
+        mod = getattr(obj, "current_module", None)
+        if not mod:
+            return None
+        try:
+            return (obj.flagged_questions or {}).get(str(mod.id), []) or []
+        except Exception:
+            return []
 
     def get_practice_test_details(self, obj):
         pt = obj.practice_test
@@ -195,10 +224,33 @@ class TestAttemptSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'practice_test', 'practice_test_details', 'student', 'student_details', 'started_at', 'submitted_at', 
             'current_module', 'current_module_details', 'current_module_start_time',
-            'is_completed', 'is_expired', 'score', 'completed_modules', 'module_results'
+            'current_state',
+            'module_1_started_at', 'module_1_submitted_at',
+            'module_2_started_at', 'module_2_submitted_at',
+            'scoring_started_at', 'completed_at',
+            'version_number',
+            'is_completed', 'is_expired', 'score', 'completed_modules', 'module_results',
+            'server_now',
+            'current_module_saved_answers',
+            'current_module_flagged_questions',
         ]
 
-        read_only_fields = ['student', 'started_at', 'submitted_at', 'current_module', 'current_module_start_time', 'is_completed', 'score', 'completed_modules']
+        read_only_fields = [
+            'student',
+            'started_at',
+            'submitted_at',
+            'current_module',
+            'current_module_start_time',
+            'current_state',
+            'module_1_started_at', 'module_1_submitted_at',
+            'module_2_started_at', 'module_2_submitted_at',
+            'scoring_started_at', 'completed_at',
+            'version_number',
+            'is_completed',
+            'score',
+            'completed_modules',
+            'server_now',
+        ]
 
 # ── Admin Serializers ────────────────────────────────────────────────────────
 
