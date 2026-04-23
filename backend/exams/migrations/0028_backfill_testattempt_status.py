@@ -3,19 +3,18 @@ from django.db import migrations
 
 def _infer_status(apps, attempt):
     Module = apps.get_model("exams", "Module")
-    TestAttempt = apps.get_model("exams", "TestAttempt")
 
     if getattr(attempt, "is_completed", False):
-        return TestAttempt.STATUS_COMPLETED
+        return "COMPLETED"
 
     current_module_id = getattr(attempt, "current_module_id", None)
     if current_module_id:
         try:
             mod = Module.objects.get(pk=current_module_id)
             if mod.module_order == 2:
-                return TestAttempt.STATUS_MODULE_2_ACTIVE
+                return "MODULE_2_ACTIVE"
             if mod.module_order == 1:
-                return TestAttempt.STATUS_MODULE_1_ACTIVE
+                return "MODULE_1_ACTIVE"
         except Module.DoesNotExist:
             pass
 
@@ -25,11 +24,11 @@ def _infer_status(apps, attempt):
         mods = list(Module.objects.filter(id__in=completed_ids).values_list("module_order", flat=True))
         if 2 in mods:
             # If module 2 is marked completed but is_completed is false, treat as completed (data repair).
-            return TestAttempt.STATUS_COMPLETED
+            return "COMPLETED"
         if 1 in mods:
-            return TestAttempt.STATUS_MODULE_1_SUBMITTED
+            return "MODULE_1_SUBMITTED"
 
-    return TestAttempt.STATUS_NOT_STARTED
+    return "NOT_STARTED"
 
 
 def backfill_status(apps, schema_editor):
@@ -41,7 +40,7 @@ def backfill_status(apps, schema_editor):
         updates = {}
         if getattr(att, "status", None) != inferred:
             updates["status"] = inferred
-        if inferred == TestAttempt.STATUS_COMPLETED and not getattr(att, "is_completed", False):
+        if inferred == "COMPLETED" and not getattr(att, "is_completed", False):
             updates["is_completed"] = True
         if updates:
             TestAttempt.objects.filter(pk=att.pk).update(**updates)
