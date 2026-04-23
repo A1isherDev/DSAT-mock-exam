@@ -508,9 +508,18 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                     module_answers = request.data.get('answers', {})
                     flagged = request.data.get('flagged', [])
                     current_mod_order = attempt.current_module.module_order if attempt.current_module else "?"
+
+                    # Capture the module being submitted NOW, before submit_module() advances
+                    # current_module to the next module.  The old guard used attempt.current_module_id
+                    # which—after a successful Module 1 submit—already points to Module 2, so a retry
+                    # would skip the guard and prematurely submit Module 2 with Module 1 answers.
+                    submitting_module_id = attempt.current_module_id
+
                     # Duplicate submit guard (server-side): safe under retries.
-                    if attempt.completed_modules.filter(pk=attempt.current_module_id).exists():
+                    if attempt.completed_modules.filter(pk=submitting_module_id).exists():
                         metric_incr("submit_duplicate_prevented")
+                        # Do NOT call submit_module() again; the attempt is already in the correct
+                        # post-submit state.  Fall through so the client receives the canonical payload.
                     else:
                         attempt.submit_module(module_answers, flagged)
 

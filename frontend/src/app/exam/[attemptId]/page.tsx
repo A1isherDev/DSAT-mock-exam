@@ -860,54 +860,90 @@ function ExamPlayerInner() {
         setLoading(true);
         try {
             const prevOrder = Number(attempt?.current_module_details?.module_order || 0) || null;
-            const idem = `submit.${attempt.id}.${attempt.current_module_details.id}.${Date.now()}`;
-            await examsApi.submitModule(attempt.id, answers, flagged, { idempotencyKey: idem, expectedVersionNumber: attempt?.version_number });
-            const updatedAttempt = await examsApi.getAttemptStatus(Number(attemptId));
-            if (updatedAttempt.is_completed) {
-                const meid = searchParams.get('mockExamId');
-                const subj = updatedAttempt.practice_test_details?.subject;
-                if (mockFlow && meid && platformSubjectIsReadingWriting(subj)) {
-                    router.push(`/mock/${meid}/break?rwAttempt=${attemptId}`);
-                    return;
+            // Idempotency key WITHOUT Date.now() so retries within the 10-min cache window
+            // hit the stored response instead of re-executing the mutation.
+            const idem = `submit.${attempt.id}.${attempt.current_module_details.id}.v${attempt.version_number}`;
+
+            let updatedAttempt: any = null;
+
+            try {
+                // submitModule returns the full serialized attempt (Module 2 active after M1 submit).
+                // Use that directly — avoids a second round-trip that can fail independently.
+                updatedAttempt = await examsApi.submitModule(
+                    attempt.id,
+                    answers,
+                    flagged,
+                    { idempotencyKey: idem, expectedVersionNumber: attempt?.version_number },
+                );
+            } catch (submitErr: any) {
+                // HTTP 409 = version conflict: backend already advanced the state (e.g. a prior
+                // request succeeded but its response was lost).  Extract the canonical attempt from
+                // the error body so we can sync forward instead of leaving the student on Module 1.
+                const status409 = submitErr?.response?.status === 409;
+                const bodyAttempt = submitErr?.response?.data?.attempt;
+                if (status409 && bodyAttempt) {
+                    updatedAttempt = bodyAttempt;
+                } else {
+                    // Genuine error (network, 400, 500…) — re-fetch status to get the real state
+                    // before giving up, in case the backend actually succeeded.
+                    try {
+                        updatedAttempt = await examsApi.getAttemptStatus(Number(attemptId));
+                    } catch {
+                        // Status fetch also failed; surface the original error.
+                        throw submitErr;
+                    }
                 }
-                if (mockFlow && meid && platformSubjectIsMath(subj)) {
-                    const rw = searchParams.get('rwAttempt');
-                    const qs =
-                        rw && rw.length > 0
-                            ? `?rwAttempt=${encodeURIComponent(rw)}&mathAttempt=${attemptId}`
-                            : `?mathAttempt=${attemptId}`;
-                    router.push(`/mock/${meid}/results${qs}`);
-                    return;
-                }
-                router.push(`/review/${attemptId}`);
-            } else {
-                // Module 2 submit transitions to SCORING now (async); show scoring UI.
-                if (updatedAttempt?.current_state === "SCORING") {
-                    setAttempt(updatedAttempt);
-                    setLoading(false);
-                    return;
-                }
-                const nextOrder = Number(updatedAttempt?.current_module_details?.module_order || 0) || null;
-                if (prevOrder === 1 && nextOrder === 2) {
-                    prevModuleOrderRef.current = 2;
-                    setTransitioning(true);
-                    setTimeout(() => setTransitioning(false), 1800);
-                }
-                setAttempt(updatedAttempt);
-                setCurrentQuestionIndex(0);
-                setAnswers({});
-                setFlagged([]);
-                setEliminatedOptions({});
-                setQuestionHighlights({});
-                setShowAnswerPreview(false);
-                setLoading(false);
-                try {
-                    const key = `mastersat.examDraft.${attemptId}.${attempt.current_module_details.id}`;
-                    localStorage.removeItem(key);
-                } catch {}
             }
+
+            const applyAttemptUpdate = (data: any) => {
+                if (data.is_completed) {
+                    const meid = searchParams.get('mockExamId');
+                    const subj = data.practice_test_details?.subject;
+                    if (mockFlow && meid && platformSubjectIsReadingWriting(subj)) {
+                        router.push(`/mock/${meid}/break?rwAttempt=${attemptId}`);
+                        return;
+                    }
+                    if (mockFlow && meid && platformSubjectIsMath(subj)) {
+                        const rw = searchParams.get('rwAttempt');
+                        const qs =
+                            rw && rw.length > 0
+                                ? `?rwAttempt=${encodeURIComponent(rw)}&mathAttempt=${attemptId}`
+                                : `?mathAttempt=${attemptId}`;
+                        router.push(`/mock/${meid}/results${qs}`);
+                        return;
+                    }
+                    router.push(`/review/${attemptId}`);
+                } else {
+                    // Module 2 submit transitions to SCORING now (async); show scoring UI.
+                    if (data?.current_state === 'SCORING') {
+                        setAttempt(data);
+                        setLoading(false);
+                        return;
+                    }
+                    const nextOrder = Number(data?.current_module_details?.module_order || 0) || null;
+                    if (prevOrder === 1 && nextOrder === 2) {
+                        prevModuleOrderRef.current = 2;
+                        setTransitioning(true);
+                        setTimeout(() => setTransitioning(false), 1800);
+                    }
+                    setAttempt(data);
+                    setCurrentQuestionIndex(0);
+                    setAnswers({});
+                    setFlagged([]);
+                    setEliminatedOptions({});
+                    setQuestionHighlights({});
+                    setShowAnswerPreview(false);
+                    setLoading(false);
+                    try {
+                        const key = `mastersat.examDraft.${attemptId}.${attempt.current_module_details.id}`;
+                        localStorage.removeItem(key);
+                    } catch {}
+                }
+            };
+
+            applyAttemptUpdate(updatedAttempt);
         } catch (err) {
-            console.error(err);
+            console.error('handleSubmitModule unrecoverable error:', err);
             setLoading(false);
         } finally {
             submitLockRef.current = false;
