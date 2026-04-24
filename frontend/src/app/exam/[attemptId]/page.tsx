@@ -315,6 +315,8 @@ function ExamPlayerInner() {
     const [midtermMode, setMidtermMode] = useState(() => searchParams.get('midterm') === '1');
     const [attempt, setAttempt] = useState<any>(null);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState<string | null>(null);
+    const [reloadNonce, setReloadNonce] = useState(0);
     const [transitioning, setTransitioning] = useState(false);
     
     // SAFE STATE UPDATE: Enforces version_number checks to prevent stale background polls
@@ -410,6 +412,7 @@ function ExamPlayerInner() {
     useEffect(() => {
         const fetchAttempt = async () => {
             try {
+                setLoadError(null);
                 const data = await examsApi.getAttemptStatus(Number(attemptId));
                 try {
                     const sn = data?.server_now ? new Date(data.server_now).getTime() : NaN;
@@ -432,10 +435,12 @@ function ExamPlayerInner() {
                 }
                 setLoading(false);
             } catch (err) {
+                setLoading(false);
+                setLoadError("Attemptni yuklab bo'lmadi. Internet yoki login holatini tekshirib, qayta urinib ko'ring.");
             }
         };
         fetchAttempt();
-    }, [attemptId, router]);
+    }, [attemptId, router, reloadNonce, safeSetAttempt]);
 
     // Minimal multi-tab guard: block UI if another tab is active for this attempt.
     useEffect(() => {
@@ -1150,14 +1155,34 @@ function ExamPlayerInner() {
         return `${mins}:${secs.toString().padStart(2, '0')}`;
     };
 
+    if (loadError) {
+        return (
+            <div className="min-h-screen flex flex-col items-center justify-center bg-white px-6">
+                <h2 className="text-xl font-bold text-slate-900 tracking-tight text-center">Testni ochishda xatolik</h2>
+                <p className="text-slate-500 font-medium mt-3 text-center max-w-md">{loadError}</p>
+                <button
+                    type="button"
+                    onClick={() => {
+                        setLoading(true);
+                        setAttempt(null);
+                        setReloadNonce((x) => x + 1);
+                    }}
+                    className="mt-6 inline-flex items-center justify-center rounded-xl bg-emerald-600 px-5 py-3 text-white font-bold hover:bg-emerald-700 transition-colors"
+                >
+                    Qayta urinish
+                </button>
+            </div>
+        );
+    }
+
     if (loading || !attempt || !attempt.current_module_details) {
         return (
             <div className="min-h-screen flex flex-col items-center justify-center bg-white">
                 <div className="animate-spin text-blue-600 w-12 h-12 mb-6">
                     <Pause className="w-full h-full" />
                 </div>
-                <h2 className="text-xl font-bold text-slate-900 tracking-tight">Saving and continuing...</h2>
-                <p className="text-slate-500 font-medium mt-2">Preparing your next module</p>
+                <h2 className="text-xl font-bold text-slate-900 tracking-tight">Loading exam...</h2>
+                <p className="text-slate-500 font-medium mt-2">Please wait</p>
             </div>
         );
     }
