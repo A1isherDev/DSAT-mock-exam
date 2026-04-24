@@ -1092,11 +1092,12 @@ function ExamPlayerInner() {
         // --- Autonomous Recovery: Retry Loop ---
         const performSubmit = async (attemptCount = 0) => {
             try {
+                const expected = attempt?.version_number;
                 const resp = await examsApi.submitModule(
                     attemptIdNum,
                     answers,
                     flagged,
-                    { idempotencyKey: idem, expectedVersionNumber: attempt?.version_number },
+                    { idempotencyKey: idem, expectedVersionNumber: expected },
                 );
                 
                 watchdogActive = false;
@@ -1109,7 +1110,30 @@ function ExamPlayerInner() {
                 if (status === 409 && err?.response?.data?.attempt) {
                     watchdogActive = false;
                     clearTimeout(watchdogTimer);
-                    applyAttemptUpdate(err.response.data.attempt);
+                    const serverAttempt = err.response.data.attempt;
+                    applyAttemptUpdate(serverAttempt);
+
+                    // If we are still on module 1, retry once with the fresh version_number.
+                    // This fixes the common case where background autosave/other tab bumped the version
+                    // right before submit, causing a conflict but not applying the transition.
+                    try {
+                        const st = serverAttempt?.current_state;
+                        const mo = Number(serverAttempt?.current_module_details?.module_order || 0);
+                        if (st === "MODULE_1_ACTIVE" && mo === 1) {
+                            const newV = serverAttempt?.version_number;
+                            const newModId = serverAttempt?.current_module_details?.id ?? currentModId;
+                            const retryIdem = `submit.${attemptIdNum}.${newModId}.v${newV}.retry`;
+                            const resp2 = await examsApi.submitModule(
+                                attemptIdNum,
+                                answers,
+                                flagged,
+                                { idempotencyKey: retryIdem, expectedVersionNumber: newV },
+                            );
+                            applyAttemptUpdate(resp2);
+                        }
+                    } catch {
+                        // If retry fails, fall through to allow user retry manually.
+                    }
                     return;
                 }
 
@@ -1127,6 +1151,10 @@ function ExamPlayerInner() {
                     } catch {
                         setLoading(false);
                         submitLockRef.current = false;
+                        setLoadError(
+                            `Submit failed.${status ? ` HTTP ${status}.` : ""} ` +
+                            `Please click Retry and try submitting again.`
+                        );
                     }
                 }
             }
