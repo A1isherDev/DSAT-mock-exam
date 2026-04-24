@@ -974,6 +974,11 @@ function ExamPlayerInner() {
         
         submitLockRef.current = true;
         setLoading(true);
+        // Prevent the background polling loop from racing this submit.
+        try {
+            if (activePollRef.current) clearTimeout(activePollRef.current);
+        } catch {}
+        activePollRef.current = null;
         
         const attemptIdNum = Number(attemptId);
         const prevOrder = Number(attempt?.current_module_details?.module_order || 0);
@@ -984,6 +989,8 @@ function ExamPlayerInner() {
         const applyAttemptUpdate = (data: any) => {
             if (!data) return;
             const nextOrder = Number(data?.current_module_details?.module_order || 0) || null;
+            const nextModId = data?.current_module_details?.id ?? null;
+            const didModuleChange = Boolean(nextModId && Number(nextModId) !== Number(currentModId));
             
             // If we are already on M2 or scoring, ensure we transition UI immediately
             if (data.is_completed) {
@@ -1030,33 +1037,40 @@ function ExamPlayerInner() {
             }
 
             // Detect M1 -> M2 transition
-            if (prevOrder === 1 && nextOrder === 2) {
+            if (didModuleChange && prevOrder === 1 && nextOrder === 2) {
                 prevModuleOrderRef.current = 2;
                 setTransitioning(true);
                 setTimeout(() => setTransitioning(false), 1800);
             }
 
-            // Update state and clear locals
+            // Update attempt state first (backend truth).
             safeSetAttempt(data);
-            setCurrentQuestionIndex(0);
-            setAnswers({});
-            setFlagged([]);
+
+            // Only clear per-module local UI state when we actually moved to a different module.
+            // If submit failed or was idempotently ignored, clearing here would "lose answers" in the UI.
+            if (didModuleChange) {
+                setCurrentQuestionIndex(0);
+                setAnswers({});
+                setFlagged([]);
+                setEliminatedOptions({});
+                setQuestionHighlights({});
+                setShowAnswerPreview(false);
+            }
             
             if (data?.current_module_details?.id) {
                 lastAnswersModuleIdRef.current = data.current_module_details.id;
             }
 
-            setEliminatedOptions({});
-            setQuestionHighlights({});
-            setShowAnswerPreview(false);
             setLoading(false);
             submitLockRef.current = false;
             
-            // Cleanup persistence
-            try {
-                const key = `mastersat.examDraft.${attemptId}.${currentModId}`;
-                localStorage.removeItem(key);
-            } catch {}
+            // Cleanup persistence only if we moved off this module.
+            if (didModuleChange) {
+                try {
+                    const key = `mastersat.examDraft.${attemptId}.${currentModId}`;
+                    localStorage.removeItem(key);
+                } catch {}
+            }
         };
 
         // --- Autonomous Recovery: Watchdog ---

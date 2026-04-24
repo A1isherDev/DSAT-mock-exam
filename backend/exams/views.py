@@ -632,7 +632,13 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                 attempt.version_number = int(attempt.version_number or 0) + 1
                 attempt.save(update_fields=["module_answers", "flagged_questions", "version_number", "updated_at"])
 
-            return Response({'status': 'saved', 'version_number': attempt.version_number})
+            # Return canonical attempt payload so the frontend can update version_number and avoid stale overwrites.
+            attempt = (
+                TestAttempt.objects.select_related("practice_test", "current_module")
+                .prefetch_related("practice_test__modules", "current_module__questions")
+                .get(pk=attempt0.pk)
+            )
+            return Response(self.get_serializer(attempt).data)
 
         return consume_idempotency_key(attempt=attempt0, endpoint="save_attempt", key=idem, compute=_compute)
 
