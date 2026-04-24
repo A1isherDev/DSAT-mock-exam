@@ -548,18 +548,28 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                     details=f"Submitted module {current_mod_order} of {attempt.practice_test}"
                 )
 
-                attempt = TestAttempt.objects.get(pk=attempt0.pk)
+                # Final re-fetch to ensure all FKs and M2M state are loaded for the serializer.
+                # Use select_related to guarantee current_module is fresh.
+                attempt = TestAttempt.objects.select_related("current_module").get(pk=attempt0.pk)
                 if expired:
                     attempt.is_expired = True
+                
+                resp_data = self.get_serializer(attempt).data
+                logger.info(
+                    "submit_module_success attempt_id=%s new_state=%s new_mod_id=%s v=%s",
+                    attempt.id, attempt.current_state, attempt.current_module_id, attempt.version_number
+                )
                 metric_incr("submit_module")
-                return Response(self.get_serializer(attempt).data)
-            except Exception:
+                return Response(resp_data)
+            except Exception as e:
                 logger.exception(
-                    "submit_module failed attempt_id=%s user_id=%s",
+                    "submit_module failed attempt_id=%s user_id=%s error=%s",
                     getattr(attempt0, "id", None),
                     getattr(request.user, "id", None),
+                    str(e)
                 )
-                return Response({'error': 'Could not submit module.'}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
         return consume_idempotency_key(attempt=attempt0, endpoint="submit_module", key=idem, compute=_compute)
 

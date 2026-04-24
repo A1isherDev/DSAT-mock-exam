@@ -445,12 +445,19 @@ function ExamPlayerInner() {
             local = null;
             try { localStorage.removeItem(key); } catch {}
         }
+        const localModId = local?.moduleId ?? null;
+        if (localModId && String(localModId) !== String(attempt.current_module_details.id)) {
+            // Draft belongs to a different module; discard.
+            local = null;
+        }
+
         const serverAnswers = attempt?.current_module_saved_answers || {};
         const serverFlagged = Array.isArray(attempt?.current_module_flagged_questions)
             ? attempt.current_module_flagged_questions
             : [];
         setAnswers({ ...(local?.answers || {}), ...serverAnswers });
         setFlagged(Array.from(new Set([...(local?.flagged || []), ...serverFlagged])));
+
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [attempt?.current_module_details?.id, attempt?.version_number]);
 
@@ -459,8 +466,14 @@ function ExamPlayerInner() {
         if (!attempt?.current_module_details?.id) return;
         const key = `mastersat.examDraft.${attemptId}.${attempt.current_module_details.id}`;
         try {
-            localStorage.setItem(key, JSON.stringify({ answers, flagged, v: attempt?.version_number ?? null }));
+            localStorage.setItem(key, JSON.stringify({ 
+                answers, 
+                flagged, 
+                v: attempt?.version_number ?? null,
+                moduleId: attempt.current_module_details.id
+            }));
         } catch {
+
             /* ignore */
         }
     }, [answers, flagged, attempt?.current_module_details?.id, attempt?.version_number, attemptId]);
@@ -1087,6 +1100,22 @@ function ExamPlayerInner() {
             }, 15_000);
         }
     }, [timeLeft, attempt?.current_module_details?.id, warningShownForModule]);
+
+    // Forensic diagnostic logging (throttled)
+    useEffect(() => {
+        const interval = setInterval(() => {
+            console.log('[EXAM] Render State Audit:', {
+                module_order: attempt?.current_module_details?.module_order,
+                current_state: attempt?.current_state,
+                questions_count: questions.length,
+                current_index: currentQuestionIndex,
+                is_transitioning: transitioning,
+                is_loading: loading,
+                v: attempt?.version_number
+            });
+        }, 5000);
+        return () => clearInterval(interval);
+    }, [attempt, questions.length, currentQuestionIndex, transitioning, loading]);
 
     const formatTime = (seconds: number) => {
         const mins = Math.floor(seconds / 60);

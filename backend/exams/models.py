@@ -442,19 +442,32 @@ class TestAttempt(TimestampedModel):
 
         raise ValidationError("Invalid module order")
 
-    def submit_module(self, module_answers, flagged_questions=[]):
-        if self.is_completed or self.current_state == self.STATE_COMPLETED:
-            raise ValidationError("Attempt already completed")
+    def submit_module(self, module_answers: dict, flagged: list = None) -> None:
+        logger.info(
+            "submit_module_start attempt_id=%s current_mod_id=%s current_state=%s v=%s",
+            self.id, self.current_module_id, self.current_state, self.version_number
+        )
+
         if not self.current_module:
+            logger.error("submit_module_fail_no_module attempt_id=%s", self.id)
             raise ValidationError("No current module to submit")
 
-        # Idempotency guard: if current module already marked completed, do not advance twice.
+        if self.is_completed or self.current_state == self.STATE_COMPLETED:
+            raise ValidationError("Attempt already completed")
+
+        # Defensive: If this specific module is already completed, do not re-process.
+        # This prevents accidental double-advancement if the state machine is in a weird spot.
         if self.completed_modules.filter(pk=self.current_module_id).exists():
+            logger.warning("submit_module_skip_already_completed attempt_id=%s mod_id=%s", self.id, self.current_module_id)
             return
-            
-        module_id = str(self.current_module.id)
-        self.module_answers[module_id] = module_answers
-        self.flagged_questions[module_id] = flagged_questions
+
+        if not self.module_answers:
+            self.module_answers = {}
+        if not self.flagged_questions:
+            self.flagged_questions = {}
+
+        self.module_answers[str(self.current_module_id)] = module_answers
+        self.flagged_questions[str(self.current_module_id)] = flagged or []
         
         # Mark as completed in the set
         self.completed_modules.add(self.current_module)
@@ -464,10 +477,10 @@ class TestAttempt(TimestampedModel):
             # After Module 1 submission, strictly move to Module 2 (if it exists).
             now = timezone.now()
             self.module_1_submitted_at = self.module_1_submitted_at or now
-            self.current_state = self.STATE_MODULE_1_SUBMITTED
+            self.current_state = self.STATE_MODULE_2_ACTIVE
             next_module = self._module_by_order(2)
             if next_module is None:
-                # Data integrity issue: no Module 2 provisioned. Do NOT mark completed early.
+                logger.error("submit_module_no_m2 attempt_id=%s", self.id)
                 self.current_module = None
                 self.current_module_start_time = None
                 self.version_number = int(self.version_number or 0) + 1
@@ -484,7 +497,8 @@ class TestAttempt(TimestampedModel):
                     ]
                 )
                 raise ValidationError("Module 2 is missing; cannot complete attempt after Module 1.")
-            self.current_state = self.STATE_MODULE_2_ACTIVE
+            
+            logger.info("submit_module_advancing_m1_to_m2 attempt_id=%s m2_id=%s", self.id, next_module.id)
             self._set_active_module(next_module)
             self.version_number = int(self.version_number or 0) + 1
             self.save(
