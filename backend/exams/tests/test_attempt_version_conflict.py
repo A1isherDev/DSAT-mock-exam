@@ -18,7 +18,11 @@ class AttemptVersionConflictTests(APITestCase):
         )
         self.client.force_authenticate(self.user)
 
-        self.test = PracticeTest.objects.create(subject="MATH", form_type="INTERNATIONAL")
+        self.test = PracticeTest.objects.create(
+            subject="MATH",
+            form_type="INTERNATIONAL",
+            skip_default_modules=True,
+        )
         self.m1 = Module.objects.create(practice_test=self.test, module_order=1, time_limit_minutes=35)
         self.m2 = Module.objects.create(practice_test=self.test, module_order=2, time_limit_minutes=35)
 

@@ -1,7 +1,11 @@
+import logging
+
 from django.db import models
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 from users.models import User
+
+logger = logging.getLogger(__name__)
 
 class TimestampedModel(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
@@ -278,6 +282,20 @@ class Module(TimestampedModel):
     class Meta:
         db_table = 'modules'
         ordering = ['practice_test', 'module_order']
+        constraints = [
+            models.UniqueConstraint(
+                fields=["practice_test", "module_order"],
+                name="uniq_module_order_per_test",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(module_order__in=[1, 2]),
+                name="chk_module_order_1_2",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(time_limit_minutes__gt=0),
+                name="chk_module_time_limit_positive",
+            ),
+        ]
 
     def __str__(self):
         exam_title = (
@@ -289,20 +307,50 @@ class Module(TimestampedModel):
 
 
 def ensure_full_mock_practice_test_modules(practice_test: PracticeTest) -> None:
-    """SAT full mock: guarantee two timed modules per R&W or Math section."""
-    if getattr(practice_test, "skip_default_modules", False):
-        return
+    """
+    Guarantee required timed modules exist for the exam engine.
+
+    - Full SAT mock sections (non-midterm): always require Module 1 + Module 2.
+    - Midterms: require Module 1; Module 2 only when mock.midterm_module_count >= 2.
+
+    NOTE: Historically, midterms/custom builds used ``skip_default_modules=True`` to avoid the
+    post_save auto-provision. However, the exam runner assumes the required module rows exist
+    when transitioning Module 1 → Module 2. If a required Module 2 row is missing (deleted or
+    mis-provisioned), the attempt can transition into MODULE_2_ACTIVE with no current_module,
+    leaving the frontend stuck. This helper is the single defensive backstop to prevent that.
+    """
     if practice_test.subject not in ("READING_WRITING", "MATH"):
         return
+
+    mock = getattr(practice_test, "mock_exam", None)
+    kind = getattr(mock, "kind", None) if mock else None
+
+    # Determine which module orders should exist.
+    required_orders: tuple[int, ...] = (1, 2)
+    if kind == MockExam.KIND_MIDTERM:
+        cnt = int(getattr(mock, "midterm_module_count", 2) or 2)
+        required_orders = (1, 2) if cnt >= 2 else (1,)
+
     existing_orders = set(practice_test.modules.values_list("module_order", flat=True))
-    mins = 32 if practice_test.subject == "READING_WRITING" else 35
-    for order in (1, 2):
+
+    def _default_minutes() -> int:
+        return 32 if practice_test.subject == "READING_WRITING" else 35
+
+    for order in required_orders:
         if order in existing_orders:
             continue
+        if kind == MockExam.KIND_MIDTERM and mock:
+            if order == 1:
+                mins = int(getattr(mock, "midterm_module1_minutes", 60) or 60)
+            else:
+                mins = int(getattr(mock, "midterm_module2_minutes", 60) or 60)
+        else:
+            mins = _default_minutes()
+
         Module.objects.create(
             practice_test=practice_test,
             module_order=order,
-            time_limit_minutes=mins,
+            time_limit_minutes=max(1, mins),
         )
 
 

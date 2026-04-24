@@ -73,6 +73,7 @@ from .tasks import score_attempt_async
 from .metrics import incr as metric_incr, get_counter
 from .prometheus import render_exams_prometheus_text
 from .attempt_timing import get_active_module_timing
+from .engine_integrity import autoheal_attempt_for_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -428,6 +429,7 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
             try:
                 with transaction.atomic():
                     locked = TestAttempt.objects.select_for_update().get(pk=attempt.pk)
+                    autoheal_attempt_for_runtime(locked)
                     locked.start_module(m1)
                 return Response(self.get_serializer(TestAttempt.objects.get(pk=attempt.pk)).data)
             except Exception as exc:
@@ -467,7 +469,14 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                 attempt.is_expired = True  # serializer reads this attribute
                 return Response({"error": "Module time expired."}, status=status.HTTP_409_CONFLICT)
 
-            attempt.start_module(module)
+            with transaction.atomic():
+                locked = (
+                    TestAttempt.objects.select_for_update()
+                    .select_related("practice_test", "current_module")
+                    .get(pk=attempt.pk)
+                )
+                autoheal_attempt_for_runtime(locked)
+                locked.start_module(module)
         except Exception as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         
@@ -503,6 +512,7 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                         .select_related("practice_test", "current_module")
                         .get(pk=attempt0.pk)
                     )
+                    autoheal_attempt_for_runtime(attempt)
 
                     if expected_v is not None and int(attempt.version_number or 0) != int(expected_v):
                         logger.warning("[FORENSIC] submit_module_version_conflict attempt_id=%s req_v=%s db_v=%s", attempt.id, expected_v, attempt.version_number)

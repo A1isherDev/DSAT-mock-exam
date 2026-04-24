@@ -2,7 +2,7 @@ from django.contrib.auth import get_user_model
 from django.test import override_settings
 from rest_framework.test import APITestCase
 
-from exams.models import PracticeTest, Module, TestAttempt
+from exams.models import MockExam, PracticeTest, Module, TestAttempt
 from exams.tasks import score_attempt_async
 
 
@@ -23,6 +23,7 @@ class TestAttemptStateMachineTests(APITestCase):
             subject="READING_WRITING",
             title="RW section",
             form_type="INTERNATIONAL",
+            skip_default_modules=True,
         )
         # Provision modules explicitly for test determinism.
         self.m1 = Module.objects.create(practice_test=self.test, module_order=1, time_limit_minutes=1)
@@ -139,4 +140,47 @@ class TestAttemptStateMachineTests(APITestCase):
         self.assertIn(r2.status_code, (200, 400))
         att.refresh_from_db()
         self.assertFalse(att.is_completed)
+
+    def test_midterm_missing_module2_is_reprovisioned_on_submit(self):
+        """
+        Regression guard for production bug:
+        If a midterm is configured for 2 modules but Module 2 row is missing (e.g., deleted),
+        Module 1 submission must still advance to an active Module 2 (not a null current_module).
+        """
+        exam = MockExam.objects.create(
+            title="Midterm",
+            kind=MockExam.KIND_MIDTERM,
+            midterm_subject="READING_WRITING",
+            midterm_module_count=2,
+            midterm_module1_minutes=1,
+            midterm_module2_minutes=1,
+            is_published=True,
+        )
+        test = PracticeTest.objects.create(
+            mock_exam=exam,
+            subject="READING_WRITING",
+            form_type="INTERNATIONAL",
+            skip_default_modules=True,
+        )
+        m1 = Module.objects.create(practice_test=test, module_order=1, time_limit_minutes=1)
+        # Intentionally do not create module 2.
+
+        attempt = self.client.post("/api/exams/attempts/", {"practice_test": test.id}, format="json").data
+        attempt_id = attempt["id"]
+
+        r = self.client.post(
+            f"/api/exams/attempts/{attempt_id}/start_module/",
+            {"module_id": m1.id},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200)
+
+        r = self.client.post(
+            f"/api/exams/attempts/{attempt_id}/submit_module/",
+            {"answers": {}, "flagged": []},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data.get("current_state"), TestAttempt.STATE_MODULE_2_ACTIVE)
+        self.assertEqual(r.data.get("current_module_details", {}).get("module_order"), 2)
 

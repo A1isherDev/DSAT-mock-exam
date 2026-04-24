@@ -327,7 +327,6 @@ function ExamPlayerInner() {
             
             // Critical guard: never overwrite with an older version.
             if (newV < prevV) {
-                console.warn('[FORENSIC] safeSetAttempt: discarded stale snapshot (version downgrade)', { prevV, newV });
                 return prev;
             }
             
@@ -335,7 +334,6 @@ function ExamPlayerInner() {
             const prevOrder = Number(prev?.current_module_details?.module_order || 0);
             const newOrder = Number(data?.current_module_details?.module_order || 0);
             if (newOrder < prevOrder && !data.is_completed) {
-                console.warn('[FORENSIC] safeSetAttempt: discarded stale snapshot (module order downgrade)', { prevOrder, newOrder });
                 return prev;
             }
 
@@ -433,7 +431,6 @@ function ExamPlayerInner() {
                 }
                 setLoading(false);
             } catch (err) {
-                console.error(err);
             }
         };
         fetchAttempt();
@@ -487,7 +484,6 @@ function ExamPlayerInner() {
         const localModId = local?.moduleId ?? null;
         if (!localModId || String(localModId) !== String(attempt.current_module_details.id)) {
             // Draft belongs to a different module (or is legacy/unknown); discard.
-            if (local) console.log('[FORENSIC] Discarding draft due to moduleId mismatch', { localModId, currentModId: attempt.current_module_details.id });
             local = null;
         }
 
@@ -599,7 +595,6 @@ function ExamPlayerInner() {
         const tick = async () => {
             if (cancelled) return;
             try {
-                console.log('[FORENSIC] Polling active status...', { attemptId, v: attempt?.version_number });
                 const st = await examsApi.getAttemptStatus(Number(attemptId));
 
                 // Re-check after await: the submit handler may have already advanced the
@@ -679,7 +674,6 @@ function ExamPlayerInner() {
                         throwOnError: false
                     });
                 } catch (e) {
-                    console.error("KaTeX render error:", e);
                 }
             }
             
@@ -842,7 +836,6 @@ function ExamPlayerInner() {
                 mark.appendChild(fragment);
                 targetRange.insertNode(mark);
             } catch (e) {
-                console.error('Annotation failed:', e);
             }
         }
 
@@ -927,149 +920,136 @@ function ExamPlayerInner() {
         if (!attempt || !attempt.current_module_details) return;
         if (multiTabBlocked) return;
         if (submitLockRef.current) return;
+        
         submitLockRef.current = true;
         setLoading(true);
-
-
+        
+        const attemptIdNum = Number(attemptId);
         const prevOrder = Number(attempt?.current_module_details?.module_order || 0) || null;
-        const idem = `submit.${attempt.id}.${attempt.current_module_details.id}.v${attempt.version_number}`;
-        console.log('[FORENSIC] handleSubmitModule BEGIN', { attemptId: attempt.id, prevOrder, idem, v: attempt.version_number });
+        const currentModId = attempt.current_module_details.id;
+        const idem = `submit.${attempt.id}.${currentModId}.v${attempt.version_number}`;
+        
+        // --- Self-Healing Utility: apply update and cleanup ---
+        const applyAttemptUpdate = (data: any) => {
+            if (!data) return;
+            const nextOrder = Number(data?.current_module_details?.module_order || 0) || null;
+            
+            // If we are already on M2 or scoring, ensure we transition UI immediately
+            if (data.is_completed) {
+                submitLockRef.current = false;
+                const meid = searchParams.get('mockExamId');
+                const subj = data.practice_test_details?.subject;
+                if (mockFlow && meid && platformSubjectIsReadingWriting(subj)) {
+                    router.push(`/mock/${meid}/break?rwAttempt=${attemptId}`);
+                    return;
+                }
+                if (mockFlow && meid && platformSubjectIsMath(subj)) {
+                    const rw = searchParams.get('rwAttempt');
+                    const qs = rw && rw.length > 0 ? `?rwAttempt=${encodeURIComponent(rw)}&mathAttempt=${attemptId}` : `?mathAttempt=${attemptId}`;
+                    router.push(`/mock/${meid}/results${qs}`);
+                    return;
+                }
+                router.push(`/review/${attemptId}`);
+                return;
+            }
 
-        try {
-            let updatedAttempt: any = null;
-            let is409 = false;
+            if (data?.current_state === 'SCORING') {
+                safeSetAttempt(data);
+                setLoading(false);
+                submitLockRef.current = false;
+                return;
+            }
 
+            // Detect M1 -> M2 transition
+            if (prevOrder === 1 && nextOrder === 2) {
+                prevModuleOrderRef.current = 2;
+                setTransitioning(true);
+                setTimeout(() => setTransitioning(false), 1800);
+            }
 
+            // Update state and clear locals
+            safeSetAttempt(data);
+            setCurrentQuestionIndex(0);
+            setAnswers({});
+            setFlagged([]);
+            
+            if (data?.current_module_details?.id) {
+                lastAnswersModuleIdRef.current = data.current_module_details.id;
+            }
+
+            setEliminatedOptions({});
+            setQuestionHighlights({});
+            setShowAnswerPreview(false);
+            setLoading(false);
+            submitLockRef.current = false;
+            
+            // Cleanup persistence
             try {
-                updatedAttempt = await examsApi.submitModule(
-                    attempt.id,
+                const key = `mastersat.examDraft.${attemptId}.${currentModId}`;
+                localStorage.removeItem(key);
+            } catch {}
+        };
+
+        // --- Autonomous Recovery: Watchdog ---
+        // If the main submit request hangs for > 5s, start polling the status endpoint
+        // to see if the backend already finished the job.
+        let watchdogActive = true;
+        const watchdogTimer = setTimeout(async () => {
+            if (!watchdogActive) return;
+            try {
+                const recoveryData = await examsApi.getAttemptStatus(attemptIdNum);
+                const recoveryOrder = Number(recoveryData?.current_module_details?.module_order || 0);
+                if (recoveryOrder > prevOrder || recoveryData.is_completed || recoveryData.current_state === 'SCORING') {
+                    watchdogActive = false;
+                    applyAttemptUpdate(recoveryData);
+                }
+            } catch {}
+        }, 5000);
+
+        // --- Autonomous Recovery: Retry Loop ---
+        const performSubmit = async (attemptCount = 0) => {
+            try {
+                const resp = await examsApi.submitModule(
+                    attemptIdNum,
                     answers,
                     flagged,
                     { idempotencyKey: idem, expectedVersionNumber: attempt?.version_number },
                 );
-                console.log('[EXAM] submitModule response', {
-                    current_state: updatedAttempt?.current_state,
-                    module_order: updatedAttempt?.current_module_details?.module_order,
-                    version_number: updatedAttempt?.version_number,
-                    is_completed: updatedAttempt?.is_completed,
-                    current_module: updatedAttempt?.current_module,
-                });
-            } catch (submitErr: any) {
-                console.warn('[EXAM] submitModule error', {
-                    status: submitErr?.response?.status,
-                    data: submitErr?.response?.data,
-                });
-                is409 = submitErr?.response?.status === 409;
-                const bodyAttempt = submitErr?.response?.data?.attempt;
-                if (is409 && bodyAttempt) {
-                    console.log('[EXAM] 409 conflict — using body.attempt to sync forward', {
-                        current_state: bodyAttempt?.current_state,
-                        module_order: bodyAttempt?.current_module_details?.module_order,
-                    });
-                    updatedAttempt = bodyAttempt;
+                
+                watchdogActive = false;
+                clearTimeout(watchdogTimer);
+                applyAttemptUpdate(resp);
+            } catch (err: any) {
+                const status = err?.response?.status;
+                
+                // If 409, the backend is already ahead of us. Use the data in the body.
+                if (status === 409 && err?.response?.data?.attempt) {
+                    watchdogActive = false;
+                    clearTimeout(watchdogTimer);
+                    applyAttemptUpdate(err.response.data.attempt);
+                    return;
+                }
+
+                // If temporary error and we haven't recovered yet, retry with backoff
+                if (watchdogActive && attemptCount < 4) {
+                    const delay = Math.pow(2, attemptCount) * 1000;
+                    setTimeout(() => performSubmit(attemptCount + 1), delay);
+                } else if (!watchdogActive) {
+                    // Recovered via watchdog already
                 } else {
+                    // Final fallback: try one last status check before giving up
                     try {
-                        updatedAttempt = await examsApi.getAttemptStatus(Number(attemptId));
-                        console.log('[EXAM] fallback getAttemptStatus', {
-                            current_state: updatedAttempt?.current_state,
-                            module_order: updatedAttempt?.current_module_details?.module_order,
-                        });
+                        const finalData = await examsApi.getAttemptStatus(attemptIdNum);
+                        applyAttemptUpdate(finalData);
                     } catch {
-                        throw submitErr;
+                        setLoading(false);
+                        submitLockRef.current = false;
                     }
                 }
             }
+        };
 
-            const applyAttemptUpdate = (data: any) => {
-                const nextOrder = Number(data?.current_module_details?.module_order || 0) || null;
-                const nextV = Number(data?.version_number || 0);
-
-                console.log('[FORENSIC] applyAttemptUpdate', {
-                    is_completed: data?.is_completed,
-                    current_state: data?.current_state,
-                    prevOrder,
-                    nextOrder,
-                    version_number: nextV,
-                });
-
-                if (data.is_completed) {
-                    const meid = searchParams.get('mockExamId');
-                    const subj = data.practice_test_details?.subject;
-                    if (mockFlow && meid && platformSubjectIsReadingWriting(subj)) {
-                        router.push(`/mock/${meid}/break?rwAttempt=${attemptId}`);
-                        return;
-                    }
-                    if (mockFlow && meid && platformSubjectIsMath(subj)) {
-                        const rw = searchParams.get('rwAttempt');
-                        const qs =
-                            rw && rw.length > 0
-                                ? `?rwAttempt=${encodeURIComponent(rw)}&mathAttempt=${attemptId}`
-                                : `?mathAttempt=${attemptId}`;
-                        router.push(`/mock/${meid}/results${qs}`);
-                        return;
-                    }
-                    router.push(`/review/${attemptId}`);
-                } else {
-                    if (data?.current_state === 'SCORING') {
-                        console.log('[FORENSIC] → entering SCORING state');
-                        safeSetAttempt(data);
-                        setLoading(false);
-                        return;
-                    }
-
-                    // Module transition check (M1 -> M2)
-                    if (prevOrder === 1 && nextOrder === 2) {
-                        console.log('[FORENSIC] Triggering M1 -> M2 transition animation');
-                        prevModuleOrderRef.current = 2;
-                        setTransitioning(true);
-                        setTimeout(() => setTransitioning(false), 1800);
-                    } else if (prevOrder === 1 && nextOrder === 1) {
-                        // This is the "stuck" case. Log it specifically.
-                        console.error('[FORENSIC] RECEIVED MODULE 1 AFTER SUBMISSION. This is a desync.', { prevOrder, nextOrder, nextV });
-                    }
-
-                    // Update authoritative attempt state
-                    safeSetAttempt(data);
-                    
-                    // Reset local UI state for the next module
-                    setCurrentQuestionIndex(0);
-                    setAnswers({});
-                    setFlagged([]);
-                    
-                    if (data?.current_module_details?.id) {
-                        lastAnswersModuleIdRef.current = data.current_module_details.id;
-                    }
-
-                    setEliminatedOptions({});
-                    setQuestionHighlights({});
-                    setShowAnswerPreview(false);
-                    setLoading(false);
-                    
-                    // Clear old draft
-                    try {
-                        const oldModId = attempt?.current_module_details?.id;
-                        if (oldModId) {
-                            const key = `mastersat.examDraft.${attemptId}.${oldModId}`;
-                            localStorage.removeItem(key);
-                            console.log('[FORENSIC] draft cleared', { oldModId });
-                        }
-                    } catch {}
-                }
-            };
-
-            console.log('[FORENSIC] Processing submit response', { 
-                is409: !!is409, 
-                modOrder: updatedAttempt?.current_module_details?.module_order,
-                version: updatedAttempt?.version_number
-            });
-            applyAttemptUpdate(updatedAttempt);
-
-        } catch (err) {
-            console.error('[EXAM] handleSubmitModule unrecoverable error:', err);
-            setLoading(false);
-        } finally {
-            submitLockRef.current = false;
-        }
+        void performSubmit();
     }, [attempt, attemptId, answers, flagged, router, mockFlow, searchParams, multiTabBlocked]);
 
     useEffect(() => {
@@ -1078,7 +1058,6 @@ function ExamPlayerInner() {
 
     useEffect(() => {
         if (!attempt?.current_module_details || !attempt?.current_module_start_time) {
-            console.log('[FORENSIC] Timer sync skipped: missing module details or start time', { 
                 hasDetails: !!attempt?.current_module_details, 
                 hasStartTime: !!attempt?.current_module_start_time 
             });
@@ -1091,7 +1070,6 @@ function ExamPlayerInner() {
         const elapsedSec = Math.floor((nowMs - startMs) / 1000);
         const remaining = Math.max(0, limitSec - elapsedSec);
         
-        console.log('[FORENSIC] Timer sync calculated:', { 
             remaining, 
             limitSec, 
             elapsedSec, 
@@ -1140,7 +1118,6 @@ function ExamPlayerInner() {
 
             if (remaining <= 0) {
                 if (!moduleTimerSubmitDoneRef.current && !transitioning && !loading) {
-                    console.log('[FORENSIC] Timer loop hit 0, triggering auto-submit check');
                 }
                 return;
             }
@@ -1164,7 +1141,6 @@ function ExamPlayerInner() {
     useEffect(() => {
         const isCompleted = !!attempt?.is_completed;
         if (timeLeft <= 0 && !moduleTimerSubmitDoneRef.current && !isPaused && !loading && !isCompleted && !transitioning) {
-            console.log('[FORENSIC] Timer auto-submit triggered', { timeLeft, transitioning, loading });
             moduleTimerSubmitDoneRef.current = true;
             void handleSubmitModule();
         }
@@ -1200,7 +1176,6 @@ function ExamPlayerInner() {
     // Forensic diagnostic logging (throttled)
     useEffect(() => {
         const interval = setInterval(() => {
-            console.log('[EXAM] Render State Audit:', {
                 module_order: attempt?.current_module_details?.module_order,
                 current_state: attempt?.current_state,
                 questions_count: questions.length,
@@ -1220,7 +1195,15 @@ function ExamPlayerInner() {
     };
 
     if (loading || !attempt || !attempt.current_module_details) {
-        return <div className="min-h-screen flex items-center justify-center bg-white"><div className="animate-spin text-blue-600 w-8 h-8"><Pause className="w-full h-full" /></div></div>;
+        return (
+            <div className="min-h-screen flex flex-col items-center justify-center bg-white">
+                <div className="animate-spin text-blue-600 w-12 h-12 mb-6">
+                    <Pause className="w-full h-full" />
+                </div>
+                <h2 className="text-xl font-bold text-slate-900 tracking-tight">Saving and continuing...</h2>
+                <p className="text-slate-500 font-medium mt-2">Preparing your next module</p>
+            </div>
+        );
     }
 
     if (multiTabBlocked) {
@@ -1259,18 +1242,15 @@ function ExamPlayerInner() {
     }
 
     if (transitioning) {
-        const isMath = attemptPtSubjectIsMath(attempt);
-        const title = isMath ? "Module 2" : "Module 2";
-        const subtitle = isMath ? "Continue to the next module." : "Continue to the next module.";
         return (
             <AuthGuard>
                 <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white px-8">
                     <div className="w-full max-w-xl text-center">
-                        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-emerald-300">Module transition</p>
-                        <h1 className="mt-4 text-4xl font-black tracking-tight">{title}</h1>
-                        <p className="mt-3 text-slate-300 font-medium">{subtitle}</p>
-                        <div className="mt-10 flex justify-center">
-                            <div className="w-10 h-10 border-4 border-white/25 border-t-white rounded-full animate-spin" />
+                        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-emerald-400">Success</p>
+                        <h1 className="mt-4 text-4xl font-black tracking-tight">Continuing to Module 2</h1>
+                        <p className="mt-4 text-slate-400 font-medium text-lg">Great work. The next module is loading automatically.</p>
+                        <div className="mt-12 flex justify-center">
+                            <div className="w-12 h-12 border-4 border-white/10 border-t-emerald-400 rounded-full animate-spin" />
                         </div>
                     </div>
                 </div>
@@ -1307,7 +1287,6 @@ function ExamPlayerInner() {
             await examsApi.saveAttempt(Number(attemptId), answers, flagged, { idempotencyKey: idem, expectedVersionNumber: attempt?.version_number });
             router.push('/');
         } catch (err) {
-            console.error(err);
             setLoading(false);
         }
     };
@@ -1317,7 +1296,6 @@ function ExamPlayerInner() {
             await document.documentElement.requestFullscreen();
             setIsFullscreen(true);
         } catch (e) {
-            console.error(e);
         }
     };
 
