@@ -477,6 +477,7 @@ function ExamPlayerInner() {
             if (cancelled) return;
             try {
                 const st = await examsApi.getAttemptStatus(Number(attemptId));
+                if (cancelled) return; // guard against stale response after cleanup
                 try {
                     const sn = st?.server_now ? new Date(st.server_now).getTime() : NaN;
                     if (Number.isFinite(sn)) serverOffsetMsRef.current = sn - Date.now();
@@ -518,6 +519,8 @@ function ExamPlayerInner() {
     }, [attempt?.current_state, attemptId, mockFlow, router, searchParams]);
 
     // Active module polling: refresh backend truth + server_now offset periodically.
+    // IMPORTANT: `cancelled` is checked both before AND after the await to prevent a stale
+    // in-flight response from overwriting fresh Module-2 state set by handleSubmitModule.
     useEffect(() => {
         if (!attemptId) return;
         if (!attempt?.current_state) return;
@@ -530,11 +533,23 @@ function ExamPlayerInner() {
             if (cancelled) return;
             try {
                 const st = await examsApi.getAttemptStatus(Number(attemptId));
+                // Re-check after await: the submit handler may have already advanced the
+                // attempt to Module 2 while this request was in-flight.  Without this guard
+                // the stale Module-1 response would overwrite the fresh Module-2 state.
+                if (cancelled) return;
                 try {
                     const sn = st?.server_now ? new Date(st.server_now).getTime() : NaN;
                     if (Number.isFinite(sn)) serverOffsetMsRef.current = sn - Date.now();
                 } catch {}
-                setAttempt(st);
+                // Version-number freshness guard: never roll back to a stale snapshot.
+                // The submit handler bumps version_number; if the poll returns an older
+                // version it means the request was dispatched before the submit completed.
+                setAttempt((prev: any) => {
+                    const prevV = Number(prev?.version_number ?? -1);
+                    const newV = Number(st?.version_number ?? -1);
+                    if (newV < prevV) return prev; // stale — discard
+                    return st;
+                });
                 if (st?.is_completed) {
                     router.push(`/review/${attemptId}`);
                     return;
