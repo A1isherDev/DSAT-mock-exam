@@ -411,6 +411,25 @@ function ExamPlayerInner() {
     const questions = current_module_details?.questions || [];
     const currentQuestion = questions?.[currentQuestionIndex];
 
+    // Bootstrap: if we just created/resumed an attempt, use that payload immediately for faster first paint.
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        const key = `mastersat.attempt.bootstrap.${String(attemptId || "")}`;
+        try {
+            const raw = sessionStorage.getItem(key);
+            if (!raw) return;
+            sessionStorage.removeItem(key);
+            const boot = JSON.parse(raw);
+            if (boot && boot.id && String(boot.id) === String(attemptId)) {
+                safeSetAttempt(boot);
+                if (boot.current_module_details) setLoading(false);
+            }
+        } catch {
+            /* ignore */
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [attemptId]);
+
     useEffect(() => {
         const fetchAttempt = async () => {
             try {
@@ -435,6 +454,27 @@ function ExamPlayerInner() {
                     router.push('/');
                     return;
                 }
+
+                // Self-heal: backend may briefly return active state without module payload.
+                // Re-check status once more before leaving the UI stuck on the loader.
+                if (
+                    !data?.current_module_details &&
+                    (data?.current_state === "MODULE_1_ACTIVE" || data?.current_state === "MODULE_2_ACTIVE")
+                ) {
+                    try {
+                        await new Promise((r) => setTimeout(r, 450));
+                        const st = await examsApi.getAttemptStatus(Number(attemptId));
+                        safeSetAttempt(st);
+                        if (!st?.current_module_details) {
+                            setLoadError("Test holati topildi, lekin modul yuklanmadi. Qayta urinishni bosing.");
+                            return;
+                        }
+                    } catch {
+                        setLoadError("Test holati topildi, lekin modul yuklanmadi. Qayta urinishni bosing.");
+                        return;
+                    }
+                }
+
                 setLoading(false);
             } catch (err) {
                 setLoading(false);
@@ -443,6 +483,16 @@ function ExamPlayerInner() {
         };
         fetchAttempt();
     }, [attemptId, router, reloadNonce, safeSetAttempt]);
+
+    // Hard-stop: never allow the loader to spin forever.
+    useEffect(() => {
+        if (!loading) return;
+        const t = setTimeout(() => {
+            setLoadError("Yuklash juda uzoq davom etdi. Qayta urinishni bosing.");
+            setLoading(false);
+        }, 12_000);
+        return () => clearTimeout(t);
+    }, [loading]);
 
     // Minimal multi-tab guard: block UI if another tab is active for this attempt.
     useEffect(() => {

@@ -55,6 +55,10 @@ function MockExamDetailInner() {
     setStartingModuleId(moduleId);
     try {
       const attempt = await getOrCreateAttempt(testId);
+      // Speed: bootstrap initial attempt payload to exam runner (avoids an extra blank wait).
+      try {
+        sessionStorage.setItem(`mastersat.attempt.bootstrap.${attempt.id}`, JSON.stringify(attempt));
+      } catch {}
       router.push(`/exam/${attempt.id}${querySuffix}`);
     } catch (e) {
       console.error("Failed to start module", e);

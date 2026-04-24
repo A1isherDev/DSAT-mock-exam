@@ -50,6 +50,10 @@ function PracticeTestDetailInner() {
     setStartingModuleId(moduleId);
     try {
       const attempt = await getOrCreateAttempt();
+      // Speed: bootstrap initial attempt payload to exam runner (avoids an extra blank wait).
+      try {
+        sessionStorage.setItem(`mastersat.attempt.bootstrap.${attempt.id}`, JSON.stringify(attempt));
+      } catch {}
       router.push(`/exam/${attempt.id}`);
     } catch (e) {
       console.error(e);
