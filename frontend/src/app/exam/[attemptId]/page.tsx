@@ -1166,14 +1166,6 @@ function ExamPlayerInner() {
     // Forensic diagnostic logging (throttled)
     useEffect(() => {
         const interval = setInterval(() => {
-                module_order: attempt?.current_module_details?.module_order,
-                current_state: attempt?.current_state,
-                questions_count: questions.length,
-                current_index: currentQuestionIndex,
-                is_transitioning: transitioning,
-                is_loading: loading,
-                v: attempt?.version_number
-            });
         }, 5000);
         return () => clearInterval(interval);
     }, [attempt, questions.length, currentQuestionIndex, transitioning, loading]);
