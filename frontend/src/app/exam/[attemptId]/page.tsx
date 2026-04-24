@@ -654,6 +654,19 @@ function ExamPlayerInner() {
         if (mockFlow) setIsPaused(false);
     }, [mockFlow]);
 
+    // If we already have a valid active module from the backend, never keep showing
+    // the "Saving / continuing" transition overlay.
+    useEffect(() => {
+        const st = attempt?.current_state;
+        const modOrder = Number(attempt?.current_module_details?.module_order || 0);
+        if (
+            (st === "MODULE_1_ACTIVE" && modOrder === 1) ||
+            (st === "MODULE_2_ACTIVE" && modOrder === 2)
+        ) {
+            if (transitioning) setTransitioning(false);
+        }
+    }, [attempt?.current_state, attempt?.current_module_details?.module_order, transitioning]);
+
     useEffect(() => {
         if (!loading) {
             // Single-engine deterministic KaTeX render. Call twice to avoid “first paint raw latex”
