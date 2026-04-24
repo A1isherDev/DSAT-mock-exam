@@ -1058,9 +1058,6 @@ function ExamPlayerInner() {
 
     useEffect(() => {
         if (!attempt?.current_module_details || !attempt?.current_module_start_time) {
-                hasDetails: !!attempt?.current_module_details, 
-                hasStartTime: !!attempt?.current_module_start_time 
-            });
             return;
         }
         const limitSec = attempt.current_module_details.time_limit_minutes * 60;
@@ -1069,13 +1066,6 @@ function ExamPlayerInner() {
         const nowMs = Date.now() + serverOffsetMsRef.current;
         const elapsedSec = Math.floor((nowMs - startMs) / 1000);
         const remaining = Math.max(0, limitSec - elapsedSec);
-        
-            remaining, 
-            limitSec, 
-            elapsedSec, 
-            startMs: attempt.current_module_start_time,
-            nowMs: new Date(nowMs).toISOString()
-        });
 
         lastRenderedSecRef.current = remaining;
         moduleTimerSubmitDoneRef.current = false;
