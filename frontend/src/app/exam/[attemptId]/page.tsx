@@ -339,7 +339,17 @@ function ExamPlayerInner() {
     const multiTabRef = useRef<{ bc?: BroadcastChannel; id: string } | null>(null);
     const [multiTabBlocked, setMultiTabBlocked] = useState(false);
 
+
+    const [timeLeft, setTimeLeft] = useState<number>(0);
+    const lastAnswersModuleIdRef = useRef<number | null>(null);
+    const lastRenderedSecRef = useRef<number>(-1);
+    const virtualModuleStartMsRef = useRef<number>(0);
+    const timeLeftRef = useRef<number>(0);
+    const wasTimerPausedRef = useRef(false);
+    const moduleTimerSubmitDoneRef = useRef(false);
+
     const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+
     const [answers, setAnswers] = useState<Record<string, string>>({});
     const [flagged, setFlagged] = useState<number[]>([]);
 
@@ -526,7 +536,8 @@ function ExamPlayerInner() {
                     const sn = st?.server_now ? new Date(st.server_now).getTime() : NaN;
                     if (Number.isFinite(sn)) serverOffsetMsRef.current = sn - Date.now();
                 } catch {}
-                setAttempt(st);
+                safeSetAttempt(st);
+
                 if (st?.is_completed) {
                     // route based on existing mockFlow logic
                     const meid = searchParams.get('mockExamId');
@@ -733,19 +744,9 @@ function ExamPlayerInner() {
         return () => clearTimeout(timer);
     }, [fullscreenWarningCountdown, router]);
 
-    const [timeLeft, setTimeLeft] = useState<number>(0);
-    const lastAnswersModuleIdRef = useRef<number | null>(null);
-
-    /** Last rendered whole-second value; avoids re-rendering the exam UI every animation frame. */
-    const lastRenderedSecRef = useRef<number>(-1);
-    const moduleTimerSubmitDoneRef = useRef(false);
-    /** Effective "module start" for elapsed math; shifted on resume from pause so time stays frozen while paused. */
-    const virtualModuleStartMsRef = useRef<number>(0);
-    const timeLeftRef = useRef<number>(0);
-    const wasTimerPausedRef = useRef(false);
-
     const zoomIn = () => setZoomLevel(prev => Math.min(1.5, prev + 0.1));
     const zoomOut = () => setZoomLevel(prev => Math.max(0.7, prev - 0.1));
+
 
     const handleShowPopover = useCallback((targetId: string, e?: React.MouseEvent) => {
         if (!highlighterActive) return;
@@ -923,11 +924,8 @@ function ExamPlayerInner() {
         console.log('[FORENSIC] handleSubmitModule BEGIN', { attemptId: attempt.id, prevOrder, idem, v: attempt.version_number });
 
         try {
-                versionNumber: attempt.version_number,
-                idemKey: idem,
-            });
-
             let updatedAttempt: any = null;
+
 
             try {
                 updatedAttempt = await examsApi.submitModule(
@@ -1029,13 +1027,16 @@ function ExamPlayerInner() {
                     
                     // Clear old draft AFTER state update to ensure we use the correct old ID from closure
                     try {
-                        const oldModId = attempt.current_module_details.id;
-                        const key = `mastersat.examDraft.${attemptId}.${oldModId}`;
-                        localStorage.removeItem(key);
-                        console.log('[FORENSIC] draft cleared', { oldModId });
+                        const oldModId = attempt?.current_module_details?.id;
+                        if (oldModId) {
+                            const key = `mastersat.examDraft.${attemptId}.${oldModId}`;
+                            localStorage.removeItem(key);
+                            console.log('[FORENSIC] draft cleared', { oldModId });
+                        }
                     } catch {}
                 }
             };
+
 
             console.log('[FORENSIC] RAW SUBMIT RESPONSE DATA:', updatedAttempt);
             applyAttemptUpdate(updatedAttempt);
@@ -1052,20 +1053,35 @@ function ExamPlayerInner() {
         timeLeftRef.current = timeLeft;
     }, [timeLeft]);
 
-    // Immediate sync when module loads (before first rAF frame).
     useEffect(() => {
-        if (!attempt?.current_module_details || !attempt?.current_module_start_time) return;
+        if (!attempt?.current_module_details || !attempt?.current_module_start_time) {
+            console.log('[FORENSIC] Timer sync skipped: missing module details or start time', { 
+                hasDetails: !!attempt?.current_module_details, 
+                hasStartTime: !!attempt?.current_module_start_time 
+            });
+            return;
+        }
         const limitSec = attempt.current_module_details.time_limit_minutes * 60;
         const startMs = new Date(attempt.current_module_start_time).getTime();
         virtualModuleStartMsRef.current = startMs;
         const nowMs = Date.now() + serverOffsetMsRef.current;
         const elapsedSec = Math.floor((nowMs - startMs) / 1000);
         const remaining = Math.max(0, limitSec - elapsedSec);
+        
+        console.log('[FORENSIC] Timer sync calculated:', { 
+            remaining, 
+            limitSec, 
+            elapsedSec, 
+            startMs: attempt.current_module_start_time,
+            nowMs: new Date(nowMs).toISOString()
+        });
+
         lastRenderedSecRef.current = remaining;
         moduleTimerSubmitDoneRef.current = false;
         wasTimerPausedRef.current = false;
         setTimeLeft(remaining);
     }, [attempt?.current_module_details?.id, attempt?.current_module_start_time, attempt?.current_module_details?.time_limit_minutes]);
+
 
     // After resume from pause, realign virtual start so remaining time matches the frozen display (no wall-clock jump).
     useEffect(() => {
@@ -1100,12 +1116,12 @@ function ExamPlayerInner() {
             }
 
             if (remaining <= 0) {
-                if (!moduleTimerSubmitDoneRef.current) {
-                    moduleTimerSubmitDoneRef.current = true;
-                    void handleSubmitModule();
+                if (!moduleTimerSubmitDoneRef.current && !transitioning && !loading) {
+                    console.log('[FORENSIC] Timer loop hit 0, triggering auto-submit check');
                 }
                 return;
             }
+
 
             rafId = requestAnimationFrame(loop);
         };
@@ -1120,6 +1136,18 @@ function ExamPlayerInner() {
         mockFlow,
         handleSubmitModule,
     ]);
+
+    // Timer auto-submit effect
+    useEffect(() => {
+        const isCompleted = !!attempt?.is_completed;
+        if (timeLeft <= 0 && !moduleTimerSubmitDoneRef.current && !isPaused && !loading && !isCompleted && !transitioning) {
+            console.log('[FORENSIC] Timer auto-submit triggered', { timeLeft, transitioning, loading });
+            moduleTimerSubmitDoneRef.current = true;
+            void handleSubmitModule();
+        }
+    }, [timeLeft, isPaused, loading, attempt?.is_completed, transitioning, handleSubmitModule]);
+
+
 
     useEffect(() => {
         const moduleId = attempt?.current_module_details?.id;
