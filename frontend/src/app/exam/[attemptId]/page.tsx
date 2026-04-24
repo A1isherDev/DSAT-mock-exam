@@ -457,7 +457,8 @@ function ExamPlayerInner() {
                 
                 const rendered = (data?.current_state === "NOT_STARTED") ? await examsApi.getAttemptStatus(attemptIdNum) : data;
 
-                if (rendered.is_completed) {
+                // Route to review only when backend explicitly says COMPLETED.
+                if (rendered.is_completed && rendered?.current_state === "COMPLETED") {
 
                     router.push(`/review/${attemptId}`);
                     return;
@@ -624,7 +625,7 @@ function ExamPlayerInner() {
                 } catch {}
                 safeSetAttempt(st);
 
-                if (st?.is_completed) {
+                if (st?.is_completed && st?.current_state === "COMPLETED") {
                     // route based on existing mockFlow logic
                     const meid = searchParams.get('mockExamId');
                     const subj = st?.practice_test_details?.subject;
@@ -686,7 +687,7 @@ function ExamPlayerInner() {
                 
                 safeSetAttempt(st);
 
-                if (st?.is_completed) {
+                if (st?.is_completed && st?.current_state === "COMPLETED") {
 
                     router.push(`/review/${attemptId}`);
                     return;
@@ -993,7 +994,8 @@ function ExamPlayerInner() {
             const didModuleChange = Boolean(nextModId && Number(nextModId) !== Number(currentModId));
             
             // If we are already on M2 or scoring, ensure we transition UI immediately
-            if (data.is_completed) {
+            // Only route to review when backend explicitly says COMPLETED.
+            if (data.is_completed && data?.current_state === "COMPLETED") {
                 submitLockRef.current = false;
                 const meid = searchParams.get('mockExamId');
                 const subj = data.practice_test_details?.subject;
