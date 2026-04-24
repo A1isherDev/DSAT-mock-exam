@@ -476,7 +476,12 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
             action="START_MODULE",
             details=f"Started module {module.module_order} of {attempt.practice_test}"
         )
-        
+
+        # Re-fetch from DB so the serializer gets a fresh object with all FK relations
+        # loaded (current_module_details needs the related Module row).  Without this,
+        # the serializer operates on the in-memory mutated object whose FK cache may be
+        # stale, returning null or wrong current_module_details to the frontend.
+        attempt = TestAttempt.objects.get(pk=attempt.pk)
         serializer = self.get_serializer(attempt)
         return Response(serializer.data)
 

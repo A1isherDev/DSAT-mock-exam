@@ -875,9 +875,120 @@ function ExamPlayerInner() {
         setLoading(true);
         try {
             const prevOrder = Number(attempt?.current_module_details?.module_order || 0) || null;
-            // Idempotency key WITHOUT Date.now() so retries within the 10-min cache window
-            // hit the stored response instead of re-executing the mutation.
             const idem = `submit.${attempt.id}.${attempt.current_module_details.id}.v${attempt.version_number}`;
+
+            console.log('[EXAM] handleSubmitModule START', {
+                attemptId: attempt.id,
+                prevOrder,
+                currentState: attempt.current_state,
+                versionNumber: attempt.version_number,
+                idemKey: idem,
+            });
+
+            let updatedAttempt: any = null;
+
+            try {
+                updatedAttempt = await examsApi.submitModule(
+                    attempt.id,
+                    answers,
+                    flagged,
+                    { idempotencyKey: idem, expectedVersionNumber: attempt?.version_number },
+                );
+                console.log('[EXAM] submitModule response', {
+                    current_state: updatedAttempt?.current_state,
+                    module_order: updatedAttempt?.current_module_details?.module_order,
+                    version_number: updatedAttempt?.version_number,
+                    is_completed: updatedAttempt?.is_completed,
+                    current_module: updatedAttempt?.current_module,
+                });
+            } catch (submitErr: any) {
+                console.warn('[EXAM] submitModule error', {
+                    status: submitErr?.response?.status,
+                    data: submitErr?.response?.data,
+                });
+                const status409 = submitErr?.response?.status === 409;
+                const bodyAttempt = submitErr?.response?.data?.attempt;
+                if (status409 && bodyAttempt) {
+                    console.log('[EXAM] 409 conflict — using body.attempt to sync forward', {
+                        current_state: bodyAttempt?.current_state,
+                        module_order: bodyAttempt?.current_module_details?.module_order,
+                    });
+                    updatedAttempt = bodyAttempt;
+                } else {
+                    try {
+                        updatedAttempt = await examsApi.getAttemptStatus(Number(attemptId));
+                        console.log('[EXAM] fallback getAttemptStatus', {
+                            current_state: updatedAttempt?.current_state,
+                            module_order: updatedAttempt?.current_module_details?.module_order,
+                        });
+                    } catch {
+                        throw submitErr;
+                    }
+                }
+            }
+
+            const applyAttemptUpdate = (data: any) => {
+                console.log('[EXAM] applyAttemptUpdate', {
+                    is_completed: data?.is_completed,
+                    current_state: data?.current_state,
+                    nextOrder: data?.current_module_details?.module_order,
+                    prevOrder,
+                    version_number: data?.version_number,
+                });
+                if (data.is_completed) {
+                    const meid = searchParams.get('mockExamId');
+                    const subj = data.practice_test_details?.subject;
+                    if (mockFlow && meid && platformSubjectIsReadingWriting(subj)) {
+                        router.push(`/mock/${meid}/break?rwAttempt=${attemptId}`);
+                        return;
+                    }
+                    if (mockFlow && meid && platformSubjectIsMath(subj)) {
+                        const rw = searchParams.get('rwAttempt');
+                        const qs =
+                            rw && rw.length > 0
+                                ? `?rwAttempt=${encodeURIComponent(rw)}&mathAttempt=${attemptId}`
+                                : `?mathAttempt=${attemptId}`;
+                        router.push(`/mock/${meid}/results${qs}`);
+                        return;
+                    }
+                    router.push(`/review/${attemptId}`);
+                } else {
+                    if (data?.current_state === 'SCORING') {
+                        console.log('[EXAM] → entering SCORING state');
+                        setAttempt(data);
+                        setLoading(false);
+                        return;
+                    }
+                    const nextOrder = Number(data?.current_module_details?.module_order || 0) || null;
+                    console.log('[EXAM] module transition check', { prevOrder, nextOrder, willTransition: prevOrder === 1 && nextOrder === 2 });
+                    if (prevOrder === 1 && nextOrder === 2) {
+                        prevModuleOrderRef.current = 2;
+                        setTransitioning(true);
+                        setTimeout(() => setTransitioning(false), 1800);
+                    }
+                    setAttempt(data);
+                    setCurrentQuestionIndex(0);
+                    setAnswers({});
+                    setFlagged([]);
+                    setEliminatedOptions({});
+                    setQuestionHighlights({});
+                    setShowAnswerPreview(false);
+                    setLoading(false);
+                    try {
+                        const key = `mastersat.examDraft.${attemptId}.${attempt.current_module_details.id}`;
+                        localStorage.removeItem(key);
+                    } catch {}
+                }
+            };
+
+            applyAttemptUpdate(updatedAttempt);
+        } catch (err) {
+            console.error('[EXAM] handleSubmitModule unrecoverable error:', err);
+            setLoading(false);
+        } finally {
+            submitLockRef.current = false;
+        }
+    }, [attempt, attemptId, answers, flagged, router, mockFlow, searchParams, multiTabBlocked]);
 
             let updatedAttempt: any = null;
 
