@@ -321,12 +321,24 @@ function ExamPlayerInner() {
     const safeSetAttempt = useCallback((data: any) => {
         if (!data) return;
         setAttempt((prev: any) => {
-            const prevV = Number(prev?.version_number ?? -1);
-            const newV = Number(data?.version_number ?? -1);
+            if (!prev) return data;
+            const prevV = Number(prev.version_number || 0);
+            const newV = Number(data.version_number || 0);
+            
+            // Critical guard: never overwrite with an older version.
             if (newV < prevV) {
-                console.warn('[FORENSIC] safeSetAttempt: discarded stale snapshot', { prevV, newV });
+                console.warn('[FORENSIC] safeSetAttempt: discarded stale snapshot (version downgrade)', { prevV, newV });
                 return prev;
             }
+            
+            // Critical guard: never overwrite with an older module order.
+            const prevOrder = Number(prev?.current_module_details?.module_order || 0);
+            const newOrder = Number(data?.current_module_details?.module_order || 0);
+            if (newOrder < prevOrder && !data.is_completed) {
+                console.warn('[FORENSIC] safeSetAttempt: discarded stale snapshot (module order downgrade)', { prevOrder, newOrder });
+                return prev;
+            }
+
             return data;
         });
     }, []);
@@ -925,6 +937,7 @@ function ExamPlayerInner() {
 
         try {
             let updatedAttempt: any = null;
+            let is409 = false;
 
 
             try {
@@ -946,9 +959,9 @@ function ExamPlayerInner() {
                     status: submitErr?.response?.status,
                     data: submitErr?.response?.data,
                 });
-                const status409 = submitErr?.response?.status === 409;
+                is409 = submitErr?.response?.status === 409;
                 const bodyAttempt = submitErr?.response?.data?.attempt;
-                if (status409 && bodyAttempt) {
+                if (is409 && bodyAttempt) {
                     console.log('[EXAM] 409 conflict — using body.attempt to sync forward', {
                         current_state: bodyAttempt?.current_state,
                         module_order: bodyAttempt?.current_module_details?.module_order,
@@ -968,13 +981,17 @@ function ExamPlayerInner() {
             }
 
             const applyAttemptUpdate = (data: any) => {
-                console.log('[EXAM] applyAttemptUpdate', {
+                const nextOrder = Number(data?.current_module_details?.module_order || 0) || null;
+                const nextV = Number(data?.version_number || 0);
+
+                console.log('[FORENSIC] applyAttemptUpdate', {
                     is_completed: data?.is_completed,
                     current_state: data?.current_state,
-                    nextOrder: data?.current_module_details?.module_order,
                     prevOrder,
-                    version_number: data?.version_number,
+                    nextOrder,
+                    version_number: nextV,
                 });
+
                 if (data.is_completed) {
                     const meid = searchParams.get('mockExamId');
                     const subj = data.practice_test_details?.subject;
@@ -993,39 +1010,42 @@ function ExamPlayerInner() {
                     }
                     router.push(`/review/${attemptId}`);
                 } else {
-
                     if (data?.current_state === 'SCORING') {
                         console.log('[FORENSIC] → entering SCORING state');
                         safeSetAttempt(data);
                         setLoading(false);
                         return;
                     }
-                    const nextOrder = Number(data?.current_module_details?.module_order || 0) || null;
-                    console.log('[FORENSIC] module transition check', { prevOrder, nextOrder, willTransition: prevOrder === 1 && nextOrder === 2 });
-                    
+
+                    // Module transition check (M1 -> M2)
                     if (prevOrder === 1 && nextOrder === 2) {
+                        console.log('[FORENSIC] Triggering M1 -> M2 transition animation');
                         prevModuleOrderRef.current = 2;
                         setTransitioning(true);
                         setTimeout(() => setTransitioning(false), 1800);
+                    } else if (prevOrder === 1 && nextOrder === 1) {
+                        // This is the "stuck" case. Log it specifically.
+                        console.error('[FORENSIC] RECEIVED MODULE 1 AFTER SUBMISSION. This is a desync.', { prevOrder, nextOrder, nextV });
                     }
 
-                    // Authoritative update
+                    // Update authoritative attempt state
                     safeSetAttempt(data);
                     
+                    // Reset local UI state for the next module
                     setCurrentQuestionIndex(0);
                     setAnswers({});
                     setFlagged([]);
                     
-                    // Mark state as empty but belonging to NEXT module to allow draft saving to resume
-                    lastAnswersModuleIdRef.current = data.current_module_details.id;
+                    if (data?.current_module_details?.id) {
+                        lastAnswersModuleIdRef.current = data.current_module_details.id;
+                    }
 
                     setEliminatedOptions({});
                     setQuestionHighlights({});
                     setShowAnswerPreview(false);
                     setLoading(false);
-
                     
-                    // Clear old draft AFTER state update to ensure we use the correct old ID from closure
+                    // Clear old draft
                     try {
                         const oldModId = attempt?.current_module_details?.id;
                         if (oldModId) {
@@ -1037,8 +1057,11 @@ function ExamPlayerInner() {
                 }
             };
 
-
-            console.log('[FORENSIC] RAW SUBMIT RESPONSE DATA:', updatedAttempt);
+            console.log('[FORENSIC] Processing submit response', { 
+                is409: !!is409, 
+                modOrder: updatedAttempt?.current_module_details?.module_order,
+                version: updatedAttempt?.version_number
+            });
             applyAttemptUpdate(updatedAttempt);
 
         } catch (err) {

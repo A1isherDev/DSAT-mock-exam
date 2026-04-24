@@ -494,12 +494,10 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         def _compute():
             try:
                 with transaction.atomic():
-                    # Lock row to prevent race conditions / duplicate submit advancing state twice.
-                    # Defensive: ensure full mock sections always have both modules provisioned
-                    # before we try to advance state.
+                    # Defensive: ensure full mock sections always have both modules provisioned.
                     ensure_full_mock_practice_test_modules(attempt0.practice_test)
                     
-                    # Refresh attempt to see newly created modules (if any)
+                    # Lock row to prevent race conditions.
                     attempt = (
                         TestAttempt.objects.select_for_update()
                         .select_related("practice_test", "current_module")
@@ -507,77 +505,61 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                     )
 
                     if expected_v is not None and int(attempt.version_number or 0) != int(expected_v):
+                        logger.warning("[FORENSIC] submit_module_version_conflict attempt_id=%s req_v=%s db_v=%s", attempt.id, expected_v, attempt.version_number)
                         return _version_conflict_response(self, request, attempt=attempt)
+                    
                     if not attempt.current_module:
+                        logger.error("[FORENSIC] submit_module_no_active_module attempt_id=%s", attempt.id)
                         return Response({'error': 'No active module to submit'}, status=status.HTTP_400_BAD_REQUEST)
-                    # Timer enforcement: if time elapsed, we still accept submission (finalizes the module),
-                    # but we mark the attempt payload as expired for the client to reconcile.
+                        
                     timing = get_active_module_timing(attempt)
                     expired = bool(timing and timing.is_expired)
                         
                     module_answers = request.data.get('answers', {})
                     flagged = request.data.get('flagged', [])
-                    current_mod_order = attempt.current_module.module_order if attempt.current_module else "?"
-
-                    # Capture the module being submitted NOW, before submit_module() advances
-                    # current_module to the next module.  The old guard used attempt.current_module_id
-                    # which—after a successful Module 1 submit—already points to Module 2, so a retry
-                    # would skip the guard and prematurely submit Module 2 with Module 1 answers.
+                    
                     submitting_module_id = attempt.current_module_id
 
-                    # Duplicate submit guard (server-side): safe under retries.
+                    # Duplicate submit guard: if this module was already submitted, do not re-run logic.
                     if attempt.completed_modules.filter(pk=submitting_module_id).exists():
+                        logger.info("[FORENSIC] submit_module_already_processed attempt_id=%s mod_id=%s", attempt.id, submitting_module_id)
                         metric_incr("submit_duplicate_prevented")
-                        # Do NOT call submit_module() again; the attempt is already in the correct
-                        # post-submit state.  Fall through so the client receives the canonical payload.
                     else:
                         attempt.submit_module(module_answers, flagged)
 
-                    # Module 2 submit now enters SCORING (async completion).
-                    if attempt.current_state == TestAttempt.STATE_MODULE_2_SUBMITTED:
-                        attempt.enter_scoring()
-                        # Enqueue scoring (safe to retry; task is idempotent).
+                    # After transition, if state is now SCORING, enqueue task.
+                    if attempt.current_state in (TestAttempt.STATE_MODULE_2_SUBMITTED, TestAttempt.STATE_SCORING):
+                        if attempt.current_state != TestAttempt.STATE_SCORING:
+                            attempt.enter_scoring()
+                        
                         broker = str(getattr(settings, "CELERY_BROKER_URL", "") or "").strip()
                         eager = bool(getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False))
                         if broker or eager:
                             score_attempt_async.delay(attempt.pk)
                         else:
-                            # Local/dev safety: optionally score inline when no broker is configured.
                             if bool(getattr(settings, "EXAMS_SCORE_INLINE_IF_NO_CELERY", False)):
                                 score_attempt_async(attempt.pk)
                         metric_incr("scoring_enqueued")
 
-                AuditLog.objects.create(
-                    user=request.user,
-                    action="SUBMIT_MODULE",
-                    details=f"Submitted module {current_mod_order} of {attempt.practice_test}"
-                )
-
-                # Final re-fetch to ensure all FKs and M2M state are loaded for the serializer.
-                # Use select_related to guarantee current_module is fresh.
+                # Re-fetch canonical state after transaction commit for response.
                 attempt = TestAttempt.objects.select_related("current_module").prefetch_related("current_module__questions").get(pk=attempt0.pk)
                 if expired:
                     attempt.is_expired = True
                 
-                resp_data = self.get_serializer(attempt).data
+                serializer = self.get_serializer(attempt)
+                resp_data = serializer.data
                 logger.info(
-                    "[FORENSIC] submit_module_success attempt_id=%s new_state=%s new_mod_order=%s new_v=%s",
-                    attempt.id, attempt.current_state, attempt.current_module.module_order if attempt.current_module else None, attempt.version_number
+                    "[FORENSIC] submit_module_response attempt_id=%s state=%s mod=%s v=%s",
+                    attempt.id, attempt.current_state, attempt.current_module_id, attempt.version_number
                 )
-                metric_incr("submit_module")
                 return Response(resp_data)
 
             except Exception as e:
-                logger.exception(
-                    "submit_module failed attempt_id=%s user_id=%s error=%s",
-                    getattr(attempt0, "id", None),
-                    getattr(request.user, "id", None),
-                    str(e)
-                )
+                logger.exception("[FORENSIC] submit_module_exception attempt_id=%s error=%s", getattr(attempt0, "id", None), str(e))
                 return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-
         return consume_idempotency_key(attempt=attempt0, endpoint="submit_module", key=idem, compute=_compute)
+
 
     @action(detail=True, methods=['post'])
     def save_attempt(self, request, pk=None):

@@ -444,12 +444,12 @@ class TestAttempt(TimestampedModel):
 
     def submit_module(self, module_answers: dict, flagged: list = None) -> None:
         old_state = self.current_state
-        old_mod = self.current_module_id
+        old_mod_id = self.current_module_id
         old_v = self.version_number
         
         logger.info(
-            "[FORENSIC] submit_module_start attempt_id=%s old_state=%s old_mod=%s old_v=%s",
-            self.id, old_state, old_mod, old_v
+            "[FORENSIC] submit_module_start attempt_id=%s current_state=%s current_mod_id=%s v=%s",
+            self.id, old_state, old_mod_id, old_v
         )
 
         if not self.current_module:
@@ -457,11 +457,18 @@ class TestAttempt(TimestampedModel):
             raise ValidationError("No current module to submit")
 
         if self.is_completed or self.current_state == self.STATE_COMPLETED:
+            logger.warning("[FORENSIC] submit_module_fail_already_completed attempt_id=%s", self.id)
             raise ValidationError("Attempt already completed")
 
+        # Capture current module info before we do anything
+        current_mod = self.current_module
+        mod_order = int(getattr(current_mod, "module_order", 0) or 0)
+        mod_id = current_mod.id
+
         # Defensive: If this specific module is already completed, do not re-process.
-        if self.completed_modules.filter(pk=self.current_module_id).exists():
-            logger.warning("[FORENSIC] submit_module_skip_already_completed attempt_id=%s mod_id=%s", self.id, self.current_module_id)
+        # This is a critical safety check for retries.
+        if self.completed_modules.filter(pk=mod_id).exists():
+            logger.warning("[FORENSIC] submit_module_skip_already_submitted attempt_id=%s mod_id=%s order=%s", self.id, mod_id, mod_order)
             return
 
         if not self.module_answers:
@@ -469,39 +476,29 @@ class TestAttempt(TimestampedModel):
         if not self.flagged_questions:
             self.flagged_questions = {}
 
-        self.module_answers[str(self.current_module_id)] = module_answers
-        self.flagged_questions[str(self.current_module_id)] = flagged or []
+        self.module_answers[str(mod_id)] = module_answers
+        self.flagged_questions[str(mod_id)] = flagged or []
         
         # Mark as completed in the set
-        self.completed_modules.add(self.current_module)
+        self.completed_modules.add(current_mod)
 
-        mod_order = int(getattr(self.current_module, "module_order", 0) or 0)
         if mod_order == 1:
-            # After Module 1 submission, strictly move to Module 2 (if it exists).
+            # After Module 1 submission, strictly move to Module 2.
             now = timezone.now()
             self.module_1_submitted_at = self.module_1_submitted_at or now
             self.current_state = self.STATE_MODULE_2_ACTIVE
             next_module = self._module_by_order(2)
-            if next_module is None:
-                logger.error("[FORENSIC] submit_module_no_m2 attempt_id=%s", self.id)
-                self.current_module = None
-                self.current_module_start_time = None
-                self.version_number = int(self.version_number or 0) + 1
-                self.save(
-                    update_fields=[
-                        "module_answers",
-                        "flagged_questions",
-                        "current_state",
-                        "module_1_submitted_at",
-                        "current_module",
-                        "current_module_start_time",
-                        "version_number",
-                        "updated_at",
-                    ]
-                )
-                raise ValidationError("Module 2 is missing; cannot complete attempt after Module 1.")
             
-            logger.info("[FORENSIC] submit_module_advancing_m1_to_m2 attempt_id=%s m2_id=%s", self.id, next_module.id)
+            if next_module is None:
+                logger.error("[FORENSIC] submit_module_m2_missing attempt_id=%s", self.id)
+                # Fallback: if M2 is missing, we can't stay in M1_ACTIVE.
+                # We'll set current_module to None to force a failure/sync on frontend.
+                self.current_module = None
+                self.version_number = int(self.version_number or 0) + 1
+                self.save(update_fields=["module_answers", "flagged_questions", "current_state", "module_1_submitted_at", "current_module", "version_number", "updated_at"])
+                raise ValidationError("Module 2 is missing; cannot advance exam.")
+            
+            logger.info("[FORENSIC] submit_module_transitioning_m1_to_m2 attempt_id=%s m1_id=%s m2_id=%s", self.id, mod_id, next_module.id)
             self._set_active_module(next_module)
             self.version_number = int(self.version_number or 0) + 1
             self.save(
@@ -518,13 +515,13 @@ class TestAttempt(TimestampedModel):
                 ]
             )
             logger.info(
-                "[FORENSIC] submit_module_committed attempt_id=%s new_state=%s new_mod=%s new_v=%s",
+                "[FORENSIC] submit_module_m1_committed attempt_id=%s new_state=%s new_mod_id=%s new_v=%s",
                 self.id, self.current_state, self.current_module_id, self.version_number
             )
             return
 
         if mod_order == 2:
-
+            logger.info("[FORENSIC] submit_module_m2_finishing attempt_id=%s m2_id=%s", self.id, mod_id)
             now = timezone.now()
             self.module_2_submitted_at = self.module_2_submitted_at or now
             self.current_state = self.STATE_MODULE_2_SUBMITTED
@@ -539,7 +536,12 @@ class TestAttempt(TimestampedModel):
                     "updated_at",
                 ]
             )
+            logger.info("[FORENSIC] submit_module_m2_committed attempt_id=%s new_state=%s v=%s", self.id, self.current_state, self.version_number)
             return
+
+        logger.error("[FORENSIC] submit_module_fail_invalid_order attempt_id=%s mod_id=%s order=%s", self.id, mod_id, mod_order)
+        raise ValidationError(f"Invalid module order {mod_order}")
+
 
         raise ValidationError("Invalid current module order")
 
