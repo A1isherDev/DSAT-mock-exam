@@ -555,17 +555,18 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
 
                 # Final re-fetch to ensure all FKs and M2M state are loaded for the serializer.
                 # Use select_related to guarantee current_module is fresh.
-                attempt = TestAttempt.objects.select_related("current_module").get(pk=attempt0.pk)
+                attempt = TestAttempt.objects.select_related("current_module").prefetch_related("current_module__questions").get(pk=attempt0.pk)
                 if expired:
                     attempt.is_expired = True
                 
                 resp_data = self.get_serializer(attempt).data
                 logger.info(
-                    "submit_module_success attempt_id=%s new_state=%s new_mod_id=%s v=%s",
-                    attempt.id, attempt.current_state, attempt.current_module_id, attempt.version_number
+                    "[FORENSIC] submit_module_success attempt_id=%s new_state=%s new_mod_order=%s new_v=%s",
+                    attempt.id, attempt.current_state, attempt.current_module.module_order if attempt.current_module else None, attempt.version_number
                 )
                 metric_incr("submit_module")
                 return Response(resp_data)
+
             except Exception as e:
                 logger.exception(
                     "submit_module failed attempt_id=%s user_id=%s error=%s",
@@ -612,6 +613,15 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
             return Response({'status': 'saved', 'version_number': attempt.version_number})
 
         return consume_idempotency_key(attempt=attempt0, endpoint="save_attempt", key=idem, compute=_compute)
+
+    @action(detail=True, methods=['get'], url_path='status')
+    def status(self, request, pk=None):
+        attempt = self.get_object()
+        logger.info(
+            "[FORENSIC] status_check attempt_id=%s state=%s mod=%s v=%s",
+            attempt.id, attempt.current_state, attempt.current_module_id, attempt.version_number
+        )
+        return Response(self.get_serializer(attempt).data)
 
     @action(detail=True, methods=['get'])
     def review(self, request, pk=None):

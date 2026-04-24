@@ -443,22 +443,25 @@ class TestAttempt(TimestampedModel):
         raise ValidationError("Invalid module order")
 
     def submit_module(self, module_answers: dict, flagged: list = None) -> None:
+        old_state = self.current_state
+        old_mod = self.current_module_id
+        old_v = self.version_number
+        
         logger.info(
-            "submit_module_start attempt_id=%s current_mod_id=%s current_state=%s v=%s",
-            self.id, self.current_module_id, self.current_state, self.version_number
+            "[FORENSIC] submit_module_start attempt_id=%s old_state=%s old_mod=%s old_v=%s",
+            self.id, old_state, old_mod, old_v
         )
 
         if not self.current_module:
-            logger.error("submit_module_fail_no_module attempt_id=%s", self.id)
+            logger.error("[FORENSIC] submit_module_fail_no_module attempt_id=%s", self.id)
             raise ValidationError("No current module to submit")
 
         if self.is_completed or self.current_state == self.STATE_COMPLETED:
             raise ValidationError("Attempt already completed")
 
         # Defensive: If this specific module is already completed, do not re-process.
-        # This prevents accidental double-advancement if the state machine is in a weird spot.
         if self.completed_modules.filter(pk=self.current_module_id).exists():
-            logger.warning("submit_module_skip_already_completed attempt_id=%s mod_id=%s", self.id, self.current_module_id)
+            logger.warning("[FORENSIC] submit_module_skip_already_completed attempt_id=%s mod_id=%s", self.id, self.current_module_id)
             return
 
         if not self.module_answers:
@@ -480,7 +483,7 @@ class TestAttempt(TimestampedModel):
             self.current_state = self.STATE_MODULE_2_ACTIVE
             next_module = self._module_by_order(2)
             if next_module is None:
-                logger.error("submit_module_no_m2 attempt_id=%s", self.id)
+                logger.error("[FORENSIC] submit_module_no_m2 attempt_id=%s", self.id)
                 self.current_module = None
                 self.current_module_start_time = None
                 self.version_number = int(self.version_number or 0) + 1
@@ -498,7 +501,7 @@ class TestAttempt(TimestampedModel):
                 )
                 raise ValidationError("Module 2 is missing; cannot complete attempt after Module 1.")
             
-            logger.info("submit_module_advancing_m1_to_m2 attempt_id=%s m2_id=%s", self.id, next_module.id)
+            logger.info("[FORENSIC] submit_module_advancing_m1_to_m2 attempt_id=%s m2_id=%s", self.id, next_module.id)
             self._set_active_module(next_module)
             self.version_number = int(self.version_number or 0) + 1
             self.save(
@@ -514,9 +517,14 @@ class TestAttempt(TimestampedModel):
                     "updated_at",
                 ]
             )
+            logger.info(
+                "[FORENSIC] submit_module_committed attempt_id=%s new_state=%s new_mod=%s new_v=%s",
+                self.id, self.current_state, self.current_module_id, self.version_number
+            )
             return
 
         if mod_order == 2:
+
             now = timezone.now()
             self.module_2_submitted_at = self.module_2_submitted_at or now
             self.current_state = self.STATE_MODULE_2_SUBMITTED

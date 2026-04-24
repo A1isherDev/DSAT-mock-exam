@@ -315,6 +315,22 @@ function ExamPlayerInner() {
     const [attempt, setAttempt] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [transitioning, setTransitioning] = useState(false);
+    
+    // SAFE STATE UPDATE: Enforces version_number checks to prevent stale background polls
+    // from overwriting fresh state set by manual mutations like submitModule.
+    const safeSetAttempt = useCallback((data: any) => {
+        if (!data) return;
+        setAttempt((prev: any) => {
+            const prevV = Number(prev?.version_number ?? -1);
+            const newV = Number(data?.version_number ?? -1);
+            if (newV < prevV) {
+                console.warn('[FORENSIC] safeSetAttempt: discarded stale snapshot', { prevV, newV });
+                return prev;
+            }
+            return data;
+        });
+    }, []);
+
     const prevModuleOrderRef = useRef<number | null>(null);
     const serverOffsetMsRef = useRef<number>(0);
     const scoringPollRef = useRef<any>(null);
@@ -380,11 +396,12 @@ function ExamPlayerInner() {
                 } catch {
                     /* ignore */
                 }
-                setAttempt(data);
+                safeSetAttempt(data);
                 // Set uniform zoom level to 100% (1.0) for both Math and English
                 setZoomLevel(1.0);
                 
                 if (data.is_completed) {
+
                     router.push(`/review/${attemptId}`);
                     return;
                 }
@@ -446,8 +463,9 @@ function ExamPlayerInner() {
             try { localStorage.removeItem(key); } catch {}
         }
         const localModId = local?.moduleId ?? null;
-        if (localModId && String(localModId) !== String(attempt.current_module_details.id)) {
-            // Draft belongs to a different module; discard.
+        if (!localModId || String(localModId) !== String(attempt.current_module_details.id)) {
+            // Draft belongs to a different module (or is legacy/unknown); discard.
+            if (local) console.log('[FORENSIC] Discarding draft due to moduleId mismatch', { localModId, currentModId: attempt.current_module_details.id });
             local = null;
         }
 
@@ -455,15 +473,28 @@ function ExamPlayerInner() {
         const serverFlagged = Array.isArray(attempt?.current_module_flagged_questions)
             ? attempt.current_module_flagged_questions
             : [];
+            
         setAnswers({ ...(local?.answers || {}), ...serverAnswers });
         setFlagged(Array.from(new Set([...(local?.flagged || []), ...serverFlagged])));
+        
+        // Mark that the 'answers' state now belongs to this module
+        lastAnswersModuleIdRef.current = attempt.current_module_details.id;
 
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [attempt?.current_module_details?.id, attempt?.version_number]);
 
+
     // Persist draft locally for refresh recovery
     useEffect(() => {
         if (!attempt?.current_module_details?.id) return;
+        
+        // RACE CONDITION GUARD: Only save if the answers in state actually belong to the current module.
+        // During transition (M1 -> M2), attempt.id changes first, but answers={} hasn't finished yet.
+        // We must NOT save M1 answers into the M2 slot.
+        if (lastAnswersModuleIdRef.current !== attempt.current_module_details.id) {
+            return;
+        }
+
         const key = `mastersat.examDraft.${attemptId}.${attempt.current_module_details.id}`;
         try {
             localStorage.setItem(key, JSON.stringify({ 
@@ -473,10 +504,10 @@ function ExamPlayerInner() {
                 moduleId: attempt.current_module_details.id
             }));
         } catch {
-
             /* ignore */
         }
     }, [answers, flagged, attempt?.current_module_details?.id, attempt?.version_number, attemptId]);
+
 
     // SCORING polling loop
     useEffect(() => {
@@ -545,7 +576,9 @@ function ExamPlayerInner() {
         const tick = async () => {
             if (cancelled) return;
             try {
+                console.log('[FORENSIC] Polling active status...', { attemptId, v: attempt?.version_number });
                 const st = await examsApi.getAttemptStatus(Number(attemptId));
+
                 // Re-check after await: the submit handler may have already advanced the
                 // attempt to Module 2 while this request was in-flight.  Without this guard
                 // the stale Module-1 response would overwrite the fresh Module-2 state.
@@ -554,16 +587,11 @@ function ExamPlayerInner() {
                     const sn = st?.server_now ? new Date(st.server_now).getTime() : NaN;
                     if (Number.isFinite(sn)) serverOffsetMsRef.current = sn - Date.now();
                 } catch {}
-                // Version-number freshness guard: never roll back to a stale snapshot.
-                // The submit handler bumps version_number; if the poll returns an older
-                // version it means the request was dispatched before the submit completed.
-                setAttempt((prev: any) => {
-                    const prevV = Number(prev?.version_number ?? -1);
-                    const newV = Number(st?.version_number ?? -1);
-                    if (newV < prevV) return prev; // stale — discard
-                    return st;
-                });
+                
+                safeSetAttempt(st);
+
                 if (st?.is_completed) {
+
                     router.push(`/review/${attemptId}`);
                     return;
                 }
@@ -706,6 +734,8 @@ function ExamPlayerInner() {
     }, [fullscreenWarningCountdown, router]);
 
     const [timeLeft, setTimeLeft] = useState<number>(0);
+    const lastAnswersModuleIdRef = useRef<number | null>(null);
+
     /** Last rendered whole-second value; avoids re-rendering the exam UI every animation frame. */
     const lastRenderedSecRef = useRef<number>(-1);
     const moduleTimerSubmitDoneRef = useRef(false);
@@ -886,14 +916,13 @@ function ExamPlayerInner() {
         if (submitLockRef.current) return;
         submitLockRef.current = true;
         setLoading(true);
-        try {
-            const prevOrder = Number(attempt?.current_module_details?.module_order || 0) || null;
-            const idem = `submit.${attempt.id}.${attempt.current_module_details.id}.v${attempt.version_number}`;
 
-            console.log('[EXAM] handleSubmitModule START', {
-                attemptId: attempt.id,
-                prevOrder,
-                currentState: attempt.current_state,
+
+        const prevOrder = Number(attempt?.current_module_details?.module_order || 0) || null;
+        const idem = `submit.${attempt.id}.${attempt.current_module_details.id}.v${attempt.version_number}`;
+        console.log('[FORENSIC] handleSubmitModule BEGIN', { attemptId: attempt.id, prevOrder, idem, v: attempt.version_number });
+
+        try {
                 versionNumber: attempt.version_number,
                 idemKey: idem,
             });
@@ -966,35 +995,51 @@ function ExamPlayerInner() {
                     }
                     router.push(`/review/${attemptId}`);
                 } else {
+
                     if (data?.current_state === 'SCORING') {
-                        console.log('[EXAM] → entering SCORING state');
-                        setAttempt(data);
+                        console.log('[FORENSIC] → entering SCORING state');
+                        safeSetAttempt(data);
                         setLoading(false);
                         return;
                     }
                     const nextOrder = Number(data?.current_module_details?.module_order || 0) || null;
-                    console.log('[EXAM] module transition check', { prevOrder, nextOrder, willTransition: prevOrder === 1 && nextOrder === 2 });
+                    console.log('[FORENSIC] module transition check', { prevOrder, nextOrder, willTransition: prevOrder === 1 && nextOrder === 2 });
+                    
                     if (prevOrder === 1 && nextOrder === 2) {
                         prevModuleOrderRef.current = 2;
                         setTransitioning(true);
                         setTimeout(() => setTransitioning(false), 1800);
                     }
-                    setAttempt(data);
+
+                    // Authoritative update
+                    safeSetAttempt(data);
+                    
                     setCurrentQuestionIndex(0);
                     setAnswers({});
                     setFlagged([]);
+                    
+                    // Mark state as empty but belonging to NEXT module to allow draft saving to resume
+                    lastAnswersModuleIdRef.current = data.current_module_details.id;
+
                     setEliminatedOptions({});
                     setQuestionHighlights({});
                     setShowAnswerPreview(false);
                     setLoading(false);
+
+                    
+                    // Clear old draft AFTER state update to ensure we use the correct old ID from closure
                     try {
-                        const key = `mastersat.examDraft.${attemptId}.${attempt.current_module_details.id}`;
+                        const oldModId = attempt.current_module_details.id;
+                        const key = `mastersat.examDraft.${attemptId}.${oldModId}`;
                         localStorage.removeItem(key);
+                        console.log('[FORENSIC] draft cleared', { oldModId });
                     } catch {}
                 }
             };
 
+            console.log('[FORENSIC] RAW SUBMIT RESPONSE DATA:', updatedAttempt);
             applyAttemptUpdate(updatedAttempt);
+
         } catch (err) {
             console.error('[EXAM] handleSubmitModule unrecoverable error:', err);
             setLoading(false);
