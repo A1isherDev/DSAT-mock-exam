@@ -434,23 +434,35 @@ function ExamPlayerInner() {
         const fetchAttempt = async () => {
             try {
                 setLoadError(null);
-                const data = await examsApi.getAttemptStatus(Number(attemptId));
+                const attemptIdNum = Number(attemptId);
+                const data = await examsApi.getAttemptStatus(attemptIdNum);
                 try {
                     const sn = data?.server_now ? new Date(data.server_now).getTime() : NaN;
                     if (Number.isFinite(sn)) serverOffsetMsRef.current = sn - Date.now();
                 } catch {
                     /* ignore */
                 }
-                safeSetAttempt(data);
+
+                // If the backend reports NOT_STARTED, explicitly start the engine once.
+                // This guarantees "Start test -> Module 1 opens" even for legacy rows.
+                if (data?.current_state === "NOT_STARTED") {
+                    const idem = `start.${attemptIdNum}.${Date.now()}`;
+                    const started = await examsApi.startAttemptEngine(attemptIdNum, idem);
+                    safeSetAttempt(started);
+                } else {
+                    safeSetAttempt(data);
+                }
                 // Set uniform zoom level to 100% (1.0) for both Math and English
                 setZoomLevel(1.0);
                 
-                if (data.is_completed) {
+                const rendered = (data?.current_state === "NOT_STARTED") ? await examsApi.getAttemptStatus(attemptIdNum) : data;
+
+                if (rendered.is_completed) {
 
                     router.push(`/review/${attemptId}`);
                     return;
                 }
-                if (data.is_expired) {
+                if (rendered.is_expired) {
                     router.push('/');
                     return;
                 }
@@ -458,12 +470,12 @@ function ExamPlayerInner() {
                 // Self-heal: backend may briefly return active state without module payload.
                 // Re-check status once more before leaving the UI stuck on the loader.
                 if (
-                    !data?.current_module_details &&
-                    (data?.current_state === "MODULE_1_ACTIVE" || data?.current_state === "MODULE_2_ACTIVE")
+                    !rendered?.current_module_details &&
+                    (rendered?.current_state === "MODULE_1_ACTIVE" || rendered?.current_state === "MODULE_2_ACTIVE")
                 ) {
                     try {
                         await new Promise((r) => setTimeout(r, 450));
-                        const st = await examsApi.getAttemptStatus(Number(attemptId));
+                        const st = await examsApi.getAttemptStatus(attemptIdNum);
                         safeSetAttempt(st);
                         if (!st?.current_module_details) {
                             setLoadError("The attempt state loaded, but the module payload is missing. Please click Retry.");
