@@ -135,14 +135,53 @@ api.interceptors.request.use((config) => {
 
 api.interceptors.response.use(
     (response) => response,
-    (error) => {
+    async (error) => {
         if (error.response?.status === 403 && error.response?.data?.detail) {
             if (typeof window !== 'undefined') {
                 // Avoid blocking alerts (and leaking backend detail strings) in production UX.
                 console.warn("Forbidden:", error.response.data.detail);
             }
         }
+
+        // Auth hardening for long-running sessions (exams):
+        // On 401, attempt a token refresh once, then retry the original request.
+        // Only redirect to /login if refresh fails.
         if (error.response?.status === 401) {
+            const original = error.config as any;
+            if (original && !original.__isRetryRequest) {
+                original.__isRetryRequest = true;
+                try {
+                    const refresh = Cookies.get("refresh_token");
+                    if (refresh) {
+                        // Shared refresh promise to avoid thundering herd.
+                        if (!(globalThis as any).__mastersatRefreshPromise) {
+                            (globalThis as any).__mastersatRefreshPromise = (async () => {
+                                const r = await axios.post(
+                                    `${API_URL}/auth/refresh/`,
+                                    { refresh },
+                                    { baseURL: "" }, // absolute path; API_URL already includes /api
+                                );
+                                const cookieOptions = {
+                                    secure: IS_PROD,
+                                    sameSite: "strict" as const,
+                                    expires: 7,
+                                    domain: IS_PROD ? cookieDomain() : undefined,
+                                    path: "/",
+                                };
+                                Cookies.set("access_token", r.data.access, cookieOptions);
+                                return r.data.access;
+                            })().finally(() => {
+                                (globalThis as any).__mastersatRefreshPromise = null;
+                            });
+                        }
+                        await (globalThis as any).__mastersatRefreshPromise;
+                        return api(original);
+                    }
+                } catch {
+                    // fall through to logout/redirect
+                }
+            }
+
             clearAuthCookiesEverywhere();
             if (typeof window !== 'undefined') {
                 window.location.href = '/login';
@@ -296,7 +335,21 @@ export const authApi = {
     logout: () => {
         clearAuthCookiesEverywhere();
         window.location.href = '/login';
-    }
+    },
+    refresh: async (rememberMe = true) => {
+        const refresh = Cookies.get("refresh_token");
+        if (!refresh) throw new Error("No refresh token");
+        const response = await axios.post(`${API_URL}/auth/refresh/`, { refresh }, { baseURL: "" });
+        const cookieOptions = {
+            secure: IS_PROD,
+            sameSite: "strict" as const,
+            expires: rememberMe ? 7 : undefined,
+            domain: IS_PROD ? cookieDomain() : undefined,
+            path: "/",
+        };
+        Cookies.set("access_token", response.data.access, cookieOptions);
+        return response.data;
+    },
 };
 
 export const examsApi = {

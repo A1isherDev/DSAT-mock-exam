@@ -318,6 +318,7 @@ function ExamPlayerInner() {
     const [loadError, setLoadError] = useState<string | null>(null);
     const [reloadNonce, setReloadNonce] = useState(0);
     const [transitioning, setTransitioning] = useState(false);
+    const [isOnline, setIsOnline] = useState(() => (typeof navigator !== "undefined" ? navigator.onLine : true));
     
     // SAFE STATE UPDATE: Enforces version_number checks to prevent stale background polls
     // from overwriting fresh state set by manual mutations like submitModule.
@@ -410,6 +411,18 @@ function ExamPlayerInner() {
     const { current_module_details } = attempt || {};
     const questions = current_module_details?.questions || [];
     const currentQuestion = questions?.[currentQuestionIndex];
+
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        const onOnline = () => setIsOnline(true);
+        const onOffline = () => setIsOnline(false);
+        window.addEventListener("online", onOnline);
+        window.addEventListener("offline", onOffline);
+        return () => {
+            window.removeEventListener("online", onOnline);
+            window.removeEventListener("offline", onOffline);
+        };
+    }, []);
 
     // Bootstrap: if we just created/resumed an attempt, use that payload immediately for faster first paint.
     useEffect(() => {
@@ -1485,6 +1498,33 @@ function ExamPlayerInner() {
         );
     }
 
+    // Rendering hardening: never crash the whole runner if question payload is temporarily empty/corrupt.
+    // This prevents white screens and "kicks" caused by unhandled JS exceptions.
+    if (attempt?.current_module_details && (!Array.isArray(questions) || questions.length === 0 || !currentQuestion)) {
+        return (
+            <AuthGuard>
+                <div className="min-h-screen flex flex-col items-center justify-center bg-white px-6 text-center">
+                    <h2 className="text-xl font-bold text-slate-900 tracking-tight">Questions failed to render</h2>
+                    <p className="mt-3 text-slate-500 font-medium max-w-md">
+                        The exam state is loaded, but the question payload is missing or invalid. This can happen after a
+                        transient network issue. Click Retry to reload from the server.
+                    </p>
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setLoading(true);
+                            setAttempt(null);
+                            setReloadNonce((x) => x + 1);
+                        }}
+                        className="mt-6 inline-flex items-center justify-center rounded-xl bg-emerald-600 px-5 py-3 text-white font-bold hover:bg-emerald-700 transition-colors"
+                    >
+                        Retry
+                    </button>
+                </div>
+            </AuthGuard>
+        );
+    }
+
     return (
         <AuthGuard>
             {/* Removed zoom: 1.5 to prevent layout breaking/scrolling, scaling fonts via Tailwind instead */}
@@ -1514,6 +1554,11 @@ function ExamPlayerInner() {
                     </div>
                 )}
                 <header className="flex items-start justify-between px-6 py-2 bg-white relative z-10 w-full shadow-sm" style={{ zoom: 1.15 }}>
+                    {!isOnline ? (
+                        <div className="absolute top-0 left-0 right-0 bg-amber-50 border-b border-amber-200 text-amber-900 text-[11px] font-bold py-1 px-3 text-center">
+                            Offline. Your answers are kept locally and will sync when you reconnect.
+                        </div>
+                    ) : null}
                     <div className="flex-1 flex items-center gap-4">
                         <img src="/images/logo.png" alt="Master SAT" className="w-9 h-9 object-contain" />
                         <div>
