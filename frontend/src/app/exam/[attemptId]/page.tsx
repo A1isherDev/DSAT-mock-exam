@@ -925,7 +925,7 @@ function ExamPlayerInner() {
         setLoading(true);
         
         const attemptIdNum = Number(attemptId);
-        const prevOrder = Number(attempt?.current_module_details?.module_order || 0) || null;
+        const prevOrder = Number(attempt?.current_module_details?.module_order || 0);
         const currentModId = attempt.current_module_details.id;
         const idem = `submit.${attempt.id}.${currentModId}.v${attempt.version_number}`;
         
