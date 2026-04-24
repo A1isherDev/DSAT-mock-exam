@@ -638,12 +638,30 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'], url_path='status')
     def status(self, request, pk=None):
-        attempt = self.get_object()
-        logger.info(
-            "[FORENSIC] status_check attempt_id=%s state=%s mod=%s v=%s",
-            attempt.id, attempt.current_state, attempt.current_module_id, attempt.version_number
-        )
-        return Response(self.get_serializer(attempt).data)
+        attempt0 = self.get_object()
+
+        def _compute():
+            with transaction.atomic():
+                attempt = (
+                    TestAttempt.objects.select_for_update()
+                    .select_related("practice_test", "current_module")
+                    .get(pk=attempt0.pk)
+                )
+                # Runtime integrity + canonical resume behavior:
+                # if legacy rows are NOT_STARTED but should begin at Module 1,
+                # normalize them here so the runner can always render immediately.
+                autoheal_attempt_for_runtime(attempt)
+                attempt.resume_attempt()
+
+            attempt = TestAttempt.objects.select_related("practice_test", "current_module").get(pk=attempt0.pk)
+            logger.info(
+                "[FORENSIC] status_check attempt_id=%s state=%s mod=%s v=%s",
+                attempt.id, attempt.current_state, attempt.current_module_id, attempt.version_number
+            )
+            return Response(self.get_serializer(attempt).data)
+
+        # status is safe to be non-idempotency-keyed; it’s a GET that may normalize legacy state.
+        return _compute()
 
     @action(detail=True, methods=['get'])
     def review(self, request, pk=None):
