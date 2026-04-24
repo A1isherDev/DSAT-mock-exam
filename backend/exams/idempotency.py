@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from django.db import IntegrityError
 from django.utils import timezone
 from rest_framework.response import Response
 
@@ -48,13 +49,25 @@ def consume_idempotency_key(
         return Response(row.response_json or {}, status=int(row.response_status or 200))
 
     res = compute()
-    AttemptIdempotencyKey.objects.create(
-        attempt=attempt,
-        endpoint=str(endpoint),
-        key=k,
-        response_status=int(getattr(res, "status_code", 200) or 200),
-        response_json=getattr(res, "data", None) if isinstance(getattr(res, "data", None), (dict, list)) else {},
-        expires_at=now + timezone.timedelta(seconds=int(ttl_seconds)),
-    )
+    try:
+        AttemptIdempotencyKey.objects.create(
+            attempt=attempt,
+            endpoint=str(endpoint),
+            key=k,
+            response_status=int(getattr(res, "status_code", 200) or 200),
+            response_json=getattr(res, "data", None) if isinstance(getattr(res, "data", None), (dict, list)) else {},
+            expires_at=now + timezone.timedelta(seconds=int(ttl_seconds)),
+        )
+    except IntegrityError:
+        # Another identical request already created the row (double-click / retry / network replay).
+        # Replay the existing response instead of crashing with 500.
+        row = (
+            AttemptIdempotencyKey.objects.filter(attempt=attempt, endpoint=endpoint, key=k)
+            .order_by("-created_at")
+            .first()
+        )
+        if row and row.expires_at and row.expires_at > now:
+            metric_incr("idempotency_replay")
+            return Response(row.response_json or {}, status=int(row.response_status or 200))
     return res
 

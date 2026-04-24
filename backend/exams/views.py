@@ -531,10 +531,12 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                     ensure_full_mock_practice_test_modules(attempt0.practice_test)
                     
                     # Lock row to prevent race conditions.
+                    # Postgres limitation: FOR UPDATE cannot target the nullable side of an OUTER JOIN.
+                    # Since `current_module` is nullable, avoid joining it in the locked query.
+                    attempt = TestAttempt.objects.select_for_update().get(pk=attempt0.pk)
                     attempt = (
-                        TestAttempt.objects.select_for_update()
-                        .select_related("practice_test", "current_module")
-                        .get(pk=attempt0.pk)
+                        TestAttempt.objects.select_related("practice_test", "current_module")
+                        .get(pk=attempt.pk)
                     )
                     autoheal_attempt_for_runtime(attempt)
 
