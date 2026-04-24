@@ -391,6 +391,24 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                 student=request.user,
                 practice_test=test
             )
+        # Authoritative start/resume: entering the runner should immediately be in MODULE_1_ACTIVE
+        # for new attempts, or return canonical current state for existing incomplete attempts.
+        try:
+            with transaction.atomic():
+                locked = (
+                    TestAttempt.objects.select_for_update()
+                    .select_related("practice_test", "current_module")
+                    .get(pk=attempt.pk)
+                )
+                ensure_full_mock_practice_test_modules(locked.practice_test)
+                autoheal_attempt_for_runtime(locked)
+                locked.start_attempt()
+        except Exception:
+            # Fall back to legacy behavior: return attempt row as-is.
+            pass
+
+        # Re-fetch canonical state for response (start_attempt mutates state/FKs).
+        attempt = TestAttempt.objects.select_related("current_module").get(pk=attempt.pk)
         
         AuditLog.objects.create(
             user=request.user,
@@ -430,7 +448,7 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                 with transaction.atomic():
                     locked = TestAttempt.objects.select_for_update().get(pk=attempt.pk)
                     autoheal_attempt_for_runtime(locked)
-                    locked.start_module(m1)
+                    locked.start_attempt()
                 return Response(self.get_serializer(TestAttempt.objects.get(pk=attempt.pk)).data)
             except Exception as exc:
                 return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
@@ -476,7 +494,13 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                     .get(pk=attempt.pk)
                 )
                 autoheal_attempt_for_runtime(locked)
-                locked.start_module(module)
+                # Legacy endpoint: keep for compatibility, but enforce canonical rules:
+                # - module 1 start → start_attempt
+                # - module 2 start → only allowed if engine is already MODULE_2_ACTIVE
+                if int(getattr(module, "module_order", 0) or 0) == 1:
+                    locked.start_attempt()
+                else:
+                    locked.start_module(module)
         except Exception as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         
@@ -535,10 +559,16 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                         logger.info("[FORENSIC] submit_module_already_processed attempt_id=%s mod_id=%s", attempt.id, submitting_module_id)
                         metric_incr("submit_duplicate_prevented")
                     else:
-                        attempt.submit_module(module_answers, flagged)
+                        # Canonical dispatch based on current state.
+                        if attempt.current_state == TestAttempt.STATE_MODULE_1_ACTIVE:
+                            attempt.submit_module_1(module_answers, flagged)
+                        elif attempt.current_state == TestAttempt.STATE_MODULE_2_ACTIVE:
+                            attempt.submit_module_2(module_answers, flagged)
+                        else:
+                            raise DRFValidationError(f"Cannot submit from state {attempt.current_state}")
 
                     # After transition, if state is now SCORING, enqueue task.
-                    if attempt.current_state in (TestAttempt.STATE_MODULE_2_SUBMITTED, TestAttempt.STATE_SCORING):
+                    if attempt.current_state == TestAttempt.STATE_SCORING:
                         if attempt.current_state != TestAttempt.STATE_SCORING:
                             attempt.enter_scoring()
                         
@@ -1047,7 +1077,21 @@ class BulkAssignmentHistoryDetailView(generics.RetrieveAPIView):
 
     permission_classes = [IsAuthenticated, BulkAssignmentHistoryAccess]
     serializer_class = BulkAssignmentDispatchDetailSerializer
-    queryset = BulkAssignmentDispatch.objects.select_related("assigned_by")
+
+    def get_queryset(self):
+        """
+        Defense-in-depth: match list scoping.
+        Non-wildcard actors may only view their own dispatches unless they have manage_users.
+        """
+        user = self.request.user
+        qs = BulkAssignmentDispatch.objects.select_related("assigned_by").order_by("-created_at")
+        perms = get_effective_permission_codenames(user)
+        if acc_const.WILDCARD in perms:
+            return qs
+        subj = actor_subject_probe_for_domain_perm(user)
+        if subj and authorize(user, acc_const.PERM_MANAGE_USERS, subject=subj):
+            return qs
+        return qs.filter(assigned_by=user)
 
 
 class BulkAssignmentHistoryRerunView(APIView):

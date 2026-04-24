@@ -131,14 +131,18 @@ def normalized_role(user) -> str:
 
 def can_manage_questions(user) -> bool:
     """
-    Questions authoring API (``/api/exams/admin/...``): allow any authenticated non-student
-    (admin, test_admin, teacher, super_admin, etc.). Deny students and anonymous users.
+    Questions authoring API (``/api/exams/admin/...``): **global staff only**.
+
+    This endpoint family is production-critical and effectively grants content-authoring powers
+    (create/update/delete mocks, tests, modules, questions, packs). In production we keep this
+    limited to global-scope staff: ``admin``, ``test_admin``, ``super_admin`` (and Django superuser).
+    Teachers should not implicitly gain authoring access by virtue of being non-students.
     """
     if not user or not getattr(user, "is_authenticated", False):
         return False
     if getattr(user, "is_superuser", False):
         return True
-    return normalized_role(user) != constants.ROLE_STUDENT
+    return is_global_scope_staff(user)
 
 
 def bulk_assign_request_platform_subjects(data: object) -> frozenset[str]:
@@ -692,7 +696,11 @@ def authorize(user, permission_codename: str, *, subject: Optional[str] = None) 
 
     validate_authorize_subject(subject)
     required = platform_subject_to_domain(subject)
-    assert required in constants.ALL_DOMAIN_SUBJECTS
+    if required not in constants.ALL_DOMAIN_SUBJECTS:
+        # Defensive: validate_authorize_subject should already have enforced platform vocabulary.
+        raise SubjectContractViolation(
+            f"authorize() received unknown platform subject {subject!r}."
+        )
 
     if is_privileged:
         return True

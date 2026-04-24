@@ -4,6 +4,7 @@ import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { examsApi } from '@/lib/api';
 import AuthGuard from '@/components/AuthGuard';
 import { platformSubjectIsMath, platformSubjectIsReadingWriting } from '@/lib/permissions';
+import { renderMath } from '@/lib/mathRender';
 import { Bookmark, ChevronDown, Highlighter, ZoomIn, Calculator, ChevronUp, X, Eye, EyeOff, MinusCircle, Info, Eye as EyeIcon, Play, Pause, ChevronLeft, ChevronRight, AlertCircle, BookOpen, Trash2, MoreVertical, Save } from 'lucide-react';
 import SafeHtml from '@/components/SafeHtml';
 // Fix for image URL if it's relative
@@ -653,59 +654,19 @@ function ExamPlayerInner() {
         if (mockFlow) setIsPaused(false);
     }, [mockFlow]);
 
-    // Robust Math Rendering Logic
-    const renderMath = useCallback(() => {
-        if (typeof window === 'undefined') return;
-        
-        const tryRender = () => {
-            const container = document.body;
-            if (!container) return;
-            container.classList.add('mathjax-process');
-
-            // KaTeX Auto-render
-            if ((window as any).renderMathInElement) {
-                try {
-                    (window as any).renderMathInElement(container, {
-                        delimiters: [
-                            {left: '$$', right: '$$', display: true},
-                            {left: '\\(', right: '\\)', display: false},
-                            {left: '\\[', right: '\\]', display: true}
-                        ],
-                        throwOnError: false
-                    });
-                } catch (e) {
-                }
-            }
-            
-            // MathJax 3
-            if ((window as any).MathJax && (window as any).MathJax.typesetPromise) {
-                try {
-                    // (window as any).MathJax.typesetClear([container]); 
-                    (window as any).MathJax.typesetPromise([container]).catch((err: any) => {
-                        // console.debug("MathJax process error (likely interrupted):", err);
-                    });
-                } catch (e) {}
-            }
-        };
-
-        // Execute multiple times to ensure rendering happens after React DOM updates
-        // and after external scripts (KaTeX/MathJax) are fully loaded.
-        tryRender();
-        const timers = [50, 200, 500, 1000, 2500].map(ms => setTimeout(tryRender, ms));
-        return () => timers.forEach(t => clearTimeout(t));
-    }, []);
-
     useEffect(() => {
         if (!loading) {
-            const cleanup = renderMath();
-            return cleanup;
+            // Single-engine deterministic KaTeX render. Call twice to avoid “first paint raw latex”
+            // when React commits large DOM updates.
+            renderMath({ root: document.body });
+            const t = setTimeout(() => renderMath({ root: document.body }), 60);
+            return () => clearTimeout(t);
         }
     }, [
         currentQuestionIndex, 
         loading, 
         attempt?.current_module_details?.id, 
         showAnswerPreview, 
-        renderMath, 
         answers[currentQuestion?.id],
         zoomLevel,
         highlighterActive,

@@ -55,7 +55,6 @@ function MockExamDetailInner() {
     setStartingModuleId(moduleId);
     try {
       const attempt = await getOrCreateAttempt(testId);
-      await examsApi.startModule(attempt.id, moduleId);
       router.push(`/exam/${attempt.id}${querySuffix}`);
     } catch (e) {
       console.error("Failed to start module", e);

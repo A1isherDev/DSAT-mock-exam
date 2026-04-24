@@ -51,24 +51,6 @@ export default function RootLayout({
         <Script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" strategy="afterInteractive" />
         <Script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" strategy="afterInteractive" />
         <Script src="https://accounts.google.com/gsi/client" strategy="afterInteractive" />
-        <Script id="mathjax-config" strategy="afterInteractive">
-          {`
-            window.MathJax = {
-              tex: {
-                inlineMath: [['\\\\(', '\\\\)'], ['$', '$']],
-                displayMath: [['\\\\[', '\\\\]'], ['$$', '$$']]
-              },
-              svg: {
-                fontCache: 'global'
-              },
-              options: {
-                ignoreHtmlClass: 'katex', // Don't process what KaTeX already handled
-                processHtmlClass: 'mathjax-process'
-              }
-            };
-          `}
-        </Script>
-        <Script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" strategy="afterInteractive" />
       </body>
     </html>
   );

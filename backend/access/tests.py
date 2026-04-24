@@ -30,11 +30,11 @@ class CanManageQuestionsTests(TestCase):
         u = User.objects.create_user(email="stq@example.com", password="x", role=C.ROLE_STUDENT)
         self.assertFalse(can_manage_questions(u))
 
-    def test_teacher_can_manage_questions(self):
+    def test_teacher_cannot_manage_questions(self):
         u = User.objects.create_user(
             email="tq@example.com", password="x", role=C.ROLE_TEACHER, subject=C.DOMAIN_MATH
         )
-        self.assertTrue(can_manage_questions(u))
+        self.assertFalse(can_manage_questions(u))
 
     def test_test_admin_can_manage_questions(self):
         u = User.objects.create_user(email="taq@example.com", password="x", role=C.ROLE_TEST_ADMIN)
@@ -78,7 +78,8 @@ class AccessPrimitivesTests(TestCase):
         )
 
     def test_domain_permissions_require_explicit_subject(self):
-        self.assertFalse(authorize(self.math_teacher, C.PERM_MANAGE_TESTS))
+        with self.assertRaises(SubjectContractViolation):
+            authorize(self.math_teacher, C.PERM_MANAGE_TESTS)
         self.assertTrue(
             authorize(self.math_teacher, C.PERM_MANAGE_TESTS, subject=C.SUBJECT_MATH_PLATFORM)
         )

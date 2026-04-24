@@ -957,6 +957,8 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
             files = list(request.FILES.getlist("attachment_files"))
         if not files:
             files = list(request.FILES.getlist("attachment_file[]"))
+        for f in files:
+            validate_submission_upload(f)
         if files:
             assignment.attachment_file = files[0]
             assignment.save(update_fields=["attachment_file", "updated_at"])
@@ -975,6 +977,8 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
             files = list(request.FILES.getlist("attachment_file[]"))
         if replace_all:
             _clear_assignment_teacher_attachments(assignment)
+        for f in files:
+            validate_submission_upload(f)
         if files:
             assignment.attachment_file = files[0]
             assignment.save(update_fields=["attachment_file", "updated_at"])

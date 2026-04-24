@@ -19,7 +19,7 @@ from .services import (
 class CanManageQuestions(BasePermission):
     """
     CRUD on ``/api/exams/admin/`` (mocks, pastpapers, tests, modules, questions).
-    Any authenticated user except ``student``; Django superusers always allowed.
+    Global staff only; Django superusers always allowed.
     """
 
     def has_permission(self, request, view):

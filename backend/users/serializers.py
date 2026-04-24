@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from django.conf import settings
 
 from access import constants as acc_const
 from access.services import (
@@ -118,6 +119,18 @@ class UserMeSerializer(serializers.ModelSerializer):
             return value
         if value < 400 or value > 1600:
             raise serializers.ValidationError("Target score must be between 400 and 1600.")
+        return value
+
+    def validate_profile_image(self, value):
+        if value is None:
+            return value
+        max_b = int(getattr(settings, "USER_PROFILE_MAX_IMAGE_BYTES", 5 * 1024 * 1024))
+        size = int(getattr(value, "size", 0) or 0)
+        if size > max_b:
+            raise serializers.ValidationError(f"Profile image too large. Maximum is {max_b} bytes.")
+        ct = str(getattr(value, "content_type", "") or "").lower()
+        if ct and not ct.startswith("image/"):
+            raise serializers.ValidationError("Invalid profile image content type.")
         return value
 
     def validate_sat_exam_date(self, value):

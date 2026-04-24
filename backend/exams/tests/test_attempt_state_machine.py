@@ -37,13 +37,8 @@ class TestAttemptStateMachineTests(APITestCase):
     def test_module1_submit_advances_to_module2_not_review(self):
         attempt = self._start_attempt()
         attempt_id = attempt["id"]
-
-        r = self.client.post(
-            f"/api/exams/attempts/{attempt_id}/start_module/",
-            {"module_id": self.m1.id},
-            format="json",
-        )
-        self.assertEqual(r.status_code, 200)
+        self.assertEqual(attempt.get("current_state"), TestAttempt.STATE_MODULE_1_ACTIVE)
+        self.assertEqual(attempt.get("current_module_details", {}).get("module_order"), 1)
 
         r = self.client.post(
             f"/api/exams/attempts/{attempt_id}/submit_module/",
@@ -73,8 +68,7 @@ class TestAttemptStateMachineTests(APITestCase):
     def test_final_results_only_after_module2_submit(self):
         attempt = self._start_attempt()
         attempt_id = attempt["id"]
-
-        self.client.post(f"/api/exams/attempts/{attempt_id}/start_module/", {"module_id": self.m1.id}, format="json")
+        self.assertEqual(attempt.get("current_state"), TestAttempt.STATE_MODULE_1_ACTIVE)
         self.client.post(
             f"/api/exams/attempts/{attempt_id}/submit_module/",
             {"answers": {}, "flagged": []},
@@ -113,7 +107,6 @@ class TestAttemptStateMachineTests(APITestCase):
     def test_duplicate_submit_does_not_skip_modules(self):
         attempt = self._start_attempt()
         attempt_id = attempt["id"]
-        self.client.post(f"/api/exams/attempts/{attempt_id}/start_module/", {"module_id": self.m1.id}, format="json")
 
         r1 = self.client.post(
             f"/api/exams/attempts/{attempt_id}/submit_module/",
@@ -167,13 +160,7 @@ class TestAttemptStateMachineTests(APITestCase):
 
         attempt = self.client.post("/api/exams/attempts/", {"practice_test": test.id}, format="json").data
         attempt_id = attempt["id"]
-
-        r = self.client.post(
-            f"/api/exams/attempts/{attempt_id}/start_module/",
-            {"module_id": m1.id},
-            format="json",
-        )
-        self.assertEqual(r.status_code, 200)
+        self.assertEqual(attempt.get("current_state"), TestAttempt.STATE_MODULE_1_ACTIVE)
 
         r = self.client.post(
             f"/api/exams/attempts/{attempt_id}/submit_module/",
@@ -183,4 +170,38 @@ class TestAttemptStateMachineTests(APITestCase):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.data.get("current_state"), TestAttempt.STATE_MODULE_2_ACTIVE)
         self.assertEqual(r.data.get("current_module_details", {}).get("module_order"), 2)
+
+    def test_resume_status_restores_module2(self):
+        attempt = self._start_attempt()
+        attempt_id = attempt["id"]
+
+        self.client.post(
+            f"/api/exams/attempts/{attempt_id}/submit_module/",
+            {"answers": {"1": "A"}, "flagged": []},
+            format="json",
+        )
+        r = self.client.get(f"/api/exams/attempts/{attempt_id}/status/")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data.get("current_state"), TestAttempt.STATE_MODULE_2_ACTIVE)
+        self.assertEqual(r.data.get("current_module_details", {}).get("module_order"), 2)
+
+    def test_submit_idempotency_key_replay(self):
+        attempt = self._start_attempt()
+        attempt_id = attempt["id"]
+        headers = {"HTTP_IDEMPOTENCY_KEY": "submit-1"}
+        r1 = self.client.post(
+            f"/api/exams/attempts/{attempt_id}/submit_module/",
+            {"answers": {"1": "A"}, "flagged": []},
+            format="json",
+            **headers,
+        )
+        self.assertEqual(r1.status_code, 200)
+        r2 = self.client.post(
+            f"/api/exams/attempts/{attempt_id}/submit_module/",
+            {"answers": {"1": "B"}, "flagged": []},
+            format="json",
+            **headers,
+        )
+        self.assertEqual(r2.status_code, 200)
+        self.assertEqual(r1.data, r2.data)
 

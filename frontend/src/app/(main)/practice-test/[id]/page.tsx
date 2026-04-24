@@ -50,7 +50,6 @@ function PracticeTestDetailInner() {
     setStartingModuleId(moduleId);
     try {
       const attempt = await getOrCreateAttempt();
-      await examsApi.startModule(attempt.id, moduleId);
       router.push(`/exam/${attempt.id}`);
     } catch (e) {
       console.error(e);

@@ -379,6 +379,7 @@ class TestAttempt(TimestampedModel):
     STATE_MODULE_2_SUBMITTED = "MODULE_2_SUBMITTED"
     STATE_SCORING = "SCORING"
     STATE_COMPLETED = "COMPLETED"
+    STATE_ABANDONED = "ABANDONED"
     STATE_CHOICES = [
         (STATE_NOT_STARTED, "Not started"),
         (STATE_MODULE_1_ACTIVE, "Module 1 active"),
@@ -387,6 +388,7 @@ class TestAttempt(TimestampedModel):
         (STATE_MODULE_2_SUBMITTED, "Module 2 submitted"),
         (STATE_SCORING, "Scoring"),
         (STATE_COMPLETED, "Completed"),
+        (STATE_ABANDONED, "Abandoned"),
     ]
     # NB: kept as a CharField so we can evolve the state machine without DB enum churn.
     current_state = models.CharField(
@@ -433,6 +435,191 @@ class TestAttempt(TimestampedModel):
             self.module_1_started_at = self.module_1_started_at or now
         elif module.module_order == 2:
             self.module_2_started_at = self.module_2_started_at or now
+
+    def _assert_invariants(self) -> None:
+        """
+        Internal safety checks. Do not call on every read; call after mutations.
+        """
+        st = self.current_state
+        cm = self.current_module
+        cm_order = getattr(cm, "module_order", None) if cm else None
+
+        if st == self.STATE_MODULE_1_ACTIVE and cm_order != 1:
+            raise ValidationError("Invariant violation: MODULE_1_ACTIVE requires current_module.order=1")
+        if st == self.STATE_MODULE_2_ACTIVE and cm_order != 2:
+            raise ValidationError("Invariant violation: MODULE_2_ACTIVE requires current_module.order=2")
+        if st in (self.STATE_SCORING, self.STATE_COMPLETED, self.STATE_ABANDONED) and cm is not None:
+            raise ValidationError("Invariant violation: scoring/completed/abandoned must have current_module=null")
+        if self.is_completed and st != self.STATE_COMPLETED:
+            raise ValidationError("Invariant violation: is_completed requires current_state=COMPLETED")
+
+    # ── New authoritative state-machine API ──────────────────────────────────
+    def start_attempt(self) -> None:
+        """
+        Start or resume the attempt. Must be called under select_for_update().
+        Behavior:
+        - If NOT_STARTED: moves to MODULE_1_ACTIVE and returns module 1 as current_module.
+        - If already active/submitted/scoring/completed: no-op (resume semantics).
+        """
+        if self.is_completed or self.current_state == self.STATE_COMPLETED:
+            return
+        if self.current_state == self.STATE_ABANDONED:
+            raise ValidationError("Attempt is abandoned.")
+
+        ensure_full_mock_practice_test_modules(self.practice_test)
+        if not self.started_at:
+            self.started_at = timezone.now()
+
+        if self.current_state == self.STATE_NOT_STARTED:
+            m1 = self._module_by_order(1)
+            if not m1:
+                raise ValidationError("Module 1 is missing.")
+            self.current_state = self.STATE_MODULE_1_ACTIVE
+            self._set_active_module(m1)
+            self.version_number = int(self.version_number or 0) + 1
+            self.save(
+                update_fields=[
+                    "started_at",
+                    "current_state",
+                    "current_module",
+                    "current_module_start_time",
+                    "module_1_started_at",
+                    "version_number",
+                    "updated_at",
+                ]
+            )
+            self._assert_invariants()
+            return
+
+        # Resume: ensure current_module pointer is consistent with state.
+        if self.current_state in (self.STATE_MODULE_1_ACTIVE, self.STATE_MODULE_2_ACTIVE) and not self.current_module:
+            desired = 1 if self.current_state == self.STATE_MODULE_1_ACTIVE else 2
+            m = self._module_by_order(desired)
+            if not m:
+                raise ValidationError(f"Module {desired} is missing.")
+            self._set_active_module(m)
+            self.version_number = int(self.version_number or 0) + 1
+            self.save(
+                update_fields=[
+                    "current_module",
+                    "current_module_start_time",
+                    "module_1_started_at",
+                    "module_2_started_at",
+                    "version_number",
+                    "updated_at",
+                ]
+            )
+            self._assert_invariants()
+
+    def submit_module_1(self, module_answers: dict, flagged: list | None = None) -> None:
+        """
+        MODULE_1_ACTIVE → MODULE_1_SUBMITTED → MODULE_2_ACTIVE (atomically).
+        Must be called under select_for_update().
+        """
+        if self.current_state != self.STATE_MODULE_1_ACTIVE:
+            raise ValidationError(f"Cannot submit module 1 from state {self.current_state}")
+        if not self.current_module or getattr(self.current_module, "module_order", None) != 1:
+            raise ValidationError("Current module is not module 1.")
+
+        # Save answers/flags for current module
+        mod = self.current_module
+        mid = int(mod.id)
+        self.module_answers = self.module_answers or {}
+        self.flagged_questions = self.flagged_questions or {}
+        self.module_answers[str(mid)] = module_answers or {}
+        self.flagged_questions[str(mid)] = flagged or []
+
+        # Idempotency by completed_modules
+        if not self.completed_modules.filter(pk=mid).exists():
+            self.completed_modules.add(mod)
+
+        now = timezone.now()
+        self.module_1_submitted_at = self.module_1_submitted_at or now
+        self.current_state = self.STATE_MODULE_1_SUBMITTED
+
+        # Immediately advance to module 2
+        ensure_full_mock_practice_test_modules(self.practice_test)
+        m2 = self._module_by_order(2)
+        if not m2:
+            raise ValidationError("Module 2 is missing; cannot advance.")
+        self.current_state = self.STATE_MODULE_2_ACTIVE
+        self._set_active_module(m2)
+        self.version_number = int(self.version_number or 0) + 1
+        self.save(
+            update_fields=[
+                "module_answers",
+                "flagged_questions",
+                "current_state",
+                "module_1_submitted_at",
+                "current_module",
+                "current_module_start_time",
+                "module_2_started_at",
+                "version_number",
+                "updated_at",
+            ]
+        )
+        self._assert_invariants()
+
+    def submit_module_2(self, module_answers: dict, flagged: list | None = None) -> None:
+        """
+        MODULE_2_ACTIVE → MODULE_2_SUBMITTED → SCORING (atomically).
+        Must be called under select_for_update().
+        """
+        if self.current_state != self.STATE_MODULE_2_ACTIVE:
+            raise ValidationError(f"Cannot submit module 2 from state {self.current_state}")
+        if not self.current_module or getattr(self.current_module, "module_order", None) != 2:
+            raise ValidationError("Current module is not module 2.")
+
+        mod = self.current_module
+        mid = int(mod.id)
+        self.module_answers = self.module_answers or {}
+        self.flagged_questions = self.flagged_questions or {}
+        self.module_answers[str(mid)] = module_answers or {}
+        self.flagged_questions[str(mid)] = flagged or []
+        if not self.completed_modules.filter(pk=mid).exists():
+            self.completed_modules.add(mod)
+
+        now = timezone.now()
+        self.module_2_submitted_at = self.module_2_submitted_at or now
+        self.current_state = self.STATE_MODULE_2_SUBMITTED
+
+        self.scoring_started_at = self.scoring_started_at or now
+        self.current_state = self.STATE_SCORING
+        self.current_module = None
+        self.current_module_start_time = None
+
+        self.version_number = int(self.version_number or 0) + 1
+        self.save(
+            update_fields=[
+                "module_answers",
+                "flagged_questions",
+                "current_state",
+                "module_2_submitted_at",
+                "scoring_started_at",
+                "current_module",
+                "current_module_start_time",
+                "version_number",
+                "updated_at",
+            ]
+        )
+        self._assert_invariants()
+
+    def resume_attempt(self) -> None:
+        """
+        Normalize invariants for resume. Must be called under select_for_update().
+        """
+        self.start_attempt()
+
+    def complete_attempt(self) -> None:
+        """
+        SCORING → COMPLETED. Called by scoring worker under select_for_update().
+        """
+        if self.current_state == self.STATE_COMPLETED and self.is_completed:
+            return
+        if self.current_state != self.STATE_SCORING:
+            raise ValidationError(f"Cannot complete attempt from state {self.current_state}")
+        self.complete_test()
+        self._assert_invariants()
 
     def start_module(self, module: Module) -> None:
         """

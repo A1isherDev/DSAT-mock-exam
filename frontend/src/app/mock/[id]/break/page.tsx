@@ -71,7 +71,6 @@ function BreakInner() {
         if (!attempt) {
           attempt = await examsApi.startTest(mathTest.id);
         }
-        await examsApi.startModule(attempt.id, firstMod.id);
         if (!cancelled) {
           router.replace(
             `/exam/${attempt.id}?mockFlow=1&mockExamId=${encodeURIComponent(mockId)}&rwAttempt=${encodeURIComponent(rwAttempt)}`
