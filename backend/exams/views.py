@@ -538,9 +538,17 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                     )
                     autoheal_attempt_for_runtime(attempt)
 
+                    # IMPORTANT (production): submit must not be blocked by expected_version_number mismatches.
+                    # Autosave/polling can legitimately bump version_number right before a user clicks Submit.
+                    # For submit we treat this as a SOFT conflict: we log it, but continue under the row lock
+                    # and return canonical state after commit.
                     if expected_v is not None and int(attempt.version_number or 0) != int(expected_v):
-                        logger.warning("[FORENSIC] submit_module_version_conflict attempt_id=%s req_v=%s db_v=%s", attempt.id, expected_v, attempt.version_number)
-                        return _version_conflict_response(self, request, attempt=attempt)
+                        logger.warning(
+                            "[FORENSIC] submit_module_soft_version_conflict attempt_id=%s req_v=%s db_v=%s",
+                            attempt.id,
+                            expected_v,
+                            attempt.version_number,
+                        )
                     
                     if not attempt.current_module:
                         logger.error("[FORENSIC] submit_module_no_active_module attempt_id=%s", attempt.id)
