@@ -466,11 +466,11 @@ function ExamPlayerInner() {
                         const st = await examsApi.getAttemptStatus(Number(attemptId));
                         safeSetAttempt(st);
                         if (!st?.current_module_details) {
-                            setLoadError("Test holati topildi, lekin modul yuklanmadi. Qayta urinishni bosing.");
+                            setLoadError("The attempt state loaded, but the module payload is missing. Please click Retry.");
                             return;
                         }
                     } catch {
-                        setLoadError("Test holati topildi, lekin modul yuklanmadi. Qayta urinishni bosing.");
+                        setLoadError("The attempt state loaded, but the module payload is missing. Please click Retry.");
                         return;
                     }
                 }
@@ -478,7 +478,15 @@ function ExamPlayerInner() {
                 setLoading(false);
             } catch (err) {
                 setLoading(false);
-                setLoadError("Attemptni yuklab bo'lmadi. Internet yoki login holatini tekshirib, qayta urinib ko'ring.");
+                const status = (err as any)?.response?.status;
+                const data = (err as any)?.response?.data;
+                const detail =
+                    (typeof data === "string" && data) ||
+                    data?.detail ||
+                    data?.error ||
+                    (data && typeof data === "object" ? JSON.stringify(data) : "");
+                const msg = `Could not load the attempt.${status ? ` HTTP ${status}.` : ""}${detail ? ` ${detail}` : ""}`;
+                setLoadError(msg);
             }
         };
         fetchAttempt();
@@ -488,7 +496,7 @@ function ExamPlayerInner() {
     useEffect(() => {
         if (!loading) return;
         const t = setTimeout(() => {
-            setLoadError("Yuklash juda uzoq davom etdi. Qayta urinishni bosing.");
+            setLoadError("Loading is taking too long. Please click Retry.");
             setLoading(false);
         }, 12_000);
         return () => clearTimeout(t);
@@ -1228,7 +1236,7 @@ function ExamPlayerInner() {
     if (loadError) {
         return (
             <div className="min-h-screen flex flex-col items-center justify-center bg-white px-6">
-                <h2 className="text-xl font-bold text-slate-900 tracking-tight text-center">Testni ochishda xatolik</h2>
+                <h2 className="text-xl font-bold text-slate-900 tracking-tight text-center">Could not open the exam</h2>
                 <p className="text-slate-500 font-medium mt-3 text-center max-w-md">{loadError}</p>
                 <button
                     type="button"
@@ -1239,7 +1247,31 @@ function ExamPlayerInner() {
                     }}
                     className="mt-6 inline-flex items-center justify-center rounded-xl bg-emerald-600 px-5 py-3 text-white font-bold hover:bg-emerald-700 transition-colors"
                 >
-                    Qayta urinish
+                    Retry
+                </button>
+            </div>
+        );
+    }
+
+    // If we are no longer loading but still have no module payload, treat as an error (do not hang on loader).
+    if (!loading && (!attempt || !attempt.current_module_details)) {
+        return (
+            <div className="min-h-screen flex flex-col items-center justify-center bg-white px-6">
+                <h2 className="text-xl font-bold text-slate-900 tracking-tight text-center">Module failed to load</h2>
+                <p className="text-slate-500 font-medium mt-3 text-center max-w-md">
+                    The attempt state loaded, but the module payload is missing. This is usually caused by a server-side
+                    state/module mismatch or a network interruption.
+                </p>
+                <button
+                    type="button"
+                    onClick={() => {
+                        setLoading(true);
+                        setAttempt(null);
+                        setReloadNonce((x) => x + 1);
+                    }}
+                    className="mt-6 inline-flex items-center justify-center rounded-xl bg-emerald-600 px-5 py-3 text-white font-bold hover:bg-emerald-700 transition-colors"
+                >
+                    Force refresh
                 </button>
             </div>
         );

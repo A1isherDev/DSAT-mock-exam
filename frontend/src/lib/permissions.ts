@@ -89,9 +89,7 @@ export function normalizePlatformSubject(raw: string | null | undefined): "READI
   if (
     low === "math" ||
     low === "mathematics" ||
-    low === "maths" ||
-    low === "matematika" ||
-    low === "математика"
+    low === "maths"
   ) {
     return "MATH";
   }

@@ -57,7 +57,7 @@ export default function LoginPage() {
                 await authApi.telegramAuth(user, rememberMe);
                 router.push('/');
             } catch (err: any) {
-                setError(err?.response?.data?.detail || 'Telegram orqali kirish muvaffaqiyatsiz.');
+                setError(err?.response?.data?.detail || 'Telegram sign-in failed.');
             } finally {
                 setLoading(false);
             }
@@ -197,7 +197,7 @@ export default function LoginPage() {
                             </div>
                             <div className="w-full flex flex-col items-center gap-2">
                                 <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
-                                    Telegram bilan kirish
+                                    Sign in with Telegram
                                 </span>
                                 {telegramCfg === null ? (
                                     <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
@@ -208,11 +208,11 @@ export default function LoginPage() {
                                     />
                                 ) : (
                                     <p className="text-center text-xs text-slate-500 dark:text-slate-400 max-w-sm px-2">
-                                        Telegram orqali kirish hozircha yo‘q. Administrator{" "}
+                                        Telegram login is not configured yet. An administrator must set{" "}
                                         <code className="text-[10px] bg-slate-100 dark:bg-slate-800 px-1 rounded">
                                             TELEGRAM_BOT_TOKEN
                                         </code>{" "}
-                                        va BotFather-da Web Login domenini sozlasin.
+                                        and configure the Web Login domain in BotFather.
                                     </p>
                                 )}
                             </div>

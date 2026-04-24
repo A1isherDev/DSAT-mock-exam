@@ -49,7 +49,7 @@ def _normalize_platform_subject_value(raw):
     ) or ("READING" in u and "WRITING" in u):
         return "READING_WRITING"
     low = s.lower()
-    if low in ("math", "mathematics", "maths", "matematika", "математика"):
+    if low in ("math", "mathematics", "maths"):
         return "MATH"
     if "reading" in low and "writing" in low:
         return "READING_WRITING"
