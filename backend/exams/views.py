@@ -563,19 +563,24 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                     flagged = request.data.get('flagged', [])
                     
                     submitting_module_id = attempt.current_module_id
+                    submitting_module_order = int(getattr(attempt.current_module, "module_order", 0) or 0)
 
                     # Duplicate submit guard: if this module was already submitted, do not re-run logic.
                     if attempt.completed_modules.filter(pk=submitting_module_id).exists():
                         logger.info("[FORENSIC] submit_module_already_processed attempt_id=%s mod_id=%s", attempt.id, submitting_module_id)
                         metric_incr("submit_duplicate_prevented")
                     else:
-                        # Canonical dispatch based on current state.
-                        if attempt.current_state == TestAttempt.STATE_MODULE_1_ACTIVE:
+                        # Canonical dispatch based on the actual active module order.
+                        # Production safety: state can be stale/corrupted; module_order is the ground truth for what the
+                        # student is submitting right now.
+                        if submitting_module_order == 1:
                             attempt.submit_module_1(module_answers, flagged)
-                        elif attempt.current_state == TestAttempt.STATE_MODULE_2_ACTIVE:
+                        elif submitting_module_order == 2:
                             attempt.submit_module_2(module_answers, flagged)
                         else:
-                            raise DRFValidationError(f"Cannot submit from state {attempt.current_state}")
+                            raise DRFValidationError(
+                                f"Cannot submit: invalid current module order {submitting_module_order} (state={attempt.current_state})"
+                            )
 
                     # After transition, if state is now SCORING, enqueue task.
                     if attempt.current_state == TestAttempt.STATE_SCORING:
