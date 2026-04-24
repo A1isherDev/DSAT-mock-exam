@@ -336,7 +336,9 @@ function ExamPlayerInner() {
             // Critical guard: never overwrite with an older module order.
             const prevOrder = Number(prev?.current_module_details?.module_order || 0);
             const newOrder = Number(data?.current_module_details?.module_order || 0);
-            if (newOrder < prevOrder && !data.is_completed) {
+            // Only apply the module-order regression guard when both sides have a real module.
+            // Legit states like SCORING/COMPLETED will have no active module (order=0).
+            if (prevOrder > 0 && newOrder > 0 && newOrder < prevOrder && !data.is_completed) {
                 return prev;
             }
 
@@ -936,6 +938,24 @@ function ExamPlayerInner() {
                 safeSetAttempt(data);
                 setLoading(false);
                 submitLockRef.current = false;
+                return;
+            }
+
+            // If backend says we're in MODULE_2_ACTIVE but payload is missing, immediately re-fetch status.
+            // This prevents getting stuck on the loader if an intermediate/stale response arrives.
+            if (data?.current_state === "MODULE_2_ACTIVE" && !data?.current_module_details) {
+                safeSetAttempt(data);
+                const aid = Number(attemptIdNum);
+                setLoading(true);
+                setTimeout(async () => {
+                    try {
+                        const st = await examsApi.getAttemptStatus(aid);
+                        applyAttemptUpdate(st);
+                    } catch {
+                        setLoading(false);
+                        submitLockRef.current = false;
+                    }
+                }, 400);
                 return;
             }
 
