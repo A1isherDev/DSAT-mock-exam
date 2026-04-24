@@ -495,16 +495,21 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
             try:
                 with transaction.atomic():
                     # Lock row to prevent race conditions / duplicate submit advancing state twice.
+                    # Defensive: ensure full mock sections always have both modules provisioned
+                    # before we try to advance state.
+                    ensure_full_mock_practice_test_modules(attempt0.practice_test)
+                    
+                    # Refresh attempt to see newly created modules (if any)
                     attempt = (
                         TestAttempt.objects.select_for_update()
                         .select_related("practice_test", "current_module")
                         .get(pk=attempt0.pk)
                     )
+
                     if expected_v is not None and int(attempt.version_number or 0) != int(expected_v):
                         return _version_conflict_response(self, request, attempt=attempt)
                     if not attempt.current_module:
                         return Response({'error': 'No active module to submit'}, status=status.HTTP_400_BAD_REQUEST)
-
                     # Timer enforcement: if time elapsed, we still accept submission (finalizes the module),
                     # but we mark the attempt payload as expired for the client to reconcile.
                     timing = get_active_module_timing(attempt)

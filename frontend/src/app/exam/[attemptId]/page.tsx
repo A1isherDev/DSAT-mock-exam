@@ -1422,7 +1422,19 @@ function ExamPlayerInner() {
                                             <Save className="w-4 h-4 mr-3 text-slate-400" />
                                             Save and Exit
                                         </button>
+                                        <div className="h-px bg-slate-100 mx-2" />
+                                        <button 
+                                            onClick={() => {
+                                                setShowMoreMenu(false);
+                                                setShowAnswerPreview(true);
+                                            }}
+                                            className="w-full flex items-center px-4 py-3 text-sm font-bold text-emerald-600 hover:bg-emerald-50 transition-colors"
+                                        >
+                                            <ChevronRight className="w-4 h-4 mr-3" />
+                                            Submit Section
+                                        </button>
                                     </div>
+
                                 </>
                             )}
                         </div>
@@ -1768,13 +1780,21 @@ function ExamPlayerInner() {
                         )}
 
                         {currentQuestionIndex < questions.length - 1 ? (
-                            <button
-                                onClick={goNext}
-                                disabled={isNavigating}
-                                className={`flex items-center gap-1 bg-[#2563eb] text-white font-bold px-6 py-1.5 rounded-full hover:bg-blue-700 transition-all shadow text-xs active:scale-[0.92] ${isNavigating ? 'opacity-50 pointer-events-none' : ''}`}
-                            >
-                                Next
-                            </button>
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => setShowAnswerPreview(true)}
+                                    className="flex items-center gap-1 font-bold px-4 py-1.5 rounded-full border border-slate-300 text-slate-600 hover:bg-slate-50 transition-all text-[10px] uppercase tracking-wider"
+                                >
+                                    Finish Module
+                                </button>
+                                <button
+                                    onClick={goNext}
+                                    disabled={isNavigating}
+                                    className={`flex items-center gap-1 bg-[#2563eb] text-white font-bold px-6 py-1.5 rounded-full hover:bg-blue-700 transition-all shadow text-xs active:scale-[0.92] ${isNavigating ? 'opacity-50 pointer-events-none' : ''}`}
+                                >
+                                    Next
+                                </button>
+                            </div>
                         ) : (
                             <button
                                 onClick={() => setShowAnswerPreview(true)}
@@ -1783,6 +1803,7 @@ function ExamPlayerInner() {
                                 Finish Module
                             </button>
                         )}
+
                     </div>
                 </footer>
             </div>
