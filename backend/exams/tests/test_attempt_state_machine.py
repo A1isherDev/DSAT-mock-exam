@@ -185,6 +185,21 @@ class TestAttemptStateMachineTests(APITestCase):
         self.assertEqual(r.data.get("current_state"), TestAttempt.STATE_MODULE_2_ACTIVE)
         self.assertEqual(r.data.get("current_module_details", {}).get("module_order"), 2)
 
+    def test_status_normalizes_module1_submitted_to_module2_active(self):
+        attempt = self._start_attempt()
+        attempt_id = attempt["id"]
+        # Simulate a legacy/partial-write attempt that got stuck in MODULE_1_SUBMITTED with no active module pointer.
+        att = TestAttempt.objects.get(pk=attempt_id)
+        att.current_state = TestAttempt.STATE_MODULE_1_SUBMITTED
+        att.current_module = None
+        att.current_module_start_time = None
+        att.save(update_fields=["current_state", "current_module", "current_module_start_time"])
+
+        r = self.client.get(f"/api/exams/attempts/{attempt_id}/status/")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data.get("current_state"), TestAttempt.STATE_MODULE_2_ACTIVE)
+        self.assertEqual(r.data.get("current_module_details", {}).get("module_order"), 2)
+
     def test_submit_idempotency_key_replay(self):
         attempt = self._start_attempt()
         attempt_id = attempt["id"]

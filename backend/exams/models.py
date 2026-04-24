@@ -608,7 +608,55 @@ class TestAttempt(TimestampedModel):
         """
         Normalize invariants for resume. Must be called under select_for_update().
         """
+        # First, ensure attempts are started and active-module pointers are consistent.
         self.start_attempt()
+
+        # Legacy/edge-state normalization: the UI cannot render *_SUBMITTED states because
+        # there is no active module payload. These states are meant to be instantaneous.
+        #
+        # If we ever find an attempt persisted in these states (e.g. old code path,
+        # partial write, or manual admin edits), normalize to the next renderable state.
+        if self.current_state == self.STATE_MODULE_1_SUBMITTED:
+            ensure_full_mock_practice_test_modules(self.practice_test)
+            m2 = self._module_by_order(2)
+            if not m2:
+                raise ValidationError("Module 2 is missing; cannot resume.")
+            self.current_state = self.STATE_MODULE_2_ACTIVE
+            self._set_active_module(m2)
+            self.version_number = int(self.version_number or 0) + 1
+            self.save(
+                update_fields=[
+                    "current_state",
+                    "current_module",
+                    "current_module_start_time",
+                    "module_2_started_at",
+                    "version_number",
+                    "updated_at",
+                ]
+            )
+            self._assert_invariants()
+            return
+
+        if self.current_state == self.STATE_MODULE_2_SUBMITTED:
+            # If module-2 was submitted but scoring wasn't entered, move to SCORING.
+            now = timezone.now()
+            self.scoring_started_at = self.scoring_started_at or now
+            self.current_state = self.STATE_SCORING
+            self.current_module = None
+            self.current_module_start_time = None
+            self.version_number = int(self.version_number or 0) + 1
+            self.save(
+                update_fields=[
+                    "current_state",
+                    "scoring_started_at",
+                    "current_module",
+                    "current_module_start_time",
+                    "version_number",
+                    "updated_at",
+                ]
+            )
+            self._assert_invariants()
+            return
 
     def complete_attempt(self) -> None:
         """
