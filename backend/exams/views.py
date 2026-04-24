@@ -653,7 +653,11 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                 autoheal_attempt_for_runtime(attempt)
                 attempt.resume_attempt()
 
-            attempt = TestAttempt.objects.select_related("practice_test", "current_module").get(pk=attempt0.pk)
+            attempt = (
+                TestAttempt.objects.select_related("practice_test", "current_module")
+                .prefetch_related("practice_test__modules", "current_module__questions")
+                .get(pk=attempt0.pk)
+            )
             logger.info(
                 "[FORENSIC] status_check attempt_id=%s state=%s mod=%s v=%s",
                 attempt.id, attempt.current_state, attempt.current_module_id, attempt.version_number

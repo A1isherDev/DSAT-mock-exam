@@ -165,7 +165,10 @@ from users.serializers import UserSerializer
 
 class TestAttemptSerializer(serializers.ModelSerializer):
     practice_test_details = serializers.SerializerMethodField()
-    current_module_details = ModuleSerializer(source='current_module', read_only=True)
+    # Critical: some legacy attempts can have current_state=MODULE_*_ACTIVE while current_module is null
+    # (partial writes, old code paths, or manual edits). The UI requires a module payload to render.
+    # We therefore compute this field and fall back to inferring the module from state.
+    current_module_details = serializers.SerializerMethodField()
     student_details = UserSerializer(source='student', read_only=True)
     is_expired = serializers.SerializerMethodField()
     module_results = serializers.SerializerMethodField()
@@ -182,6 +185,20 @@ class TestAttemptSerializer(serializers.ModelSerializer):
     def get_server_now(self, obj):
         return timezone.now().isoformat()
 
+    def get_current_module_details(self, obj):
+        mod = getattr(obj, "current_module", None)
+        if mod:
+            return ModuleSerializer(mod).data
+
+        st = getattr(obj, "current_state", None)
+        if st == TestAttempt.STATE_MODULE_1_ACTIVE:
+            m = obj.practice_test.modules.filter(module_order=1).order_by("id").first()
+            return ModuleSerializer(m).data if m else None
+        if st == TestAttempt.STATE_MODULE_2_ACTIVE:
+            m = obj.practice_test.modules.filter(module_order=2).order_by("id").first()
+            return ModuleSerializer(m).data if m else None
+        return None
+
     def get_current_module_saved_answers(self, obj):
         """
         Resume support: return saved answers for the currently active module only.
@@ -189,7 +206,13 @@ class TestAttemptSerializer(serializers.ModelSerializer):
         """
         mod = getattr(obj, "current_module", None)
         if not mod:
-            return None
+            st = getattr(obj, "current_state", None)
+            if st == TestAttempt.STATE_MODULE_1_ACTIVE:
+                mod = obj.practice_test.modules.filter(module_order=1).order_by("id").first()
+            elif st == TestAttempt.STATE_MODULE_2_ACTIVE:
+                mod = obj.practice_test.modules.filter(module_order=2).order_by("id").first()
+            if not mod:
+                return None
         try:
             return (obj.module_answers or {}).get(str(mod.id), {}) or {}
         except Exception:
@@ -198,7 +221,14 @@ class TestAttemptSerializer(serializers.ModelSerializer):
     def get_current_module_flagged_questions(self, obj):
         mod = getattr(obj, "current_module", None)
         if not mod:
-            return None
+            # If we inferred a module for rendering, mirror that for resume support.
+            st = getattr(obj, "current_state", None)
+            if st == TestAttempt.STATE_MODULE_1_ACTIVE:
+                mod = obj.practice_test.modules.filter(module_order=1).order_by("id").first()
+            elif st == TestAttempt.STATE_MODULE_2_ACTIVE:
+                mod = obj.practice_test.modules.filter(module_order=2).order_by("id").first()
+            if not mod:
+                return None
         try:
             return (obj.flagged_questions or {}).get(str(mod.id), []) or []
         except Exception:
