@@ -1253,8 +1253,14 @@ function ExamPlayerInner() {
         );
     }
 
-    // If we are no longer loading but still have no module payload, treat as an error (do not hang on loader).
-    if (!loading && (!attempt || !attempt.current_module_details)) {
+    // If we are no longer loading and the backend expects an active module, but payload is missing,
+    // treat as an error (do not hang on loader). Note: SCORING/COMPLETED intentionally have no module payload.
+    if (
+        !loading &&
+        attempt &&
+        !attempt.current_module_details &&
+        (attempt.current_state === "MODULE_1_ACTIVE" || attempt.current_state === "MODULE_2_ACTIVE")
+    ) {
         return (
             <div className="min-h-screen flex flex-col items-center justify-center bg-white px-6">
                 <h2 className="text-xl font-bold text-slate-900 tracking-tight text-center">Module failed to load</h2>
