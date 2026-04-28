@@ -248,9 +248,13 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
         data = super().validate(attrs)
         u = self.user
-        if getattr(u, "security_step_up_required_until", None):
-            u.security_step_up_required_until = None
-            u.save(update_fields=["security_step_up_required_until"])
+        try:
+            if getattr(u, "security_step_up_required_until", None):
+                u.security_step_up_required_until = None
+                u.save(update_fields=["security_step_up_required_until"])
+        except Exception:
+            # Never fail password login if adaptive-security columns drift or DB is mid-migrate.
+            pass
         data["is_admin"] = u.is_admin
         data["role"] = u.role
         data["subject"] = getattr(u, "subject", None) or ""

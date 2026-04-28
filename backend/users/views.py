@@ -279,12 +279,16 @@ class CookieTokenRefreshView(TokenRefreshView):
                 return Response({"detail": "Session revoked."}, status=status.HTTP_401_UNAUTHORIZED)
 
             user = User.objects.get(pk=s.user_id)
-            if user.security_step_up_required_until and user.security_step_up_required_until > timezone.now():
-                security_metric_incr("refresh_fail", 1)
-                return Response(
-                    {"detail": "Re-authentication required.", "code": "security_step_up"},
-                    status=status.HTTP_401_UNAUTHORIZED,
-                )
+            try:
+                step_until = getattr(user, "security_step_up_required_until", None)
+                if step_until and step_until > timezone.now():
+                    security_metric_incr("refresh_fail", 1)
+                    return Response(
+                        {"detail": "Re-authentication required.", "code": "security_step_up"},
+                        status=status.HTTP_401_UNAUTHORIZED,
+                    )
+            except Exception:
+                pass
             new_refresh = RefreshToken.for_user(user)
             new_refresh_s = str(new_refresh)
             new_access = str(new_refresh.access_token)

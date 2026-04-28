@@ -18,14 +18,20 @@ class CookieOrHeaderJWTAuthentication(JWTAuthentication):
         user = super().get_user(validated_token)
         if user is None or not user.is_active:
             return user
-        until = getattr(user, "security_step_up_required_until", None)
-        if until and until > timezone.now():
-            raise AuthenticationFailed(
-                {
-                    "detail": "Re-authentication is required for your account due to a recent security check.",
-                    "code": "security_step_up",
-                }
-            )
+        try:
+            until = getattr(user, "security_step_up_required_until", None)
+            if until and until > timezone.now():
+                raise AuthenticationFailed(
+                    {
+                        "detail": "Re-authentication is required for your account due to a recent security check.",
+                        "code": "security_step_up",
+                    }
+                )
+        except AuthenticationFailed:
+            raise
+        except Exception:
+            # Missing column mid-migrate: do not block all JWT auth.
+            pass
         return user
 
     def authenticate(self, request):
