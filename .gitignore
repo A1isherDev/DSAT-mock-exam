@@ -12,6 +12,9 @@ backend/db.sqlite3
 backend/staticfiles/
 backend/media/
 
+# Deploy shim: optional local npm lock only (deploy.sh uses frontend/ for npm ci)
+deploy/package-lock.json
+
 # ── Node / Next.js ────────────────────────────────────────────
 frontend/node_modules/
 frontend/.next/

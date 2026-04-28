@@ -73,7 +73,7 @@ Use the script from **any** directory (it uses absolute paths and `npm --prefix`
 bash /var/www/satapp/deploy/deploy.sh
 ```
 
-Do **not** run plain `npm ci` or `npm run build` while your shell’s current directory is `deploy/` unless you only mean the tiny shim `package.json` there. The Next.js app and its real `package-lock.json` live under **`frontend/`**.
+Do **not** run plain `npm ci` or `npm run build` while your shell’s current directory is `deploy/` unless you only mean the tiny shim `package.json` there. The Next.js app and its real `package-lock.json` live under **`frontend/`**. `deploy/package-lock.json` is gitignored (optional local file only); **`deploy.sh` removes an untracked copy before `git pull`** so merges are not blocked on old servers.
 
 If you install or build the frontend by hand on the server, use one of:
 

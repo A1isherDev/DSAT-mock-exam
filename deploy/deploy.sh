@@ -75,6 +75,14 @@ fi
 
 if [[ "$SKIP_PULL" == "false" ]]; then
   echo "-> Pulling latest code..."
+  # An old untracked deploy/package-lock.json on the server blocks checkout when the same path
+  # exists in git; remove only if still untracked (safe for normal deploys).
+  if [[ -f "$APP_DIR/deploy/package-lock.json" ]]; then
+    if git -C "$APP_DIR" status --porcelain deploy/package-lock.json 2>/dev/null | grep -q '^??'; then
+      echo "   Removing untracked deploy/package-lock.json so git pull can merge."
+      rm -f "$APP_DIR/deploy/package-lock.json"
+    fi
+  fi
   git -C "$APP_DIR" pull --ff-only origin main
 else
   echo "-> Skipping git pull (--skip-pull)"
