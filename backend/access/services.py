@@ -6,8 +6,9 @@ LMS authorization — **use these entry points and no ad‑hoc shortcuts**.
 **LOCKED CONTRACT (regressions)**
 
 * **Questions authoring** (``/api/exams/admin/…``): :func:`can_manage_questions` — students denied;
-  all other authenticated roles see full querysets. Student/portal reads still use
-  :func:`filter_practice_tests_for_user` / :func:`can_view_tests` as below.
+  all other authenticated roles see full querysets. Student portal pastpaper list uses
+  :func:`filter_practice_tests_for_user` with :func:`visible_practice_test_platform_subjects_for_query`
+  (students: no ``PracticeTest.subject`` filter — full published bank).
 
 * **View** test content (portal / library): :func:`can_view_tests`. **Edit** test content:
   :func:`can_edit_tests`. Public/portal querysets use :func:`filter_practice_tests_for_user`
@@ -567,6 +568,9 @@ def visible_practice_test_platform_subjects_for_query(user) -> Optional[frozense
     if not perms:
         return frozenset()
     if constants.WILDCARD in perms:
+        return None
+    # Students: full published pastpaper bank (Math + R&W). Not gated on user.subject or M2M.
+    if normalized_role(user) == constants.ROLE_STUDENT:
         return None
     # Global roles never carry user.subject; SQL must not filter the library by subject.
     if is_global_scope_staff(user):

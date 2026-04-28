@@ -206,10 +206,11 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         """
-        Students: standalone PracticeTest rows they are explicitly assigned to (assigned_users).
-        No automatic “whole pack” unlock from one section — Math vs English access stay separate.
-        Staff with test-library permissions: all standalone tests visible per ABAC
-        (view_all / subject scopes / authoring perms), same as admin test lists.
+        Students: the full published pastpaper bank (``filter_practice_tests_for_user``), not
+        only ``assigned_users`` — the /practice-tests page is a school-wide library. Class
+        homework still uses M2M for analytics, but library access is not exclusive to it.
+        Staff with test-library permissions: same filter, or stricter subject scoping for teachers.
+        Other roles (rare): only tests in ``assigned_users``.
         """
         user = self.request.user
         base = (
@@ -218,6 +219,8 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
             .prefetch_related("modules")
         )
         if can_browse_standalone_practice_library(user):
+            return filter_practice_tests_for_user(user, base).distinct()
+        if normalized_role(user) == acc_const.ROLE_STUDENT:
             return filter_practice_tests_for_user(user, base).distinct()
         return base.filter(assigned_users=user).distinct()
 
@@ -375,6 +378,8 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         user = request.user
         base = PracticeTest.objects.all().select_related("mock_exam", "pastpaper_pack")
         if can_browse_standalone_practice_library(user):
+            allowed = filter_practice_tests_for_user(user, base).distinct()
+        elif normalized_role(user) == acc_const.ROLE_STUDENT:
             allowed = filter_practice_tests_for_user(user, base).distinct()
         else:
             allowed = base.filter(assigned_users=user).distinct()

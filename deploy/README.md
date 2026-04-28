@@ -67,8 +67,31 @@ NEXT_PUBLIC_API_URL=https://yourdomain.com/api
 
 ## Step 4 — Run Deployment
 
+Use the script from **any** directory (it uses absolute paths and `npm --prefix` for the frontend):
+
 ```bash
 bash /var/www/satapp/deploy/deploy.sh
+```
+
+Do **not** run plain `npm ci` or `npm run build` while your shell’s current directory is `deploy/` unless you only mean the tiny shim `package.json` there. The Next.js app and its real `package-lock.json` live under **`frontend/`**.
+
+If you install or build the frontend by hand on the server, use one of:
+
+```bash
+cd /var/www/satapp/frontend && npm ci --no-audit --no-fund && npm run build
+```
+
+Or from the repo root:
+
+```bash
+npm ci --prefix /var/www/satapp/frontend --no-audit --no-fund
+npm run build --prefix /var/www/satapp/frontend
+```
+
+Or from `deploy/` (scripts delegate to `../frontend`):
+
+```bash
+cd /var/www/satapp/deploy && npm run ci:frontend && npm run build:frontend
 ```
 
 This will:

@@ -250,6 +250,29 @@ class AccessPrimitivesTests(TestCase):
         v = visible_practice_test_platform_subjects_for_query(admin)
         self.assertIsNone(v)
 
+    def test_student_visible_platform_subjects_full_pastpaper_library(self):
+        student = User.objects.create_user(
+            email="st_lib@example.com",
+            password="x",
+            role=C.ROLE_STUDENT,
+        )
+        v = visible_practice_test_platform_subjects_for_query(student)
+        self.assertIsNone(v)
+
+    def test_student_filter_includes_standalone_pastpaper_rows(self):
+        from exams.models import PracticeTest
+
+        student = User.objects.create_user(
+            email="st_ptlib@example.com",
+            password="x",
+            role=C.ROLE_STUDENT,
+        )
+        pt = PracticeTest.objects.create(subject=C.SUBJECT_MATH_PLATFORM, skip_default_modules=True)
+        qs = filter_practice_tests_for_user(
+            student, PracticeTest.objects.filter(mock_exam__isnull=True, pk=pt.pk)
+        )
+        self.assertTrue(qs.exists())
+
     def test_filter_queryset_matches_can_view_tests(self):
         from exams.models import PracticeTest
 
