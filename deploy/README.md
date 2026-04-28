@@ -18,7 +18,7 @@ ssh root@YOUR_SERVER_IP
 bash /path/to/deploy/setup_server.sh yourdomain.com
 ```
 
-This installs: Node.js, PM2, Python 3.11, Nginx, Certbot.
+This installs: Node.js, PM2, Python 3.12, Nginx, Certbot.
 
 ---
 
@@ -134,6 +134,19 @@ bash /var/www/satapp/deploy/deploy.sh
 ```
 
 ---
+
+## Post-deploy smoke tests + rollback
+
+Run the release smoke suite **immediately after deploy** and rollback if it fails.
+
+- **Smoke runner**: `deploy/run_post_deploy_smoke.sh`
+- **Playwright spec**: `frontend/tests/e2e/release_smoke_api.spec.ts`
+
+Suggested pipeline:
+
+- Deploy new version
+- Run `deploy/run_post_deploy_smoke.sh` with `PLAYWRIGHT_BASE_URL=https://yourdomain.com`
+- If smoke fails: rollback to the previous release (previous image/tag) and page on-call
 
 ## Useful Commands
 

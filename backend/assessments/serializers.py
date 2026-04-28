@@ -154,6 +154,7 @@ class SaveAnswerSerializer(serializers.Serializer):
     attempt_id = serializers.IntegerField()
     question_id = serializers.IntegerField()
     answer = serializers.JSONField(required=False, allow_null=True)
+    client_seq = serializers.IntegerField(required=False, min_value=0)
     # Client may send these, but server will ignore for time tracking.
     answered_at = serializers.DateTimeField(required=False)
 

@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { useAssessmentSetsList, useDeleteAssessmentQuestion, useUpsertAssessmentQuestion, useUpsertAssessmentSet } from "@/features/assessments/hooks";
+import { useAssessmentSetDetail, useAssessmentSetsList, useDeleteAssessmentQuestion, useUpsertAssessmentQuestion, useUpsertAssessmentSet } from "@/features/assessments/hooks";
+import { assessmentAuthoringApi } from "@/features/assessments/api";
 import { AssessmentCategorySelect } from "@/features/assessments/components/AssessmentCategorySelect";
 import { AssessmentQuestionEditorFields } from "@/features/assessments/components/AssessmentQuestionEditorFields";
 import type { AssessmentQuestion, AssessmentQuestionType, AssessmentSet } from "@/features/assessments/types";
@@ -82,6 +83,7 @@ export default function BuilderSetEditorContainer() {
   const toast = useToast();
 
   const { data, isLoading, error, refetch } = useAssessmentSetsList();
+  const detail = useAssessmentSetDetail(setId);
   const upsertSet = useUpsertAssessmentSet();
   const upsertQuestion = useUpsertAssessmentQuestion(setId);
   const delQuestion = useDeleteAssessmentQuestion(setId);
@@ -126,10 +128,21 @@ export default function BuilderSetEditorContainer() {
     return () => window.removeEventListener("keydown", onKey);
   }, [redo, undo]);
 
-  const setRow = useMemo(() => {
-    const all = Array.isArray(data) ? (data as AssessmentSet[]) : [];
-    return all.find((s) => Number(s.id) === setId) ?? null;
-  }, [data, setId]);
+  const setRow = (detail.data as any) || null;
+
+  // Guard: bad route param should never result in backend 404s like /sets/NaN/questions/.
+  useEffect(() => {
+    if (!Number.isFinite(setId) || setId <= 0) {
+      toast.push({ tone: "error", message: "Invalid set id in the URL. Please re-open the set from the list." });
+      void assessmentAuthoringApi.telemetry("stale_id_blocked_total");
+    }
+  }, [setId, toast]);
+
+  const view = useBuilderViewSet();
+  const questions = useMemo(() => {
+    const qs = Array.isArray(view?.questions) ? (view!.questions as AssessmentQuestion[]) : [];
+    return normalizeQuestionList(qs);
+  }, [view]);
 
   const serverUpdatedAt = (setRow as any)?.updated_at;
   useEffect(() => {
@@ -147,11 +160,25 @@ export default function BuilderSetEditorContainer() {
     hydrate(setRow);
   }, [setRow]); // intentionally only when server set instance changes
 
-  const view = useBuilderViewSet();
-  const questions = useMemo(() => {
-    const qs = Array.isArray(view?.questions) ? (view!.questions as AssessmentQuestion[]) : [];
-    return normalizeQuestionList(qs);
-  }, [view]);
+  // If the set disappeared (deleted / filtered / stale selection), recover instead of letting
+  // later mutations hit 404 on a non-existent set id.
+  useEffect(() => {
+    if (detail.isLoading) return;
+    if (!Number.isFinite(setId) || setId <= 0) return;
+    if (!detail.data) return;
+    if (setRow) return;
+    toast.push({ tone: "error", message: "This set no longer exists or you no longer have access. Refreshing…" });
+    void assessmentAuthoringApi.telemetry("builder_refetch_recovery_total");
+    void detail.refetch();
+  }, [detail, setId, setRow, toast]);
+
+  // Validate selected question id against the current list; clear stale selection automatically.
+  useEffect(() => {
+    if (!selectedQuestionId) return;
+    if (questions.some((q) => q.id === selectedQuestionId)) return;
+    selectQuestion(null);
+    void assessmentAuthoringApi.telemetry("invalid_selection_recovered_total");
+  }, [questions, selectQuestion, selectedQuestionId]);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 

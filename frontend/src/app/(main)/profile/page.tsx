@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { classesApi, examsApi, usersApi } from "@/lib/api";
+import { authApi, classesApi, examsApi, usersApi } from "@/lib/api";
 import { formatLessonDaysMeta } from "@/lib/classroomSchedule";
 import TelegramLoginButton, { type TelegramAuthUser } from "@/components/TelegramLoginButton";
 import {
@@ -125,6 +125,9 @@ export default function ProfilePage() {
   const [telegramCfg, setTelegramCfg] = useState<{ enabled: boolean; bot_username: string | null } | null>(null);
   const [telegramLinkBusy, setTelegramLinkBusy] = useState(false);
   const [examDateOptions, setExamDateOptions] = useState<ExamDateOptionRow[]>([]);
+  const [sessions, setSessions] = useState<any[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [sessionsBusyId, setSessionsBusyId] = useState<number | null>(null);
 
   const handleTelegramLink = useCallback(async (user: TelegramAuthUser) => {
     setTelegramLinkBusy(true);
@@ -180,6 +183,24 @@ export default function ProfilePage() {
           setLoading(false);
           setClassesLoading(false);
         }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setSessionsLoading(true);
+      try {
+        const r = await authApi.getSessions();
+        if (!cancelled) setSessions(Array.isArray(r?.sessions) ? r.sessions : []);
+      } catch {
+        if (!cancelled) setSessions([]);
+      } finally {
+        if (!cancelled) setSessionsLoading(false);
       }
     })();
     return () => {
@@ -812,6 +833,109 @@ export default function ProfilePage() {
               +{selectedStudents.length - 12} more students
             </p>
           )}
+        </div>
+      </div>
+
+      {/* Sessions */}
+      <div className="mt-6 metric-tile p-6">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Security</p>
+            <h3 className="text-xl font-extrabold text-foreground mt-1">Active sessions</h3>
+            <p className="text-sm text-muted-foreground mt-1">
+              Review where your account is signed in and revoke anything suspicious.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="btn-secondary"
+            disabled={sessionsLoading}
+            onClick={async () => {
+              setSessionsLoading(true);
+              try {
+                const r = await authApi.getSessions();
+                setSessions(Array.isArray(r?.sessions) ? r.sessions : []);
+              } finally {
+                setSessionsLoading(false);
+              }
+            }}
+          >
+            {sessionsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+            Refresh
+          </button>
+        </div>
+
+        <div className="mt-4 space-y-2">
+          {sessionsLoading ? (
+            <div className="panel-soft p-6 flex items-center justify-center">
+              <Loader2 className="w-5 h-5 animate-spin text-primary" />
+            </div>
+          ) : sessions.length === 0 ? (
+            <div className="panel-soft p-6">
+              <p className="font-bold text-foreground">No session data</p>
+              <p className="text-sm text-muted-foreground mt-1">Sign in again to create a new rotated session record.</p>
+            </div>
+          ) : (
+            sessions.map((s) => {
+              const revoked = !!s.revoked_at;
+              return (
+                <div key={s.id} className="panel-soft p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-extrabold text-foreground truncate">
+                      {revoked ? "Revoked session" : "Active session"}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1 truncate">
+                      IP: {s.ip || "—"} · Last active: {s.last_seen_at ? formatDate(s.last_seen_at) : "—"}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground mt-1 line-clamp-2">
+                      {s.user_agent || ""}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      disabled={revoked || sessionsBusyId === s.id}
+                      onClick={async () => {
+                        setSessionsBusyId(s.id);
+                        try {
+                          await authApi.revokeSession(Number(s.id));
+                          const r = await authApi.getSessions();
+                          setSessions(Array.isArray(r?.sessions) ? r.sessions : []);
+                        } finally {
+                          setSessionsBusyId(null);
+                        }
+                      }}
+                    >
+                      {sessionsBusyId === s.id ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                      Revoke
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        <div className="mt-4 flex items-center justify-between gap-3 flex-wrap">
+          <p className="text-xs text-muted-foreground">
+            Tip: if you see unknown IPs/devices, revoke all sessions and change your password.
+          </p>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={async () => {
+              setSessionsLoading(true);
+              try {
+                await authApi.revokeAllSessions();
+                setSessions([]);
+              } finally {
+                setSessionsLoading(false);
+              }
+            }}
+          >
+            Revoke all
+          </button>
         </div>
       </div>
 

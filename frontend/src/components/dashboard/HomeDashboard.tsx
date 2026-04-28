@@ -100,7 +100,7 @@ export function HomeDashboard() {
   const [examDateError, setExamDateError] = useState<string | null>(null);
 
   useEffect(() => {
-    setHasToken(!!Cookies.get("access_token"));
+    setHasToken(!!Cookies.get("lms_user") || !!Cookies.get("role") || !!Cookies.get("is_admin"));
   }, []);
 
   useEffect(() => {

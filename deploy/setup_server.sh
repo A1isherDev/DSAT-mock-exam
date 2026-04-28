@@ -36,7 +36,7 @@ if ! id "$APP_USER" &>/dev/null; then
 fi
 
 # ── Node.js LTS ───────────────────────────────────────────────
-curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
 apt-get install -y nodejs
 echo "✓ Node.js $(node -v) installed"
 

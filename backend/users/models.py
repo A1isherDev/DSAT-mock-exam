@@ -104,6 +104,18 @@ class User(AbstractUser):
         db_index=True,
         help_text="Telegram user id when linked or signed up via Telegram.",
     )
+    last_password_change = models.DateTimeField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Set when the user changes password via API (adaptive security).",
+    )
+    # Until this time, step-up: valid JWTs are rejected (except allowlisted public/auth routes).
+    security_step_up_required_until = models.DateTimeField(
+        null=True,
+        blank=True,
+        db_index=True,
+    )
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = []
@@ -155,3 +167,50 @@ class User(AbstractUser):
         from access.services import is_lms_staff_user
 
         return is_lms_staff_user(self)
+
+
+class RefreshSession(models.Model):
+    """
+    Server-side session record for refresh token rotation + device list.
+    One row per active refresh token (by jti).
+    """
+
+    user = models.ForeignKey("users.User", on_delete=models.CASCADE, related_name="refresh_sessions")
+    refresh_jti = models.CharField(max_length=64, unique=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    last_seen_at = models.DateTimeField(auto_now=True, db_index=True)
+    ip = models.CharField(max_length=64, blank=True, default="")
+    user_agent = models.CharField(max_length=512, blank=True, default="")
+    revoked_at = models.DateTimeField(null=True, blank=True, db_index=True)
+
+    class Meta:
+        db_table = "users_refresh_sessions"
+        indexes = [
+            models.Index(fields=["user", "revoked_at", "-last_seen_at"]),
+        ]
+
+
+class SecurityAuditEvent(models.Model):
+    """
+    Durable log for user-visible security events and operations automation.
+    """
+
+    SEVERITY_INFO = "info"
+    SEVERITY_WARNING = "warning"
+    SEVERITY_CRITICAL = "critical"
+
+    user = models.ForeignKey("users.User", on_delete=models.CASCADE, related_name="security_audit_events")
+    event_type = models.CharField(max_length=64, db_index=True)
+    severity = models.CharField(max_length=16, default=SEVERITY_INFO, db_index=True)
+    ip = models.CharField(max_length=64, blank=True, default="")
+    user_agent = models.CharField(max_length=512, blank=True, default="")
+    detail = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "users_security_audit_events"
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["user", "-created_at"]),
+        ]
+

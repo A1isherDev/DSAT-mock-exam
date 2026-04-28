@@ -431,9 +431,9 @@ function ExamPlayerInner() {
         try {
             const raw = sessionStorage.getItem(key);
             if (!raw) return;
-            sessionStorage.removeItem(key);
             const boot = JSON.parse(raw);
             if (boot && boot.id && String(boot.id) === String(attemptId)) {
+                sessionStorage.removeItem(key);
                 safeSetAttempt(boot);
                 if (boot.current_module_details) setLoading(false);
             }
@@ -459,7 +459,15 @@ function ExamPlayerInner() {
                 // If the backend reports NOT_STARTED, explicitly start the engine once.
                 // This guarantees "Start test -> Module 1 opens" even for legacy rows.
                 if (data?.current_state === "NOT_STARTED") {
-                    const idem = `start.${attemptIdNum}.${Date.now()}`;
+                    const idemKeyStorage = `mastersat.idem.startAttempt.${attemptIdNum}`;
+                    const idem =
+                        (typeof window !== "undefined" && sessionStorage.getItem(idemKeyStorage)) ||
+                        `start.${attemptIdNum}.${(typeof crypto !== "undefined" && "randomUUID" in crypto ? (crypto as any).randomUUID() : String(Date.now()))}`;
+                    try {
+                        sessionStorage.setItem(idemKeyStorage, idem);
+                    } catch {
+                        /* ignore */
+                    }
                     const started = await examsApi.startAttemptEngine(attemptIdNum, idem);
                     safeSetAttempt(started);
                 } else {
@@ -513,6 +521,29 @@ function ExamPlayerInner() {
                     (data && typeof data === "object" ? JSON.stringify(data) : "");
                 const msg = `Could not load the attempt.${status ? ` HTTP ${status}.` : ""}${detail ? ` ${detail}` : ""}`;
                 setLoadError(msg);
+
+                // Stale/invalid attempt id recovery: try to route back to canonical start entry.
+                if (status === 404 && typeof window !== "undefined") {
+                    const bootKey = `mastersat.attempt.bootstrap.${String(attemptId || "")}`;
+                    try {
+                        const raw = sessionStorage.getItem(bootKey);
+                        if (raw) {
+                            const boot = JSON.parse(raw);
+                            const ptId =
+                                boot?.practice_test_details?.id ??
+                                boot?.practice_test_details?.pk ??
+                                boot?.practice_test ??
+                                boot?.practice_test_id;
+                            if (ptId) {
+                                router.replace(`/practice-test/${ptId}`);
+                                return;
+                            }
+                        }
+                    } catch {
+                        /* ignore */
+                    }
+                    router.replace("/");
+                }
             }
         };
         fetchAttempt();
@@ -1441,8 +1472,21 @@ function ExamPlayerInner() {
     const handleSaveAndExit = async () => {
         try {
             setLoading(true);
-            const idem = `save.${attemptId}.${attempt?.current_module_details?.id || "x"}.${Date.now()}`;
-            await examsApi.saveAttempt(Number(attemptId), answers, flagged, { idempotencyKey: idem, expectedVersionNumber: attempt?.version_number });
+            const currentModId = attempt?.current_module_details?.id || "x";
+            const ver = attempt?.version_number ?? "v";
+            const idemKeyStorage = `mastersat.idem.saveAttempt.${attemptId}.${currentModId}.${ver}`;
+            const idem =
+                (typeof window !== "undefined" && sessionStorage.getItem(idemKeyStorage)) ||
+                `save.${attemptId}.${currentModId}.v${ver}.${(typeof crypto !== "undefined" && "randomUUID" in crypto ? (crypto as any).randomUUID() : String(Date.now()))}`;
+            try {
+                sessionStorage.setItem(idemKeyStorage, idem);
+            } catch {
+                /* ignore */
+            }
+            await examsApi.saveAttempt(Number(attemptId), answers, flagged, {
+                idempotencyKey: idem,
+                expectedVersionNumber: attempt?.version_number,
+            });
             router.push('/');
         } catch (err) {
             setLoading(false);

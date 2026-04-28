@@ -13,6 +13,7 @@ import {
   FileWarning,
   Users,
   UserCircle,
+  Shield,
   LogOut,
   LogIn,
   Sun,
@@ -40,6 +41,7 @@ const nav = [
   { href: "/midterm", label: "Midterm", icon: FileWarning },
   { href: "/classes", label: "Classes", icon: Users },
   { href: "/profile", label: "Profile", icon: UserCircle },
+  { href: "/security", label: "Security", icon: Shield },
 ];
 
 const quickLinks = [
@@ -50,6 +52,7 @@ const quickLinks = [
 
 function pageTitle(pathname: string): string {
   if (pathname === "/") return "Dashboard";
+  if (pathname === "/security" || pathname.startsWith("/security/")) return "Security";
   const item = nav.find((n) =>
     n.href === "/"
       ? false
@@ -87,7 +90,8 @@ export default function StudentShell({ children }: { children: React.ReactNode }
 
   useEffect(() => {
     setMounted(true);
-    setIsLoggedIn(!!Cookies.get("access_token"));
+    // Auth is cookie-based (HttpOnly); rely on presence of non-HttpOnly session hints.
+    setIsLoggedIn(!!Cookies.get("lms_user") || !!Cookies.get("role") || !!Cookies.get("is_admin"));
   }, [pathname]);
 
   useEffect(() => {

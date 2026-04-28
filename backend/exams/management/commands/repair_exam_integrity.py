@@ -9,6 +9,7 @@ from django.db.models import Count
 from django.utils import timezone
 
 from exams.engine_integrity import infer_state_from_attempt, required_module_orders_for_test
+from exams.metrics import incr as metric_incr
 from exams.models import Module, PracticeTest, Question, TestAttempt, ensure_full_mock_practice_test_modules
 
 
@@ -202,6 +203,62 @@ class Command(BaseCommand):
                     locked.version_number = int(locked.version_number or 0) + 1
                     updates["version_number"] = locked.version_number
                     locked.save(update_fields=list(updates.keys()) + ["updated_at"])
+
+        # ── 6) Duplicate active attempts per (student, practice_test) ───────
+        # Repair strategy:
+        # - Choose canonical attempt as the most recently updated (tie-breaker: highest id).
+        # - Mark all other active attempts in that group as ABANDONED and clear pointers.
+        dup_groups = (
+            TestAttempt.objects.filter(is_completed=False)
+            .exclude(current_state=TestAttempt.STATE_ABANDONED)
+            .values("student_id", "practice_test_id")
+            .annotate(c=Count("id"))
+            .filter(c__gt=1)
+            .order_by("student_id", "practice_test_id")
+        )
+        dup_touched = 0
+        for g in dup_groups.iterator(chunk_size=200):
+            if dup_touched >= limit:
+                break
+            student_id = g["student_id"]
+            test_id = g["practice_test_id"]
+            attempts = list(
+                TestAttempt.objects.filter(
+                    student_id=student_id,
+                    practice_test_id=test_id,
+                    is_completed=False,
+                )
+                .exclude(current_state=TestAttempt.STATE_ABANDONED)
+                .order_by("-updated_at", "-id")
+            )
+            if len(attempts) <= 1:
+                continue
+
+            canonical = attempts[0]
+            extras = attempts[1:]
+            _bump("attempt.duplicate_active_group", canonical.pk)
+            dup_touched += 1
+
+            if dry:
+                continue
+
+            with transaction.atomic():
+                for extra in extras:
+                    locked = TestAttempt.objects.select_for_update().get(pk=extra.pk)
+                    locked.current_state = TestAttempt.STATE_ABANDONED
+                    locked.current_module = None
+                    locked.current_module_start_time = None
+                    locked.version_number = int(locked.version_number or 0) + 1
+                    locked.save(
+                        update_fields=[
+                            "current_state",
+                            "current_module",
+                            "current_module_start_time",
+                            "version_number",
+                            "updated_at",
+                        ]
+                    )
+                    metric_incr("integrity_repairs_applied")
 
         out = dict(summary)
         if as_json:

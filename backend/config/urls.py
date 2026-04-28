@@ -1,18 +1,34 @@
 from django.contrib import admin
 from django.urls import path, include
-from rest_framework_simplejwt.views import (
-    TokenObtainPairView,
-    TokenRefreshView,
-)
 from django.conf import settings
 from django.conf.urls.static import static
 
-from users.views import ThrottledTokenObtainPairView
+from users.views import (
+    CookieLogoutView,
+    CookieTokenObtainPairView,
+    CookieTokenRefreshView,
+    RevokeAllSessionsView,
+    RevokeSessionView,
+    SessionListView,
+)
+from config.health import LiveHealthView, ReadyHealthView
+from config.ops_alerting import AlertmanagerWebhookView
+from config.csrf_api import CsrfTokenView
+from config.csp_report import CSPReportView
 
 urlpatterns = [
     path('django-admin/', admin.site.urls),
-    path('api/auth/login/', ThrottledTokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('api/auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('api/auth/login/', CookieTokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/auth/refresh/', CookieTokenRefreshView.as_view(), name='token_refresh'),
+    path('api/auth/logout/', CookieLogoutView.as_view(), name='token_logout'),
+    path('api/auth/csrf/', CsrfTokenView.as_view(), name='csrf-token'),
+    path('api/auth/sessions/', SessionListView.as_view(), name='auth-sessions'),
+    path('api/auth/sessions/revoke_all/', RevokeAllSessionsView.as_view(), name='auth-revoke-all'),
+    path('api/auth/sessions/<int:session_id>/revoke/', RevokeSessionView.as_view(), name='auth-revoke-session'),
+    path('api/ops/alertmanager/webhook/', AlertmanagerWebhookView.as_view(), name='alertmanager-webhook'),
+    path('api/health/live/', LiveHealthView.as_view(), name='health-live'),
+    path('api/health/ready/', ReadyHealthView.as_view(), name='health-ready'),
+    path('api/csp-report/', CSPReportView.as_view(), name='csp-report'),
     path('api/users/', include('users.urls')),
     path('api/exams/', include('exams.urls')),
     path('api/classes/', include('classes.urls')),

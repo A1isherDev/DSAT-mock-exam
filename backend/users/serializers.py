@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.conf import settings
+from django.utils import timezone
 
 from access import constants as acc_const
 from access.services import (
@@ -16,7 +17,7 @@ from users.phone_utils import normalize_phone
 
 from classes.models import ClassroomMembership
 
-from .models import ExamDateOption, User
+from .models import ExamDateOption, SecurityAuditEvent, User
 
 
 def _sync_global_user_access(user: User) -> None:
@@ -61,6 +62,8 @@ class UserMeSerializer(serializers.ModelSerializer):
     role = serializers.SerializerMethodField()
     permissions = serializers.SerializerMethodField()
     telegram_linked = serializers.SerializerMethodField()
+    security_step_up_active = serializers.SerializerMethodField()
+    has_recent_security_alerts = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -81,6 +84,9 @@ class UserMeSerializer(serializers.ModelSerializer):
             "role",
             "subject",
             "permissions",
+            "last_password_change",
+            "security_step_up_active",
+            "has_recent_security_alerts",
         ]
         extra_kwargs = {
             "profile_image": {"required": False, "allow_null": True},
@@ -89,6 +95,7 @@ class UserMeSerializer(serializers.ModelSerializer):
             "last_name": {"required": False},
             "email": {"required": False},
             "subject": {"read_only": True},
+            "last_password_change": {"read_only": True},
         }
 
     def validate_username(self, value):
@@ -207,6 +214,21 @@ class UserMeSerializer(serializers.ModelSerializer):
     def get_telegram_linked(self, obj):
         return obj.telegram_id is not None
 
+    def get_security_step_up_active(self, obj):
+        until = getattr(obj, "security_step_up_required_until", None)
+        if not until:
+            return False
+        return bool(until > timezone.now())
+
+    def get_has_recent_security_alerts(self, obj):
+        from users.models import SecurityAuditEvent
+        from datetime import timedelta
+
+        since = timezone.now() - timedelta(days=7)
+        return SecurityAuditEvent.objects.filter(
+            user=obj, severity__in=("warning", "critical"), created_at__gte=since
+        ).exists()
+
     def get_permissions(self, obj):
         return sorted(get_effective_permission_codenames(obj))
 
@@ -225,11 +247,15 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
 
     def validate(self, attrs):
         data = super().validate(attrs)
-        data["is_admin"] = self.user.is_admin
-        data["role"] = self.user.role
-        data["subject"] = getattr(self.user, "subject", None) or ""
-        data["is_frozen"] = self.user.is_frozen
-        data["permissions"] = sorted(get_effective_permission_codenames(self.user))
+        u = self.user
+        if getattr(u, "security_step_up_required_until", None):
+            u.security_step_up_required_until = None
+            u.save(update_fields=["security_step_up_required_until"])
+        data["is_admin"] = u.is_admin
+        data["role"] = u.role
+        data["subject"] = getattr(u, "subject", None) or ""
+        data["is_frozen"] = u.is_frozen
+        data["permissions"] = sorted(get_effective_permission_codenames(u))
         return data
 
 
@@ -429,6 +455,8 @@ class UserSerializer(serializers.ModelSerializer):
         user = super().create(validated_data)
         if password:
             user.set_password(password)
+            user.last_password_change = timezone.now()
+            user.security_step_up_required_until = None
             user.save()
         sync_django_staff_flag(user)
         user.refresh_from_db()
@@ -466,6 +494,8 @@ class UserSerializer(serializers.ModelSerializer):
         user = super().update(instance, validated_data)
         if password:
             user.set_password(password)
+            user.last_password_change = timezone.now()
+            user.security_step_up_required_until = None
             user.save()
         sync_django_staff_flag(user)
         user.refresh_from_db()
@@ -482,4 +512,10 @@ class UserSerializer(serializers.ModelSerializer):
             )
         _sync_global_user_access(user)
         return user
+
+
+class SecurityAuditEventSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SecurityAuditEvent
+        fields = ("id", "event_type", "severity", "ip", "user_agent", "detail", "created_at")
 

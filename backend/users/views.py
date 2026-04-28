@@ -1,6 +1,8 @@
 import logging
 
 from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.views import TokenRefreshView
+from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -26,17 +28,28 @@ from access.services import (
 from .serializers import (
     ExamDateOptionPublicSerializer,
     ExamDateOptionSerializer,
-    UserSerializer,
-    UserMeSerializer,
     MyTokenObtainPairSerializer,
+    SecurityAuditEventSerializer,
+    UserMeSerializer,
+    UserSerializer,
 )
 from .permissions import IsAuthenticatedAndNotFrozen
 from django.conf import settings
 import re
+import time
+from datetime import timedelta
+from django.core.cache import cache
 
+from .security_audit import log_security_event
+from .security_risk import clear_security_step_up, record_failed_refresh_attempt
 from .telegram_auth import verify_telegram_login
 from .phone_utils import normalize_phone
 from .telegram_bot_info import telegram_bot_username_for_token
+from .auth_cookies import clear_auth_cookies, set_access_cookie, set_auth_cookies, REFRESH_COOKIE
+from .security_metrics import incr as security_metric_incr
+from .security_churn import observe_new_session, observe_refresh_rotation
+from .models import RefreshSession
+from django.utils import timezone
 
 logger = logging.getLogger("security.users")
 
@@ -92,6 +105,308 @@ def _effective_telegram_bot_username() -> str:
 class ThrottledTokenObtainPairView(TokenObtainPairView):
     serializer_class = MyTokenObtainPairSerializer
     throttle_scope = 'sustained'
+
+
+def _revoked_key(jti: str) -> str:
+    return f"auth.revoked_refresh_jti.{jti}"
+
+
+def _is_refresh_revoked(refresh: str) -> bool:
+    try:
+        tok = RefreshToken(refresh)
+        jti = str(tok.get("jti") or "")
+        if not jti:
+            return False
+        return bool(cache.get(_revoked_key(jti)))
+    except Exception:
+        return False
+
+
+def _revoke_refresh(refresh: str) -> None:
+    """
+    Lightweight refresh revoke without DB migrations:
+    store refresh jti in shared cache until its exp.
+    """
+    try:
+        tok = RefreshToken(refresh)
+        jti = str(tok.get("jti") or "")
+        exp = int(tok.get("exp") or 0)
+        if not jti or not exp:
+            return
+        ttl = max(1, exp - int(time.time()))
+        cache.set(_revoked_key(jti), "1", timeout=ttl)
+    except Exception:
+        return
+
+
+def _jti_of_refresh(refresh: str) -> str:
+    tok = RefreshToken(refresh)
+    return str(tok.get("jti") or "")
+
+
+def _user_id_of_refresh(refresh: str) -> int | None:
+    tok = RefreshToken(refresh)
+    uid = tok.get("user_id")
+    try:
+        return int(uid)
+    except Exception:
+        return None
+
+
+def _audit_refresh_failure(*, user_id: int | None, request, kind: str) -> None:
+    record_failed_refresh_attempt(user_id)
+    if user_id is not None and kind in (
+        "replay_revoked_cache",
+        "replay_no_session",
+        "concurrent_rotation",
+    ):
+        log_security_event(
+            user_id=user_id,
+            event_type="refresh_replay_blocked",
+            request=request,
+            detail={"kind": kind},
+            severity="warning",
+        )
+
+
+def _session_fingerprint(request) -> tuple[str, str]:
+    ip = str(request.META.get("REMOTE_ADDR") or "")[:64]
+    ua = str(request.META.get("HTTP_USER_AGENT") or "")[:512]
+    return ip, ua
+
+
+class CookieTokenObtainPairView(ThrottledTokenObtainPairView):
+    """
+    Browser auth: set HttpOnly cookies for access+refresh.
+    Response body omits raw tokens to avoid JS-readable auth.
+    """
+
+    def post(self, request, *args, **kwargs):
+        # Legacy clients may still read JSON tokens; keep compatibility via opt-in.
+        include_tokens = str(request.query_params.get("include_tokens") or "").lower() in ("1", "true", "yes")
+        remember_me = str(request.data.get("remember_me") or "1").lower() in ("1", "true", "yes")
+        serializer = self.get_serializer(data=request.data)
+        try:
+            serializer.is_valid(raise_exception=True)
+        except Exception:
+            security_metric_incr("failed_login", 1)
+            return Response({"detail": "Invalid credentials."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        data = dict(serializer.validated_data)
+        access = str(data.get("access") or "")
+        refresh = str(data.get("refresh") or "")
+
+        resp = Response(data, status=status.HTTP_200_OK)
+        if access and refresh:
+            set_auth_cookies(response=resp, request=request, access=access, refresh=refresh, remember_me=remember_me)
+            try:
+                user = getattr(serializer, "user", None)
+                jti = _jti_of_refresh(refresh)
+                if user is not None and jti:
+                    ip, ua = _session_fingerprint(request)
+                    RefreshSession.objects.update_or_create(
+                        refresh_jti=jti,
+                        defaults={"user": user, "revoked_at": None, "ip": ip, "user_agent": ua},
+                    )
+                    observe_new_session(user_id=int(user.pk), ip=ip, request=request)
+            except Exception:
+                pass
+
+        if not include_tokens:
+            resp.data.pop("access", None)
+            resp.data.pop("refresh", None)
+        return resp
+
+
+class CookieTokenRefreshView(TokenRefreshView):
+    """
+    Refresh using HttpOnly refresh cookie; sets new HttpOnly access cookie.
+    """
+
+    def post(self, request, *args, **kwargs):
+        include_tokens = str(request.query_params.get("include_tokens") or "").lower() in ("1", "true", "yes")
+
+        refresh_cookie = request.COOKIES.get(REFRESH_COOKIE) if hasattr(request, "COOKIES") else None
+        refresh_body = (request.data or {}).get("refresh") if hasattr(request, "data") else None
+        refresh = str(refresh_cookie or refresh_body or "")
+        if not refresh:
+            security_metric_incr("refresh_fail", 1)
+            return Response({"detail": "Missing refresh token."}, status=status.HTTP_400_BAD_REQUEST)
+        if _is_refresh_revoked(refresh):
+            _audit_refresh_failure(
+                user_id=_user_id_of_refresh(refresh), request=request, kind="replay_revoked_cache"
+            )
+            security_metric_incr("refresh_fail", 1)
+            return Response({"detail": "Refresh token revoked."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        # Enforce server-side session allowlist + rotation transactionally.
+        try:
+            jti = _jti_of_refresh(refresh)
+            if not jti:
+                raise ValueError("missing jti")
+            s = RefreshSession.objects.filter(refresh_jti=jti, revoked_at__isnull=True).select_for_update().first()
+            if not s:
+                _audit_refresh_failure(
+                    user_id=_user_id_of_refresh(refresh), request=request, kind="replay_no_session"
+                )
+                security_metric_incr("refresh_fail", 1)
+                return Response({"detail": "Session revoked."}, status=status.HTTP_401_UNAUTHORIZED)
+        except Exception:
+            security_metric_incr("refresh_fail", 1)
+            return Response({"detail": "Session validation failed."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        # Validate the provided refresh token cryptographically.
+        try:
+            serializer = TokenRefreshSerializer(data={"refresh": refresh})
+            serializer.is_valid(raise_exception=True)
+        except Exception:
+            _audit_refresh_failure(user_id=_user_id_of_refresh(refresh), request=request, kind="invalid_token")
+            security_metric_incr("refresh_fail", 1)
+            return Response({"detail": "Invalid refresh token."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        # Full rotation: old revoked + new created atomically.
+        from django.db import transaction
+        from users.models import User
+
+        ip, ua = _session_fingerprint(request)
+        with transaction.atomic():
+            s = RefreshSession.objects.select_for_update().filter(pk=s.pk, revoked_at__isnull=True).first()
+            if not s:
+                _audit_refresh_failure(
+                    user_id=_user_id_of_refresh(refresh), request=request, kind="concurrent_rotation"
+                )
+                security_metric_incr("refresh_fail", 1)
+                return Response({"detail": "Session revoked."}, status=status.HTTP_401_UNAUTHORIZED)
+
+            user = User.objects.get(pk=s.user_id)
+            if user.security_step_up_required_until and user.security_step_up_required_until > timezone.now():
+                security_metric_incr("refresh_fail", 1)
+                return Response(
+                    {"detail": "Re-authentication required.", "code": "security_step_up"},
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
+            new_refresh = RefreshToken.for_user(user)
+            new_refresh_s = str(new_refresh)
+            new_access = str(new_refresh.access_token)
+            new_jti = str(new_refresh.get("jti") or "")
+            if not new_jti:
+                _audit_refresh_failure(user_id=int(s.user_id), request=request, kind="rotation_no_jti")
+                security_metric_incr("refresh_fail", 1)
+                return Response({"detail": "Refresh rotation failed."}, status=status.HTTP_401_UNAUTHORIZED)
+
+            # Mark old revoked in DB first.
+            RefreshSession.objects.filter(pk=s.pk).update(revoked_at=timezone.now())
+
+            # Create new session row (unique on refresh_jti prevents duplicates).
+            RefreshSession.objects.update_or_create(
+                refresh_jti=new_jti,
+                defaults={"user": user, "revoked_at": None, "ip": ip, "user_agent": ua},
+            )
+
+        # After commit: revoke old jti in cache (best-effort) and touch churn counters.
+        try:
+            _revoke_refresh(refresh)
+        except Exception:
+            pass
+        observe_refresh_rotation(user_id=int(s.user_id), ip=ip, request=request)
+        security_metric_incr("refresh_rotations", 1)
+
+        resp = Response({"access": new_access} if include_tokens else {}, status=status.HTTP_200_OK)
+        set_auth_cookies(response=resp, request=request, access=new_access, refresh=new_refresh_s, remember_me=True)
+        return resp
+
+
+class CookieLogoutView(APIView):
+    """
+    Clear cookies and revoke the current refresh token (best-effort).
+    """
+
+    permission_classes = []
+
+    def post(self, request):
+        refresh = request.COOKIES.get(REFRESH_COOKIE) if hasattr(request, "COOKIES") else None
+        if refresh:
+            try:
+                _revoke_refresh(str(refresh))
+            except Exception:
+                security_metric_incr("logout_revoke_fail", 1)
+            try:
+                jti = _jti_of_refresh(str(refresh))
+                if jti:
+                    RefreshSession.objects.filter(refresh_jti=jti, revoked_at__isnull=True).update(revoked_at=timezone.now())
+            except Exception:
+                pass
+        resp = Response({"ok": True}, status=status.HTTP_200_OK)
+        clear_auth_cookies(response=resp, request=request)
+        return resp
+
+
+class SessionListView(APIView):
+    permission_classes = [IsAuthenticatedAndNotFrozen]
+
+    def get(self, request):
+        qs = RefreshSession.objects.filter(user=request.user).order_by("-last_seen_at", "-id")[:50]
+        rows = []
+        for s in qs:
+            rows.append(
+                {
+                    "id": s.id,
+                    "created_at": s.created_at.isoformat() if s.created_at else None,
+                    "last_seen_at": s.last_seen_at.isoformat() if s.last_seen_at else None,
+                    "ip": s.ip,
+                    "user_agent": s.user_agent,
+                    "revoked_at": s.revoked_at.isoformat() if s.revoked_at else None,
+                }
+            )
+        return Response({"sessions": rows}, status=status.HTTP_200_OK)
+
+
+class RevokeAllSessionsView(APIView):
+    permission_classes = [IsAuthenticatedAndNotFrozen]
+
+    def post(self, request):
+        now = timezone.now()
+        qs = RefreshSession.objects.filter(user=request.user, revoked_at__isnull=True)
+        jtis = list(qs.values_list("refresh_jti", flat=True)[:500])
+        for jti in jtis:
+            try:
+                cache.set(_revoked_key(str(jti)), "1", timeout=int(timedelta(days=8).total_seconds()))
+            except Exception:
+                pass
+        qs.update(revoked_at=now)
+        log_security_event(
+            user_id=int(request.user.pk),
+            event_type="session_revoke_all",
+            request=request,
+            detail={"sessions": len(jtis)},
+            severity="info",
+        )
+        resp = Response({"ok": True}, status=status.HTTP_200_OK)
+        clear_auth_cookies(response=resp, request=request)
+        return resp
+
+
+class RevokeSessionView(APIView):
+    permission_classes = [IsAuthenticatedAndNotFrozen]
+
+    def post(self, request, session_id: int):
+        s = RefreshSession.objects.filter(pk=session_id, user=request.user).first()
+        if not s:
+            return Response({"detail": "Session not found."}, status=status.HTTP_404_NOT_FOUND)
+        if s.revoked_at is None:
+            RefreshSession.objects.filter(pk=s.pk).update(revoked_at=timezone.now())
+            try:
+                cache.set(_revoked_key(str(s.refresh_jti)), "1", timeout=int(timedelta(days=8).total_seconds()))
+            except Exception:
+                pass
+            log_security_event(
+                user_id=int(request.user.pk),
+                event_type="session_revoke",
+                request=request,
+                detail={"session_id": int(session_id), "jti": str(s.refresh_jti)[:16]},
+                severity="info",
+            )
+        return Response({"ok": True}, status=status.HTTP_200_OK)
 
 class UserListView(generics.ListAPIView):
     serializer_class = UserSerializer
@@ -241,6 +556,34 @@ class UserMeView(generics.RetrieveUpdateAPIView):
         return self.request.user
 
 
+class UserSecurityView(APIView):
+    """Recent security events and adaptive account flags for the signed-in user."""
+
+    permission_classes = [IsAuthenticatedAndNotFrozen]
+
+    def get(self, request):
+        from datetime import timedelta
+
+        from .models import SecurityAuditEvent
+
+        u = request.user
+        ev = SecurityAuditEvent.objects.filter(user=u)[:50]
+        since = timezone.now() - timedelta(days=7)
+        suspicious = SecurityAuditEvent.objects.filter(
+            user=u, severity__in=("warning", "critical"), created_at__gte=since
+        ).count()
+        return Response(
+            {
+                "last_password_change": u.last_password_change.isoformat() if u.last_password_change else None,
+                "security_step_up_active": bool(
+                    u.security_step_up_required_until and u.security_step_up_required_until > timezone.now()
+                ),
+                "suspicious_login_alerts": int(suspicious),
+                "events": SecurityAuditEventSerializer(ev, many=True).data,
+            }
+        )
+
+
 class ExamDateOptionListView(generics.ListAPIView):
     """Active exam dates for student profile dropdown."""
 
@@ -348,19 +691,34 @@ class GoogleAuthView(APIView):
             if updated:
                 user.save(update_fields=["first_name", "last_name"])
 
+        clear_security_step_up(user_id=user.pk)
+
         refresh = RefreshToken.for_user(user)
-        return Response(
-            {
-                "refresh": str(refresh),
-                "access": str(refresh.access_token),
-                "is_admin": user.is_admin,
-                "role": user.role,
-                "subject": _subject_for_auth_response(user),
-                "is_frozen": user.is_frozen,
-                "permissions": sorted(get_effective_permission_codenames(user)),
-            },
-            status=status.HTTP_200_OK,
-        )
+        body = {
+            "refresh": str(refresh),
+            "access": str(refresh.access_token),
+            "is_admin": user.is_admin,
+            "role": user.role,
+            "subject": _subject_for_auth_response(user),
+            "is_frozen": user.is_frozen,
+            "permissions": sorted(get_effective_permission_codenames(user)),
+        }
+        resp = Response(body, status=status.HTTP_200_OK)
+        try:
+            set_auth_cookies(
+                response=resp,
+                request=request,
+                access=str(body["access"]),
+                refresh=str(body["refresh"]),
+                remember_me=True,
+            )
+            include_tokens = str(request.query_params.get("include_tokens") or "").lower() in ("1", "true", "yes")
+            if not include_tokens:
+                resp.data.pop("access", None)
+                resp.data.pop("refresh", None)
+        except Exception:
+            pass
+        return resp
 
 
 class TelegramWidgetConfigView(APIView):
@@ -498,16 +856,31 @@ class TelegramAuthView(APIView):
         user.telegram_id = tg_id
         user.save(update_fields=["telegram_id"])
 
+        clear_security_step_up(user_id=user.pk)
+
         refresh = RefreshToken.for_user(user)
-        return Response(
-            {
-                "refresh": str(refresh),
-                "access": str(refresh.access_token),
-                "is_admin": user.is_admin,
-                "role": user.role,
-                "subject": _subject_for_auth_response(user),
-                "is_frozen": user.is_frozen,
-                "permissions": sorted(get_effective_permission_codenames(user)),
-            },
-            status=status.HTTP_200_OK,
-        )
+        body = {
+            "refresh": str(refresh),
+            "access": str(refresh.access_token),
+            "is_admin": user.is_admin,
+            "role": user.role,
+            "subject": _subject_for_auth_response(user),
+            "is_frozen": user.is_frozen,
+            "permissions": sorted(get_effective_permission_codenames(user)),
+        }
+        resp = Response(body, status=status.HTTP_200_OK)
+        try:
+            set_auth_cookies(
+                response=resp,
+                request=request,
+                access=str(body["access"]),
+                refresh=str(body["refresh"]),
+                remember_me=True,
+            )
+            include_tokens = str(request.query_params.get("include_tokens") or "").lower() in ("1", "true", "yes")
+            if not include_tokens:
+                resp.data.pop("access", None)
+                resp.data.pop("refresh", None)
+        except Exception:
+            pass
+        return resp

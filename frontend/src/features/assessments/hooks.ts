@@ -13,6 +13,17 @@ export function useAssessmentSetsList(params?: { subject?: Subject; category?: s
   });
 }
 
+export function useAssessmentSetDetail(setId: number) {
+  return useQuery({
+    queryKey: assessmentKeys.setDetail(setId),
+    queryFn: () => assessmentAuthoringApi.getSet(setId),
+    enabled: Number.isFinite(setId) && setId > 0,
+    staleTime: 10_000,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+  });
+}
+
 export function useUpsertAssessmentSet() {
   const qc = useQueryClient();
   return useMutation({

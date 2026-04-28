@@ -3,13 +3,17 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useAssessmentSetsList } from "@/features/assessments/hooks";
-import { getSubject } from "@/lib/permissions";
+import { getRole, getSubject } from "@/lib/permissions";
 
 const INPUT =
   "ui-input w-full rounded-xl border border-border bg-surface-2/80 px-3 py-2 text-sm shadow-sm";
 
 export default function BuilderSetsPage() {
-  const scopedSubject = getSubject();
+  // Backend already enforces teacher subject scoping.
+  // For global staff (admin/test_admin/super_admin), default to "all subjects" to avoid
+  // accidental disappearance of sets when a subject cookie is present.
+  const role = getRole();
+  const scopedSubject = role === "teacher" ? getSubject() : null;
   const [q, setQ] = useState("");
   const { data, isLoading, error, refetch } = useAssessmentSetsList(
     scopedSubject ? { subject: scopedSubject } : undefined,

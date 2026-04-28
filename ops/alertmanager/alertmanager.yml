@@ -1,0 +1,19 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: telegram
+  group_by: ["alertname", "severity"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: telegram
+    webhook_configs:
+      - url: "https://mastersat.uz/api/ops/alertmanager/webhook/"
+        send_resolved: true
+        http_config:
+          headers:
+            X-Alertmanager-Secret: "${ALERTMANAGER_WEBHOOK_SECRET}"
+

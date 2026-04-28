@@ -67,6 +67,13 @@ class SubdomainAPIGuardMiddleware:
         if path.startswith("/api/auth/"):
             return self.get_response(request)
 
+        if path.startswith("/api/csp-report/"):
+            return self.get_response(request)
+
+        # Ops: Alertmanager webhook (infrastructure).
+        if path.startswith("/api/ops/alertmanager/"):
+            return self.get_response(request)
+
         # Role-level gate (before endpoint allowlists).
         # - testers (test_admin) may use admin console for users/bulk-assign
         # - testers MAY use questions console subdomain

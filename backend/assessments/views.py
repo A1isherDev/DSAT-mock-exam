@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Max, Avg, Count
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -43,6 +43,9 @@ from .throttles import (
 from .async_tasks import grade_attempt_task
 from .grading_service import grade_attempt
 from .prometheus import render_assessments_prometheus_text
+from .prometheus_homework import render_assessments_homework_prometheus_text
+from .metrics import incr as assessments_metric_incr
+from config.error_reporting import report_error
 from .worker_metrics import get_celery_worker_snapshot
 from .redis_health import get_redis_health_snapshot
 from .serializers import (
@@ -379,20 +382,52 @@ class AssignAssessmentHomeworkView(APIView):
         instructions = (data.get("instructions") or "").strip()
         due_at = data.get("due_at")
 
-        # Create core homework row in existing system.
-        assignment = Assignment.objects.create(
-            classroom=classroom,
-            created_by=request.user,
-            title=title[:200],
-            instructions=instructions,
-            due_at=due_at,
-        )
-        hw = HomeworkAssignment.objects.create(
-            classroom=classroom,
-            assessment_set=aset,
-            assignment=assignment,
-            assigned_by=request.user,
-        )
+        # Create core homework row in existing system (atomic + idempotent).
+        # DB uniqueness on (classroom, assessment_set) makes retries safe.
+        with transaction.atomic():
+            existing = (
+                HomeworkAssignment.objects.select_for_update()
+                .select_related("assignment")
+                .filter(classroom=classroom, assessment_set=aset)
+                .order_by("-id")
+                .first()
+            )
+            if existing:
+                assessments_metric_incr("homework_duplicate_prevented")
+                hw = existing
+            else:
+                assignment = Assignment.objects.create(
+                    classroom=classroom,
+                    created_by=request.user,
+                    title=title[:200],
+                    instructions=instructions,
+                    due_at=due_at,
+                )
+                try:
+                    hw = HomeworkAssignment.objects.create(
+                        classroom=classroom,
+                        assessment_set=aset,
+                        assignment=assignment,
+                        assigned_by=request.user,
+                    )
+                except IntegrityError:
+                    assessments_metric_incr("homework_duplicate_prevented")
+                    # Another request created the homework concurrently.
+                    # Clean up the now-orphaned assignment and return canonical homework.
+                    assignment.delete()
+                    hw = (
+                        HomeworkAssignment.objects.select_for_update()
+                        .select_related("assignment")
+                        .filter(classroom=classroom, assessment_set=aset)
+                        .order_by("-id")
+                        .first()
+                    )
+                    if not hw:
+                        report_error(
+                            "assessments.homework_assign_integrity_error_no_canonical",
+                            context={"actor_id": request.user.pk, "classroom_id": classroom.pk, "set_id": aset.pk},
+                        )
+                        raise
         from .models import AssessmentHomeworkAuditEvent
 
         AssessmentHomeworkAuditEvent.objects.create(
@@ -526,6 +561,7 @@ class SaveAnswerView(APIView):
         ser = SaveAnswerSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         data = ser.validated_data
+        client_seq = int(data.get("client_seq") or 0)
 
         att = AssessmentAttempt.objects.select_for_update().select_related("homework").filter(
             pk=data["attempt_id"], student=request.user
@@ -567,14 +603,27 @@ class SaveAnswerView(APIView):
                 "first_seen_at": now,
                 "last_seen_at": now,
                 "time_spent_seconds": 0,
+                "client_seq": client_seq,
             },
         )
         if not created:
+            # Optimistic concurrency: reject stale/out-of-order writes (multi-tab, mobile retries).
+            if client_seq and int(getattr(row, "client_seq", 0) or 0) >= client_seq:
+                return Response(
+                    {
+                        "detail": "Stale answer update rejected.",
+                        "code": "stale_write",
+                        "server_client_seq": int(getattr(row, "client_seq", 0) or 0),
+                        "answer_id": row.pk,
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
             row.answer = ans
             row.answered_at = answered_at
             if row.first_seen_at is None:
                 row.first_seen_at = now
             row.last_seen_at = now
+            row.client_seq = max(int(getattr(row, "client_seq", 0) or 0), int(client_seq or 0))
             # Compute time from server timestamps. Cap per-question time to avoid runaway.
             cap = int((q.grading_config or {}).get("max_seconds") or 15 * 60)
             cap = max(10, min(2 * 60 * 60, cap))
@@ -587,6 +636,7 @@ class SaveAnswerView(APIView):
                     "first_seen_at",
                     "last_seen_at",
                     "time_spent_seconds",
+                    "client_seq",
                     "updated_at",
                 ]
             )
@@ -845,6 +895,40 @@ class AdminGradingPrometheusMetricsView(APIView):
     def get(self, request):
         txt = render_assessments_prometheus_text()
         return HttpResponse(txt, content_type="text/plain; version=0.0.4")
+
+
+class AdminHomeworkPrometheusMetricsView(APIView):
+    """
+    Prometheus scrape endpoint for homework integrity counters.
+    Keep it dependency-free (mirrors other prometheus endpoints).
+    """
+
+    permission_classes = [IsAuthenticatedAndNotFrozen, CanManageQuestions]
+
+    def get(self, request):
+        txt = render_assessments_homework_prometheus_text()
+        return HttpResponse(txt, content_type="text/plain; version=0.0.4")
+
+
+class AdminBuilderTelemetryView(APIView):
+    """
+    Minimal telemetry ingestion endpoint for questions-console builder recovery events.
+    Best-effort counters only (Prometheus-exposed via assessments homework metrics endpoint).
+    """
+
+    permission_classes = [IsAuthenticatedAndNotFrozen, CanManageQuestions]
+
+    def post(self, request):
+        key = str((request.data or {}).get("key") or "").strip()
+        allowed = {
+            "invalid_selection_recovered_total",
+            "stale_id_blocked_total",
+            "builder_refetch_recovery_total",
+        }
+        if key not in allowed:
+            return Response({"detail": "Invalid telemetry key."}, status=status.HTTP_400_BAD_REQUEST)
+        assessments_metric_incr(key)
+        return Response({"ok": True}, status=status.HTTP_200_OK)
 
 
 class MyAssessmentResultForAssignmentView(APIView):

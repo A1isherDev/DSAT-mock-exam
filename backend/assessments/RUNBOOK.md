@@ -8,6 +8,8 @@ This runbook covers the **automatic grading pipeline** (attempt submission → a
   - DB-derived queue/latency/failure metrics + trends + broker queue best-effort (Redis) + worker snapshot (Celery inspect best-effort).
 - `GET /api/assessments/admin/grading/metrics/prometheus/`
   - Prometheus text exposition for gauges (queue + worker snapshot).
+- `GET /api/assessments/admin/homework/metrics/prometheus/`
+  - Prometheus text exposition for **homework integrity counters** (duplicate prevented + repairs applied).
 - `GET /api/assessments/admin/attempts/<attempt_id>/`
 - `POST /api/assessments/admin/attempts/<attempt_id>/requeue/`
   - Only for `grading_status=failed`, subject to cooldown + max-per-attempt.
@@ -69,6 +71,37 @@ Actions:
 - confirm email recipients configured
 - check CRITICAL log entries for alerts (delivery failures are logged)
 - ensure shared cache is configured in production (dedupe + budgets depend on it)
+
+## Homework integrity commands
+
+### Audit
+
+```bash
+python manage.py audit_homework_integrity --json
+```
+
+Checks:
+- duplicate homework rows per `(classroom, assessment_set)`
+- homework rows whose linked `classes.Assignment.classroom_id` disagrees with homework `classroom_id`
+
+### Repair (de-dupe)
+
+Dry run:
+
+```bash
+python manage.py repair_homework_integrity --dry-run --json
+```
+
+Apply:
+
+```bash
+python manage.py repair_homework_integrity --json
+```
+
+Repairs:
+- selects canonical homework per `(classroom, assessment_set)` (prefers one with attempts)
+- migrates attempts + audit events from duplicates into canonical
+- deletes duplicate homework via deleting its linked `Assignment` (CASCADE)
 
 ## Configuration knobs
 

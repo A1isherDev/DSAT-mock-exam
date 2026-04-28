@@ -20,10 +20,10 @@ function PracticeTestDetailInner() {
   useEffect(() => {
     const run = async () => {
       try {
-        const token = Cookies.get("access_token");
+        const isLoggedIn = !!Cookies.get("lms_user") || !!Cookies.get("role") || !!Cookies.get("is_admin");
         const data = await examsApi.getPracticeTest(testId);
         setTest(data);
-        if (token) {
+        if (isLoggedIn) {
           const attemptsData = await examsApi.getAttempts();
           setAttempts(attemptsData);
         }

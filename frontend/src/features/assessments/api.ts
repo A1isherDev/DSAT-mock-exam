@@ -17,6 +17,9 @@ export const assessmentAuthoringApi = {
     const data = await assessmentsApi.adminListSets(params);
     return Array.isArray(data) ? (data as AssessmentSet[]) : [];
   },
+  getSet: async (id: number): Promise<AssessmentSet> => {
+    return (await assessmentsApi.adminGetSet(id)) as AssessmentSet;
+  },
   createSet: async (payload: {
     subject: Subject;
     category?: string;
@@ -37,6 +40,9 @@ export const assessmentAuthoringApi = {
   },
   deleteQuestion: async (id: number) => {
     await assessmentsApi.adminDeleteQuestion(id);
+  },
+  telemetry: async (key: string) => {
+    await api.post("/assessments/admin/builder/telemetry/", { key });
   },
 };
 

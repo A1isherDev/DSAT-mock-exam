@@ -86,10 +86,14 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',  # Serve static files efficiently
+    # Security headers (CSP report-only by default).
+    'config.security_headers.CSPMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
+    # Enforce CSRF for cookie-authenticated API requests (DRF APIViews are CSRF-exempt by default).
+    'config.csrf_api.APICSRFEnforceMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     # Populate JWT user before host-based API guards (DRF auth runs later per-view).
     'access.middleware.JWTUserMiddleware',
@@ -391,7 +395,8 @@ AUTHENTICATION_BACKENDS = [
 ]
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
+    # Short-lived access; browser uses refresh cookie to renew.
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
@@ -413,6 +418,10 @@ CSRF_TRUSTED_ORIGINS = [
     'https://questions.mastersat.uz',
     'http://65.109.100.104',
 ]
+
+# Cookie-based JWT auth still requires CSRF defenses for unsafe requests.
+CSRF_COOKIE_SAMESITE = "Strict"
+CSRF_COOKIE_HTTPONLY = False
 
 
 # ─── Classroom homework (submissions) ─────────────────────────────────────────
@@ -453,7 +462,8 @@ CLASSROOM_OPS_EMAIL_RECIPIENTS = os.getenv("CLASSROOM_OPS_EMAIL_RECIPIENTS", "")
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        # Cookie + header (defense-in-depth and backward compatibility for non-browser clients).
+        'users.authentication.CookieOrHeaderJWTAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'users.permissions.IsAuthenticatedAndNotFrozen',

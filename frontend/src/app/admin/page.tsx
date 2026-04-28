@@ -287,8 +287,8 @@ export default function AdminPage() {
     useEffect(() => {
         // If we don't have a cached label yet (common when navigating directly to subdomains),
         // fetch /users/me and populate the header label.
-        const token = Cookies.get("access_token");
-        if (!token) return;
+        const isLoggedIn = !!Cookies.get("lms_user") || !!Cookies.get("role") || !!Cookies.get("is_admin");
+        if (!isLoggedIn) return;
         if (session.label) return;
         let cancelled = false;
         (async () => {

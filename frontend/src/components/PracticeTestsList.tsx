@@ -117,14 +117,14 @@ export default function PracticeTestsList({
     let cancelled = false;
 
     const fetchData = async () => {
-      const token = Cookies.get("access_token");
-      if (!cancelled) setIsLoggedIn(!!token);
+      const isLogged = !!Cookies.get("lms_user") || !!Cookies.get("role") || !!Cookies.get("is_admin");
+      if (!cancelled) setIsLoggedIn(isLogged);
       try {
         const list = await examsApi.getPracticeTests();
         if (cancelled) return;
         const raw = Array.isArray(list) ? list : [];
         setTests(raw.filter((t) => !isTimedMockSectionRow(t)));
-        if (token) {
+        if (isLogged) {
           const attemptsData = await examsApi.getAttempts();
           if (!cancelled) setAttempts(Array.isArray(attemptsData) ? attemptsData : []);
         } else {

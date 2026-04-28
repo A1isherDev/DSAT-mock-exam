@@ -40,14 +40,14 @@ export default function MockExamsList({
   const router = useRouter();
 
   useEffect(() => {
-    const token = Cookies.get("access_token");
-    setIsLoggedIn(!!token);
+    const isLogged = !!Cookies.get("lms_user") || !!Cookies.get("role") || !!Cookies.get("is_admin");
+    setIsLoggedIn(isLogged);
 
     const fetchData = async () => {
       try {
         const mockExamsData = await examsApi.getMockExams();
         setMockExams(mockExamsData);
-        if (token) {
+        if (isLogged) {
           const attemptsData = await examsApi.getAttempts();
           setAttempts(attemptsData);
         }

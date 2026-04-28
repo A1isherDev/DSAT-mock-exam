@@ -1,0 +1,53 @@
+{
+  "uid": "exams-homework-health",
+  "title": "Exams + Homework Health",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "timezone": "browser",
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Exam attempt: duplicate active prevented (rate)",
+      "targets": [
+        { "expr": "rate(exams_active_attempt_duplicates_prevented_total[5m])", "refId": "A" }
+      ],
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Exam attempt: idempotency replays (rate)",
+      "targets": [
+        { "expr": "rate(exams_attempt_idempotency_replay_total[5m])", "refId": "A" }
+      ],
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Exam attempt: version conflicts (rate)",
+      "targets": [
+        { "expr": "rate(exams_attempt_version_conflict_total[5m])", "refId": "A" }
+      ],
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Homework: duplicate prevented (rate)",
+      "targets": [
+        { "expr": "rate(assessments_homework_duplicate_prevented_total[5m])", "refId": "A" }
+      ],
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Integrity repairs applied (rate)",
+      "targets": [
+        { "expr": "rate(exams_integrity_repairs_applied_total[5m])", "refId": "A" },
+        { "expr": "rate(assessments_integrity_repairs_applied_total[5m])", "refId": "B" }
+      ],
+      "gridPos": { "x": 0, "y": 16, "w": 24, "h": 8 }
+    }
+  ]
+}
+

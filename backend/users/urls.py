@@ -6,6 +6,7 @@ from .views import (
     UserDeleteView,
     UserRegistrationView,
     UserMeView,
+    UserSecurityView,
     GoogleAuthView,
     TelegramAuthView,
     TelegramWidgetConfigView,
@@ -14,9 +15,11 @@ from .views import (
     ExamDateOptionAdminListCreateView,
     ExamDateOptionAdminDetailView,
 )
+from .prometheus_security import AdminSecurityPrometheusMetricsView
 
 urlpatterns = [
     path('me/', UserMeView.as_view(), name='user-me'),
+    path('me/security/', UserSecurityView.as_view(), name='user-me-security'),
     path('exam-dates/', ExamDateOptionListView.as_view(), name='exam-date-options'),
     path('admin/exam-dates/', ExamDateOptionAdminListCreateView.as_view(), name='admin-exam-dates'),
     path('admin/exam-dates/<int:pk>/', ExamDateOptionAdminDetailView.as_view(), name='admin-exam-date-detail'),
@@ -25,6 +28,7 @@ urlpatterns = [
     path('telegram/config/', TelegramWidgetConfigView.as_view(), name='telegram-widget-config'),
     path('telegram/link/', TelegramLinkView.as_view(), name='telegram-link'),
     path('telegram/', TelegramAuthView.as_view(), name='telegram-auth'),
+    path('admin/security/metrics/prometheus/', AdminSecurityPrometheusMetricsView.as_view(), name='admin-security-metrics'),
     path('', UserListView.as_view(), name='user-list'),
     path('create/', UserCreateView.as_view(), name='user-create'),
     path('<int:pk>/update/', UserUpdateView.as_view(), name='user-update'),

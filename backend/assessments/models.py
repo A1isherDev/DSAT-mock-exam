@@ -335,6 +335,8 @@ class AssessmentAnswer(models.Model):
     is_correct = models.BooleanField(null=True, blank=True, db_index=True)
     points_awarded = models.DecimalField(max_digits=7, decimal_places=2, null=True, blank=True)
     answered_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    # Client-provided monotonic sequence for conflict detection (multi-tab / out-of-order protection).
+    client_seq = models.BigIntegerField(default=0, db_index=True)
     updated_at = models.DateTimeField(auto_now=True, db_index=True)
 
     class Meta:

@@ -100,6 +100,40 @@ class Command(BaseCommand):
             "finding_sample_attempt_ids_by_code": dict(codes_samples),
         }
 
+        # Duplicate active attempts per (student, practice_test) (race / retries).
+        dup_active_groups = (
+            TestAttempt.objects.filter(is_completed=False)
+            .exclude(current_state=TestAttempt.STATE_ABANDONED)
+            .values("student_id", "practice_test_id")
+            .annotate(c=Count("id"))
+            .filter(c__gt=1)
+            .order_by("-c", "student_id", "practice_test_id")
+        )
+        dup_active_rows = []
+        for row in dup_active_groups[:limit]:
+            dup_active_rows.append(
+                {
+                    "student_id": row["student_id"],
+                    "practice_test_id": row["practice_test_id"],
+                    "count": row["c"],
+                    "attempt_ids": list(
+                        TestAttempt.objects.filter(
+                            student_id=row["student_id"],
+                            practice_test_id=row["practice_test_id"],
+                            is_completed=False,
+                        )
+                        .exclude(current_state=TestAttempt.STATE_ABANDONED)
+                        .order_by("-updated_at", "-id")
+                        .values_list("id", flat=True)[: min(limit, 25)]
+                    ),
+                }
+            )
+
+        report["attempts"]["duplicate_active_attempts_per_student_test"] = {
+            "count": dup_active_groups.count(),
+            "rows": dup_active_rows,
+        }
+
         # Attempts with current_state active but no current_module (common stuck symptom).
         active_null = TestAttempt.objects.filter(
             current_state__in=[TestAttempt.STATE_MODULE_1_ACTIVE, TestAttempt.STATE_MODULE_2_ACTIVE],

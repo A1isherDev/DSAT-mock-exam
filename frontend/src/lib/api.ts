@@ -13,13 +13,13 @@ function cookieDomain(): string | undefined {
 }
 
 const AUTH_COOKIE_NAMES = [
+    // Legacy JS-readable tokens (removed); still cleared defensively.
     "access_token",
     "refresh_token",
     "is_admin",
     "is_frozen",
     "role",
     "lms_permissions",
-    "lms_subject",
     "lms_scope",
     "lms_user",
 ] as const;
@@ -59,20 +59,13 @@ async function persistMeCookie(rememberMe: boolean) {
                 username: me?.username,
                 first_name: me?.first_name,
                 last_name: me?.last_name,
+                role: me?.role ? String(me.role).toLowerCase() : "",
+                subject: me?.subject ? String(me.subject).toLowerCase() : "",
             }),
             cookieOptions,
         );
-        const roleMe = String(me?.role || "").toLowerCase();
-        if (roleMe === "test_admin") {
-            Cookies.remove("lms_subject", { path: "/", domain: IS_PROD ? cookieDomain() : undefined });
-        } else {
-            const subj = me?.subject ? String(me.subject).toLowerCase() : "";
-            if (subj === "math" || subj === "english") {
-                Cookies.set("lms_subject", subj, cookieOptions);
-            } else {
-                Cookies.remove("lms_subject", { path: "/", domain: IS_PROD ? cookieDomain() : undefined });
-            }
-        }
+        // Stop persisting `lms_subject`: `/users/me/` is the source of truth.
+        Cookies.remove("lms_subject", { path: "/", domain: IS_PROD ? cookieDomain() : undefined });
     } catch {
         // best-effort; UI will fall back to role-only if this fails
     }
@@ -126,9 +119,20 @@ function unwrapAdminList<T>(data: unknown): T[] {
 type AdminListEntity = { id: number };
 
 api.interceptors.request.use((config) => {
-    const token = Cookies.get('access_token');
-    if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
+    // Auth is cookie-based (HttpOnly access token). Do not attach Authorization header.
+    // CSRF hardening: send X-CSRFToken for unsafe methods when csrftoken cookie exists.
+    try {
+        const method = String(config.method || "get").toLowerCase();
+        const unsafe = method !== "get" && method !== "head" && method !== "options";
+        if (unsafe) {
+            const csrf = Cookies.get("csrftoken");
+            if (csrf) {
+                (config.headers as any) = config.headers || {};
+                (config.headers as any)["X-CSRFToken"] = csrf;
+            }
+        }
+    } catch {
+        // ignore
     }
     return config;
 });
@@ -147,41 +151,33 @@ api.interceptors.response.use(
         // On 401, attempt a token refresh once, then retry the original request.
         // Only redirect to /login if refresh fails.
         if (error.response?.status === 401) {
+            if (typeof window !== "undefined" && (globalThis as any).__mastersatLogoutInProgress) {
+                return Promise.reject(error);
+            }
             const original = error.config as any;
             if (original && !original.__isRetryRequest) {
                 original.__isRetryRequest = true;
                 try {
-                    const refresh = Cookies.get("refresh_token");
-                    if (refresh) {
-                        // Shared refresh promise to avoid thundering herd.
-                        if (!(globalThis as any).__mastersatRefreshPromise) {
-                            (globalThis as any).__mastersatRefreshPromise = (async () => {
-                                const r = await axios.post(
-                                    `${API_URL}/auth/refresh/`,
-                                    { refresh },
-                                    { baseURL: "" }, // absolute path; API_URL already includes /api
-                                );
-                                const cookieOptions = {
-                                    secure: IS_PROD,
-                                    sameSite: "strict" as const,
-                                    expires: 7,
-                                    domain: IS_PROD ? cookieDomain() : undefined,
-                                    path: "/",
-                                };
-                                Cookies.set("access_token", r.data.access, cookieOptions);
-                                return r.data.access;
-                            })().finally(() => {
-                                (globalThis as any).__mastersatRefreshPromise = null;
-                            });
-                        }
-                        await (globalThis as any).__mastersatRefreshPromise;
-                        return api(original);
+                    // Shared refresh promise to avoid thundering herd.
+                    // Refresh uses HttpOnly cookie `lms_refresh`; no JS-readable tokens.
+                    if (!(globalThis as any).__mastersatRefreshPromise) {
+                        (globalThis as any).__mastersatRefreshPromise = (async () => {
+                            await axios.post(`${API_URL}/auth/refresh/`, {}, { baseURL: "" });
+                            return true;
+                        })().finally(() => {
+                            (globalThis as any).__mastersatRefreshPromise = null;
+                        });
                     }
+                    await (globalThis as any).__mastersatRefreshPromise;
+                    return api(original);
                 } catch {
                     // fall through to logout/redirect
                 }
             }
 
+            if (typeof window !== "undefined") {
+                (globalThis as any).__mastersatLogoutInProgress = true;
+            }
             clearAuthCookiesEverywhere();
             if (typeof window !== 'undefined') {
                 window.location.href = '/login';
@@ -215,6 +211,23 @@ export const usersApi = {
         const r = await api.get('/users/exam-dates/');
         return r.data;
     },
+    getSecurity: async () => {
+        const r = await api.get('/users/me/security/');
+        return r.data as {
+            last_password_change: string | null;
+            security_step_up_active: boolean;
+            suspicious_login_alerts: number;
+            events: Array<{
+                id: number;
+                event_type: string;
+                severity: string;
+                ip: string;
+                user_agent: string;
+                detail: Record<string, unknown>;
+                created_at: string;
+            }>;
+        };
+    },
 };
 
 export const authApi = {
@@ -231,7 +244,7 @@ export const authApi = {
     login: async (email: string, password: string, rememberMe = true) => {
         // Avoid "sticky sessions" when old host-only + shared-domain cookies both exist.
         clearAuthCookiesEverywhere();
-        const response = await api.post('/auth/login/', { email, password });
+        const response = await api.post('/auth/login/', { email, password, remember_me: rememberMe ? 1 : 0 });
         const cookieOptions = {
             secure: IS_PROD,
             sameSite: 'strict' as const,
@@ -239,25 +252,13 @@ export const authApi = {
             domain: IS_PROD ? cookieDomain() : undefined,
             path: "/",
         };
-        Cookies.set('access_token', response.data.access, cookieOptions);
-        Cookies.set('refresh_token', response.data.refresh, cookieOptions);
         Cookies.set('is_admin', response.data.is_admin ? 'true' : 'false', cookieOptions);
         Cookies.set('is_frozen', response.data.is_frozen ? 'true' : 'false', cookieOptions);
         Cookies.set('role', String(response.data.role || 'student').toLowerCase(), cookieOptions);
         if (Array.isArray(response.data.permissions)) {
             Cookies.set('lms_permissions', JSON.stringify(response.data.permissions), cookieOptions);
         }
-        const rl = String(response.data.role || "student").toLowerCase();
-        if (rl === "test_admin") {
-            Cookies.remove("lms_subject", { path: "/", domain: IS_PROD ? cookieDomain() : undefined });
-        } else {
-            const subj = response.data.subject ? String(response.data.subject).toLowerCase() : "";
-            if (subj === "math" || subj === "english") {
-                Cookies.set("lms_subject", subj, cookieOptions);
-            } else {
-                Cookies.remove("lms_subject", { path: "/", domain: IS_PROD ? cookieDomain() : undefined });
-            }
-        }
+        Cookies.remove("lms_subject", { path: "/", domain: IS_PROD ? cookieDomain() : undefined });
         await persistMeCookie(rememberMe);
         return response.data;
     },
@@ -271,25 +272,14 @@ export const authApi = {
             domain: IS_PROD ? cookieDomain() : undefined,
             path: "/",
         };
-        Cookies.set('access_token', response.data.access, cookieOptions);
-        Cookies.set('refresh_token', response.data.refresh, cookieOptions);
+        // Google auth currently returns tokens in JSON; server also sets HttpOnly cookies.
         Cookies.set('is_admin', response.data.is_admin ? 'true' : 'false', cookieOptions);
         Cookies.set('is_frozen', response.data.is_frozen ? 'true' : 'false', cookieOptions);
         Cookies.set('role', String(response.data.role || 'student').toLowerCase(), cookieOptions);
         if (Array.isArray(response.data.permissions)) {
             Cookies.set('lms_permissions', JSON.stringify(response.data.permissions), cookieOptions);
         }
-        const rlG = String(response.data.role || "student").toLowerCase();
-        if (rlG === "test_admin") {
-            Cookies.remove("lms_subject", { path: "/", domain: IS_PROD ? cookieDomain() : undefined });
-        } else {
-            const subj = response.data.subject ? String(response.data.subject).toLowerCase() : "";
-            if (subj === "math" || subj === "english") {
-                Cookies.set("lms_subject", subj, cookieOptions);
-            } else {
-                Cookies.remove("lms_subject", { path: "/", domain: IS_PROD ? cookieDomain() : undefined });
-            }
-        }
+        Cookies.remove("lms_subject", { path: "/", domain: IS_PROD ? cookieDomain() : undefined });
         await persistMeCookie(rememberMe);
         return response.data;
     },
@@ -310,45 +300,41 @@ export const authApi = {
             domain: IS_PROD ? cookieDomain() : undefined,
             path: "/",
         };
-        Cookies.set('access_token', response.data.access, cookieOptions);
-        Cookies.set('refresh_token', response.data.refresh, cookieOptions);
+        // Telegram auth currently returns tokens in JSON; server also sets HttpOnly cookies.
         Cookies.set('is_admin', response.data.is_admin ? 'true' : 'false', cookieOptions);
         Cookies.set('is_frozen', response.data.is_frozen ? 'true' : 'false', cookieOptions);
         Cookies.set('role', String(response.data.role || 'student').toLowerCase(), cookieOptions);
         if (Array.isArray(response.data.permissions)) {
             Cookies.set('lms_permissions', JSON.stringify(response.data.permissions), cookieOptions);
         }
-        const rlT = String(response.data.role || "student").toLowerCase();
-        if (rlT === "test_admin") {
-            Cookies.remove("lms_subject", { path: "/", domain: IS_PROD ? cookieDomain() : undefined });
-        } else {
-            const subj = response.data.subject ? String(response.data.subject).toLowerCase() : "";
-            if (subj === "math" || subj === "english") {
-                Cookies.set("lms_subject", subj, cookieOptions);
-            } else {
-                Cookies.remove("lms_subject", { path: "/", domain: IS_PROD ? cookieDomain() : undefined });
-            }
-        }
+        Cookies.remove("lms_subject", { path: "/", domain: IS_PROD ? cookieDomain() : undefined });
         await persistMeCookie(rememberMe);
         return response.data;
     },
-    logout: () => {
+    logout: async () => {
+        try {
+            await api.post("/auth/logout/", {});
+        } catch {
+            // Best-effort: still clear JS-readable cookies and redirect.
+        }
         clearAuthCookiesEverywhere();
         window.location.href = '/login';
     },
     refresh: async (rememberMe = true) => {
-        const refresh = Cookies.get("refresh_token");
-        if (!refresh) throw new Error("No refresh token");
-        const response = await axios.post(`${API_URL}/auth/refresh/`, { refresh }, { baseURL: "" });
-        const cookieOptions = {
-            secure: IS_PROD,
-            sameSite: "strict" as const,
-            expires: rememberMe ? 7 : undefined,
-            domain: IS_PROD ? cookieDomain() : undefined,
-            path: "/",
-        };
-        Cookies.set("access_token", response.data.access, cookieOptions);
+        const response = await axios.post(`${API_URL}/auth/refresh/`, {}, { baseURL: "" });
         return response.data;
+    },
+    getSessions: async () => {
+        const r = await api.get("/auth/sessions/");
+        return r.data as { sessions: any[] };
+    },
+    revokeSession: async (sessionId: number) => {
+        const r = await api.post(`/auth/sessions/${sessionId}/revoke/`, {});
+        return r.data;
+    },
+    revokeAllSessions: async () => {
+        const r = await api.post("/auth/sessions/revoke_all/", {});
+        return r.data;
     },
 };
 
@@ -379,7 +365,12 @@ export const examsApi = {
         return res.data;
     },
     startModule: async (attemptId: number, moduleId: number) => {
-        const res = await api.post(`/exams/attempts/${attemptId}/start_module/`, { module_id: moduleId });
+        const key = `start_module.${attemptId}.${moduleId}.${Date.now()}`;
+        const res = await api.post(
+            `/exams/attempts/${attemptId}/start_module/`,
+            { module_id: moduleId },
+            { headers: { "Idempotency-Key": key } },
+        );
         return res.data;
     },
     getAttemptStatus: async (attemptId: number) => {
@@ -794,6 +785,10 @@ export const assessmentsApi = {
         }>,
     ) => {
         const r = await api.patch(`/assessments/admin/sets/${id}/`, payload);
+        return r.data;
+    },
+    adminGetSet: async (id: number) => {
+        const r = await api.get(`/assessments/admin/sets/${id}/`);
         return r.data;
     },
     adminCreateQuestion: async (

@@ -1,0 +1,30 @@
+groups:
+  - name: mastersat_integrity
+    rules:
+      - alert: ExamsDuplicateActiveAttemptsPreventedSpike
+        expr: rate(exams_active_attempt_duplicates_prevented_total[10m]) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Exams duplicate active attempts being prevented"
+          description: "Duplicate active attempts are being prevented consistently. Investigate client retries or backend contention."
+
+      - alert: HomeworkDuplicateAssignPreventedSpike
+        expr: rate(assessments_homework_duplicate_prevented_total[10m]) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Homework duplicates being prevented"
+          description: "Homework duplicate assigns are being prevented consistently. Investigate retry storms or UI double-submits."
+
+      - alert: IntegrityRepairsApplied
+        expr: rate(exams_integrity_repairs_applied_total[30m]) > 0 or rate(assessments_integrity_repairs_applied_total[30m]) > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Integrity repairs applied"
+          description: "Repair commands have applied mutations recently. Confirm audits are clean and investigate root cause."
+

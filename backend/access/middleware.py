@@ -24,9 +24,9 @@ class JWTUserMiddleware:
         path = request.path or ""
         if path.startswith("/api/") and not getattr(request.user, "is_authenticated", False):
             try:
-                from rest_framework_simplejwt.authentication import JWTAuthentication
+                from users.authentication import CookieOrHeaderJWTAuthentication
 
-                result = JWTAuthentication().authenticate(request)
+                result = CookieOrHeaderJWTAuthentication().authenticate(request)
                 if result:
                     user, token = result
                     request.user = user

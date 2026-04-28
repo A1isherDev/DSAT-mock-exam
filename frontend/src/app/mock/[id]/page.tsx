@@ -26,10 +26,10 @@ function MockExamDetailInner() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const token = Cookies.get("access_token");
+        const isLoggedIn = !!Cookies.get("lms_user") || !!Cookies.get("role") || !!Cookies.get("is_admin");
         const examData = await examsApi.getMockExam(Number(id));
         setMockExam(examData);
-        if (token) {
+        if (isLoggedIn) {
           const attemptsData = await examsApi.getAttempts();
           setAttempts(attemptsData);
         }

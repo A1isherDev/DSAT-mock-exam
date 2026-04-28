@@ -9,7 +9,7 @@ from rest_framework.exceptions import ValidationError as DRFValidationError
 import logging
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.conf import settings
 from django.http import HttpResponse
 from datetime import timedelta
@@ -74,6 +74,8 @@ from .metrics import incr as metric_incr, get_counter
 from .prometheus import render_exams_prometheus_text
 from .attempt_timing import get_active_module_timing
 from .engine_integrity import autoheal_attempt_for_runtime
+from config.error_reporting import report_error
+from config.reliability import idempotency_key_from_request
 
 logger = logging.getLogger(__name__)
 
@@ -378,34 +380,53 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
             allowed = base.filter(assigned_users=user).distinct()
 
         test = get_object_or_404(allowed, id=test_id)
-        
-        # Get or create attempt (only reuse INCOMPLETE attempts)
-        attempt = TestAttempt.objects.filter(
-            student=request.user,
-            practice_test=test,
-            is_completed=False
-        ).first()
 
-        if not attempt:
-            attempt = TestAttempt.objects.create(
-                student=request.user,
-                practice_test=test
-            )
-        # Authoritative start/resume: entering the runner should immediately be in MODULE_1_ACTIVE
-        # for new attempts, or return canonical current state for existing incomplete attempts.
-        try:
-            with transaction.atomic():
-                locked = (
-                    TestAttempt.objects.select_for_update()
-                    .select_related("practice_test", "current_module")
-                    .get(pk=attempt.pk)
+        # Get-or-create active attempt (concurrency-safe under DB constraint).
+        # We exclude ABANDONED attempts from reuse so students can restart after abandoning.
+        with transaction.atomic():
+            attempt = (
+                TestAttempt.objects.select_for_update()
+                .select_related("practice_test", "current_module")
+                .filter(
+                    student=request.user,
+                    practice_test=test,
+                    is_completed=False,
                 )
-                ensure_full_mock_practice_test_modules(locked.practice_test)
-                autoheal_attempt_for_runtime(locked)
-                locked.start_attempt()
-        except Exception:
-            # Fall back to legacy behavior: return attempt row as-is.
-            pass
+                .exclude(current_state=TestAttempt.STATE_ABANDONED)
+                .order_by("-id")
+                .first()
+            )
+
+            if attempt is None:
+                try:
+                    attempt = TestAttempt.objects.create(student=request.user, practice_test=test)
+                except IntegrityError:
+                    metric_incr("active_attempt_duplicates_prevented")
+                    # Another concurrent request won the race; fetch the canonical active attempt.
+                    attempt = (
+                        TestAttempt.objects.select_for_update()
+                        .select_related("practice_test", "current_module")
+                        .filter(
+                            student=request.user,
+                            practice_test=test,
+                            is_completed=False,
+                        )
+                        .exclude(current_state=TestAttempt.STATE_ABANDONED)
+                        .order_by("-id")
+                        .first()
+                    )
+                    if attempt is None:
+                        report_error(
+                            "exams.attempt_create_integrity_error_no_canonical",
+                            context={"user_id": request.user.pk, "practice_test_id": test.pk},
+                        )
+                        raise
+
+            # Authoritative start/resume: entering the runner should immediately be in MODULE_1_ACTIVE
+            # for new attempts, or return canonical current state for existing incomplete attempts.
+            ensure_full_mock_practice_test_modules(attempt.practice_test)
+            autoheal_attempt_for_runtime(attempt)
+            attempt.start_attempt()
 
         # Re-fetch canonical state for response (start_attempt mutates state/FKs).
         attempt = TestAttempt.objects.select_related("current_module").get(pk=attempt.pk)
@@ -419,15 +440,7 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(attempt)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-    @action(detail=True, methods=["get"])
-    def status(self, request, pk=None):
-        """
-        Canonical attempt state for polling/resume.
-        Frontend must render from this payload (includes server_now in serializer).
-        """
-        attempt = self.get_object()
-        serializer = self.get_serializer(attempt)
-        return Response(serializer.data)
+    # NOTE: `status` is defined once below (canonical resume payload).
 
     @action(detail=True, methods=["post"])
     def start(self, request, pk=None):
@@ -453,7 +466,7 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
             except Exception as exc:
                 return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-        idem = request.headers.get("Idempotency-Key") or request.headers.get("X-Idempotency-Key")
+        idem = idempotency_key_from_request(request)
         return consume_idempotency_key(attempt=attempt, endpoint="start", key=idem, compute=_compute)
 
         AuditLog.objects.create(
@@ -468,6 +481,7 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
     def start_module(self, request, pk=None):
         attempt = self.get_object()
         module_id = request.data.get('module_id')
+        idem = idempotency_key_from_request(request)
         
         # Defensive: ensure full mock sections always have both modules provisioned.
         ensure_full_mock_practice_test_modules(attempt.practice_test)
@@ -477,32 +491,34 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         if attempt.is_completed:
             return Response({'error': 'Cannot start module for a completed test'}, status=status.HTTP_400_BAD_REQUEST)
 
-        try:
-            # If current module is already expired, prevent arbitrary module hopping.
-            timing = get_active_module_timing(attempt)
-            if timing and timing.is_expired and attempt.current_state in (
-                TestAttempt.STATE_MODULE_1_ACTIVE,
-                TestAttempt.STATE_MODULE_2_ACTIVE,
-            ):
-                attempt.is_expired = True  # serializer reads this attribute
-                return Response({"error": "Module time expired."}, status=status.HTTP_409_CONFLICT)
+        def _compute():
+            try:
+                # If current module is already expired, prevent arbitrary module hopping.
+                timing = get_active_module_timing(attempt)
+                if timing and timing.is_expired and attempt.current_state in (
+                    TestAttempt.STATE_MODULE_1_ACTIVE,
+                    TestAttempt.STATE_MODULE_2_ACTIVE,
+                ):
+                    attempt.is_expired = True  # serializer reads this attribute
+                    return Response({"error": "Module time expired."}, status=status.HTTP_409_CONFLICT)
 
-            with transaction.atomic():
-                locked = (
-                    TestAttempt.objects.select_for_update()
-                    .select_related("practice_test", "current_module")
-                    .get(pk=attempt.pk)
-                )
-                autoheal_attempt_for_runtime(locked)
-                # Legacy endpoint: keep for compatibility, but enforce canonical rules:
-                # - module 1 start → start_attempt
-                # - module 2 start → only allowed if engine is already MODULE_2_ACTIVE
-                if int(getattr(module, "module_order", 0) or 0) == 1:
-                    locked.start_attempt()
-                else:
-                    locked.start_module(module)
-        except Exception as exc:
-            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+                with transaction.atomic():
+                    locked = (
+                        TestAttempt.objects.select_for_update()
+                        .select_related("practice_test", "current_module")
+                        .get(pk=attempt.pk)
+                    )
+                    autoheal_attempt_for_runtime(locked)
+                    # Legacy endpoint: keep for compatibility, but enforce canonical rules:
+                    # - module 1 start → start_attempt
+                    # - module 2 start → only allowed if engine is already MODULE_2_ACTIVE
+                    if int(getattr(module, "module_order", 0) or 0) == 1:
+                        locked.start_attempt()
+                    else:
+                        locked.start_module(module)
+                return Response(self.get_serializer(TestAttempt.objects.get(pk=attempt.pk)).data)
+            except Exception as exc:
+                return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         
         AuditLog.objects.create(
             user=request.user,
@@ -510,18 +526,12 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
             details=f"Started module {module.module_order} of {attempt.practice_test}"
         )
 
-        # Re-fetch from DB so the serializer gets a fresh object with all FK relations
-        # loaded (current_module_details needs the related Module row).  Without this,
-        # the serializer operates on the in-memory mutated object whose FK cache may be
-        # stale, returning null or wrong current_module_details to the frontend.
-        attempt = TestAttempt.objects.get(pk=attempt.pk)
-        serializer = self.get_serializer(attempt)
-        return Response(serializer.data)
+        return consume_idempotency_key(attempt=attempt, endpoint="start_module", key=idem, compute=_compute)
 
     @action(detail=True, methods=['post'])
     def submit_module(self, request, pk=None):
         attempt0 = self.get_object()
-        idem = request.headers.get("Idempotency-Key") or request.headers.get("X-Idempotency-Key")
+        idem = idempotency_key_from_request(request)
         expected_v = _expected_attempt_version(request)
 
         def _compute():
@@ -582,10 +592,10 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                                 f"Cannot submit: invalid current module order {submitting_module_order} (state={attempt.current_state})"
                             )
 
-                    # After transition, if state is now SCORING, enqueue task.
+                    # After transition, if state is MODULE_2_SUBMITTED, enter SCORING then enqueue task.
+                    if attempt.current_state == TestAttempt.STATE_MODULE_2_SUBMITTED:
+                        attempt.enter_scoring()
                     if attempt.current_state == TestAttempt.STATE_SCORING:
-                        if attempt.current_state != TestAttempt.STATE_SCORING:
-                            attempt.enter_scoring()
                         
                         broker = str(getattr(settings, "CELERY_BROKER_URL", "") or "").strip()
                         eager = bool(getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False))
@@ -619,7 +629,7 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def save_attempt(self, request, pk=None):
         attempt0 = self.get_object()
-        idem = request.headers.get("Idempotency-Key") or request.headers.get("X-Idempotency-Key")
+        idem = idempotency_key_from_request(request)
         expected_v = _expected_attempt_version(request)
 
         def _compute():
@@ -657,36 +667,21 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
 
         return consume_idempotency_key(attempt=attempt0, endpoint="save_attempt", key=idem, compute=_compute)
 
-    @action(detail=True, methods=['get'], url_path='status')
+    @action(detail=True, methods=["get"], url_path="status")
     def status(self, request, pk=None):
+        """
+        Read-only attempt payload for polling/status UI.
+
+        IMPORTANT: do not lock or mutate state in GET requests.
+        All state transitions happen in POST endpoints (start/save/submit).
+        """
         attempt0 = self.get_object()
-
-        def _compute():
-            with transaction.atomic():
-                attempt = (
-                    TestAttempt.objects.select_for_update()
-                    .select_related("practice_test", "current_module")
-                    .get(pk=attempt0.pk)
-                )
-                # Runtime integrity + canonical resume behavior:
-                # if legacy rows are NOT_STARTED but should begin at Module 1,
-                # normalize them here so the runner can always render immediately.
-                autoheal_attempt_for_runtime(attempt)
-                attempt.resume_attempt()
-
-            attempt = (
-                TestAttempt.objects.select_related("practice_test", "current_module")
-                .prefetch_related("practice_test__modules", "current_module__questions")
-                .get(pk=attempt0.pk)
-            )
-            logger.info(
-                "[FORENSIC] status_check attempt_id=%s state=%s mod=%s v=%s",
-                attempt.id, attempt.current_state, attempt.current_module_id, attempt.version_number
-            )
-            return Response(self.get_serializer(attempt).data)
-
-        # status is safe to be non-idempotency-keyed; it’s a GET that may normalize legacy state.
-        return _compute()
+        attempt = (
+            TestAttempt.objects.select_related("practice_test", "current_module")
+            .prefetch_related("practice_test__modules", "current_module__questions")
+            .get(pk=attempt0.pk)
+        )
+        return Response(self.get_serializer(attempt).data)
 
     @action(detail=True, methods=['get'])
     def review(self, request, pk=None):

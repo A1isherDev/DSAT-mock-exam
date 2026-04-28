@@ -1,5 +1,17 @@
 import Cookies from "js-cookie";
 
+function readMeCookie(): any | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = Cookies.get("lms_user");
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * UI-only permission helpers. The backend enforces all authorization.
  * Synced from login / Google auth into the `lms_permissions` cookie (JSON array).
@@ -17,17 +29,20 @@ export function getPermissionList(): string[] {
   }
 }
 
-/** Single domain subject for staff (math | english), from login /me cookie. */
+/** Single domain subject for staff (math | english), derived from `/users/me/` (via lms_user cookie cache). */
 export function getSubject(): "math" | "english" | null {
   if (typeof window === "undefined") return null;
-  const raw = (Cookies.get("lms_subject") || "").trim().toLowerCase();
+  const raw = String(readMeCookie()?.subject || "").trim().toLowerCase();
   if (raw === "math" || raw === "english") return raw;
   return null;
 }
 
-/** Role from auth cookie (lowercase). */
+/** Role derived from `/users/me/` (via lms_user cookie cache), with cookie fallback. */
 export function getRole(): string {
   if (typeof window === "undefined") return "";
+  const me = readMeCookie();
+  const fromMe = me?.role ? String(me.role).trim().toLowerCase() : "";
+  if (fromMe) return fromMe;
   return (Cookies.get("role") || "").trim().toLowerCase();
 }
 
