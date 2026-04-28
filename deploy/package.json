@@ -1,0 +1,10 @@
+{
+  "name": "satapp-deploy",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Shim only. The Next.js app and its lockfile live in ../frontend. Do not add dependencies here.",
+  "scripts": {
+    "ci:frontend": "npm ci --prefix ../frontend --no-audit --no-fund",
+    "build:frontend": "npm run build --prefix ../frontend"
+  }
+}
