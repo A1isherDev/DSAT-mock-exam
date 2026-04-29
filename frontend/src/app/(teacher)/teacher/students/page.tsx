@@ -9,6 +9,10 @@ import { canAbacTestSubject } from "@/lib/permissions";
 import { isTimedMockSectionRow, singleDisplayTitle, subjectLabel } from "@/lib/practiceTestCards";
 import { Users } from "lucide-react";
 
+function _hasSubject(t: unknown): t is { subject: string } {
+  return !!t && typeof (t as any).subject === "string" && String((t as any).subject).trim().length > 0;
+}
+
 export default function TeacherStudentsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -72,11 +76,13 @@ export default function TeacherStudentsPage() {
       setGrantMsg(null);
       try {
         const list = await examsPublicApi.getPracticeTests();
-        const raw = Array.isArray(list) ? list : [];
+        const raw: unknown[] = Array.isArray(list) ? (list as unknown[]) : [];
         // Teacher access UI: standalone practice library only (exclude timed mock section rows).
-        const standalone = raw.filter(
-          (t) => !isTimedMockSectionRow(t) && canAbacTestSubject(t.subject),
-        );
+        const standalone = raw.filter((t) => {
+          if (isTimedMockSectionRow(t as any)) return false;
+          if (!_hasSubject(t)) return false;
+          return canAbacTestSubject(t.subject);
+        });
         if (!cancelled) setTests(standalone);
       } catch (e: any) {
         if (!cancelled) setGrantMsg(e?.response?.data?.detail || "Could not load practice tests.");
