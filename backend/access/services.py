@@ -846,13 +846,13 @@ def filter_pastpaper_packs_for_user(user, queryset):
         _debug_log_test_library_filter("filter_pastpaper_packs_for_user", user, queryset, queryset)
         return queryset
 
-    visible = filter_practice_tests_for_user(
-        user,
-        PracticeTest.objects.filter(mock_exam__isnull=True),
+    # Avoid queryset UNION (|) to prevent ORM / Postgres edge cases returning empty results.
+    visible = filter_practice_tests_for_user(user, PracticeTest.objects.filter(mock_exam__isnull=True))
+    out = (
+        queryset.annotate(_section_count=Count("sections"))
+        .filter(Q(sections__in=visible) | Q(_section_count=0))
+        .distinct()
     )
-    with_sections = queryset.filter(sections__in=visible)
-    empty = queryset.annotate(_section_count=Count("sections")).filter(_section_count=0)
-    out = (with_sections | empty).distinct()
     _debug_log_test_library_filter("filter_pastpaper_packs_for_user", user, queryset, out)
     return out
 
