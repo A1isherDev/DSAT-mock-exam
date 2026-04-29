@@ -71,6 +71,12 @@ class SubdomainAPIGuardMiddleware:
         if path.startswith("/api/auth/"):
             return self.get_response(request)
 
+        # Health + schema endpoints must always be reachable (for load balancers and deploy checks).
+        if path.startswith("/api/health/"):
+            return self.get_response(request)
+        if path.startswith("/api/schema/"):
+            return self.get_response(request)
+
         if path.startswith("/api/csp-report/"):
             return self.get_response(request)
 
