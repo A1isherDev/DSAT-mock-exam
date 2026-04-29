@@ -41,7 +41,17 @@ export default function LoginPage() {
         setError('');
         try {
             await authApi.login(email, password, rememberMe);
-            router.push('/');
+            // Hardened boot flow: always confirm /users/me after login so we never "look logged out".
+            await usersApi.getMe().catch(() => null);
+            const host = (typeof window !== "undefined" ? window.location.hostname.toLowerCase() : "");
+            if (host.startsWith("admin.")) {
+                router.push("/admin");
+            } else if (host.startsWith("questions.")) {
+                router.push("/admin");
+            } else {
+                // main domain: student/teacher portal
+                router.push("/");
+            }
         } catch {
             setError('The email or password you entered is incorrect. Please try again.');
         } finally {

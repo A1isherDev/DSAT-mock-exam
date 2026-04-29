@@ -193,10 +193,42 @@ class CookieTokenObtainPairView(ThrottledTokenObtainPairView):
         try:
             serializer.is_valid(raise_exception=True)
         except Exception:
+            # Best-effort reason classification for staff consoles (admin/questions).
+            # Keep the external "detail" stable to avoid account enumeration on the main domain.
+            reason = "invalid_credentials"
+            console = str(getattr(request, "lms_console", "") or "").strip().lower()
+            ident = str(request.data.get("email") or request.data.get("username") or "").strip()
+            if console in ("admin", "questions") and ident:
+                try:
+                    from django.contrib.auth import get_user_model
+                    from django.db.models import Q
+
+                    U = get_user_model()
+                    u = U.objects.filter(Q(email__iexact=ident) | Q(username__iexact=ident)).first()
+                    if not u:
+                        reason = "user_not_found"
+                    elif not bool(getattr(u, "is_active", True)):
+                        reason = "inactive"
+                    elif not u.check_password(str(request.data.get("password") or "")):
+                        reason = "bad_password"
+                    else:
+                        reason = "auth_failed"
+                except Exception:
+                    reason = "auth_failed"
+
             security_metric_incr("failed_login", 1)
             metric_incr("slo_login_fail_total")
             metric_incr_role("slo_login_fail_total", actor=getattr(serializer, "user", None) or getattr(request, "user", None))
-            return Response({"detail": "Invalid credentials."}, status=status.HTTP_401_UNAUTHORIZED)
+            logger.info(
+                "login_failed reason=%s host=%s ident=%s",
+                reason,
+                str(request.get_host() or ""),
+                ident[:128],
+            )
+            body = {"detail": "Invalid credentials."}
+            if console in ("admin", "questions"):
+                body["code"] = reason
+            return Response(body, status=status.HTTP_401_UNAUTHORIZED)
 
         data = dict(serializer.validated_data)
         access = str(data.get("access") or "")

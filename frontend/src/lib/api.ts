@@ -46,7 +46,7 @@ async function persistMeCookie(rememberMe: boolean) {
         const me = await usersApi.getMe();
         const cookieOptions = {
             secure: IS_PROD,
-            sameSite: "strict" as const,
+            sameSite: "lax" as const,
             expires: rememberMe ? 7 : undefined,
             domain: IS_PROD ? cookieDomain() : undefined,
             path: "/",
@@ -162,7 +162,9 @@ api.interceptors.response.use(
                     // Refresh uses HttpOnly cookie `lms_refresh`; no JS-readable tokens.
                     if (!(globalThis as any).__mastersatRefreshPromise) {
                         (globalThis as any).__mastersatRefreshPromise = (async () => {
-                            await axios.post(`${API_URL}/auth/refresh/`, {}, { baseURL: "" });
+                            // Use the shared axios instance so CSRF headers apply.
+                            await authApi.csrf();
+                            await api.post("/auth/refresh/", {});
                             return true;
                         })().finally(() => {
                             (globalThis as any).__mastersatRefreshPromise = null;
@@ -239,6 +241,11 @@ export const usersApi = {
 };
 
 export const authApi = {
+    csrf: async () => {
+        // Must be called before login/refresh/logout on hardened CSRF flows.
+        const r = await api.get("/auth/csrf/");
+        return r.data as { csrfToken: string };
+    },
     register: async (firstName: string, lastName: string, username: string, email: string, password: string) => {
         const response = await api.post('/users/register/', { 
             first_name: firstName,
@@ -252,10 +259,11 @@ export const authApi = {
     login: async (email: string, password: string, rememberMe = true) => {
         // Avoid "sticky sessions" when old host-only + shared-domain cookies both exist.
         clearAuthCookiesEverywhere();
+        await authApi.csrf();
         const response = await api.post('/auth/login/', { email, password, remember_me: rememberMe ? 1 : 0 });
         const cookieOptions = {
             secure: IS_PROD,
-            sameSite: 'strict' as const,
+            sameSite: 'lax' as const,
             expires: rememberMe ? 7 : undefined,
             domain: IS_PROD ? cookieDomain() : undefined,
             path: "/",
@@ -272,10 +280,11 @@ export const authApi = {
     },
     googleAuth: async (credential: string, profile?: { first_name?: string; last_name?: string; username?: string }, rememberMe = true) => {
         clearAuthCookiesEverywhere();
+        await authApi.csrf();
         const response = await api.post('/users/google/', { credential, ...(profile || {}) });
         const cookieOptions = {
             secure: IS_PROD,
-            sameSite: 'strict' as const,
+            sameSite: 'lax' as const,
             expires: rememberMe ? 7 : undefined,
             domain: IS_PROD ? cookieDomain() : undefined,
             path: "/",
@@ -300,10 +309,11 @@ export const authApi = {
         rememberMe = true
     ) => {
         clearAuthCookiesEverywhere();
+        await authApi.csrf();
         const response = await api.post('/users/telegram/', payload);
         const cookieOptions = {
             secure: IS_PROD,
-            sameSite: 'strict' as const,
+            sameSite: 'lax' as const,
             expires: rememberMe ? 7 : undefined,
             domain: IS_PROD ? cookieDomain() : undefined,
             path: "/",
@@ -321,6 +331,7 @@ export const authApi = {
     },
     logout: async () => {
         try {
+            await authApi.csrf();
             await api.post("/auth/logout/", {});
         } catch {
             // Best-effort: still clear JS-readable cookies and redirect.
@@ -328,8 +339,9 @@ export const authApi = {
         clearAuthCookiesEverywhere();
         window.location.href = '/login';
     },
-    refresh: async (rememberMe = true) => {
-        const response = await axios.post(`${API_URL}/auth/refresh/`, {}, { baseURL: "" });
+    refresh: async (_rememberMe = true) => {
+        await authApi.csrf();
+        const response = await api.post("/auth/refresh/", {});
         return response.data;
     },
     getSessions: async () => {

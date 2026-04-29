@@ -426,7 +426,8 @@ CSRF_TRUSTED_ORIGINS = [
 ]
 
 # Cookie-based JWT auth still requires CSRF defenses for unsafe requests.
-CSRF_COOKIE_SAMESITE = "Strict"
+# Lax is more resilient across subdomain navigations while still preventing most CSRF vectors.
+CSRF_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_HTTPONLY = False
 
 

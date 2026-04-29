@@ -32,7 +32,8 @@ def _cookie_common(request):
         "httponly": True,
         # Strict blocks cross-site requests (CSRF) by not sending cookies.
         # Our consoles are on subdomains of the same site, so this remains compatible.
-        "samesite": "Strict",
+        # Lax is more resilient across redirects and subdomain navigations.
+        "samesite": "Lax",
         "domain": cookie_domain_for_request(request),
         "path": "/",
     }

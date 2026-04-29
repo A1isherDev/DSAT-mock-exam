@@ -48,8 +48,10 @@ class APICSRFEnforceMiddleware:
         unsafe = method not in ("GET", "HEAD", "OPTIONS", "TRACE")
 
         if path.startswith("/api/") and unsafe:
-            has_auth_cookie = bool(request.COOKIES.get("lms_access") or request.COOKIES.get("lms_refresh"))
-            if has_auth_cookie:
+            # Always require CSRF for auth endpoints, even before cookies exist.
+            # This prevents "login works sometimes" issues across subdomains/sessions.
+            enforce = path.startswith("/api/auth/") or bool(request.COOKIES.get("lms_access") or request.COOKIES.get("lms_refresh"))
+            if enforce:
                 if not _is_same_site_origin(request):
                     return JsonResponse({"detail": "Bad origin."}, status=403)
                 # Validate token pair header+cookie.
