@@ -1,4 +1,4 @@
-import api, { assessmentsApi } from "@/lib/api";
+import api, { assessmentsAdminApi } from "@/lib/api";
 
 import type {
   AssessmentSet,
@@ -14,11 +14,11 @@ import type {
 
 export const assessmentAuthoringApi = {
   listSets: async (params?: { subject?: Subject; category?: string }): Promise<AssessmentSet[]> => {
-    const data = await assessmentsApi.adminListSets(params);
+    const data = await assessmentsAdminApi.adminListSets(params);
     return Array.isArray(data) ? (data as AssessmentSet[]) : [];
   },
   getSet: async (id: number): Promise<AssessmentSet> => {
-    return (await assessmentsApi.adminGetSet(id)) as AssessmentSet;
+    return (await assessmentsAdminApi.adminGetSet(id)) as AssessmentSet;
   },
   createSet: async (payload: {
     subject: Subject;
@@ -27,19 +27,19 @@ export const assessmentAuthoringApi = {
     description?: string;
     is_active?: boolean;
   }): Promise<AssessmentSet> => {
-    return (await assessmentsApi.adminCreateSet(payload)) as AssessmentSet;
+    return (await assessmentsAdminApi.adminCreateSet(payload)) as AssessmentSet;
   },
   updateSet: async (id: number, payload: Partial<Omit<AssessmentSet, "id">>): Promise<AssessmentSet> => {
-    return (await assessmentsApi.adminUpdateSet(id, payload as any)) as AssessmentSet;
+    return (await assessmentsAdminApi.adminUpdateSet(id, payload as any)) as AssessmentSet;
   },
   createQuestion: async (setId: number, payload: Partial<AssessmentQuestion> & { prompt: string; question_type: string }) => {
-    return (await assessmentsApi.adminCreateQuestion(setId, payload as any)) as AssessmentQuestion;
+    return (await assessmentsAdminApi.adminCreateQuestion(setId, payload as any)) as AssessmentQuestion;
   },
   updateQuestion: async (id: number, payload: Partial<AssessmentQuestion>) => {
-    return (await assessmentsApi.adminUpdateQuestion(id, payload as any)) as AssessmentQuestion;
+    return (await assessmentsAdminApi.adminUpdateQuestion(id, payload as any)) as AssessmentQuestion;
   },
   deleteQuestion: async (id: number) => {
-    await assessmentsApi.adminDeleteQuestion(id);
+    await assessmentsAdminApi.adminDeleteQuestion(id);
   },
   telemetry: async (key: string) => {
     await api.post("/assessments/admin/builder/telemetry/", { key });

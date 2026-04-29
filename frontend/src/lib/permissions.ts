@@ -61,8 +61,7 @@ export function canManageQuestionsConsole(): boolean {
   return (
     r === "super_admin" ||
     r === "admin" ||
-    r === "test_admin" ||
-    r === "teacher"
+    r === "test_admin"
   );
 }
 

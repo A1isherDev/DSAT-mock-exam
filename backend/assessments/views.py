@@ -95,6 +95,13 @@ class AdminAssessmentSetListCreateView(APIView):
         qs = qs.order_by("-created_at", "-id")[:500]
         return Response(AssessmentSetSerializer(qs, many=True).data)
 
+    def post(self, request):
+        s = AssessmentSetAdminWriteSerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+        inst = s.save(created_by=request.user)
+        inst = AssessmentSet.objects.filter(pk=inst.pk).prefetch_related("questions").first()
+        return Response(AssessmentSetSerializer(inst).data, status=status.HTTP_201_CREATED)
+
 
 class AdminGradingMetricsView(APIView):
     """
@@ -238,13 +245,6 @@ class AdminGradingMetricsView(APIView):
                 "server_time": now.isoformat(),
             }
         )
-
-    def post(self, request):
-        s = AssessmentSetAdminWriteSerializer(data=request.data)
-        s.is_valid(raise_exception=True)
-        inst = s.save(created_by=request.user)
-        inst = AssessmentSet.objects.filter(pk=inst.pk).prefetch_related("questions").first()
-        return Response(AssessmentSetSerializer(inst).data, status=status.HTTP_201_CREATED)
 
 
 class AdminAssessmentSetDetailView(APIView):

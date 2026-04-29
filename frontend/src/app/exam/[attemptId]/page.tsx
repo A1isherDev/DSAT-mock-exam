@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect, useRef, memo, useCallback, Suspense } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
-import { examsApi } from '@/lib/api';
+import { examsPublicApi } from '@/lib/api';
 import AuthGuard from '@/components/AuthGuard';
 import { platformSubjectIsMath, platformSubjectIsReadingWriting } from '@/lib/permissions';
 import { renderMath } from '@/lib/mathRender';
@@ -448,7 +448,7 @@ function ExamPlayerInner() {
             try {
                 setLoadError(null);
                 const attemptIdNum = Number(attemptId);
-                const data = await examsApi.getAttemptStatus(attemptIdNum);
+                const data = await examsPublicApi.getAttemptStatus(attemptIdNum);
                 try {
                     const sn = data?.server_now ? new Date(data.server_now).getTime() : NaN;
                     if (Number.isFinite(sn)) serverOffsetMsRef.current = sn - Date.now();
@@ -468,7 +468,7 @@ function ExamPlayerInner() {
                     } catch {
                         /* ignore */
                     }
-                    const started = await examsApi.startAttemptEngine(attemptIdNum, idem);
+                    const started = await examsPublicApi.startAttemptEngine(attemptIdNum, idem);
                     safeSetAttempt(started);
                 } else {
                     safeSetAttempt(data);
@@ -476,7 +476,7 @@ function ExamPlayerInner() {
                 // Set uniform zoom level to 100% (1.0) for both Math and English
                 setZoomLevel(1.0);
                 
-                const rendered = (data?.current_state === "NOT_STARTED") ? await examsApi.getAttemptStatus(attemptIdNum) : data;
+                const rendered = (data?.current_state === "NOT_STARTED") ? await examsPublicApi.getAttemptStatus(attemptIdNum) : data;
 
                 // Route to review only when backend explicitly says COMPLETED.
                 if (rendered.is_completed && rendered?.current_state === "COMPLETED") {
@@ -485,7 +485,7 @@ function ExamPlayerInner() {
                     return;
                 }
                 if (rendered.is_expired) {
-                    router.push('/');
+                    setLoadError("This module has expired. Please click Retry to sync.");
                     return;
                 }
 
@@ -497,7 +497,7 @@ function ExamPlayerInner() {
                 ) {
                     try {
                         await new Promise((r) => setTimeout(r, 450));
-                        const st = await examsApi.getAttemptStatus(attemptIdNum);
+                        const st = await examsPublicApi.getAttemptStatus(attemptIdNum);
                         safeSetAttempt(st);
                         if (!st?.current_module_details) {
                             setLoadError("The attempt state loaded, but the module payload is missing. Please click Retry.");
@@ -513,6 +513,10 @@ function ExamPlayerInner() {
             } catch (err) {
                 setLoading(false);
                 const status = (err as any)?.response?.status;
+                if ((err as any)?.__mastersatAuthRequired || status === 401) {
+                    setLoadError("Your session needs re-authentication. Please click Retry to reconnect.");
+                    return;
+                }
                 const data = (err as any)?.response?.data;
                 const detail =
                     (typeof data === "string" && data) ||
@@ -661,7 +665,7 @@ function ExamPlayerInner() {
         const tick = async () => {
             if (cancelled) return;
             try {
-                const st = await examsApi.getAttemptStatus(Number(attemptId));
+                    const st = await examsPublicApi.getAttemptStatus(Number(attemptId));
                 if (cancelled) return; // guard against stale response after cleanup
                 try {
                     const sn = st?.server_now ? new Date(st.server_now).getTime() : NaN;
@@ -718,7 +722,7 @@ function ExamPlayerInner() {
         const tick = async () => {
             if (cancelled) return;
             try {
-                const st = await examsApi.getAttemptStatus(Number(attemptId));
+                const st = await examsPublicApi.getAttemptStatus(Number(attemptId));
 
                 // Re-check after await: the submit handler may have already advanced the
                 // attempt to Module 2 while this request was in-flight.  Without this guard
@@ -737,7 +741,7 @@ function ExamPlayerInner() {
                     return;
                 }
                 if (st?.is_expired) {
-                    router.push('/');
+                    setLoadError("This module has expired. Please click Retry to sync.");
                     return;
                 }
                 delayMs = 10_000;
@@ -1072,7 +1076,7 @@ function ExamPlayerInner() {
                 setLoading(true);
                 setTimeout(async () => {
                     try {
-                        const st = await examsApi.getAttemptStatus(aid);
+                        const st = await examsPublicApi.getAttemptStatus(aid);
                         applyAttemptUpdate(st);
                     } catch {
                         setLoading(false);
@@ -1126,7 +1130,7 @@ function ExamPlayerInner() {
         const watchdogTimer = setTimeout(async () => {
             if (!watchdogActive) return;
             try {
-                const recoveryData = await examsApi.getAttemptStatus(attemptIdNum);
+                const recoveryData = await examsPublicApi.getAttemptStatus(attemptIdNum);
                 const recoveryOrder = Number(recoveryData?.current_module_details?.module_order || 0);
                 if (recoveryOrder > prevOrder || recoveryData.is_completed || recoveryData.current_state === 'SCORING') {
                     watchdogActive = false;
@@ -1139,7 +1143,7 @@ function ExamPlayerInner() {
         const performSubmit = async (attemptCount = 0) => {
             try {
                 const expected = attempt?.version_number;
-                const resp = await examsApi.submitModule(
+                const resp = await examsPublicApi.submitModule(
                     attemptIdNum,
                     answers,
                     flagged,
@@ -1169,7 +1173,7 @@ function ExamPlayerInner() {
                             const newV = serverAttempt?.version_number;
                             const newModId = serverAttempt?.current_module_details?.id ?? currentModId;
                             const retryIdem = `submit.${attemptIdNum}.${newModId}.v${newV}.retry`;
-                            const resp2 = await examsApi.submitModule(
+                            const resp2 = await examsPublicApi.submitModule(
                                 attemptIdNum,
                                 answers,
                                 flagged,
@@ -1192,7 +1196,7 @@ function ExamPlayerInner() {
                 } else {
                     // Final fallback: try one last status check before giving up
                     try {
-                        const finalData = await examsApi.getAttemptStatus(attemptIdNum);
+                        const finalData = await examsPublicApi.getAttemptStatus(attemptIdNum);
                         applyAttemptUpdate(finalData);
                     } catch {
                         setLoading(false);
@@ -1217,12 +1221,28 @@ function ExamPlayerInner() {
         if (!attempt?.current_module_details || !attempt?.current_module_start_time) {
             return;
         }
-        const limitSec = attempt.current_module_details.time_limit_minutes * 60;
+        const limitSecRaw =
+            (typeof (attempt as any)?.module_duration_seconds === "number" && Number.isFinite((attempt as any).module_duration_seconds))
+                ? (attempt as any).module_duration_seconds
+                : attempt.current_module_details.time_limit_minutes * 60;
+        const limitSec = Math.max(0, Math.floor(limitSecRaw));
+
+        const remainingFromServer =
+            (typeof (attempt as any)?.remaining_seconds === "number" && Number.isFinite((attempt as any).remaining_seconds))
+                ? Math.max(0, Math.floor((attempt as any).remaining_seconds))
+                : null;
+
         const startMs = new Date(attempt.current_module_start_time).getTime();
-        virtualModuleStartMsRef.current = startMs;
         const nowMs = Date.now() + serverOffsetMsRef.current;
-        const elapsedSec = Math.floor((nowMs - startMs) / 1000);
-        const remaining = Math.max(0, limitSec - elapsedSec);
+        const computedRemaining = (() => {
+            if (!Number.isFinite(startMs)) return null;
+            const elapsedSec = Math.floor((nowMs - startMs) / 1000);
+            return Math.max(0, limitSec - elapsedSec);
+        })();
+
+        const remaining = remainingFromServer ?? computedRemaining ?? limitSec;
+        // Align virtual start to the displayed remaining time so rAF timer is stable.
+        virtualModuleStartMsRef.current = nowMs - (limitSec - remaining) * 1000;
 
         lastRenderedSecRef.current = remaining;
         moduleTimerSubmitDoneRef.current = false;
@@ -1235,7 +1255,11 @@ function ExamPlayerInner() {
     useEffect(() => {
         const paused = isPaused && !mockFlow;
         if (!attempt?.current_module_details || !attempt?.current_module_start_time) return;
-        const limitSec = attempt.current_module_details.time_limit_minutes * 60;
+        const limitSecRaw =
+            (typeof (attempt as any)?.module_duration_seconds === "number" && Number.isFinite((attempt as any).module_duration_seconds))
+                ? (attempt as any).module_duration_seconds
+                : attempt.current_module_details.time_limit_minutes * 60;
+        const limitSec = Math.max(0, Math.floor(limitSecRaw));
         if (wasTimerPausedRef.current && !paused) {
             const rem = timeLeftRef.current;
             const nowMs = Date.now() + serverOffsetMsRef.current;
@@ -1250,7 +1274,11 @@ function ExamPlayerInner() {
         if (!attempt?.current_module_details || !attempt?.current_module_start_time) return;
         if (isPaused && !mockFlow) return;
 
-        const limitSec = attempt.current_module_details.time_limit_minutes * 60;
+        const limitSecRaw =
+            (typeof (attempt as any)?.module_duration_seconds === "number" && Number.isFinite((attempt as any).module_duration_seconds))
+                ? (attempt as any).module_duration_seconds
+                : attempt.current_module_details.time_limit_minutes * 60;
+        const limitSec = Math.max(0, Math.floor(limitSecRaw));
         let rafId = 0;
 
         const loop = () => {
@@ -1483,7 +1511,7 @@ function ExamPlayerInner() {
             } catch {
                 /* ignore */
             }
-            await examsApi.saveAttempt(Number(attemptId), answers, flagged, {
+            await examsPublicApi.saveAttempt(Number(attemptId), answers, flagged, {
                 idempotencyKey: idem,
                 expectedVersionNumber: attempt?.version_number,
             });

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { classesApi, examsApi } from "@/lib/api";
+import { classesApi, examsPublicApi } from "@/lib/api";
 import { subjectLabel } from "@/lib/practiceTestCards";
 import { platformSubjectIsMath } from "@/lib/permissions";
 import {
@@ -138,7 +138,7 @@ export default function AssignmentDetailPage() {
         setSubmissions([]);
         setAttemptsLoading(true);
         try {
-          const att = await examsApi.getAttempts();
+          const att = await examsPublicApi.getAttempts();
           setMyAttempts(Array.isArray(att) ? att : []);
         } catch {
           setMyAttempts([]);
@@ -302,7 +302,7 @@ export default function AssignmentDetailPage() {
     if (isClassAdmin) return;
     setAttemptsLoading(true);
     try {
-      const att = await examsApi.getAttempts();
+      const att = await examsPublicApi.getAttempts();
       setMyAttempts(Array.isArray(att) ? att : []);
     } catch {
       setMyAttempts([]);

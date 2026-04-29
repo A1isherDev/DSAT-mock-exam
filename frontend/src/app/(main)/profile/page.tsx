@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { authApi, classesApi, examsApi, usersApi } from "@/lib/api";
+import { authApi, classesApi, examsPublicApi, usersApi } from "@/lib/api";
 import { formatLessonDaysMeta } from "@/lib/classroomSchedule";
 import TelegramLoginButton, { type TelegramAuthUser } from "@/components/TelegramLoginButton";
 import {
@@ -213,7 +213,7 @@ export default function ProfilePage() {
     (async () => {
       setAnalyticsLoading(true);
       try {
-        const attemptsRaw = await examsApi.getAttempts();
+        const attemptsRaw = await examsPublicApi.getAttempts();
         const attempts = (Array.isArray(attemptsRaw) ? attemptsRaw : []) as Attempt[];
         const completed = attempts
           .filter((a) => a.is_completed)

@@ -347,11 +347,15 @@ def ensure_full_mock_practice_test_modules(practice_test: PracticeTest) -> None:
         else:
             mins = _default_minutes()
 
-        Module.objects.create(
-            practice_test=practice_test,
-            module_order=order,
-            time_limit_minutes=max(1, mins),
-        )
+        try:
+            Module.objects.get_or_create(
+                practice_test=practice_test,
+                module_order=order,
+                defaults={"time_limit_minutes": max(1, mins)},
+            )
+        except IntegrityError:
+            # Concurrent provisioning race: another request created the row.
+            pass
 
 
 class TestAttempt(TimestampedModel):
@@ -463,8 +467,32 @@ class TestAttempt(TimestampedModel):
         """
         if self.is_completed or self.current_state == self.STATE_COMPLETED:
             return
+        # ABANDONED is recoverable; treat as resumable (business rule).
         if self.current_state == self.STATE_ABANDONED:
-            raise ValidationError("Attempt is abandoned.")
+            # Decide which module to resume based on persisted submission markers.
+            # If module 1 was submitted we must resume module 2; otherwise module 1.
+            resume_order = 2 if (self.module_1_submitted_at is not None) else 1
+            ensure_full_mock_practice_test_modules(self.practice_test)
+            m = self._module_by_order(resume_order)
+            if not m:
+                raise ValidationError(f"Module {resume_order} is missing.")
+            self.current_state = self.STATE_MODULE_2_ACTIVE if resume_order == 2 else self.STATE_MODULE_1_ACTIVE
+            self._set_active_module(m)
+            self.version_number = int(self.version_number or 0) + 1
+            self.save(
+                update_fields=[
+                    "started_at",
+                    "current_state",
+                    "current_module",
+                    "current_module_start_time",
+                    "module_1_started_at",
+                    "module_2_started_at",
+                    "version_number",
+                    "updated_at",
+                ]
+            )
+            self._assert_invariants()
+            return
 
         ensure_full_mock_practice_test_modules(self.practice_test)
         if not self.started_at:

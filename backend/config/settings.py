@@ -458,6 +458,12 @@ CLASSROOM_OPS_WEBHOOK_URL = os.getenv("CLASSROOM_OPS_WEBHOOK_URL", "").strip()
 CLASSROOM_OPS_EMAIL_RECIPIENTS = os.getenv("CLASSROOM_OPS_EMAIL_RECIPIENTS", "").strip()
 
 
+# JWT: optionally hard-reject authenticated API tokens when ``security_step_up_required_until``
+# is active. Default False: rely on refresh/login/session flows instead of denying every JWT.
+SECURITY_STEP_UP_ENFORCE_ON_JWT = _env_bool(
+    "SECURITY_STEP_UP_ENFORCE_ON_JWT", default_when_unset=False
+)
+
 # ─── Django REST Framework ────────────────────────────────────────────────────
 
 REST_FRAMEWORK = {
@@ -494,6 +500,9 @@ REST_FRAMEWORK = {
             '40/hour',
         ),
     }
+    ,
+    # Standardize core AppError responses.
+    "EXCEPTION_HANDLER": "core.errors.drf.core_exception_handler",
 }
 
 

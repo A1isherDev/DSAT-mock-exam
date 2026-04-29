@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { classesApi, adminApi } from "@/lib/api";
+import { classesApi, examsAdminApi } from "@/lib/api";
 import { lessonDaysMetaSuffix } from "@/lib/classroomSchedule";
 import { can } from "@/lib/permissions";
 import {
@@ -130,7 +130,7 @@ export default function ClassesPage() {
   useEffect(() => {
     fetchClasses();
     if (canCreateClassroom) {
-      adminApi
+      examsAdminApi
         .getUsers()
         .then((u) => {
           const list = (Array.isArray(u) ? u : []).filter((x: any) => x.class_teacher_eligible);

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { adminApi, classesApi, examsApi } from "@/lib/api";
+import { examsAdminApi, classesApi, examsPublicApi } from "@/lib/api";
 import { ClassroomButton } from "@/components/classroom/Button";
 import { ClassroomModal } from "@/components/classroom/Modal";
 import { canAbacTestSubject } from "@/lib/permissions";
@@ -71,7 +71,7 @@ export default function TeacherStudentsPage() {
       setTestsLoading(true);
       setGrantMsg(null);
       try {
-        const list = await examsApi.getPracticeTests();
+        const list = await examsPublicApi.getPracticeTests();
         const raw = Array.isArray(list) ? list : [];
         // Teacher access UI: standalone practice library only (exclude timed mock section rows).
         const standalone = raw.filter(
@@ -121,7 +121,7 @@ export default function TeacherStudentsPage() {
     }
     setGrantLoading(true);
     try {
-      await adminApi.bulkAssignStudents([], selectedStudentIds, "FULL", undefined, selectedTestIds);
+      await examsAdminApi.bulkAssignStudents([], selectedStudentIds, "FULL", undefined, selectedTestIds);
       setGrantMsg("Access granted.");
       setSelectedTestIds([]);
       setGrantOpen(false);

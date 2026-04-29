@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import AuthGuard from "@/components/AuthGuard";
-import { examsApi } from "@/lib/api";
+import { examsPublicApi } from "@/lib/api";
 import { platformSubjectIsReadingWriting } from "@/lib/permissions";
 import { BookOpen, Calculator, CheckCircle2, ArrowLeft, Play, Eye } from "lucide-react";
 import Cookies from "js-cookie";
@@ -21,10 +21,10 @@ function PracticeTestDetailInner() {
     const run = async () => {
       try {
         const isLoggedIn = !!Cookies.get("lms_user") || !!Cookies.get("role") || !!Cookies.get("is_admin");
-        const data = await examsApi.getPracticeTest(testId);
+        const data = await examsPublicApi.getPracticeTest(testId);
         setTest(data);
         if (isLoggedIn) {
-          const attemptsData = await examsApi.getAttempts();
+          const attemptsData = await examsPublicApi.getAttempts();
           setAttempts(attemptsData);
         }
       } catch (e) {
@@ -40,7 +40,7 @@ function PracticeTestDetailInner() {
   const getOrCreateAttempt = async () => {
     let attempt = attempts.find((a) => a.practice_test === testId && !a.is_expired && !a.is_completed);
     if (!attempt) {
-      attempt = await examsApi.startTest(testId);
+      attempt = await examsPublicApi.startTest(testId);
       setAttempts([...attempts, attempt]);
     }
     return attempt;

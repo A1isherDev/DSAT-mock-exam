@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { assessmentsApi, classesApi } from "@/lib/api";
+import { assessmentsAdminApi, classesApi } from "@/lib/api";
 import { getSubject } from "@/lib/permissions";
 
 const INPUT = "input-modern";
@@ -56,7 +56,7 @@ export function AssessmentClassroomAssignPanel({ canAssign, showToast }: Assessm
     setSetsLoading(true);
     try {
       const dom = getSubject();
-      const data = await assessmentsApi.adminListSets(dom ? { subject: dom } : undefined);
+      const data = await assessmentsAdminApi.adminListSets(dom ? { subject: dom } : undefined);
       setSets(Array.isArray(data) ? data : []);
     } catch {
       setSets([]);
@@ -147,7 +147,7 @@ export function AssessmentClassroomAssignPanel({ canAssign, showToast }: Assessm
         : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
     idempotencyRef.current = idempotencyKey;
     try {
-      await assessmentsApi.assignHomework(
+      await assessmentsAdminApi.assignHomework(
         {
           classroom_id: classroomId!,
           set_id: setId!,

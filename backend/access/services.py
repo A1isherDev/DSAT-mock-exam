@@ -561,16 +561,20 @@ def visible_practice_test_platform_subjects_for_query(user) -> Optional[frozense
 
     **Single source of truth** with :func:`can_view_tests` (global staff: unfiltered querysets when
     they have effective permissions).
+
+    **Anonymous / unauthenticated** callers (public ``GET /api/exams/``): ``None`` — no subject
+    filter on standalone practice rows.
     """
     if not user or not getattr(user, "is_authenticated", False):
-        return frozenset()
+        return None
+    # Students: full published pastpaper bank (Math + R&W). Before ``perms`` empty-check so a
+    # misconfigured permission row cannot hide the entire library.
+    if normalized_role(user) == constants.ROLE_STUDENT:
+        return None
     perms = get_effective_permission_codenames(user)
     if not perms:
         return frozenset()
     if constants.WILDCARD in perms:
-        return None
-    # Students: full published pastpaper bank (Math + R&W). Not gated on user.subject or M2M.
-    if normalized_role(user) == constants.ROLE_STUDENT:
         return None
     # Global roles never carry user.subject; SQL must not filter the library by subject.
     if is_global_scope_staff(user):

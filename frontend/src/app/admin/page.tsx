@@ -1,7 +1,9 @@
 "use client";
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import AuthGuard from '@/components/AuthGuard';
-import { adminApi, assessmentsApi, authApi, usersApi } from '@/lib/api';
+import { authApi, usersApi } from '@/lib/api';
+import { adminExamsFeatureApi } from "@/features/adminExams/api";
+import { adminAssessmentsFeatureApi } from "@/features/adminAssessments/api";
 import {
     can,
     canAuthorTestsUi,
@@ -474,11 +476,11 @@ export default function AdminPage() {
     const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
     // Fetch
-    const fetchUsers = useCallback(async () => { try { setUsers(await adminApi.getUsers()); } catch(e){} }, []);
+    const fetchUsers = useCallback(async () => { try { setUsers(await adminExamsFeatureApi.getUsers()); } catch(e){} }, []);
 
     const fetchExamDatesAdmin = useCallback(async () => {
         try {
-            const data = await adminApi.listExamDatesAdmin();
+            const data = await adminExamsFeatureApi.listExamDatesAdmin();
             setExamDatesAdmin(Array.isArray(data) ? data : []);
         } catch {
             setExamDatesAdmin([]);
@@ -487,7 +489,7 @@ export default function AdminPage() {
     
     const fetchMockExams = useCallback(async () => {
         try {
-            const data = await adminApi.getMockExams();
+            const data = await adminExamsFeatureApi.getMockExams();
             setMockExams(data);
             if (data.length > 0 && !didInitMockSelection.current) {
                 didInitMockSelection.current = true;
@@ -503,7 +505,7 @@ export default function AdminPage() {
 
     const fetchStandaloneTests = useCallback(async () => {
         try {
-            const data = await adminApi.getPracticeTestsAdmin(true);
+            const data = await adminExamsFeatureApi.getPracticeTestsAdmin(true);
             setStandaloneTests(data);
         } catch (e: any) {
             const d = e?.response?.data;
@@ -515,7 +517,7 @@ export default function AdminPage() {
 
     const fetchPastpaperPacks = useCallback(async () => {
         try {
-            const data = await adminApi.getPastpaperPacks();
+            const data = await adminExamsFeatureApi.getPastpaperPacks();
             setPastpaperPacks(Array.isArray(data) ? data : []);
         } catch (e: any) {
             const d = e?.response?.data;
@@ -529,7 +531,7 @@ export default function AdminPage() {
         setAssessmentSetsLoading(true);
         try {
             const dom = getSubject();
-            const data = await assessmentsApi.adminListSets(dom ? { subject: dom } : undefined);
+            const data = await adminAssessmentsFeatureApi.adminListSets(dom ? { subject: dom } : undefined);
             setAssessmentSets(Array.isArray(data) ? data : []);
         } catch (e: any) {
             const d = e?.response?.data;
@@ -544,7 +546,7 @@ export default function AdminPage() {
     const fetchModules = useCallback(async () => {
         if (!selectedPracticeTestId) return [];
         try {
-            const data = await adminApi.getModules(selectedPracticeTestId);
+            const data = await adminExamsFeatureApi.getModules(selectedPracticeTestId);
             setModules(data);
             return data;
         } catch (e) {
@@ -555,7 +557,7 @@ export default function AdminPage() {
 
     const fetchQuestions = useCallback(async () => {
         if (!selectedPracticeTestId || !selectedModuleId) return;
-        try { setQuestions(await adminApi.getQuestions(selectedPracticeTestId, selectedModuleId)); } catch(e) {}
+        try { setQuestions(await adminExamsFeatureApi.getQuestions(selectedPracticeTestId, selectedModuleId)); } catch(e) {}
     }, [selectedPracticeTestId, selectedModuleId]);
 
     useEffect(() => {
@@ -1046,11 +1048,11 @@ export default function AdminPage() {
             return;
         }
         try {
-            const mods = await adminApi.getModules(selectedPracticeTestId);
+            const mods = await adminExamsFeatureApi.getModules(selectedPracticeTestId);
             let points = 0;
             let count = 0;
             for (const mod of mods) {
-                const qs = await adminApi.getQuestions(selectedPracticeTestId, mod.id);
+                const qs = await adminExamsFeatureApi.getQuestions(selectedPracticeTestId, mod.id);
                 const arr = Array.isArray(qs) ? qs : [];
                 points += arr.reduce((s: number, q: any) => s + (q.score || 0), 0);
                 count += arr.length;
@@ -1128,9 +1130,9 @@ export default function AdminPage() {
                 payload.password = userForm.password;
             }
             if (editingUser?.id) {
-                await adminApi.updateUser(editingUser.id, payload);
+                await adminExamsFeatureApi.updateUser(editingUser.id, payload);
             } else {
-                await adminApi.createUser({ ...payload, password: userForm.password || '' });
+                await adminExamsFeatureApi.createUser({ ...payload, password: userForm.password || '' });
             }
             await fetchUsers();
             setEditingUser(null);
@@ -1151,14 +1153,14 @@ export default function AdminPage() {
     };
     const handleDeleteUser = async (id: number) => {
         if (!confirm('Delete this user?')) return;
-        await adminApi.deleteUser(id); await fetchUsers(); showToast('User deleted');
+        await adminExamsFeatureApi.deleteUser(id); await fetchUsers(); showToast('User deleted');
     };
 
     const handleToggleUserFrozen = async (user: { id: number; is_frozen?: boolean }) => {
         const nextFrozen = !user.is_frozen;
         setSaving(true);
         try {
-            await adminApi.updateUser(user.id, { is_frozen: nextFrozen });
+            await adminExamsFeatureApi.updateUser(user.id, { is_frozen: nextFrozen });
             await fetchUsers();
             showToast(nextFrozen ? 'User frozen' : 'User unfrozen');
         } catch {
@@ -1206,11 +1208,11 @@ export default function AdminPage() {
             for (const id of selectedUserIds) {
                 try {
                     if (action === "delete") {
-                        await adminApi.deleteUser(id);
+                        await adminExamsFeatureApi.deleteUser(id);
                     } else if (action === "freeze") {
-                        await adminApi.updateUser(id, { is_frozen: true });
+                        await adminExamsFeatureApi.updateUser(id, { is_frozen: true });
                     } else {
-                        await adminApi.updateUser(id, { is_frozen: false });
+                        await adminExamsFeatureApi.updateUser(id, { is_frozen: false });
                     }
                     ok++;
                 } catch {
@@ -1243,9 +1245,9 @@ export default function AdminPage() {
                 sort_order: Number(examDateForm.sort_order) || 0,
             };
             if (editingExamDate?.id) {
-                await adminApi.updateExamDate(editingExamDate.id, payload);
+                await adminExamsFeatureApi.updateExamDate(editingExamDate.id, payload);
             } else {
-                await adminApi.createExamDate(payload);
+                await adminExamsFeatureApi.createExamDate(payload);
             }
             await fetchExamDatesAdmin();
             setEditingExamDate(null);
@@ -1261,7 +1263,7 @@ export default function AdminPage() {
     const handleDeleteExamDateOption = async (id: number) => {
         if (!confirm('Delete this exam date option? Students will no longer be able to select it.')) return;
         try {
-            await adminApi.deleteExamDate(id);
+            await adminExamsFeatureApi.deleteExamDate(id);
             await fetchExamDatesAdmin();
             showToast('Exam date removed');
         } catch {
@@ -1294,9 +1296,9 @@ export default function AdminPage() {
             const formPayload =
                 activeTab === "midterms" ? { ...mockForm, kind: "MIDTERM" as const } : mockForm;
             if (editingMock?.id) {
-                await adminApi.updateMockExam(editingMock.id, formPayload);
+                await adminExamsFeatureApi.updateMockExam(editingMock.id, formPayload);
             } else {
-                await adminApi.createMockExam(formPayload);
+                await adminExamsFeatureApi.createMockExam(formPayload);
             }
             await fetchMockExams();
             setEditingMock(null);
@@ -1316,7 +1318,7 @@ export default function AdminPage() {
     };
     const handleDeleteMock = async (id: number) => {
         if (!confirm('Delete this mock exam and all its tests?')) return;
-        await adminApi.deleteMockExam(id); await fetchMockExams(); showToast('Mock Exam deleted');
+        await adminExamsFeatureApi.deleteMockExam(id); await fetchMockExams(); showToast('Mock Exam deleted');
     };
 
     const handleAddTest = async (subject: 'READING_WRITING' | 'MATH', mockId?: number) => {
@@ -1328,7 +1330,7 @@ export default function AdminPage() {
 
         setSaving(true);
         try {
-            await adminApi.addTestToExam(targetMockId, subject, label, formType);
+            await adminExamsFeatureApi.addTestToExam(targetMockId, subject, label, formType);
             await fetchMockExams();
             showToast(`${subject === 'READING_WRITING' ? 'English' : 'Math'} test added ✓`);
             
@@ -1342,7 +1344,7 @@ export default function AdminPage() {
         if (!targetMockId || !confirm('Remove this test?')) return;
         setSaving(true);
         try {
-            await adminApi.removeTestFromExam(targetMockId, testId);
+            await adminExamsFeatureApi.removeTestFromExam(targetMockId, testId);
             await fetchMockExams();
             showToast('Test removed');
         } finally { setSaving(false); }
@@ -1377,9 +1379,9 @@ export default function AdminPage() {
                 form_type: packForm.form_type,
             };
             if (editingPack?.id) {
-                await adminApi.updatePastpaperPack(editingPack.id, payload);
+                await adminExamsFeatureApi.updatePastpaperPack(editingPack.id, payload);
             } else {
-                await adminApi.createPastpaperPack(payload);
+                await adminExamsFeatureApi.createPastpaperPack(payload);
             }
             await fetchPastpaperPacks();
             await fetchStandaloneTests();
@@ -1395,7 +1397,7 @@ export default function AdminPage() {
         if (!confirm('Delete this pastpaper card and ALL English/Math sections inside it (questions included)?')) return;
         setSaving(true);
         try {
-            await adminApi.deletePastpaperPack(id);
+            await adminExamsFeatureApi.deletePastpaperPack(id);
             await fetchPastpaperPacks();
             await fetchStandaloneTests();
             showToast('Pack deleted');
@@ -1408,7 +1410,7 @@ export default function AdminPage() {
         if (!canCreateTestForSubject(subject)) return;
         setSaving(true);
         try {
-            await adminApi.addPastpaperPackSection(packId, subject);
+            await adminExamsFeatureApi.addPastpaperPackSection(packId, subject);
             await fetchPastpaperPacks();
             await fetchStandaloneTests();
             showToast(subject === 'READING_WRITING' ? 'English section added' : 'Math section added');
@@ -1421,7 +1423,7 @@ export default function AdminPage() {
         if (!can("manage_tests")) return;
         setSaving(true);
         try {
-            await adminApi.updatePracticeTest(testId, { pastpaper_pack: packId });
+            await adminExamsFeatureApi.updatePracticeTest(testId, { pastpaper_pack: packId });
             await fetchPastpaperPacks();
             await fetchStandaloneTests();
             showToast(packId == null ? 'Section is now unassigned' : 'Section moved');
@@ -1449,7 +1451,7 @@ export default function AdminPage() {
                 label: pastpaperForm.label.trim(),
                 form_type: pastpaperForm.form_type,
             };
-            await adminApi.updatePracticeTest(editingPastpaper.id, payload);
+            await adminExamsFeatureApi.updatePracticeTest(editingPastpaper.id, payload);
             await fetchStandaloneTests();
             await fetchPastpaperPacks();
             setEditingPastpaper(null);
@@ -1466,7 +1468,7 @@ export default function AdminPage() {
         if (!confirm('Delete this pastpaper practice test and all modules/questions?')) return;
         setSaving(true);
         try {
-            await adminApi.deletePracticeTest(id);
+            await adminExamsFeatureApi.deletePracticeTest(id);
             if (selectedPracticeTestId === id) {
                 setSelectedPracticeTestId(null);
                 setSelectedModuleId(null);
@@ -1484,7 +1486,7 @@ export default function AdminPage() {
         if (!selectedPracticeTestId) return;
         setSaving(true);
         try {
-            await adminApi.updateModule(selectedPracticeTestId, moduleId!, data);
+            await adminExamsFeatureApi.updateModule(selectedPracticeTestId, moduleId!, data);
             await fetchModules();
             showToast('Module updated ✓');
         } finally { setSaving(false); }
@@ -1536,14 +1538,14 @@ export default function AdminPage() {
                     : selectedModuleId;
 
             if (isEdit) {
-                await adminApi.updateQuestion(testIdForApi, moduleIdForApi, Number(qid), formData, true);
+                await adminExamsFeatureApi.updateQuestion(testIdForApi, moduleIdForApi, Number(qid), formData, true);
             } else {
-                await adminApi.createQuestion(selectedPracticeTestId, selectedModuleId, formData, true);
+                await adminExamsFeatureApi.createQuestion(selectedPracticeTestId, selectedModuleId, formData, true);
             }
 
             if (testIdForApi !== selectedPracticeTestId) setSelectedPracticeTestId(testIdForApi);
             if (moduleIdForApi !== selectedModuleId) setSelectedModuleId(moduleIdForApi);
-            const list = await adminApi.getQuestions(testIdForApi, moduleIdForApi);
+            const list = await adminExamsFeatureApi.getQuestions(testIdForApi, moduleIdForApi);
             setQuestions(Array.isArray(list) ? list : []);
             setEditingQuestion(null);
             const mockForTest = mockExams.find((m) =>
@@ -1583,14 +1585,14 @@ export default function AdminPage() {
     const handleReorderQuestion = async (id: number, action: 'up' | 'down') => {
         if (!selectedPracticeTestId || !selectedModuleId) return;
         try {
-            await adminApi.reorderQuestion(selectedPracticeTestId, selectedModuleId, id, action);
+            await adminExamsFeatureApi.reorderQuestion(selectedPracticeTestId, selectedModuleId, id, action);
             fetchQuestions();
         } catch (e: any) { showToast('Cannot move further'); }
     };
     const handleDeleteQuestion = async (qId: number) => {
         if (!selectedPracticeTestId || !selectedModuleId) return;
         if (!confirm('Delete this question?')) return;
-        await adminApi.deleteQuestion(selectedPracticeTestId, selectedModuleId, qId);
+        await adminExamsFeatureApi.deleteQuestion(selectedPracticeTestId, selectedModuleId, qId);
         await fetchQuestions();
         await refreshMidtermTotals();
         showToast('Question deleted');
@@ -1666,7 +1668,7 @@ export default function AdminPage() {
         if (!selectedAssessmentSetId || !canAuthorTestsUi()) return;
         setSaving(true);
         try {
-            await assessmentsApi.adminUpdateSet(selectedAssessmentSetId, {
+            await adminAssessmentsFeatureApi.adminUpdateSet(selectedAssessmentSetId, {
                 title: assessmentSetEdit.title.trim(),
                 category: assessmentSetEdit.category.trim(),
                 description: assessmentSetEdit.description.trim(),
@@ -1691,7 +1693,7 @@ export default function AdminPage() {
         }
         setSaving(true);
         try {
-            const created = await assessmentsApi.adminCreateSet({
+            const created = await adminAssessmentsFeatureApi.adminCreateSet({
                 subject: assessmentNewForm.subject,
                 title: t,
                 category: assessmentNewForm.category.trim() || undefined,
@@ -1740,9 +1742,9 @@ export default function AdminPage() {
                 }
             }
             if (aqDraft.id) {
-                await assessmentsApi.adminUpdateQuestion(aqDraft.id, payload);
+                await adminAssessmentsFeatureApi.adminUpdateQuestion(aqDraft.id, payload);
             } else {
-                await assessmentsApi.adminCreateQuestion(selectedAssessmentSetId, payload);
+                await adminAssessmentsFeatureApi.adminCreateQuestion(selectedAssessmentSetId, payload);
             }
             showToast("Question saved");
             setAqDraft(null);
@@ -1761,7 +1763,7 @@ export default function AdminPage() {
         if (!confirm("Delete this assessment question?")) return;
         setSaving(true);
         try {
-            await assessmentsApi.adminDeleteQuestion(id);
+            await adminAssessmentsFeatureApi.adminDeleteQuestion(id);
             showToast("Question deleted");
             if (aqDraft?.id === id) setAqDraft(null);
             await fetchAssessmentSets();
@@ -3072,7 +3074,7 @@ export default function AdminPage() {
                                                                     onClick={async (e) => {
                                                                         e.stopPropagation();
                                                                         try {
-                                                                            await adminApi.publishMockExam(mock.id);
+                                                                            await adminExamsFeatureApi.publishMockExam(mock.id);
                                                                             await fetchMockExams();
                                                                             showToast("Published. Assign students on the portal row or Assign users.");
                                                                         } catch (er: any) {
@@ -3091,7 +3093,7 @@ export default function AdminPage() {
                                                                         e.stopPropagation();
                                                                         if (!confirm("Unpublish? Students will no longer see this mock.")) return;
                                                                         try {
-                                                                            await adminApi.unpublishMockExam(mock.id);
+                                                                            await adminExamsFeatureApi.unpublishMockExam(mock.id);
                                                                             await fetchMockExams();
                                                                             showToast("Unpublished");
                                                                         } catch (er: any) {
@@ -3392,7 +3394,7 @@ export default function AdminPage() {
                                                                         onClick={async (e) => {
                                                                             e.stopPropagation();
                                                                             try {
-                                                                                await adminApi.publishMockExam(mock.id);
+                                                                                await adminExamsFeatureApi.publishMockExam(mock.id);
                                                                                 await fetchMockExams();
                                                                                 showToast("Published. Students see it on /midterm when assigned.");
                                                                             } catch (er: any) {
@@ -3411,7 +3413,7 @@ export default function AdminPage() {
                                                                             e.stopPropagation();
                                                                             if (!confirm("Unpublish? Students will no longer see this midterm.")) return;
                                                                             try {
-                                                                                await adminApi.unpublishMockExam(mock.id);
+                                                                                await adminExamsFeatureApi.unpublishMockExam(mock.id);
                                                                                 await fetchMockExams();
                                                                                 showToast("Unpublished");
                                                                             } catch (er: any) {

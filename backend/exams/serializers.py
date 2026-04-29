@@ -162,6 +162,7 @@ class MockExamSerializer(serializers.ModelSerializer):
         ]
 
 from users.serializers import UserSerializer
+from .attempt_timing import get_active_module_timing
 
 class TestAttemptSerializer(serializers.ModelSerializer):
     practice_test_details = serializers.SerializerMethodField()
@@ -175,6 +176,13 @@ class TestAttemptSerializer(serializers.ModelSerializer):
     server_now = serializers.SerializerMethodField()
     current_module_saved_answers = serializers.SerializerMethodField()
     current_module_flagged_questions = serializers.SerializerMethodField()
+    remaining_seconds = serializers.SerializerMethodField()
+    module_duration_seconds = serializers.SerializerMethodField()
+    module_started_at = serializers.SerializerMethodField()
+    active_module_order = serializers.SerializerMethodField()
+    can_submit = serializers.SerializerMethodField()
+    can_resume = serializers.SerializerMethodField()
+    results_ready = serializers.SerializerMethodField()
 
     def get_is_expired(self, obj):
         return getattr(obj, 'is_expired', False)
@@ -184,6 +192,59 @@ class TestAttemptSerializer(serializers.ModelSerializer):
     
     def get_server_now(self, obj):
         return timezone.now().isoformat()
+
+    def get_module_started_at(self, obj):
+        v = getattr(obj, "current_module_start_time", None)
+        return v.isoformat() if v else None
+
+    def get_module_duration_seconds(self, obj):
+        mod = getattr(obj, "current_module", None)
+        if not mod:
+            # mirror serializer inference so the UI can still render safely
+            st = getattr(obj, "current_state", None)
+            if st == TestAttempt.STATE_MODULE_1_ACTIVE:
+                mod = obj.practice_test.modules.filter(module_order=1).order_by("id").first()
+            elif st == TestAttempt.STATE_MODULE_2_ACTIVE:
+                mod = obj.practice_test.modules.filter(module_order=2).order_by("id").first()
+        if not mod:
+            return None
+        try:
+            mins = int(getattr(mod, "time_limit_minutes", 0) or 0)
+        except (TypeError, ValueError):
+            mins = 0
+        return max(0, mins * 60)
+
+    def get_remaining_seconds(self, obj):
+        try:
+            timing = get_active_module_timing(obj)
+            return int(timing.remaining_seconds) if timing else None
+        except Exception:
+            return None
+
+    def get_active_module_order(self, obj):
+        mod = getattr(obj, "current_module", None)
+        if mod and getattr(mod, "module_order", None) in (1, 2):
+            return int(mod.module_order)
+        # fall back to state inference
+        st = getattr(obj, "current_state", None)
+        if st == TestAttempt.STATE_MODULE_1_ACTIVE:
+            return 1
+        if st == TestAttempt.STATE_MODULE_2_ACTIVE:
+            return 2
+        return None
+
+    def get_can_submit(self, obj):
+        st = getattr(obj, "current_state", None)
+        return bool(st in (TestAttempt.STATE_MODULE_1_ACTIVE, TestAttempt.STATE_MODULE_2_ACTIVE))
+
+    def get_can_resume(self, obj):
+        st = getattr(obj, "current_state", None)
+        if getattr(obj, "is_completed", False) or st == TestAttempt.STATE_COMPLETED:
+            return False
+        return bool(st in (TestAttempt.STATE_NOT_STARTED, TestAttempt.STATE_MODULE_1_ACTIVE, TestAttempt.STATE_MODULE_2_ACTIVE, TestAttempt.STATE_ABANDONED, TestAttempt.STATE_MODULE_1_SUBMITTED, TestAttempt.STATE_MODULE_2_SUBMITTED))
+
+    def get_results_ready(self, obj):
+        return bool(getattr(obj, "is_completed", False) and getattr(obj, "current_state", None) == TestAttempt.STATE_COMPLETED)
 
     def get_current_module_details(self, obj):
         mod = getattr(obj, "current_module", None)
@@ -263,6 +324,13 @@ class TestAttemptSerializer(serializers.ModelSerializer):
             'server_now',
             'current_module_saved_answers',
             'current_module_flagged_questions',
+            'remaining_seconds',
+            'module_duration_seconds',
+            'module_started_at',
+            'active_module_order',
+            'can_submit',
+            'can_resume',
+            'results_ready',
         ]
 
         read_only_fields = [
@@ -280,6 +348,13 @@ class TestAttemptSerializer(serializers.ModelSerializer):
             'score',
             'completed_modules',
             'server_now',
+            'remaining_seconds',
+            'module_duration_seconds',
+            'module_started_at',
+            'active_module_order',
+            'can_submit',
+            'can_resume',
+            'results_ready',
         ]
 
 # ── Admin Serializers ────────────────────────────────────────────────────────

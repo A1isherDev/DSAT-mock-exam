@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { examsApi } from "@/lib/api";
+import { examsPublicApi } from "@/lib/api";
 import {
   buildHomeworkPastpaperCards,
   formatLineDate,
@@ -120,12 +120,12 @@ export default function PracticeTestsList({
       const isLogged = !!Cookies.get("lms_user") || !!Cookies.get("role") || !!Cookies.get("is_admin");
       if (!cancelled) setIsLoggedIn(isLogged);
       try {
-        const list = await examsApi.getPracticeTests();
+        const list = await examsPublicApi.getPracticeTests();
         if (cancelled) return;
         const raw = Array.isArray(list) ? list : [];
         setTests(raw.filter((t) => !isTimedMockSectionRow(t)));
         if (isLogged) {
-          const attemptsData = await examsApi.getAttempts();
+          const attemptsData = await examsPublicApi.getAttempts();
           if (!cancelled) setAttempts(Array.isArray(attemptsData) ? attemptsData : []);
         } else {
           setAttempts([]);

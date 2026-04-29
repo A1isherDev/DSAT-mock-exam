@@ -1,17 +1,27 @@
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from access import constants as acc_const
+from access.models import UserAccess
 from classes.models import Classroom, ClassroomMembership
 from assessments.models import AssessmentSet, AssessmentQuestion
 
 
 User = get_user_model()
 
+_ALLOWED_SUBDOMAIN_HOSTS = (
+    "localhost",
+    "127.0.0.1",
+    "testserver",
+    "admin.mastersat.uz",
+    "questions.mastersat.uz",
+)
 
+
+@override_settings(ALLOWED_HOSTS=list(_ALLOWED_SUBDOMAIN_HOSTS))
 class AssessmentsSecurityMatrixTests(TestCase):
     def setUp(self):
         self.client = APIClient()
@@ -39,10 +49,24 @@ class AssessmentsSecurityMatrixTests(TestCase):
             role=acc_const.ROLE_TEST_ADMIN,
         )
 
+        UserAccess.objects.create(
+            user=self.teacher_math,
+            subject=acc_const.DOMAIN_MATH,
+            classroom=None,
+            granted_by=self.teacher_math,
+        )
+        UserAccess.objects.create(
+            user=self.teacher_eng,
+            subject=acc_const.DOMAIN_ENGLISH,
+            classroom=None,
+            granted_by=self.teacher_eng,
+        )
+
         # Classrooms
         self.class_math = Classroom.objects.create(
-            title="Math class",
+            name="Math class",
             subject=Classroom.SUBJECT_MATH,
+            lesson_days=Classroom.DAYS_ODD,
             created_by=self.teacher_math,
             teacher=self.teacher_math,
         )
@@ -51,8 +75,9 @@ class AssessmentsSecurityMatrixTests(TestCase):
         )
 
         self.class_eng = Classroom.objects.create(
-            title="English class",
+            name="English class",
             subject=Classroom.SUBJECT_ENGLISH,
+            lesson_days=Classroom.DAYS_ODD,
             created_by=self.teacher_eng,
             teacher=self.teacher_eng,
         )

@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import AuthGuard from "@/components/AuthGuard";
-import { examsApi } from "@/lib/api";
+import { examsPublicApi } from "@/lib/api";
 import { platformSubjectIsMath } from "@/lib/permissions";
 import { ArrowLeft, Timer } from "lucide-react";
 
@@ -53,7 +53,7 @@ function BreakInner() {
       }
 
       try {
-        const exam = await examsApi.getMockExam(Number(mockId));
+        const exam = await examsPublicApi.getMockExam(Number(mockId));
         const mathTest = (exam.tests || []).find((t: { subject?: string }) => platformSubjectIsMath(t.subject));
         const modules = [...(mathTest?.modules || [])].sort(
           (a: { module_order?: number }, b: { module_order?: number }) =>
@@ -63,13 +63,13 @@ function BreakInner() {
         if (!mathTest?.id || !firstMod?.id) {
           throw new Error("No Math module");
         }
-        const attemptsData = await examsApi.getAttempts();
+        const attemptsData = await examsPublicApi.getAttempts();
         let attempt = attemptsData.find(
           (a: { practice_test?: number; is_completed?: boolean; is_expired?: boolean }) =>
             a.practice_test === mathTest.id && !a.is_completed && !a.is_expired
         );
         if (!attempt) {
-          attempt = await examsApi.startTest(mathTest.id);
+          attempt = await examsPublicApi.startTest(mathTest.id);
         }
         if (!cancelled) {
           router.replace(

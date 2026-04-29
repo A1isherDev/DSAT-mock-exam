@@ -15,7 +15,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { adminApi, assessmentsApi, classesApi } from "@/lib/api";
+import { examsAdminApi, assessmentsAdminApi, classesApi } from "@/lib/api";
 import { getSubject } from "@/lib/permissions";
 import {
   formatMockExamAdminLabel,
@@ -177,7 +177,7 @@ export function BulkAssignWizard({
     setHistoryLoading(true);
     setHistoryError(null);
     try {
-      const data = await adminApi.listBulkAssignmentHistory();
+      const data = await examsAdminApi.listBulkAssignmentHistory();
       setHistory(Array.isArray(data) ? data : []);
     } catch (e: any) {
       const msg = e?.response?.data?.detail;
@@ -208,7 +208,7 @@ export function BulkAssignWizard({
     setAssessmentSetsLoading(true);
     try {
       const dom = getSubject();
-      const data = await assessmentsApi.adminListSets(dom ? { subject: dom } : undefined);
+      const data = await assessmentsAdminApi.adminListSets(dom ? { subject: dom } : undefined);
       setAssessmentSets(Array.isArray(data) ? (data as Array<Record<string, unknown>>) : []);
     } catch {
       setAssessmentSets([]);
@@ -568,7 +568,7 @@ export function BulkAssignWizard({
     setRerunBusyId(id);
     setError(null);
     try {
-      const res = (await adminApi.rerunBulkAssignmentDispatch(id)) as Record<string, unknown>;
+      const res = (await examsAdminApi.rerunBulkAssignmentDispatch(id)) as Record<string, unknown>;
       const skipped = Number(res.students_skipped_count || 0);
       const granted = Number(res.students_granted_count ?? 0);
       setLastResult(mapAssignApiToLastResult(res, true));
@@ -609,7 +609,7 @@ export function BulkAssignWizard({
           : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
       assessmentIdempotencyRef.current = idempotencyKey;
       try {
-        await assessmentsApi.assignHomework(
+        await assessmentsAdminApi.assignHomework(
           {
             classroom_id: assessmentClassroomId,
             set_id: assessmentSetId,
@@ -689,7 +689,7 @@ export function BulkAssignWizard({
     };
 
     try {
-      const res = (await adminApi.bulkAssignStudents(
+      const res = (await examsAdminApi.bulkAssignStudents(
         isMocks && mockExamId ? [mockExamId] : [],
         selectedUserIds,
         isMocks ? assignmentType : "FULL",

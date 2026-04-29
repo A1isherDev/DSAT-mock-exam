@@ -44,7 +44,9 @@ class AttemptTimerEnforcementTests(APITestCase):
             {"answers": {"1": "A"}, "flagged": []},
             format="json",
         )
-        self.assertEqual(r.status_code, 409)
+        # Timeout behavior: autosave will auto-submit and return canonical state.
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.data.get("is_expired"))
 
     def test_autosave_idempotency_replay(self):
         att = self._create_attempt_and_start_m1()

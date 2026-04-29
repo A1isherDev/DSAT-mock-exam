@@ -187,6 +187,25 @@ class ClassroomSecurityTests(TestCase):
         self.assertEqual(r.status_code, 403)
         self.assertTrue(ClassPost.objects.filter(pk=post.pk).exists())
 
+    def test_student_list_only_member_classes(self):
+        other_class = Classroom.objects.create(
+            name="Other class",
+            subject=Classroom.SUBJECT_ENGLISH,
+            lesson_days=Classroom.DAYS_ODD,
+            created_by=self.admin,
+        )
+        ClassroomMembership.objects.create(
+            classroom=other_class, user=self.other, role=ClassroomMembership.ROLE_ADMIN
+        )
+        self.client.force_authenticate(self.student)
+        r = self.client.get("/api/classes/")
+        self.assertEqual(r.status_code, 200)
+        rows = r.json()
+        self.assertIsInstance(rows, list)
+        ids = {row["id"] for row in rows}
+        self.assertIn(self.classroom.pk, ids)
+        self.assertNotIn(other_class.pk, ids)
+
 
 class ClassroomListDirectoryTests(TestCase):
     """Global assign staff should list all classrooms for homework / admin flows."""
@@ -225,9 +244,19 @@ class ClassroomListDirectoryTests(TestCase):
             ClassroomMembership.objects.filter(classroom=self.classroom, user=self.super_admin).exists()
         )
         self.client.force_authenticate(self.super_admin)
-        r = self.client.get("/api/classes/")
+        r = self.client.get("/api/classes/directory/")
         self.assertEqual(r.status_code, 200, r.content)
         data = r.json()
         self.assertIsInstance(data, list)
         ids = {row["id"] for row in data}
         self.assertIn(self.classroom.pk, ids)
+
+    def test_student_cannot_list_directory_even_with_flag(self):
+        student = User.objects.create_user(
+            email="dir_student@example.com",
+            password="secret123",
+            role=acc_const.ROLE_STUDENT,
+        )
+        self.client.force_authenticate(student)
+        r = self.client.get("/api/classes/directory/")
+        self.assertEqual(r.status_code, 403)

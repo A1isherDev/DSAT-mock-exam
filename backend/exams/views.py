@@ -2,6 +2,7 @@ from rest_framework import viewsets, status, generics
 from rest_framework.views import APIView
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.permissions import AllowAny
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.permissions import IsAdminUser
 from rest_framework.exceptions import PermissionDenied
@@ -9,7 +10,9 @@ from rest_framework.exceptions import ValidationError as DRFValidationError
 import logging
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from django.db import IntegrityError, transaction
+import time
+
+from django.db import IntegrityError, OperationalError, transaction
 from django.conf import settings
 from django.http import HttpResponse
 from datetime import timedelta
@@ -23,16 +26,13 @@ from access.policies import (
     BulkAssignAccess,
     BulkAssignmentHistoryAccess,
 )
+from core.authz import actor_subject_probe_for_domain_perm, authorize, can_manage_questions, normalized_role
 from access.services import (
-    actor_subject_probe_for_domain_perm,
-    authorize,
     bulk_assign_request_platform_subjects,
     can_browse_standalone_practice_library,
-    can_manage_questions,
     filter_mock_exams_for_user,
     filter_practice_tests_for_user,
     get_effective_permission_codenames,
-    normalized_role,
     student_has_any_subject_grant,
 )
 from access.subject_mapping import platform_subject_to_domain
@@ -68,14 +68,15 @@ from .serializers import (
     BulkAssignmentDispatchSerializer,
     BulkAssignmentDispatchDetailSerializer,
 )
-from .idempotency import consume_idempotency_key
+from core.idempotency import consume as consume_idempotency
 from .tasks import score_attempt_async
-from .metrics import incr as metric_incr, get_counter
+from core.metrics import incr as metric_incr
+from .metrics import get_counter
 from .prometheus import render_exams_prometheus_text
 from .attempt_timing import get_active_module_timing
 from .engine_integrity import autoheal_attempt_for_runtime
 from config.error_reporting import report_error
-from config.reliability import idempotency_key_from_request
+from core.idempotency import idempotency_key_from_request
 
 logger = logging.getLogger(__name__)
 
@@ -199,18 +200,42 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
     """
     Pastpaper / skill practice only: standalone PracticeTest rows (no mock_exam).
     Timed mocks and their sections are only exposed via mock-exams + /mock/:id.
+
+    List/retrieve are **AllowAny** so the Next.js practice catalog can load without cookies;
+    starting an attempt still requires auth on ``TestAttemptViewSet``.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
     serializer_class = PracticeTestSerializer
+
+    def list(self, request, *args, **kwargs):
+        """
+        Staff consoles must use backend-authoritative authoring APIs (``/api/exams/admin/...``).
+        The public practice library endpoint (``/api/exams/``) is intentionally a different surface.
+        If a staff console accidentally calls this endpoint, fail loudly instead of returning an
+        empty list that looks like “no tests exist”.
+        """
+        try:
+            console = str(getattr(request, "lms_console", "") or "").strip().lower()
+        except Exception:
+            console = ""
+        user = getattr(request, "user", None)
+        if console in ("admin", "questions") and user and getattr(user, "is_authenticated", False):
+            if can_manage_questions(user):
+                metric_incr("wrong_staff_endpoint_total")
+                return Response(
+                    {
+                        "detail": "This endpoint is the public practice library. Use /api/exams/admin/tests/ for staff authoring lists."
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        return super().list(request, *args, **kwargs)
 
     def get_queryset(self):
         """
-        Students: the full published pastpaper bank (``filter_practice_tests_for_user``), not
-        only ``assigned_users`` — the /practice-tests page is a school-wide library. Class
-        homework still uses M2M for analytics, but library access is not exclusive to it.
-        Staff with test-library permissions: same filter, or stricter subject scoping for teachers.
-        Other roles (rare): only tests in ``assigned_users``.
+        Anonymous + students + staff who can browse: ``filter_practice_tests_for_user`` (full bank
+        for anon/students; subject-scoped for teachers). Other authenticated roles: ``assigned_users``
+        only (legacy).
         """
         user = self.request.user
         base = (
@@ -219,6 +244,8 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
             .prefetch_related("modules")
         )
         if can_browse_standalone_practice_library(user):
+            return filter_practice_tests_for_user(user, base).distinct()
+        if not user.is_authenticated:
             return filter_practice_tests_for_user(user, base).distinct()
         if normalized_role(user) == acc_const.ROLE_STUDENT:
             return filter_practice_tests_for_user(user, base).distinct()
@@ -387,51 +414,65 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         test = get_object_or_404(allowed, id=test_id)
 
         # Get-or-create active attempt (concurrency-safe under DB constraint).
-        # We exclude ABANDONED attempts from reuse so students can restart after abandoning.
-        with transaction.atomic():
-            attempt = (
-                TestAttempt.objects.select_for_update()
-                .select_related("practice_test", "current_module")
-                .filter(
-                    student=request.user,
-                    practice_test=test,
-                    is_completed=False,
-                )
-                .exclude(current_state=TestAttempt.STATE_ABANDONED)
-                .order_by("-id")
-                .first()
-            )
-
-            if attempt is None:
-                try:
-                    attempt = TestAttempt.objects.create(student=request.user, practice_test=test)
-                except IntegrityError:
-                    metric_incr("active_attempt_duplicates_prevented")
-                    # Another concurrent request won the race; fetch the canonical active attempt.
-                    attempt = (
-                        TestAttempt.objects.select_for_update()
-                        .select_related("practice_test", "current_module")
-                        .filter(
-                            student=request.user,
-                            practice_test=test,
-                            is_completed=False,
+        # Business rule: abandoning is recoverable, so we reuse the latest abandoned attempt
+        # only if there is no other canonical active (non-abandoned) attempt.
+        # SQLite can raise "database table is locked" under thread races.
+        # In production (Postgres) this path is not expected, but in tests we retry briefly.
+        last_exc: Exception | None = None
+        attempt = None
+        for _ in range(4):
+            try:
+                with transaction.atomic():
+                    # Important for SQLite (test runner): avoid SELECT ... FOR UPDATE on the table
+                    # before attempting an insert, as it can trigger "database table is locked" under threads.
+                    try:
+                        attempt = TestAttempt.objects.create(student=request.user, practice_test=test)
+                    except IntegrityError:
+                        # Reset rollback flag after IntegrityError so we can still query in this atomic block.
+                        transaction.set_rollback(False)
+                        metric_incr("active_attempt_duplicates_prevented")
+                        attempt = (
+                            TestAttempt.objects.select_for_update()
+                            .select_related("practice_test", "current_module")
+                            .filter(student=request.user, practice_test=test, is_completed=False)
+                            .exclude(current_state=TestAttempt.STATE_ABANDONED)
+                            .order_by("-id")
+                            .first()
                         )
-                        .exclude(current_state=TestAttempt.STATE_ABANDONED)
-                        .order_by("-id")
-                        .first()
-                    )
-                    if attempt is None:
-                        report_error(
-                            "exams.attempt_create_integrity_error_no_canonical",
-                            context={"user_id": request.user.pk, "practice_test_id": test.pk},
-                        )
-                        raise
+                        if attempt is None:
+                            attempt = (
+                                TestAttempt.objects.select_for_update()
+                                .select_related("practice_test", "current_module")
+                                .filter(
+                                    student=request.user,
+                                    practice_test=test,
+                                    is_completed=False,
+                                    current_state=TestAttempt.STATE_ABANDONED,
+                                )
+                                .order_by("-id")
+                                .first()
+                            )
+                        if attempt is None:
+                            report_error(
+                                "exams.attempt_create_integrity_error_no_canonical",
+                                context={"user_id": request.user.pk, "practice_test_id": test.pk},
+                            )
+                            raise
 
-            # Authoritative start/resume: entering the runner should immediately be in MODULE_1_ACTIVE
-            # for new attempts, or return canonical current state for existing incomplete attempts.
-            ensure_full_mock_practice_test_modules(attempt.practice_test)
-            autoheal_attempt_for_runtime(attempt)
-            attempt.start_attempt()
+                    # Authoritative start/resume: entering the runner should immediately be in MODULE_1_ACTIVE
+                    # for new attempts, or return canonical current state for existing incomplete attempts.
+                    ensure_full_mock_practice_test_modules(attempt.practice_test)
+                    autoheal_attempt_for_runtime(attempt)
+                    attempt.start_attempt()
+                last_exc = None
+                break
+            except OperationalError as exc:
+                last_exc = exc
+                time.sleep(0.05)
+                continue
+
+        if last_exc is not None or attempt is None:
+            raise last_exc or OperationalError("Could not create attempt due to database lock.")
 
         # Re-fetch canonical state for response (start_attempt mutates state/FKs).
         attempt = TestAttempt.objects.select_related("current_module").get(pk=attempt.pk)
@@ -446,6 +487,37 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     # NOTE: `status` is defined once below (canonical resume payload).
+
+    @action(detail=True, methods=["post"], url_path="resume")
+    def resume(self, request, pk=None):
+        """
+        Canonical resume endpoint (backend authoritative).
+        Locks the attempt row, auto-heals invariants, runs resume normalization,
+        then returns the canonical payload.
+        """
+        attempt0 = self.get_object()
+
+        def _compute():
+            try:
+                with transaction.atomic():
+                    locked = (
+                        TestAttempt.objects.select_for_update()
+                        .select_related("practice_test", "current_module")
+                        .get(pk=attempt0.pk)
+                    )
+                    ensure_full_mock_practice_test_modules(locked.practice_test)
+                    autoheal_attempt_for_runtime(locked)
+                    locked.resume_attempt()
+                attempt = (
+                    TestAttempt.objects.select_related("practice_test", "current_module")
+                    .prefetch_related("practice_test__modules", "current_module__questions")
+                    .get(pk=attempt0.pk)
+                )
+                return Response(self.get_serializer(attempt).data)
+            except Exception as exc:
+                return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return consume_idempotency(attempt=attempt0, endpoint="resume", request=request, compute=_compute)
 
     @action(detail=True, methods=["post"])
     def start(self, request, pk=None):
@@ -471,8 +543,7 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
             except Exception as exc:
                 return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-        idem = idempotency_key_from_request(request)
-        return consume_idempotency_key(attempt=attempt, endpoint="start", key=idem, compute=_compute)
+        return consume_idempotency(attempt=attempt, endpoint="start", request=request, compute=_compute)
 
         AuditLog.objects.create(
             user=request.user,
@@ -486,7 +557,6 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
     def start_module(self, request, pk=None):
         attempt = self.get_object()
         module_id = request.data.get('module_id')
-        idem = idempotency_key_from_request(request)
         
         # Defensive: ensure full mock sections always have both modules provisioned.
         ensure_full_mock_practice_test_modules(attempt.practice_test)
@@ -531,12 +601,11 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
             details=f"Started module {module.module_order} of {attempt.practice_test}"
         )
 
-        return consume_idempotency_key(attempt=attempt, endpoint="start_module", key=idem, compute=_compute)
+        return consume_idempotency(attempt=attempt, endpoint="start_module", request=request, compute=_compute)
 
     @action(detail=True, methods=['post'])
     def submit_module(self, request, pk=None):
         attempt0 = self.get_object()
-        idem = idempotency_key_from_request(request)
         expected_v = _expected_attempt_version(request)
 
         def _compute():
@@ -628,16 +697,16 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                 logger.exception("[FORENSIC] submit_module_exception attempt_id=%s error=%s", getattr(attempt0, "id", None), str(e))
                 return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        return consume_idempotency_key(attempt=attempt0, endpoint="submit_module", key=idem, compute=_compute)
+        return consume_idempotency(attempt=attempt0, endpoint="submit_module", request=request, compute=_compute)
 
 
     @action(detail=True, methods=['post'])
     def save_attempt(self, request, pk=None):
         attempt0 = self.get_object()
-        idem = idempotency_key_from_request(request)
         expected_v = _expected_attempt_version(request)
 
         def _compute():
+            expired = False
             with transaction.atomic():
                 attempt = (
                     TestAttempt.objects.select_for_update()
@@ -651,16 +720,27 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
 
                 timing = get_active_module_timing(attempt)
                 if timing and timing.is_expired:
-                    attempt.is_expired = True
-                    return Response({"error": "Module time expired."}, status=status.HTTP_409_CONFLICT)
+                    # Backend-authoritative timeout behavior: auto-submit using the last provided payload.
+                    module_answers = request.data.get('answers', {}) or {}
+                    flagged = request.data.get('flagged', []) or []
+                    order = int(getattr(attempt.current_module, "module_order", 0) or 0)
+                    if order == 1:
+                        attempt.submit_module_1(module_answers, flagged)
+                    elif order == 2:
+                        attempt.submit_module_2(module_answers, flagged)
+                    else:
+                        attempt.is_expired = True
+                        return Response({"error": "Module time expired."}, status=status.HTTP_409_CONFLICT)
+                    expired = True
 
-                module_answers = request.data.get('answers', {})
-                flagged = request.data.get('flagged', [])
+                module_answers = request.data.get('answers', {}) if not (timing and timing.is_expired) else None
+                flagged = request.data.get('flagged', []) if not (timing and timing.is_expired) else None
 
-                attempt.module_answers[str(attempt.current_module.id)] = module_answers
-                attempt.flagged_questions[str(attempt.current_module.id)] = flagged
-                attempt.version_number = int(attempt.version_number or 0) + 1
-                attempt.save(update_fields=["module_answers", "flagged_questions", "version_number", "updated_at"])
+                if module_answers is not None:
+                    attempt.module_answers[str(attempt.current_module.id)] = module_answers
+                    attempt.flagged_questions[str(attempt.current_module.id)] = flagged
+                    attempt.version_number = int(attempt.version_number or 0) + 1
+                    attempt.save(update_fields=["module_answers", "flagged_questions", "version_number", "updated_at"])
 
             # Return canonical attempt payload so the frontend can update version_number and avoid stale overwrites.
             attempt = (
@@ -668,9 +748,11 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                 .prefetch_related("practice_test__modules", "current_module__questions")
                 .get(pk=attempt0.pk)
             )
+            if expired:
+                attempt.is_expired = True
             return Response(self.get_serializer(attempt).data)
 
-        return consume_idempotency_key(attempt=attempt0, endpoint="save_attempt", key=idem, compute=_compute)
+        return consume_idempotency(attempt=attempt0, endpoint="save_attempt", request=request, compute=_compute)
 
     @action(detail=True, methods=["get"], url_path="status")
     def status(self, request, pk=None):

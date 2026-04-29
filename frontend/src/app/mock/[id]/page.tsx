@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import AuthGuard from "@/components/AuthGuard";
-import { examsApi } from "@/lib/api";
+import { examsPublicApi } from "@/lib/api";
 import { coalesceArray, platformSubjectIsMath, platformSubjectIsReadingWriting } from "@/lib/permissions";
 import { BookOpen, Calculator, CheckCircle2, ArrowLeft, Play, Eye, Trophy } from "lucide-react";
 import Cookies from "js-cookie";
@@ -27,10 +27,10 @@ function MockExamDetailInner() {
     const fetchData = async () => {
       try {
         const isLoggedIn = !!Cookies.get("lms_user") || !!Cookies.get("role") || !!Cookies.get("is_admin");
-        const examData = await examsApi.getMockExam(Number(id));
+        const examData = await examsPublicApi.getMockExam(Number(id));
         setMockExam(examData);
         if (isLoggedIn) {
-          const attemptsData = await examsApi.getAttempts();
+          const attemptsData = await examsPublicApi.getAttempts();
           setAttempts(attemptsData);
         }
       } catch (err) {
@@ -45,7 +45,7 @@ function MockExamDetailInner() {
   const getOrCreateAttempt = async (testId: number) => {
     let attempt = attempts.find((a) => a.practice_test === testId && !a.is_expired && !a.is_completed);
     if (!attempt) {
-      attempt = await examsApi.startTest(testId);
+      attempt = await examsPublicApi.startTest(testId);
       setAttempts([...attempts, attempt]);
     }
     return attempt;

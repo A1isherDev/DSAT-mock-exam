@@ -28,6 +28,43 @@ const eslintConfig = defineConfig([
       "react/no-unescaped-entities": "off",
     },
   },
+  // Staff consoles must never call public exam APIs (prevents route confusion regressions).
+  {
+    files: ["src/app/admin/**/*.{ts,tsx}", "src/app/(admin)/**/*.{ts,tsx}", "src/components/bulk-assign/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@/lib/api",
+              importNames: ["examsPublicApi"],
+              message: "Staff consoles must use examsAdminApi, not examsPublicApi.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  // Staff pages should prefer feature APIs over low-level clients.
+  {
+    files: ["src/app/admin/**/*.{ts,tsx}", "src/app/(admin)/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@/lib/api",
+              importNames: ["examsAdminApi", "examsPublicApi", "assessmentsAdminApi"],
+              message:
+                "Admin pages must import exam/assessment clients via feature APIs (e.g. '@/features/adminExams/api', '@/features/adminAssessments/api'), not directly from '@/lib/api'.",
+            },
+          ],
+        },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;

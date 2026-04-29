@@ -250,6 +250,12 @@ class AccessPrimitivesTests(TestCase):
         v = visible_practice_test_platform_subjects_for_query(admin)
         self.assertIsNone(v)
 
+    def test_anonymous_visible_practice_subjects_unfiltered(self):
+        from django.contrib.auth.models import AnonymousUser
+
+        v = visible_practice_test_platform_subjects_for_query(AnonymousUser())
+        self.assertIsNone(v)
+
     def test_student_visible_platform_subjects_full_pastpaper_library(self):
         student = User.objects.create_user(
             email="st_lib@example.com",

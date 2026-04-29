@@ -176,6 +176,14 @@ api.interceptors.response.use(
             }
 
             if (typeof window !== "undefined") {
+                const inExamRunner = String(window.location?.pathname || "").startsWith("/exam/");
+                if (inExamRunner) {
+                    // Exam runner must not "kick out" on transient auth failures.
+                    // Let the page render a reconnect/auth-required state instead of redirecting.
+                    const e: any = error;
+                    e.__mastersatAuthRequired = true;
+                    return Promise.reject(e);
+                }
                 (globalThis as any).__mastersatLogoutInProgress = true;
             }
             clearAuthCookiesEverywhere();
@@ -338,7 +346,7 @@ export const authApi = {
     },
 };
 
-export const examsApi = {
+export const examsPublicApi = {
     getMockExams: async () => {
         const res = await api.get('/exams/mock-exams/');
         return res.data;
@@ -350,7 +358,7 @@ export const examsApi = {
     /** Pastpaper practice library only (standalone tests). Timed mocks: mock-exams APIs + /mock/:id. */
     getPracticeTests: async () => {
         const res = await api.get('/exams/');
-        return res.data;
+        return unwrapAdminList(res.data);
     },
     getPracticeTest: async (id: number) => {
         const res = await api.get(`/exams/${id}/`);
@@ -386,6 +394,14 @@ export const examsApi = {
     startAttemptEngine: async (attemptId: number, idempotencyKey?: string) => {
         const res = await api.post(
             `/exams/attempts/${attemptId}/start/`,
+            {},
+            { headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined },
+        );
+        return res.data;
+    },
+    resumeAttemptEngine: async (attemptId: number, idempotencyKey?: string) => {
+        const res = await api.post(
+            `/exams/attempts/${attemptId}/resume/`,
             {},
             { headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined },
         );
@@ -563,7 +579,7 @@ export const classesApi = {
     },
 };
 
-export const adminApi = {
+export const examsAdminApi = {
     // Users
     getUsers: async () => { const r = await api.get('/users/'); return r.data; },
     createUser: async (data: object) => { const r = await api.post('/users/create/', data); return r.data; },
@@ -759,7 +775,7 @@ export const vocabularyApi = {
     },
 };
 
-export const assessmentsApi = {
+export const assessmentsAdminApi = {
     adminListSets: async (params?: { subject?: "math" | "english"; category?: string }) => {
         const r = await api.get("/assessments/admin/sets/", { params });
         return r.data;

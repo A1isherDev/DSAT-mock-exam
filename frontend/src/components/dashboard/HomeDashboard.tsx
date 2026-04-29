@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Cookies from "js-cookie";
-import { classesApi, examsApi, usersApi } from "@/lib/api";
+import { classesApi, examsPublicApi, usersApi } from "@/lib/api";
 import { ArrowRight, BarChart3, Calendar, Loader2, Pencil, PlayCircle, Target, TrendingUp } from "lucide-react";
 import { ClassroomButton } from "@/components/classroom";
 import { DashboardCard, DashboardEyebrow, DashboardTitle } from "./DashboardCard";
@@ -113,7 +113,7 @@ export function HomeDashboard() {
       try {
         const [meData, rawAttempts, classes, examDatesRaw] = await Promise.all([
           usersApi.getMe(),
-          examsApi.getAttempts().catch(() => []),
+          examsPublicApi.getAttempts().catch(() => []),
           classesApi.list().catch(() => []),
           usersApi.listExamDates().catch(() => []),
         ]);

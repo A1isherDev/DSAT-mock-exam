@@ -11,6 +11,8 @@ from dataclasses import dataclass
 
 from django.http import JsonResponse
 
+from exams.metrics import incr as exams_metric_incr
+
 
 @dataclass(frozen=True)
 class HostGuardConfig:
@@ -42,9 +44,11 @@ def _host_kind(host: str, cfg: HostGuardConfig) -> str:
 class SubdomainAPIGuardMiddleware:
     """
     Enforce coarse separation of consoles by subdomain:
-    - admin.<domain>: users + bulk-assign only (plus GET-only reads needed by UI)
-    - questions.<domain>: tests/questions CRUD endpoints
-    - main domain: student/teacher portal APIs
+    - admin.<domain>: users + bulk assign; LMS exam authoring SPA (pastpapers, mocks,
+      questions CRUD via ``/api/exams/admin/…`` — same-origin as apex; enforced in DRF)
+    - questions.<domain>: preferred authoring subdomain; full ``/api/exams/admin/*`` + assessments admin
+    - main domain: student/teacher portal APIs; exams authoring requires DRF roles
+      (``/api/exams/admin/*`` is not HTTP-blocked here for same-origin SPAs).
     """
 
     def __init__(self, get_response):
@@ -84,10 +88,12 @@ class SubdomainAPIGuardMiddleware:
             else ""
         )
         if kind == "admin" and role in ("student",):
+            exams_metric_incr("forbidden_admin_route_total")
             return JsonResponse(
                 {"detail": "You cannot access admin console."}, status=403
             )
         if kind == "questions" and role == "student":
+            exams_metric_incr("forbidden_admin_route_total")
             return JsonResponse(
                 {"detail": "Students cannot access questions console."}, status=403
             )
@@ -102,16 +108,10 @@ class SubdomainAPIGuardMiddleware:
                 return self.get_response(request)
             if path.startswith("/api/exams/assignments/"):
                 return self.get_response(request)
-            # Allow GET-only reads for lists used by bulk assign UI.
+            # Hosted admin SPA performs full exam authoring (pastpaper packs, mock shells, tests/modules/questions).
+            # Same policy as apex domain: do not deny by host; rely on ``CanManageQuestions`` etc.
             if path.startswith("/api/exams/admin/"):
-                if method == "GET":
-                    return self.get_response(request)
-                return JsonResponse(
-                    {
-                        "detail": "Test authoring is disabled on admin subdomain. Use questions subdomain."
-                    },
-                    status=403,
-                )
+                return self.get_response(request)
             # Assessments: admin assigns sets as homework + needs to list sets.
             if path.startswith("/api/assessments/"):
                 # Allow homework assignment and read-only browsing on admin console.
@@ -120,14 +120,17 @@ class SubdomainAPIGuardMiddleware:
                 if path.startswith("/api/assessments/admin/"):
                     if method == "GET":
                         return self.get_response(request)
+                    exams_metric_incr("forbidden_admin_route_total")
                     return JsonResponse(
                         {"detail": "Assessment authoring is disabled on admin subdomain. Use questions subdomain."},
                         status=403,
                     )
                 # Student attempt flows live on main domain; block on admin for clarity.
+                exams_metric_incr("forbidden_admin_route_total")
                 return JsonResponse(
                     {"detail": "This assessments endpoint is not available on admin subdomain."}, status=403
                 )
+            exams_metric_incr("forbidden_admin_route_total")
             return JsonResponse(
                 {"detail": "This endpoint is not available on admin subdomain."}, status=403
             )
@@ -146,12 +149,14 @@ class SubdomainAPIGuardMiddleware:
                 return self.get_response(request)
             # Users are intentionally not available here.
             if path.startswith("/api/users/"):
+                exams_metric_incr("forbidden_admin_route_total")
                 return JsonResponse({"detail": "Users console is available on admin subdomain."}, status=403)
             return self.get_response(request)
 
-        # Main domain: block admin/test authoring endpoints.
-        if path.startswith("/api/exams/admin/"):
-            return JsonResponse({"detail": "Admin authoring endpoints require questions subdomain."}, status=403)
+        # Main domain: do **not** block ``/api/exams/admin/`` here. JWT attaches the user early
+        # via ``JWTUserMiddleware``, but authoring permission is enforced in DRF views
+        # (``CanManageQuestions``); blocking HTTP here broke single-origin SPA deployments where
+        # the CMS calls the API on the same host as students.
 
         return self.get_response(request)
 

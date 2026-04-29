@@ -244,16 +244,28 @@ class ClassroomViewSet(ModelViewSet):
         # student/teacher "Classes" UX private and prevents accidental directory-wide exposure.
         #
         # Superusers and super_admin may still need a global list for operational tasks.
-        if getattr(self, "action", None) != "list":
-            return member_qs
-        if getattr(user, "is_superuser", False) or normalized_role(user) == acc_const.ROLE_SUPER_ADMIN:
-            return Classroom.objects.annotate(members_count=Count("memberships")).distinct()
-        return member_qs
+        # Fail-closed: `/api/classes/` is always membership-scoped for everyone.
+        # A directory-wide list (ops/admin use) is exposed via a separate endpoint action.
+        out = member_qs if getattr(self, "action", None) == "list" else member_qs
+        return out
 
     def get_serializer_class(self):
         if self.action in ("create", "update", "partial_update"):
             return ClassroomCreateSerializer
         return ClassroomSerializer
+
+    @action(detail=False, methods=["get"], url_path="directory")
+    def directory(self, request):
+        """Directory-wide classroom list (super_admin/superuser only)."""
+        user = request.user
+        if not (getattr(user, "is_superuser", False) or normalized_role(user) == acc_const.ROLE_SUPER_ADMIN):
+            raise PermissionDenied(detail="You do not have permission to view the classroom directory.")
+        qs = Classroom.objects.annotate(members_count=Count("memberships")).distinct().order_by("-created_at")
+        page = self.paginate_queryset(qs)
+        if page is not None:
+            ser = ClassroomSerializer(page, many=True, context={"request": request})
+            return self.get_paginated_response(ser.data)
+        return Response(ClassroomSerializer(qs, many=True, context={"request": request}).data)
 
     def get_object(self):
         queryset = self.filter_queryset(self.get_queryset())

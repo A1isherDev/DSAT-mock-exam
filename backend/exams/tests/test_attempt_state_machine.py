@@ -195,7 +195,8 @@ class TestAttemptStateMachineTests(APITestCase):
         att.current_module_start_time = None
         att.save(update_fields=["current_state", "current_module", "current_module_start_time"])
 
-        r = self.client.get(f"/api/exams/attempts/{attempt_id}/status/")
+        # Status endpoint is read-only; normalization happens on explicit resume.
+        r = self.client.post(f"/api/exams/attempts/{attempt_id}/resume/", {}, format="json")
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.data.get("current_state"), TestAttempt.STATE_MODULE_2_ACTIVE)
         self.assertEqual(r.data.get("current_module_details", {}).get("module_order"), 2)

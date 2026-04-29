@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { examsApi } from "@/lib/api";
+import { examsPublicApi } from "@/lib/api";
 import { FileText, Search, X, ArrowRight } from "lucide-react";
 import Cookies from "js-cookie";
 type ExamKindFilter = "ALL" | "MOCK_SAT" | "MIDTERM";
@@ -30,7 +30,7 @@ export default function MockExamsList({
   title,
   description,
   mockQuerySuffix = "",
-  examKindFilter = "ALL",
+  examKindFilter = "ALL",  
 }: MockExamsListProps) {
   const [mockExams, setMockExams] = useState<any[]>([]);
   const [attempts, setAttempts] = useState<any[]>([]);
@@ -45,10 +45,10 @@ export default function MockExamsList({
 
     const fetchData = async () => {
       try {
-        const mockExamsData = await examsApi.getMockExams();
+        const mockExamsData = await examsPublicApi.getMockExams();
         setMockExams(mockExamsData);
         if (isLogged) {
-          const attemptsData = await examsApi.getAttempts();
+          const attemptsData = await examsPublicApi.getAttempts();
           setAttempts(attemptsData);
         }
       } catch (err) {

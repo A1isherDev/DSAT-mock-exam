@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import AuthGuard from "@/components/AuthGuard";
-import { examsApi } from "@/lib/api";
+import { examsPublicApi } from "@/lib/api";
 import { platformSubjectIsMath, platformSubjectIsReadingWriting } from "@/lib/permissions";
 import { ArrowLeft, Trophy } from "lucide-react";
 
@@ -21,14 +21,14 @@ function ResultsInner() {
     let cancelled = false;
     (async () => {
       try {
-        const mock = await examsApi.getMockExam(mockId);
+        const mock = await examsPublicApi.getMockExam(mockId);
         if (cancelled) return;
         setTitle(mock.title || "Mock exam");
         const rwTest = (mock.tests || []).find((t: any) => platformSubjectIsReadingWriting(t.subject));
         const mathTest = (mock.tests || []).find((t: any) => platformSubjectIsMath(t.subject));
         const rwParam = searchParams.get("rwAttempt");
         const mathParam = searchParams.get("mathAttempt");
-        const attempts = await examsApi.getAttempts();
+        const attempts = await examsPublicApi.getAttempts();
         if (cancelled) return;
 
         const pick = (testId: number | undefined, param: string | null) => {

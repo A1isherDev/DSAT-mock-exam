@@ -1,0 +1,121 @@
+from __future__ import annotations
+
+from django.contrib.auth import get_user_model
+from django.test import TestCase, override_settings
+from rest_framework.test import APIClient
+
+from access import constants as acc_const
+from exams.models import MockExam, PastpaperPack, PracticeTest
+
+User = get_user_model()
+
+_ALLOWED_FOR_SUBDOMAIN_TESTS = (
+    "testserver",
+    "localhost",
+    "127.0.0.1",
+    "admin.mastersat.uz",
+    "questions.mastersat.uz",
+)
+
+_ADMIN_HOST = {"HTTP_HOST": "admin.mastersat.uz"}
+_QUESTIONS_HOST = {"HTTP_HOST": "questions.mastersat.uz"}
+
+
+@override_settings(ALLOWED_HOSTS=list(_ALLOWED_FOR_SUBDOMAIN_TESTS))
+class RBACSubdomainFlowsTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.test_admin = User.objects.create_user(
+            email="ta@example.com",
+            password="pw",
+            role=acc_const.ROLE_TEST_ADMIN,
+        )
+        self.admin = User.objects.create_user(
+            email="admin@example.com",
+            password="pw",
+            role=acc_const.ROLE_ADMIN,
+        )
+
+    def test_test_admin_questions_host_can_list_and_create_tests(self):
+        self.client.force_authenticate(user=self.test_admin)
+
+        # Seed one mock exam and one standalone (pastpaper-like) section.
+        MockExam.objects.create(title="Mock A", practice_date="2024-10-01", kind=MockExam.KIND_MOCK_SAT)
+        PracticeTest.objects.create(
+            subject="MATH",
+            form_type="INTERNATIONAL",
+            mock_exam=None,
+            title="Standalone Section",
+            skip_default_modules=True,
+        )
+
+        r1 = self.client.get("/api/exams/admin/mock-exams/", **_QUESTIONS_HOST)
+        self.assertEqual(r1.status_code, 200)
+        self.assertIsInstance(r1.json(), list)
+        self.assertGreaterEqual(len(r1.json()), 1)
+
+        r2 = self.client.get("/api/exams/admin/tests/", **_QUESTIONS_HOST)
+        self.assertEqual(r2.status_code, 200)
+        self.assertIsInstance(r2.json(), list)
+        self.assertGreaterEqual(len(r2.json()), 1)
+
+        created = self.client.post(
+            "/api/exams/admin/tests/",
+            data={
+                "title": "Created by test_admin",
+                "subject": "READING_WRITING",
+                "form_type": "INTERNATIONAL",
+                "label": "A",
+            },
+            format="json",
+            **_QUESTIONS_HOST,
+        )
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.json().get("title"), "Created by test_admin")
+
+    def test_questions_host_wrong_endpoint_public_library_fails_loud_for_staff(self):
+        self.client.force_authenticate(user=self.test_admin)
+        r = self.client.get("/api/exams/", **_QUESTIONS_HOST)
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("/api/exams/admin/tests/", r.json().get("detail", ""))
+
+    def test_admin_host_lists_pastpaper_cards_and_sections_for_assignment_console(self):
+        self.client.force_authenticate(user=self.admin)
+
+        pack = PastpaperPack.objects.create(title="October form", form_type="INTERNATIONAL")
+        # Pack sections (RW + Math) + one orphan standalone section.
+        PracticeTest.objects.create(
+            mock_exam=None,
+            pastpaper_pack=pack,
+            subject="MATH",
+            form_type="INTERNATIONAL",
+            title="Pack Math",
+            skip_default_modules=True,
+        )
+        PracticeTest.objects.create(
+            mock_exam=None,
+            pastpaper_pack=pack,
+            subject="READING_WRITING",
+            form_type="INTERNATIONAL",
+            title="Pack RW",
+            skip_default_modules=True,
+        )
+        PracticeTest.objects.create(
+            mock_exam=None,
+            pastpaper_pack=None,
+            subject="READING_WRITING",
+            form_type="INTERNATIONAL",
+            title="Orphan RW",
+            skip_default_modules=True,
+        )
+
+        packs = self.client.get("/api/exams/admin/pastpaper-packs/", **_ADMIN_HOST)
+        self.assertEqual(packs.status_code, 200)
+        self.assertIsInstance(packs.json(), list)
+        self.assertGreaterEqual(len(packs.json()), 1)
+
+        standalone = self.client.get("/api/exams/admin/tests/?standalone=1", **_ADMIN_HOST)
+        self.assertEqual(standalone.status_code, 200)
+        self.assertIsInstance(standalone.json(), list)
+        self.assertGreaterEqual(len(standalone.json()), 3)
+

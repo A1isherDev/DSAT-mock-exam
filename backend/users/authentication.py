@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from django.conf import settings
 from django.utils import timezone
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.authentication import JWTAuthentication
@@ -17,6 +18,8 @@ class CookieOrHeaderJWTAuthentication(JWTAuthentication):
     def get_user(self, validated_token):
         user = super().get_user(validated_token)
         if user is None or not user.is_active:
+            return user
+        if not getattr(settings, "SECURITY_STEP_UP_ENFORCE_ON_JWT", False):
             return user
         try:
             until = getattr(user, "security_step_up_required_until", None)

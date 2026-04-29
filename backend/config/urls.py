@@ -16,6 +16,7 @@ from config.ops_alerting import AlertmanagerWebhookView
 from config.csrf_api import CsrfTokenView
 from config.csp_report import CSPReportView
 
+
 urlpatterns = [
     path('django-admin/', admin.site.urls),
     path('api/auth/login/', CookieTokenObtainPairView.as_view(), name='token_obtain_pair'),

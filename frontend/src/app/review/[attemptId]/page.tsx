@@ -1,7 +1,7 @@
 "use client";
 import React, { useMemo, useState, useEffect } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
-import { examsApi } from '@/lib/api';
+import { examsPublicApi } from '@/lib/api';
 import AuthGuard from '@/components/AuthGuard';
 import { CheckCircle2, XCircle, ArrowLeft, BarChart3, Eye, EyeOff, X, ChevronRight, BookOpen, AlertCircle } from 'lucide-react';
 import SafeHtml from '@/components/SafeHtml';
@@ -212,7 +212,7 @@ export default function ReviewPage() {
     useEffect(() => {
         const fetchReview = async () => {
             try {
-                const data = await examsApi.getReview(Number(attemptId), moduleId ? Number(moduleId) : undefined);
+                const data = await examsPublicApi.getReview(Number(attemptId), moduleId ? Number(moduleId) : undefined);
                 setReview(data);
                 setLoading(false);
             } catch (err) {
