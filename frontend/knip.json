@@ -1,0 +1,29 @@
+{
+  "$schema": "https://unpkg.com/knip@latest/schema.json",
+  "entry": [
+    "src/app/**/*.tsx",
+    "src/components/**/*.tsx",
+    "src/features/**/api.ts",
+    "src/features/**/hooks.ts",
+    "src/lib/**/*.ts"
+  ],
+  "project": ["tsconfig.json"],
+  "ignore": [
+    "src/lib/openapi-types.ts",
+    "src/lib/openapiClient.gen.ts"
+  ],
+  "ignoreDependencies": [
+    "@dnd-kit/core",
+    "@dnd-kit/sortable",
+    "@dnd-kit/utilities",
+    "@hookform/resolvers",
+    "react-hook-form",
+    "zod",
+    "zustand",
+    "openapi-typescript",
+    "tailwindcss",
+    "yaml",
+    "postcss"
+  ]
+}
+

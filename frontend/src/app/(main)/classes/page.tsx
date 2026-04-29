@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { classesApi, examsAdminApi } from "@/lib/api";
+import { classesApi } from "@/lib/api";
 import { lessonDaysMetaSuffix } from "@/lib/classroomSchedule";
 import { can } from "@/lib/permissions";
 import {
@@ -129,15 +129,6 @@ export default function ClassesPage() {
 
   useEffect(() => {
     fetchClasses();
-    if (canCreateClassroom) {
-      examsAdminApi
-        .getUsers()
-        .then((u) => {
-          const list = (Array.isArray(u) ? u : []).filter((x: any) => x.class_teacher_eligible);
-          setTeachers(list);
-        })
-        .catch(() => {});
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

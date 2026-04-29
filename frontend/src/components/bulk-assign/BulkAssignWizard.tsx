@@ -15,7 +15,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { examsAdminApi, assessmentsAdminApi, classesApi } from "@/lib/api";
+import { bulkAssignApi } from "@/features/bulkAssign/api";
 import { getSubject } from "@/lib/permissions";
 import {
   formatMockExamAdminLabel,
@@ -77,6 +77,10 @@ function normalizeClassroomSubject(raw: unknown): "math" | "english" | null {
   if (u === "ENGLISH") return "english";
   return null;
 }
+
+const examsAdminApi = bulkAssignApi.exams;
+const assessmentsAdminApi = bulkAssignApi.assessments;
+const classesApi = bulkAssignApi.classes;
 
 const BTN_PRIMARY =
   "btn-primary text-sm !px-4 !py-2.5 inline-flex items-center gap-2 justify-center font-bold disabled:opacity-50";

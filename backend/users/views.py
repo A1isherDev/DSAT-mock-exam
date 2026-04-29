@@ -39,6 +39,7 @@ import re
 import time
 from datetime import timedelta
 from django.core.cache import cache
+from time import monotonic
 
 from .security_audit import log_security_event
 from .security_risk import clear_security_step_up, record_failed_refresh_attempt
@@ -47,6 +48,8 @@ from .phone_utils import normalize_phone
 from .telegram_bot_info import telegram_bot_username_for_token
 from .auth_cookies import clear_auth_cookies, set_access_cookie, set_auth_cookies, REFRESH_COOKIE
 from .security_metrics import incr as security_metric_incr
+from core.metrics import incr as metric_incr, incr_role as metric_incr_role
+from core.drills import env_flag
 from .security_churn import observe_new_session, observe_refresh_rotation
 from .models import RefreshSession
 from django.utils import timezone
@@ -182,6 +185,7 @@ class CookieTokenObtainPairView(ThrottledTokenObtainPairView):
     """
 
     def post(self, request, *args, **kwargs):
+        t0 = monotonic()
         # Legacy clients may still read JSON tokens; keep compatibility via opt-in.
         include_tokens = str(request.query_params.get("include_tokens") or "").lower() in ("1", "true", "yes")
         remember_me = str(request.data.get("remember_me") or "1").lower() in ("1", "true", "yes")
@@ -190,6 +194,8 @@ class CookieTokenObtainPairView(ThrottledTokenObtainPairView):
             serializer.is_valid(raise_exception=True)
         except Exception:
             security_metric_incr("failed_login", 1)
+            metric_incr("slo_login_fail_total")
+            metric_incr_role("slo_login_fail_total", actor=getattr(serializer, "user", None) or getattr(request, "user", None))
             return Response({"detail": "Invalid credentials."}, status=status.HTTP_401_UNAUTHORIZED)
 
         data = dict(serializer.validated_data)
@@ -215,6 +221,10 @@ class CookieTokenObtainPairView(ThrottledTokenObtainPairView):
         if not include_tokens:
             resp.data.pop("access", None)
             resp.data.pop("refresh", None)
+        metric_incr("slo_login_ok_total")
+        metric_incr_role("slo_login_ok_total", actor=getattr(serializer, "user", None))
+        metric_incr("slo_login_latency_ms_sum", int((monotonic() - t0) * 1000))
+        metric_incr("slo_login_latency_ms_count")
         return resp
 
 
@@ -224,6 +234,11 @@ class CookieTokenRefreshView(TokenRefreshView):
     """
 
     def post(self, request, *args, **kwargs):
+        if env_flag("DRILL_REFRESH_OUTAGE"):
+            return Response(
+                {"detail": "Token refresh temporarily unavailable (drill)."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
         include_tokens = str(request.query_params.get("include_tokens") or "").lower() in ("1", "true", "yes")
 
         refresh_cookie = request.COOKIES.get(REFRESH_COOKIE) if hasattr(request, "COOKIES") else None

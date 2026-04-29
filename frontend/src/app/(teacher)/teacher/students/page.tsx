@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { examsAdminApi, classesApi, examsPublicApi } from "@/lib/api";
+import { teacherApi } from "@/features/teacher/api";
 import { ClassroomButton } from "@/components/classroom/Button";
 import { ClassroomModal } from "@/components/classroom/Modal";
 import { canAbacTestSubject } from "@/lib/permissions";
@@ -14,6 +14,7 @@ function _hasSubject(t: unknown): t is { subject: string } {
 }
 
 export default function TeacherStudentsPage() {
+  const { examsAdmin: examsAdminApi, classes: classesApi, examsPublic: examsPublicApi } = teacherApi;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [groups, setGroups] = useState<any[]>([]);

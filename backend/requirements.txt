@@ -7,6 +7,7 @@ tzdata==2025.3
 # REST API
 djangorestframework==3.16.1
 djangorestframework_simplejwt==5.5.1
+drf-spectacular==0.28.0
 PyJWT==2.11.0
 django-cors-headers==4.9.0
 django-filter==25.2

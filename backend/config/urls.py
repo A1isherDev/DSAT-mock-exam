@@ -15,6 +15,7 @@ from config.health import LiveHealthView, ReadyHealthView
 from config.ops_alerting import AlertmanagerWebhookView
 from config.csrf_api import CsrfTokenView
 from config.csp_report import CSPReportView
+from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 
 urlpatterns = [
@@ -30,6 +31,8 @@ urlpatterns = [
     path('api/health/live/', LiveHealthView.as_view(), name='health-live'),
     path('api/health/ready/', ReadyHealthView.as_view(), name='health-ready'),
     path('api/csp-report/', CSPReportView.as_view(), name='csp-report'),
+    path("api/schema/", SpectacularAPIView.as_view(), name="openapi-schema"),
+    path("api/schema/swagger/", SpectacularSwaggerView.as_view(url_name="openapi-schema"), name="openapi-swagger"),
     path('api/users/', include('users.urls')),
     path('api/exams/', include('exams.urls')),
     path('api/classes/', include('classes.urls')),

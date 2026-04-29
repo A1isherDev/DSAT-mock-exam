@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { classesApi } from "@/lib/api";
+import { teacherApi } from "@/features/teacher/api";
 import CreateAssignmentModal from "@/components/CreateAssignmentModal";
 import { Plus, Calendar, Pencil, Trash2, ClipboardCheck } from "lucide-react";
 
 export default function TeacherHomeworkPage() {
+  const classesApi = teacherApi.classes;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [groups, setGroups] = useState<any[]>([]);

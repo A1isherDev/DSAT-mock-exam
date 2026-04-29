@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { assessmentsAdminApi, classesApi } from "@/lib/api";
+import { bulkAssignApi } from "@/features/bulkAssign/api";
 import { getSubject } from "@/lib/permissions";
 
 const INPUT = "input-modern";
@@ -36,6 +36,8 @@ export type AssessmentClassroomAssignPanelProps = {
  * Used from Assignments tab on admin.* and from Assessments tab on questions.*.
  */
 export function AssessmentClassroomAssignPanel({ canAssign, showToast }: AssessmentClassroomAssignPanelProps) {
+  const assessmentsAdminApi = bulkAssignApi.assessments;
+  const classesApi = bulkAssignApi.classes;
   const [sets, setSets] = useState<any[]>([]);
   const [setsLoading, setSetsLoading] = useState(false);
   const [setId, setSetId] = useState<number | null>(null);

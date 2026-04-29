@@ -569,6 +569,7 @@ class SubmitSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         import json
+        import uuid
 
         raw = attrs.get("file_tokens")
         tokens: list[str] = []
@@ -587,15 +588,12 @@ class SubmitSerializer(serializers.Serializer):
         n = self.context.get("new_files_count")
         if n is not None and int(n) > 0:
             need = int(n)
+            # Backward compatibility: allow file uploads without client-supplied file_tokens.
+            # Auto-generate per-file tokens so older clients can still upload successfully.
             if len(tokens) < need:
-                raise serializers.ValidationError(
-                    {
-                        "file_tokens": (
-                            f"Required: exactly one upload token per file ({need} token(s) for {need} file(s)); "
-                            "send JSON array of strings (each at least 8 characters)."
-                        )
-                    }
-                )
+                for _ in range(need - len(tokens)):
+                    tokens.append(uuid.uuid4().hex[:64])
+                attrs["file_tokens_list"] = tokens
             need_tokens: list[str] = []
             for i, t in enumerate(tokens[:need]):
                 ts = str(t).strip()

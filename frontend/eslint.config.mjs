@@ -46,6 +46,61 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  // Bulk-assign must use its feature boundary (single choke point).
+  {
+    files: ["src/components/bulk-assign/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@/lib/api",
+              importNames: ["examsAdminApi", "assessmentsAdminApi", "classesApi"],
+              message: "Bulk-assign components must import APIs from '@/features/bulkAssign/api'.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  // Teacher pages must use teacher feature boundary (reduces accidental surface drift).
+  {
+    files: ["src/app/(teacher)/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@/lib/api",
+              importNames: ["examsAdminApi", "examsPublicApi", "classesApi"],
+              message: "Teacher pages must import APIs from '@/features/teacher/api'.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  // Student (main) pages and shared components must use feature boundaries for exams.
+  {
+    files: ["src/app/(main)/**/*.{ts,tsx}", "src/components/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@/lib/api",
+              importNames: ["examsPublicApi", "examsAdminApi"],
+              message:
+                "Use feature APIs (e.g. '@/features/examsStudent/api') instead of importing exam clients from '@/lib/api'.",
+            },
+          ],
+        },
+      ],
+    },
+  },
   // Staff pages should prefer feature APIs over low-level clients.
   {
     files: ["src/app/admin/**/*.{ts,tsx}", "src/app/(admin)/**/*.{ts,tsx}"],

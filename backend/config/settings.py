@@ -71,6 +71,7 @@ INSTALLED_APPS = [
 
     # Third party
     'rest_framework',
+    'drf_spectacular',
     'corsheaders',
 
     # Local apps
@@ -86,6 +87,11 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',  # Serve static files efficiently
+    # Trace id + request timing (safe in prod).
+    'core.tracing.RequestTraceMiddleware',
+    'core.tracing.RequestTimingMiddleware',
+    # Canary bucketing (for edge routing).
+    'core.canary.CanarySamplingMiddleware',
     # Security headers (CSP report-only by default).
     'config.security_headers.CSPMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -503,6 +509,16 @@ REST_FRAMEWORK = {
     ,
     # Standardize core AppError responses.
     "EXCEPTION_HANDLER": "core.errors.drf.core_exception_handler",
+    # OpenAPI schema generator (used for frontend type generation).
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "MasterSAT LMS API",
+    "VERSION": "1.0.0",
+    # Cookie auth: documented as such (clients are same-origin on subdomains).
+    "SERVE_AUTHENTICATION": [],
+    "SERVE_PERMISSIONS": [],
 }
 
 

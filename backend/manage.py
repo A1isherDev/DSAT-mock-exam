@@ -6,6 +6,9 @@ import sys
 
 def main():
     """Run administrative tasks."""
+    # Ensure Django test discovery works even when invoked from repo root.
+    # Without this, `manage.py test` (no labels) may run discovery from `.` and find 0 tests.
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
     try:
         from django.core.management import execute_from_command_line

@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect, useRef, memo, useCallback, Suspense } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
-import { examsPublicApi } from '@/lib/api';
+import { examsStudentApi } from "@/features/examsStudent/api";
 import AuthGuard from '@/components/AuthGuard';
 import { platformSubjectIsMath, platformSubjectIsReadingWriting } from '@/lib/permissions';
 import { renderMath } from '@/lib/mathRender';
@@ -14,6 +14,8 @@ const getImageUrl = (path: string | null | undefined) => {
     const baseUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || '';
     return `${baseUrl}${path}`;
 };
+
+const examsPublicApi = examsStudentApi;
 
 /** `/exams/attempts/` payload may not use strict DB enum strings for `practice_test_details.subject`. */
 function attemptPtSubjectIsRW(attempt: { practice_test_details?: { subject?: string } } | null | undefined) {

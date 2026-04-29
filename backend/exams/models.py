@@ -419,6 +419,13 @@ class TestAttempt(TimestampedModel):
     class Meta:
         db_table = 'test_attempts'
         ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=["student", "practice_test"],
+                condition=models.Q(is_completed=False) & ~models.Q(current_state="ABANDONED"),
+                name="uniq_active_attempt_per_student_test",
+            )
+        ]
 
     def __str__(self):
         return f"{self.student.email} - {self.practice_test}"

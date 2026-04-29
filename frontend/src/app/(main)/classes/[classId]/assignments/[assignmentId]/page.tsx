@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { classesApi, examsPublicApi } from "@/lib/api";
+import { classesApi } from "@/lib/api";
+import { examsStudentApi } from "@/features/examsStudent/api";
 import { subjectLabel } from "@/lib/practiceTestCards";
 import { platformSubjectIsMath } from "@/lib/permissions";
 import {
@@ -33,6 +34,8 @@ import {
   Send,
   Trophy,
 } from "lucide-react";
+
+const examsPublicApi = examsStudentApi;
 
 type BundleRow = { id: number; subject: string; title?: string };
 

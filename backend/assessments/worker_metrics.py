@@ -5,6 +5,8 @@ from typing import Any
 
 from django.conf import settings
 
+from core.drills import env_flag
+
 
 def get_celery_worker_snapshot(*, timeout_s: float = 0.8) -> dict[str, Any]:
     """
@@ -21,6 +23,18 @@ def get_celery_worker_snapshot(*, timeout_s: float = 0.8) -> dict[str, Any]:
             "reserved_tasks": 0,
             "scheduled_tasks": 0,
             "active_runtime_seconds": {"avg": None, "max": None, "sample_n": 0},
+        }
+
+    if env_flag("DRILL_CELERY_STUCK"):
+        # Simulate "workers up but wedged" for incident drills.
+        return {
+            "enabled": True,
+            "reason": "drill_celery_stuck",
+            "workers": 1,
+            "active_tasks": 1,
+            "reserved_tasks": 0,
+            "scheduled_tasks": 0,
+            "active_runtime_seconds": {"avg": 3600.0, "max": 3600.0, "sample_n": 1},
         }
 
     try:

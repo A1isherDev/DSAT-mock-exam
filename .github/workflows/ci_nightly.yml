@@ -1,0 +1,74 @@
+name: CI (nightly exhaustive)
+
+on:
+  schedule:
+    - cron: "0 2 * * *" # 02:00 UTC daily
+  workflow_dispatch:
+
+jobs:
+  backend-nightly:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      SECRET_KEY: ci-secret-key
+      DEBUG: "True"
+      ALLOWED_HOSTS: localhost,127.0.0.1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install backend deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r ../requirements.txt
+          pip install -r requirements-dev.txt
+      - name: Django system check
+        run: python manage.py check
+      - name: Ensure no schema drift
+        run: python manage.py makemigrations --check --dry-run
+      - name: Backend tests with flaky rerun
+        run: |
+          start=$(date +%s)
+          python ../scripts/ci_rerun_failed_tests.py
+          dur=$(( $(date +%s) - start ))
+          echo "backend_nightly_seconds=$dur"
+          test $dur -le 2400
+      - name: Mutation tests (critical modules)
+        run: |
+          start=$(date +%s)
+          mutmut run --paths-to-mutate access/services.py,exams/views.py,exams/idempotency.py,core/idempotency/api.py --runner "python manage.py test -v 1"
+          dur=$(( $(date +%s) - start ))
+          echo "mutation_seconds=$dur"
+          test $dur -le 3600
+
+  frontend-nightly:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install deps
+        run: npm ci --no-audit --no-fund
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+      - name: Lint
+        run: npm run lint
+      - name: Dead-code check
+        run: npm run deadcode
+      - name: Generate OpenAPI types/client (must be up to date)
+        run: |
+          npm run gen:openapi
+          npm run gen:openapi-client
+          git diff --exit-code
+      - name: Build
+        run: npm run build
+      - name: E2E smoke (Playwright)
+        run: npm run test:e2e
+

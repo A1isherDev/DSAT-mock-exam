@@ -11,6 +11,7 @@ from django.views import View
 
 from assessments.models import HomeworkAssignment
 from exams.models import TestAttempt
+from core.drills import env_flag, maybe_sleep_ms
 
 
 @dataclass(frozen=True)
@@ -65,6 +66,7 @@ def _dup_homework_groups() -> int:
 
 class LiveHealthView(View):
     def get(self, request):
+        maybe_sleep_ms("DRILL_DB_SLOW_MS")
         return JsonResponse(
             {"ok": True, "ts": timezone.now().isoformat()},
             status=200,
@@ -79,7 +81,10 @@ class ReadyHealthView(View):
     """
 
     def get(self, request):
+        maybe_sleep_ms("DRILL_DB_SLOW_MS")
         pending = _pending_migrations()
+        if env_flag("DRILL_WRONG_MIGRATION"):
+            pending = list(pending) + ["DRILL.wrong_migration_deployed"]
         constraints = {
             "uniq_active_attempt_per_student_test": _constraint_exists("uniq_active_attempt_per_student_test"),
             "uniq_assessment_hw_classroom_set": _constraint_exists("uniq_assessment_hw_classroom_set"),

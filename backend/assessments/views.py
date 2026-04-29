@@ -13,6 +13,7 @@ from rest_framework.views import APIView
 from django.http import HttpResponse
 
 import secrets
+from time import monotonic
 
 from django.conf import settings as dj_settings
 
@@ -45,6 +46,7 @@ from .grading_service import grade_attempt
 from .prometheus import render_assessments_prometheus_text
 from .prometheus_homework import render_assessments_homework_prometheus_text
 from .metrics import incr as assessments_metric_incr
+from core.metrics import incr as metric_incr, incr_role as metric_incr_role
 from config.error_reporting import report_error
 from .worker_metrics import get_celery_worker_snapshot
 from .redis_health import get_redis_health_snapshot
@@ -337,6 +339,7 @@ class AssignAssessmentHomeworkView(APIView):
     ]
 
     def post(self, request):
+        t0 = monotonic()
         ser = AssignHomeworkSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         data = ser.validated_data
@@ -344,11 +347,15 @@ class AssignAssessmentHomeworkView(APIView):
         from .mitigation import is_global_assignment_blocked, is_user_assignment_blocked
 
         if is_global_assignment_blocked():
+            metric_incr("slo_homework_assign_fail_total")
+            metric_incr_role("slo_homework_assign_fail_total", actor=getattr(request, "user", None))
             return Response(
                 {"detail": "Assignment temporarily rate-limited system-wide. Retry shortly."},
                 status=status.HTTP_429_TOO_MANY_REQUESTS,
             )
         if is_user_assignment_blocked(request.user.pk):
+            metric_incr("slo_homework_assign_fail_total")
+            metric_incr_role("slo_homework_assign_fail_total", actor=getattr(request, "user", None))
             return Response(
                 {"detail": "Your account is temporarily blocked from assigning tests due to abuse controls."},
                 status=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -357,6 +364,8 @@ class AssignAssessmentHomeworkView(APIView):
         classroom = get_object_or_404(Classroom, pk=data["classroom_id"])
         c_authz = classroom_authz_for_user(classroom=classroom, user=request.user)
         if not c_authz.is_class_admin:
+            metric_incr("slo_homework_assign_fail_total")
+            metric_incr_role("slo_homework_assign_fail_total", actor=getattr(request, "user", None))
             return Response({"detail": "Only class admins can assign homework."}, status=status.HTTP_403_FORBIDDEN)
 
         aset = get_object_or_404(AssessmentSet.objects.prefetch_related("questions"), pk=data["set_id"])
@@ -366,16 +375,22 @@ class AssignAssessmentHomeworkView(APIView):
         # - teachers must "own" the classroom (classroom.teacher == actor)
         actor = request.user
         if not CanAssignTests().has_permission(request, self):
+            metric_incr("slo_homework_assign_fail_total")
+            metric_incr_role("slo_homework_assign_fail_total", actor=getattr(request, "user", None))
             return Response({"detail": "You do not have permission to assign tests."}, status=status.HTTP_403_FORBIDDEN)
 
         role = normalized_role(actor)
         if role == acc_const.ROLE_TEACHER:
             # Classroom ownership: teacher can only assign within classes they teach.
             if not c_authz.is_teacher_owner:
+                metric_incr("slo_homework_assign_fail_total")
+                metric_incr_role("slo_homework_assign_fail_total", actor=getattr(request, "user", None))
                 return Response({"detail": "Only the classroom teacher can assign tests in this class."}, status=status.HTTP_403_FORBIDDEN)
             # Subject scope: teachers can only assign their own subject.
             ds = user_domain_subject(actor)
             if ds and aset.subject != ds:
+                metric_incr("slo_homework_assign_fail_total")
+                metric_incr_role("slo_homework_assign_fail_total", actor=getattr(request, "user", None))
                 return Response({"detail": "You cannot assign tests outside your subject."}, status=status.HTTP_403_FORBIDDEN)
 
         title = (data.get("title") or "").strip() or aset.title
@@ -448,6 +463,10 @@ class AssignAssessmentHomeworkView(APIView):
             actor_is_global_staff=is_global_scope_staff(request.user) or bool(getattr(request.user, "is_superuser", False)),
         )
 
+        metric_incr("slo_homework_assign_ok_total")
+        metric_incr_role("slo_homework_assign_ok_total", actor=getattr(request, "user", None))
+        metric_incr("slo_homework_assign_latency_ms_sum", int((monotonic() - t0) * 1000))
+        metric_incr("slo_homework_assign_latency_ms_count")
         return Response(HomeworkAssignmentSerializer(hw, context={"request": request}).data, status=status.HTTP_201_CREATED)
 
 

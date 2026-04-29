@@ -11,6 +11,7 @@ import logging
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 import time
+from time import monotonic
 
 from django.db import IntegrityError, OperationalError, transaction
 from django.conf import settings
@@ -70,7 +71,7 @@ from .serializers import (
 )
 from core.idempotency import consume as consume_idempotency
 from .tasks import score_attempt_async
-from core.metrics import incr as metric_incr
+from core.metrics import incr as metric_incr, incr_role as metric_incr_role
 from .metrics import get_counter
 from .prometheus import render_exams_prometheus_text
 from .attempt_timing import get_active_module_timing
@@ -401,6 +402,7 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         return TestAttempt.objects.filter(student=self.request.user)
 
     def create(self, request, *args, **kwargs):
+        t0 = monotonic()
         test_id = request.data.get("practice_test")
         user = request.user
         base = PracticeTest.objects.all().select_related("mock_exam", "pastpaper_pack")
@@ -472,10 +474,21 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                 continue
 
         if last_exc is not None or attempt is None:
+            metric_incr("slo_exam_start_fail_total")
+            metric_incr_role("slo_exam_start_fail_total", actor=getattr(request, "user", None))
             raise last_exc or OperationalError("Could not create attempt due to database lock.")
 
         # Re-fetch canonical state for response (start_attempt mutates state/FKs).
-        attempt = TestAttempt.objects.select_related("current_module").get(pk=attempt.pk)
+        refreshed = None
+        for _ in range(6):
+            try:
+                refreshed = TestAttempt.objects.select_related("practice_test", "current_module").get(pk=attempt.pk)
+                break
+            except OperationalError:
+                time.sleep(0.05)
+        if refreshed is None:
+            raise OperationalError("Could not load attempt after create due to database lock.")
+        attempt = refreshed
         
         AuditLog.objects.create(
             user=request.user,
@@ -484,6 +497,10 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         )
             
         serializer = self.get_serializer(attempt)
+        metric_incr("slo_exam_start_ok_total")
+        metric_incr_role("slo_exam_start_ok_total", actor=getattr(request, "user", None))
+        metric_incr("slo_exam_start_latency_ms_sum", int((monotonic() - t0) * 1000))
+        metric_incr("slo_exam_start_latency_ms_count")
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     # NOTE: `status` is defined once below (canonical resume payload).
@@ -499,6 +516,7 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
 
         def _compute():
             try:
+                t0 = monotonic()
                 with transaction.atomic():
                     locked = (
                         TestAttempt.objects.select_for_update()
@@ -513,8 +531,14 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                     .prefetch_related("practice_test__modules", "current_module__questions")
                     .get(pk=attempt0.pk)
                 )
+                metric_incr("slo_exam_resume_ok_total")
+                metric_incr_role("slo_exam_resume_ok_total", actor=getattr(request, "user", None))
+                metric_incr("slo_exam_resume_latency_ms_sum", int((monotonic() - t0) * 1000))
+                metric_incr("slo_exam_resume_latency_ms_count")
                 return Response(self.get_serializer(attempt).data)
             except Exception as exc:
+                metric_incr("slo_exam_resume_fail_total")
+                metric_incr_role("slo_exam_resume_fail_total", actor=getattr(request, "user", None))
                 return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         return consume_idempotency(attempt=attempt0, endpoint="resume", request=request, compute=_compute)
@@ -535,12 +559,19 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
 
         def _compute():
             try:
+                t0 = monotonic()
                 with transaction.atomic():
                     locked = TestAttempt.objects.select_for_update().get(pk=attempt.pk)
                     autoheal_attempt_for_runtime(locked)
                     locked.start_attempt()
+                metric_incr("slo_exam_engine_start_ok_total")
+                metric_incr_role("slo_exam_engine_start_ok_total", actor=getattr(request, "user", None))
+                metric_incr("slo_exam_engine_start_latency_ms_sum", int((monotonic() - t0) * 1000))
+                metric_incr("slo_exam_engine_start_latency_ms_count")
                 return Response(self.get_serializer(TestAttempt.objects.get(pk=attempt.pk)).data)
             except Exception as exc:
+                metric_incr("slo_exam_engine_start_fail_total")
+                metric_incr_role("slo_exam_engine_start_fail_total", actor=getattr(request, "user", None))
                 return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         return consume_idempotency(attempt=attempt, endpoint="start", request=request, compute=_compute)
@@ -610,6 +641,7 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
 
         def _compute():
             try:
+                t0 = monotonic()
                 with transaction.atomic():
                     # Defensive: ensure full mock sections always have both modules provisioned.
                     ensure_full_mock_practice_test_modules(attempt0.practice_test)
@@ -674,10 +706,10 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                         broker = str(getattr(settings, "CELERY_BROKER_URL", "") or "").strip()
                         eager = bool(getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False))
                         if broker or eager:
-                            score_attempt_async.delay(attempt.pk)
+                            score_attempt_async.delay(attempt.pk, trace_id=getattr(request, "trace_id", None))
                         else:
                             if bool(getattr(settings, "EXAMS_SCORE_INLINE_IF_NO_CELERY", False)):
-                                score_attempt_async(attempt.pk)
+                                score_attempt_async(attempt.pk, trace_id=getattr(request, "trace_id", None))
                         metric_incr("scoring_enqueued")
 
                 # Re-fetch canonical state after transaction commit for response.
@@ -691,10 +723,16 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                     "[FORENSIC] submit_module_response attempt_id=%s state=%s mod=%s v=%s",
                     attempt.id, attempt.current_state, attempt.current_module_id, attempt.version_number
                 )
+                metric_incr("slo_module_submit_ok_total")
+                metric_incr_role("slo_module_submit_ok_total", actor=getattr(request, "user", None))
+                metric_incr("slo_module_submit_latency_ms_sum", int((monotonic() - t0) * 1000))
+                metric_incr("slo_module_submit_latency_ms_count")
                 return Response(resp_data)
 
             except Exception as e:
                 logger.exception("[FORENSIC] submit_module_exception attempt_id=%s error=%s", getattr(attempt0, "id", None), str(e))
+                metric_incr("slo_module_submit_fail_total")
+                metric_incr_role("slo_module_submit_fail_total", actor=getattr(request, "user", None))
                 return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         return consume_idempotency(attempt=attempt0, endpoint="submit_module", request=request, compute=_compute)

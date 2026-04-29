@@ -106,6 +106,8 @@ class SubdomainAPIGuardMiddleware:
                 return self.get_response(request)
             if path.startswith("/api/exams/bulk_assign"):
                 return self.get_response(request)
+            if path.startswith("/api/exams/bulk_assign/"):
+                return self.get_response(request)
             if path.startswith("/api/exams/assignments/"):
                 return self.get_response(request)
             # Hosted admin SPA performs full exam authoring (pastpaper packs, mock shells, tests/modules/questions).

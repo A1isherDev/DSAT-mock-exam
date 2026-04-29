@@ -1,0 +1,44 @@
+name: Production smoke (post-deploy)
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url_questions:
+        description: "Questions console base URL"
+        required: true
+        default: "https://questions.mastersat.uz"
+      base_url_admin:
+        description: "Admin console base URL"
+        required: true
+        default: "https://admin.mastersat.uz"
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install deps
+        run: npm ci --no-audit --no-fund
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+      - name: Run production smoke (API)
+        env:
+          PLAYWRIGHT_BASE_URL: ${{ inputs.base_url_questions }}
+          E2E_ADMIN_BASE_URL: ${{ inputs.base_url_admin }}
+          # Secrets must be configured in repo settings
+          E2E_STUDENT_EMAIL: ${{ secrets.E2E_STUDENT_EMAIL }}
+          E2E_STUDENT_PASSWORD: ${{ secrets.E2E_STUDENT_PASSWORD }}
+          E2E_TEACHER_EMAIL: ${{ secrets.E2E_TEACHER_EMAIL }}
+          E2E_TEACHER_PASSWORD: ${{ secrets.E2E_TEACHER_PASSWORD }}
+          E2E_ADMIN_EMAIL: ${{ secrets.E2E_ADMIN_EMAIL }}
+          E2E_ADMIN_PASSWORD: ${{ secrets.E2E_ADMIN_PASSWORD }}
+          E2E_PRACTICE_TEST_ID: ${{ secrets.E2E_PRACTICE_TEST_ID }}
+          E2E_CLASSROOM_ID: ${{ secrets.E2E_CLASSROOM_ID }}
+        run: npx playwright test tests/e2e/release_smoke_api.spec.ts
+

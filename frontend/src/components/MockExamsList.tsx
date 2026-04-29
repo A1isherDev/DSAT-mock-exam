@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { examsPublicApi } from "@/lib/api";
+import { examsStudentApi } from "@/features/examsStudent/api";
 import { FileText, Search, X, ArrowRight } from "lucide-react";
 import Cookies from "js-cookie";
 type ExamKindFilter = "ALL" | "MOCK_SAT" | "MIDTERM";
@@ -14,6 +14,8 @@ type MockExamsListProps = {
   mockQuerySuffix?: string;
   examKindFilter?: ExamKindFilter;
 };
+
+const examsPublicApi = examsStudentApi;
 
 function routeMockId(group: any) {
   return group.mock_exam_id ?? group.id;

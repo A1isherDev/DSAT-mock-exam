@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Cookies from "js-cookie";
-import { classesApi, examsPublicApi, usersApi } from "@/lib/api";
+import { classesApi, usersApi } from "@/lib/api";
+import { examsStudentApi } from "@/features/examsStudent/api";
 import { ArrowRight, BarChart3, Calendar, Loader2, Pencil, PlayCircle, Target, TrendingUp } from "lucide-react";
 import { ClassroomButton } from "@/components/classroom";
 import { DashboardCard, DashboardEyebrow, DashboardTitle } from "./DashboardCard";
@@ -20,6 +21,8 @@ type Attempt = {
   score?: number | null;
   practice_test_details?: { subject?: string; title?: string };
 };
+
+const examsPublicApi = examsStudentApi;
 
 type ExamDateOptionRow = {
   id: number;

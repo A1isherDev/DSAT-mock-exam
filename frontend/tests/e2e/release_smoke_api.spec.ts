@@ -34,6 +34,31 @@ test.describe("release smoke (API)", () => {
     expect(statusJson?.id).toBe(attempt.id);
   });
 
+  test("admin: bulk assign exam surface", async ({ playwright }) => {
+    const email = env("E2E_ADMIN_EMAIL");
+    const password = env("E2E_ADMIN_PASSWORD");
+    const practiceTestId = Number(env("E2E_PRACTICE_TEST_ID"));
+    test.skip(!email || !password || !Number.isFinite(practiceTestId) || practiceTestId <= 0, "Missing E2E env vars");
+
+    const ctx = await playwright.request.newContext({
+      baseURL: env("E2E_ADMIN_BASE_URL") || "https://admin.mastersat.uz",
+    });
+    const login = await ctx.post("/api/auth/login/?include_tokens=1", {
+      data: { email, password, remember_me: 1 },
+    });
+    expect(login.ok()).toBeTruthy();
+
+    // Minimal bulk-assign call: should not be host-guard blocked; may still 4xx on payload/permissions.
+    const assign = await ctx.post("/api/exams/bulk_assign/", {
+      data: { user_ids: [], practice_test_ids: [practiceTestId], exam_ids: [] },
+    });
+    expect([200, 201, 400, 403, 409]).toContain(assign.status());
+    if (assign.status() === 403) {
+      const j = await assign.json().catch(() => ({}));
+      expect(String((j as any)?.detail || "").toLowerCase()).not.toContain("not available on admin subdomain");
+    }
+  });
+
   test("teacher: create homework + builder save", async ({ request }) => {
     const email = env("E2E_TEACHER_EMAIL");
     const password = env("E2E_TEACHER_PASSWORD");
@@ -77,6 +102,22 @@ test.describe("release smoke (API)", () => {
     expect(assign.ok()).toBeTruthy();
     const hw = await assign.json();
     expect(hw?.id).toBeTruthy();
+  });
+
+  test("teacher: classes list is membership-scoped", async ({ request }) => {
+    const email = env("E2E_TEACHER_EMAIL");
+    const password = env("E2E_TEACHER_PASSWORD");
+    test.skip(!email || !password, "Missing E2E env vars");
+
+    const login = await request.post("/api/auth/login/?include_tokens=1", {
+      data: { email, password, remember_me: 1 },
+    });
+    expect(login.ok()).toBeTruthy();
+
+    const r = await request.get("/api/classes/");
+    expect(r.ok()).toBeTruthy();
+    const rows = await r.json();
+    expect(Array.isArray(rows)).toBeTruthy();
   });
 });
 

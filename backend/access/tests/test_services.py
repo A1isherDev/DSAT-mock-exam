@@ -169,12 +169,8 @@ class AccessPrimitivesTests(TestCase):
             password="x",
             role=C.ROLE_TEST_ADMIN,
         )
-        self.assertTrue(
-            authorize(ta, C.PERM_MANAGE_TESTS, subject=C.SUBJECT_MATH_PLATFORM)
-        )
-        self.assertTrue(
-            authorize(ta, C.PERM_MANAGE_TESTS, subject=C.SUBJECT_ENGLISH_PLATFORM)
-        )
+        self.assertTrue(authorize(ta, C.PERM_MANAGE_TESTS, subject=C.SUBJECT_MATH_PLATFORM))
+        self.assertTrue(authorize(ta, C.PERM_MANAGE_TESTS, subject=C.SUBJECT_ENGLISH_PLATFORM))
 
     def test_normalized_role_maps_legacy_strings(self):
         u = User.objects.create_user(
@@ -283,9 +279,7 @@ class AccessPrimitivesTests(TestCase):
         from exams.models import PracticeTest
 
         pt = PracticeTest.objects.create(subject=C.SUBJECT_MATH_PLATFORM, skip_default_modules=True)
-        qs = filter_practice_tests_for_user(
-            self.math_teacher, PracticeTest.objects.filter(pk=pt.pk)
-        )
+        qs = filter_practice_tests_for_user(self.math_teacher, PracticeTest.objects.filter(pk=pt.pk))
         self.assertTrue(qs.exists())
         self.assertTrue(can_view_tests(self.math_teacher, C.SUBJECT_MATH_PLATFORM))
 
@@ -365,3 +359,4 @@ class AccessPrimitivesTests(TestCase):
         qs = filter_pastpaper_packs_for_user(su, PastpaperPack.objects.all())
         self.assertEqual(qs.count(), 1)
         self.assertTrue(qs.filter(pk=pack.pk).exists())
+

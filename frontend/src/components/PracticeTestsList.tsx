@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { examsPublicApi } from "@/lib/api";
+import { examsStudentApi } from "@/features/examsStudent/api";
 import {
   buildHomeworkPastpaperCards,
   formatLineDate,
@@ -22,6 +22,8 @@ type PracticeTestsListProps = {
   title: string;
   description?: string;
 };
+
+const examsPublicApi = examsStudentApi;
 
 function progressPack(tests: any[], attempts: any[]) {
   if (!tests.length) return 0;

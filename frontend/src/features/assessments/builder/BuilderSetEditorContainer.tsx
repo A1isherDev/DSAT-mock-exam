@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useAssessmentSetDetail, useAssessmentSetsList, useDeleteAssessmentQuestion, useUpsertAssessmentQuestion, useUpsertAssessmentSet } from "@/features/assessments/hooks";
-import { assessmentAuthoringApi } from "@/features/assessments/api";
+import { assessmentsAdminApi as assessmentAuthoringApi } from "@/features/assessmentsAdmin/api";
 import { AssessmentCategorySelect } from "@/features/assessments/components/AssessmentCategorySelect";
 import { AssessmentQuestionEditorFields } from "@/features/assessments/components/AssessmentQuestionEditorFields";
 import type { AssessmentQuestion, AssessmentQuestionType, AssessmentSet } from "@/features/assessments/types";

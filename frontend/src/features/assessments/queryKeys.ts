@@ -1,13 +1,13 @@
 import type { Subject } from "./types";
 
-export const assessmentKeys = {
+export const assessmentsKeys = {
   all: ["assessments"] as const,
-  sets: () => [...assessmentKeys.all, "sets"] as const,
-  setsList: (params?: { subject?: Subject; category?: string }) => [...assessmentKeys.sets(), "list", params ?? {}] as const,
-  setDetail: (id: number) => [...assessmentKeys.sets(), "detail", id] as const,
-  attempt: () => [...assessmentKeys.all, "attempt"] as const,
-  attemptBundle: (attemptId: number) => [...assessmentKeys.attempt(), "bundle", attemptId] as const,
-  result: () => [...assessmentKeys.all, "result"] as const,
-  myResult: (assignmentId: number) => [...assessmentKeys.result(), "my", assignmentId] as const,
+  sets: () => [...assessmentsKeys.all, "sets"] as const,
+  setsList: (params?: { subject?: Subject; category?: string }) => [...assessmentsKeys.sets(), "list", params ?? {}] as const,
+  setDetail: (id: number) => [...assessmentsKeys.sets(), "detail", id] as const,
+  attempt: () => [...assessmentsKeys.all, "attempt"] as const,
+  attemptBundle: (attemptId: number) => [...assessmentsKeys.attempt(), "bundle", attemptId] as const,
+  result: () => [...assessmentsKeys.all, "result"] as const,
+  myResult: (assignmentId: number) => [...assessmentsKeys.result(), "my", assignmentId] as const,
 };
 

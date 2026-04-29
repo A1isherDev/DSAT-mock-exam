@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { authApi, classesApi, examsPublicApi, usersApi } from "@/lib/api";
+import { authApi, classesApi, usersApi } from "@/lib/api";
+import { examsStudentApi } from "@/features/examsStudent/api";
 import { formatLessonDaysMeta } from "@/lib/classroomSchedule";
 import TelegramLoginButton, { type TelegramAuthUser } from "@/components/TelegramLoginButton";
 import {
@@ -40,6 +41,8 @@ type MeForm = {
     completed_at: string | null;
   } | null;
 };
+
+const examsPublicApi = examsStudentApi;
 
 type Classroom = {
   id: number;

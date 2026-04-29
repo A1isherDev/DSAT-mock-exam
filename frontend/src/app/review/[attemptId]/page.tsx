@@ -1,10 +1,12 @@
 "use client";
 import React, { useMemo, useState, useEffect } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
-import { examsPublicApi } from '@/lib/api';
+import { examsStudentApi } from "@/features/examsStudent/api";
 import AuthGuard from '@/components/AuthGuard';
 import { CheckCircle2, XCircle, ArrowLeft, BarChart3, Eye, EyeOff, X, ChevronRight, BookOpen, AlertCircle } from 'lucide-react';
 import SafeHtml from '@/components/SafeHtml';
+
+const examsPublicApi = examsStudentApi;
 
 interface QuestionReviewModalProps {
     question: any;

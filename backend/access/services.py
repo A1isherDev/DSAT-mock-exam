@@ -116,6 +116,17 @@ def _role_permissions_map() -> dict[str, FrozenSet[str]]:
     }
 
 
+def role_permissions_matrix() -> dict[str, FrozenSet[str]]:
+    """
+    One source of truth for role → permission codenames.
+
+    Notes:
+    - This is **role-level** policy (RBAC). ABAC subject rules are enforced by `authorize(...)`.
+    - Callers should treat this mapping as read-only.
+    """
+    return _role_permissions_map()
+
+
 def normalized_role(user) -> str:
     if not user or not getattr(user, "is_authenticated", False):
         return constants.ROLE_STUDENT

@@ -1,0 +1,93 @@
+groups:
+  - name: slo-burn-rate
+    rules:
+      # Burn-rate alerting: page only on fast budget burn.
+      #
+      # Multi-window, multi-burn pattern:
+      # - short window catches rapid regressions
+      # - long window prevents flappy paging
+
+      - alert: SLOModuleSubmitBurnRateFast
+        expr: |
+          (
+            rate(slo_module_submit_fail_total[5m])
+            /
+            clamp_min(rate(slo_module_submit_ok_total[5m]) + rate(slo_module_submit_fail_total[5m]), 1e-9)
+          ) > 0.02
+          and
+          (
+            rate(slo_module_submit_fail_total[1h])
+            /
+            clamp_min(rate(slo_module_submit_ok_total[1h]) + rate(slo_module_submit_fail_total[1h]), 1e-9)
+          ) > 0.01
+        for: 5m
+        labels:
+          severity: page
+          slo: module_submit
+        annotations:
+          summary: "Module submit SLO burning fast"
+          description: "High module submit failure ratio across 5m and 1h windows."
+
+      - alert: SLOHomeworkAssignBurnRateFast
+        expr: |
+          (
+            rate(slo_homework_assign_fail_total[5m])
+            /
+            clamp_min(rate(slo_homework_assign_ok_total[5m]) + rate(slo_homework_assign_fail_total[5m]), 1e-9)
+          ) > 0.02
+          and
+          (
+            rate(slo_homework_assign_fail_total[1h])
+            /
+            clamp_min(rate(slo_homework_assign_ok_total[1h]) + rate(slo_homework_assign_fail_total[1h]), 1e-9)
+          ) > 0.01
+        for: 5m
+        labels:
+          severity: page
+          slo: homework_assign
+        annotations:
+          summary: "Homework assign SLO burning fast"
+          description: "High homework assignment failure ratio across 5m and 1h windows."
+
+      - alert: SLOLoginBurnRateFast
+        expr: |
+          (
+            rate(slo_login_fail_total[5m])
+            /
+            clamp_min(rate(slo_login_ok_total[5m]) + rate(slo_login_fail_total[5m]), 1e-9)
+          ) > 0.01
+          and
+          (
+            rate(slo_login_fail_total[1h])
+            /
+            clamp_min(rate(slo_login_ok_total[1h]) + rate(slo_login_fail_total[1h]), 1e-9)
+          ) > 0.005
+        for: 5m
+        labels:
+          severity: page
+          slo: login
+        annotations:
+          summary: "Login SLO burning fast"
+          description: "High login failure ratio across 5m and 1h windows."
+
+      - alert: SLOAPI5xxBurnRateFast
+        expr: |
+          (
+            rate(slo_api_5xx_total[5m])
+            /
+            clamp_min(rate(slo_api_4xx_total[5m]) + rate(slo_api_5xx_total[5m]), 1e-9)
+          ) > 0.02
+          and
+          (
+            rate(slo_api_5xx_total[1h])
+            /
+            clamp_min(rate(slo_api_4xx_total[1h]) + rate(slo_api_5xx_total[1h]), 1e-9)
+          ) > 0.01
+        for: 5m
+        labels:
+          severity: page
+          slo: api_5xx
+        annotations:
+          summary: "API 5xx burn rate high"
+          description: "5xx ratio elevated across 5m and 1h windows."
+

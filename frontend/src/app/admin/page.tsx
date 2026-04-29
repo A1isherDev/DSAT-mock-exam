@@ -2,8 +2,8 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import AuthGuard from '@/components/AuthGuard';
 import { authApi, usersApi } from '@/lib/api';
-import { adminExamsFeatureApi } from "@/features/adminExams/api";
-import { adminAssessmentsFeatureApi } from "@/features/adminAssessments/api";
+import { examsAdminApi as adminExamsFeatureApi } from "@/features/examsAdmin/api";
+import { assessmentsAdminApi as adminAssessmentsFeatureApi } from "@/features/assessmentsAdmin/api";
 import {
     can,
     canAuthorTestsUi,
@@ -279,6 +279,7 @@ export default function AdminPage() {
         | "admin"
         | "questions"
         | null;
+    const assessmentsAuthoringAllowed = consoleMode !== "admin";
     const didInitMockSelection = useRef(false);
     const [activeTab, setActiveTab] = useState<Tab>('pastpapers');
     const [loading, setLoading] = useState(false);
@@ -531,7 +532,7 @@ export default function AdminPage() {
         setAssessmentSetsLoading(true);
         try {
             const dom = getSubject();
-            const data = await adminAssessmentsFeatureApi.adminListSets(dom ? { subject: dom } : undefined);
+            const data = await adminAssessmentsFeatureApi.listSets(dom ? { subject: dom } : undefined);
             setAssessmentSets(Array.isArray(data) ? data : []);
         } catch (e: any) {
             const d = e?.response?.data;
@@ -1666,9 +1667,13 @@ export default function AdminPage() {
 
     const handleSaveAssessmentSetMeta = async () => {
         if (!selectedAssessmentSetId || !canAuthorTestsUi()) return;
+        if (!assessmentsAuthoringAllowed) {
+            showToast("Assessment authoring is disabled on admin console. Use questions console.");
+            return;
+        }
         setSaving(true);
         try {
-            await adminAssessmentsFeatureApi.adminUpdateSet(selectedAssessmentSetId, {
+            await adminAssessmentsFeatureApi.updateSet(selectedAssessmentSetId, {
                 title: assessmentSetEdit.title.trim(),
                 category: assessmentSetEdit.category.trim(),
                 description: assessmentSetEdit.description.trim(),
@@ -1686,6 +1691,10 @@ export default function AdminPage() {
 
     const handleCreateAssessmentSet = async () => {
         if (!canAuthorTestsUi()) return;
+        if (!assessmentsAuthoringAllowed) {
+            showToast("Assessment authoring is disabled on admin console. Use questions console.");
+            return;
+        }
         const t = assessmentNewForm.title.trim();
         if (!t) {
             showToast("Title is required.");
@@ -1693,7 +1702,7 @@ export default function AdminPage() {
         }
         setSaving(true);
         try {
-            const created = await adminAssessmentsFeatureApi.adminCreateSet({
+            const created = await adminAssessmentsFeatureApi.createSet({
                 subject: assessmentNewForm.subject,
                 title: t,
                 category: assessmentNewForm.category.trim() || undefined,
@@ -1715,6 +1724,10 @@ export default function AdminPage() {
 
     const handleSaveAssessmentQuestion = async () => {
         if (!selectedAssessmentSetId || !aqDraft || !canAuthorTestsUi()) return;
+        if (!assessmentsAuthoringAllowed) {
+            showToast("Assessment authoring is disabled on admin console. Use questions console.");
+            return;
+        }
         if (!aqDraft.prompt.trim()) {
             showToast("Prompt is required.");
             return;
@@ -1742,9 +1755,9 @@ export default function AdminPage() {
                 }
             }
             if (aqDraft.id) {
-                await adminAssessmentsFeatureApi.adminUpdateQuestion(aqDraft.id, payload);
+                await adminAssessmentsFeatureApi.updateQuestion(aqDraft.id, payload);
             } else {
-                await adminAssessmentsFeatureApi.adminCreateQuestion(selectedAssessmentSetId, payload);
+                await adminAssessmentsFeatureApi.createQuestion(selectedAssessmentSetId, payload);
             }
             showToast("Question saved");
             setAqDraft(null);
@@ -1763,7 +1776,7 @@ export default function AdminPage() {
         if (!confirm("Delete this assessment question?")) return;
         setSaving(true);
         try {
-            await adminAssessmentsFeatureApi.adminDeleteQuestion(id);
+            await adminAssessmentsFeatureApi.deleteQuestion(id);
             showToast("Question deleted");
             if (aqDraft?.id === id) setAqDraft(null);
             await fetchAssessmentSets();
@@ -1900,9 +1913,16 @@ export default function AdminPage() {
                                         <p className="mt-1 max-w-2xl text-xs text-slate-500">
                                             Create assessment sets, add questions, and assign them to classrooms — same workflow style as pastpapers / mocks (single admin console).
                                         </p>
+                                        {!assessmentsAuthoringAllowed ? (
+                                            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                                                <span className="font-bold">Authoring disabled on this subdomain.</span>{" "}
+                                                Assessment authoring endpoints are blocked on <span className="font-mono">admin.*</span>.
+                                                Use the <span className="font-mono">questions.*</span> console for create/edit.
+                                            </div>
+                                        ) : null}
                                     </div>
                                     <div className="flex flex-wrap gap-2">
-                                        {canAuthorTestsUi() ? (
+                                        {canAuthorTestsUi() && assessmentsAuthoringAllowed ? (
                                             <button
                                                 type="button"
                                                 className={BTN_GHOST}
@@ -1917,7 +1937,7 @@ export default function AdminPage() {
                                     </div>
                                 </div>
 
-                                {assessmentNewOpen && canAuthorTestsUi() ? (
+                                {assessmentNewOpen && canAuthorTestsUi() && assessmentsAuthoringAllowed ? (
                                     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                                         <p className="text-sm font-bold text-slate-900">New assessment set</p>
                                         <div className="mt-4 grid gap-3 md:grid-cols-2">

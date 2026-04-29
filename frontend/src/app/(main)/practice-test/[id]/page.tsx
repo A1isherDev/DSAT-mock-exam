@@ -3,10 +3,12 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import AuthGuard from "@/components/AuthGuard";
-import { examsPublicApi } from "@/lib/api";
+import { examsStudentApi } from "@/features/examsStudent/api";
 import { platformSubjectIsReadingWriting } from "@/lib/permissions";
 import { BookOpen, Calculator, CheckCircle2, ArrowLeft, Play, Eye } from "lucide-react";
 import Cookies from "js-cookie";
+
+const examsPublicApi = examsStudentApi;
 
 function PracticeTestDetailInner() {
   const { id } = useParams();

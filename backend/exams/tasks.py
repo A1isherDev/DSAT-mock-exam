@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 @shared_task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 5})
-def score_attempt_async(self, attempt_id: int) -> dict:
+def score_attempt_async(self, attempt_id: int, trace_id: str | None = None) -> dict:
     """
     Idempotent scoring task.
     Preconditions:
@@ -35,6 +35,9 @@ def score_attempt_async(self, attempt_id: int) -> dict:
         attempt.complete_test()
 
     metric_incr("scoring_completed")
-    logger.info("attempt_scored attempt_id=%s score=%s", attempt_id, attempt.score)
+    if trace_id:
+        logger.info("attempt_scored attempt_id=%s score=%s trace_id=%s", attempt_id, attempt.score, trace_id)
+    else:
+        logger.info("attempt_scored attempt_id=%s score=%s", attempt_id, attempt.score)
     return {"status": "ok", "attempt_id": attempt_id, "score": attempt.score}
 

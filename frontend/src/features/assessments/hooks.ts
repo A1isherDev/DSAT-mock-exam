@@ -2,21 +2,22 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { normalizeApiError } from "@/lib/apiError";
-import { assessmentAuthoringApi, assessmentAttemptApi, assessmentHomeworkApi } from "./api";
-import { assessmentKeys } from "./queryKeys";
+import { assessmentsAdminApi } from "@/features/assessmentsAdmin/api";
+import { assessmentsStudentApi } from "@/features/assessmentsStudent/api";
+import { assessmentsKeys } from "./queryKeys";
 import type { AssessmentQuestion, AssessmentSet, Attempt, HomeworkAssignmentCreateRequest, Subject } from "./types";
 
 export function useAssessmentSetsList(params?: { subject?: Subject; category?: string }) {
   return useQuery({
-    queryKey: assessmentKeys.setsList(params),
-    queryFn: () => assessmentAuthoringApi.listSets(params),
+    queryKey: assessmentsKeys.setsList(params),
+    queryFn: () => assessmentsAdminApi.listSets(params),
   });
 }
 
 export function useAssessmentSetDetail(setId: number) {
   return useQuery({
-    queryKey: assessmentKeys.setDetail(setId),
-    queryFn: () => assessmentAuthoringApi.getSet(setId),
+    queryKey: assessmentsKeys.setDetail(setId),
+    queryFn: () => assessmentsAdminApi.getSet(setId),
     enabled: Number.isFinite(setId) && setId > 0,
     staleTime: 10_000,
     refetchOnWindowFocus: true,
@@ -28,11 +29,11 @@ export function useUpsertAssessmentSet() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (x: { id?: number | null; payload: any }) => {
-      if (x.id) return await assessmentAuthoringApi.updateSet(x.id, x.payload);
-      return await assessmentAuthoringApi.createSet(x.payload);
+      if (x.id) return await assessmentsAdminApi.updateSet(x.id, x.payload);
+      return await assessmentsAdminApi.createSet(x.payload);
     },
     onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: assessmentKeys.sets() });
+      await qc.invalidateQueries({ queryKey: assessmentsKeys.sets() });
     },
     onError: (e) => {
       throw normalizeApiError(e);
@@ -44,12 +45,12 @@ export function useUpsertAssessmentQuestion(setId: number) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (x: { id?: number | null; payload: any }) => {
-      if (x.id) return await assessmentAuthoringApi.updateQuestion(x.id, x.payload);
-      return await assessmentAuthoringApi.createQuestion(setId, x.payload);
+      if (x.id) return await assessmentsAdminApi.updateQuestion(x.id, x.payload);
+      return await assessmentsAdminApi.createQuestion(setId, x.payload);
     },
     onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: assessmentKeys.sets() });
-      await qc.invalidateQueries({ queryKey: assessmentKeys.setDetail(setId) });
+      await qc.invalidateQueries({ queryKey: assessmentsKeys.sets() });
+      await qc.invalidateQueries({ queryKey: assessmentsKeys.setDetail(setId) });
     },
     onError: (e) => {
       throw normalizeApiError(e);
@@ -61,11 +62,11 @@ export function useDeleteAssessmentQuestion(setId: number) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (questionId: number) => {
-      await assessmentAuthoringApi.deleteQuestion(questionId);
+      await assessmentsAdminApi.deleteQuestion(questionId);
     },
     onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: assessmentKeys.sets() });
-      await qc.invalidateQueries({ queryKey: assessmentKeys.setDetail(setId) });
+      await qc.invalidateQueries({ queryKey: assessmentsKeys.sets() });
+      await qc.invalidateQueries({ queryKey: assessmentsKeys.setDetail(setId) });
     },
     onError: (e) => {
       throw normalizeApiError(e);
@@ -76,7 +77,7 @@ export function useDeleteAssessmentQuestion(setId: number) {
 export function useAssignAssessmentHomework() {
   return useMutation({
     mutationFn: async (vars: { payload: HomeworkAssignmentCreateRequest; idempotencyKey?: string }) => {
-      return await assessmentHomeworkApi.assign(vars.payload, vars.idempotencyKey);
+      return await assessmentsAdminApi.assign(vars.payload, vars.idempotencyKey);
     },
     onError: (e) => {
       throw normalizeApiError(e);
@@ -87,7 +88,7 @@ export function useAssignAssessmentHomework() {
 export function useStartAttempt() {
   return useMutation({
     mutationFn: async (payload: { assignment_id: number }): Promise<Attempt> => {
-      return await assessmentAttemptApi.start(payload);
+      return await assessmentsStudentApi.start(payload);
     },
     onError: (e) => {
       throw normalizeApiError(e);
@@ -104,10 +105,10 @@ export function useSaveAnswer() {
       answer: any;
       time_spent_seconds?: number;
     }): Promise<Attempt> => {
-      return await assessmentAttemptApi.saveAnswer(payload);
+      return await assessmentsStudentApi.saveAnswer(payload);
     },
     onSuccess: async (_data, vars) => {
-      await qc.invalidateQueries({ queryKey: assessmentKeys.attemptBundle(vars.attempt_id) });
+      await qc.invalidateQueries({ queryKey: assessmentsKeys.attemptBundle(vars.attempt_id) });
     },
     onError: (e) => {
       throw normalizeApiError(e);
@@ -118,7 +119,7 @@ export function useSaveAnswer() {
 export function useSubmitAttempt() {
   return useMutation({
     mutationFn: async (payload: { attempt_id: number }): Promise<Attempt> => {
-      return await assessmentAttemptApi.submit(payload);
+      return await assessmentsStudentApi.submit(payload);
     },
     onError: (e) => {
       throw normalizeApiError(e);
@@ -128,8 +129,8 @@ export function useSubmitAttempt() {
 
 export function useMyAssessmentResult(assignmentId: number) {
   return useQuery({
-    queryKey: assessmentKeys.myResult(assignmentId),
-    queryFn: () => assessmentAttemptApi.myResult(assignmentId),
+    queryKey: assessmentsKeys.myResult(assignmentId),
+    queryFn: () => assessmentsStudentApi.myResult(assignmentId),
     enabled: Number.isFinite(assignmentId) && assignmentId > 0,
     retry: (count, err: any) => {
       const status = err?.response?.status;
@@ -141,8 +142,8 @@ export function useMyAssessmentResult(assignmentId: number) {
 
 export function useAttemptBundle(attemptId: number) {
   return useQuery({
-    queryKey: assessmentKeys.attemptBundle(attemptId),
-    queryFn: () => assessmentAttemptApi.bundle(attemptId),
+    queryKey: assessmentsKeys.attemptBundle(attemptId),
+    queryFn: () => assessmentsStudentApi.bundle(attemptId),
     enabled: Number.isFinite(attemptId) && attemptId > 0,
     staleTime: 15_000,
     refetchOnWindowFocus: true,
