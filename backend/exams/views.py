@@ -1128,6 +1128,23 @@ class AdminModuleViewSet(viewsets.ModelViewSet):
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.db import models as db_models
 
+def _normalize_question_orders_for_module(*, module_id: int) -> None:
+    """
+    Keep Question.order deterministic and contiguous per module.
+
+    Contract:
+    - starts at 0
+    - no gaps / duplicates
+    """
+    qs = Question.objects.filter(module_id=module_id).order_by("order", "id").only("id", "order")
+    to_update = []
+    for idx, q in enumerate(qs):
+        if q.order != idx:
+            q.order = idx
+            to_update.append(q)
+    if to_update:
+        Question.objects.bulk_update(to_update, ["order"])
+
 class AdminQuestionViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, CanManageQuestions]
     serializer_class = AdminQuestionSerializer
@@ -1141,10 +1158,20 @@ class AdminQuestionViewSet(viewsets.ModelViewSet):
         module = get_object_or_404(Module, pk=self.kwargs['module_pk'], practice_test_id=self.kwargs['test_pk'])
         # Auto-assign order to the end
         max_order = self.get_queryset().aggregate(db_models.Max('order'))['order__max']
-        serializer.save(
+        q = serializer.save(
             module=module,
-            order=(max_order + 1) if max_order is not None else 1
+            order=(max_order + 1) if max_order is not None else 0
         )
+        _normalize_question_orders_for_module(module_id=q.module_id)
+
+    def perform_update(self, serializer):
+        q = serializer.save()
+        _normalize_question_orders_for_module(module_id=q.module_id)
+
+    def perform_destroy(self, instance):
+        module_id = instance.module_id
+        super().perform_destroy(instance)
+        _normalize_question_orders_for_module(module_id=module_id)
 
     @action(detail=True, methods=['post'])
     def reorder(self, request, test_pk=None, module_pk=None, pk=None):
@@ -1165,6 +1192,7 @@ class AdminQuestionViewSet(viewsets.ModelViewSet):
             target.order = old_order
             question.save()
             target.save()
+            _normalize_question_orders_for_module(module_id=question.module_id)
             return Response({'status': 'reordered'})
         return Response({'message': 'Already at boundary'}, status=status.HTTP_400_BAD_REQUEST)
 
