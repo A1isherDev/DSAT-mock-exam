@@ -12,6 +12,7 @@ from exams.models import PastpaperPack
 User = get_user_model()
 
 _ADMIN_HOST_KWARGS = {"HTTP_HOST": "admin.mastersat.uz"}
+_QUESTIONS_HOST_KWARGS = {"HTTP_HOST": "questions.mastersat.uz"}
 
 # Mirrors production nginx server_name for subdomain guards.
 _ALLOWED_FOR_SUBDOMAIN_TESTS = (
@@ -82,4 +83,12 @@ class PastPapersAdminMainDomainTests(TestCase):
         resp = self.client.delete(f"/api/exams/admin/pastpaper-packs/{pack.pk}/", **_ADMIN_HOST_KWARGS)
         self.assertEqual(resp.status_code, 204)
         self.assertFalse(PastpaperPack.objects.filter(pk=pack.pk).exists())
+
+    def test_questions_host_public_practice_catalog_200_for_test_admin(self):
+        """Pastpaper SPA on ``questions.*`` loads GET /api/exams/ — must not hard-fail authoring roles."""
+        self.client.force_authenticate(user=self.test_admin)
+        resp = self.client.get("/api/exams/", **_QUESTIONS_HOST_KWARGS)
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertIsInstance(body, list)
 

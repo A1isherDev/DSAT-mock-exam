@@ -209,29 +209,6 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [AllowAny]
     serializer_class = PracticeTestSerializer
 
-    def list(self, request, *args, **kwargs):
-        """
-        Staff consoles must use backend-authoritative authoring APIs (``/api/exams/admin/...``).
-        The public practice library endpoint (``/api/exams/``) is intentionally a different surface.
-        If a staff console accidentally calls this endpoint, fail loudly instead of returning an
-        empty list that looks like “no tests exist”.
-        """
-        try:
-            console = str(getattr(request, "lms_console", "") or "").strip().lower()
-        except Exception:
-            console = ""
-        user = getattr(request, "user", None)
-        if console in ("admin", "questions") and user and getattr(user, "is_authenticated", False):
-            if can_manage_questions(user):
-                metric_incr("wrong_staff_endpoint_total")
-                return Response(
-                    {
-                        "detail": "This endpoint is the public practice library. Use /api/exams/admin/tests/ for staff authoring lists."
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-        return super().list(request, *args, **kwargs)
-
     def get_queryset(self):
         """
         Anonymous + students + staff who can browse: ``filter_practice_tests_for_user`` (full bank
