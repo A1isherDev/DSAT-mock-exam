@@ -507,7 +507,13 @@ export default function AdminPage() {
     const fetchStandaloneTests = useCallback(async () => {
         try {
             const data = await adminExamsFeatureApi.getPracticeTestsAdmin(true);
-            setStandaloneTests(data);
+            const arr = Array.isArray(data) ? data : [];
+            // Temporary debug: confirm admin pastpaper payload shape.
+            console.debug("[admin] standalone pastpaper sections", {
+                count: arr.length,
+                sample: arr[0],
+            });
+            setStandaloneTests(arr);
         } catch (e: any) {
             const d = e?.response?.data;
             const msg = d?.detail || 'Could not load pastpaper sections.';
