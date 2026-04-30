@@ -1102,8 +1102,6 @@ class AdminPracticeTestViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         base = PracticeTest.objects.all().prefetch_related("modules", "assigned_users")
-        if not can_manage_questions(self.request.user):
-            return base.none()
         standalone = self.request.query_params.get("standalone")
         if standalone in ("1", "true", "yes"):
             return base.filter(mock_exam__isnull=True)
