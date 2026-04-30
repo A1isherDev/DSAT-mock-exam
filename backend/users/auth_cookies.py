@@ -38,6 +38,17 @@ def _cookie_common(request):
         "path": "/",
     }
 
+def _delete_cookie_common(request):
+    """
+    Django's ``HttpResponse.delete_cookie`` does not accept cookie flags like
+    ``secure`` / ``httponly``. Only pass attributes that participate in cookie matching.
+    """
+    return {
+        "samesite": "Lax",
+        "domain": cookie_domain_for_request(request),
+        "path": "/",
+    }
+
 
 def set_auth_cookies(
     *,
@@ -78,7 +89,7 @@ def set_access_cookie(*, response, request, access: str):
 
 
 def clear_auth_cookies(*, response, request):
-    common = _cookie_common(request)
+    common = _delete_cookie_common(request)
     response.delete_cookie(ACCESS_COOKIE, **common)
     response.delete_cookie(REFRESH_COOKIE, **common)
 
