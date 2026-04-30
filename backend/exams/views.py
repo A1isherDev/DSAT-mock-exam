@@ -216,10 +216,13 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
         only (legacy).
         """
         user = self.request.user
+        # Student practice library must never surface empty tests (no questions); the exam runner
+        # requires a non-empty `current_module_details.questions` payload.
         base = (
-            PracticeTest.objects.filter(mock_exam__isnull=True)
+            PracticeTest.objects.filter(mock_exam__isnull=True, modules__questions__isnull=False)
             .select_related("mock_exam", "pastpaper_pack")
             .prefetch_related("modules")
+            .distinct()
         )
         if can_browse_standalone_practice_library(user):
             return filter_practice_tests_for_user(user, base).distinct()
@@ -382,7 +385,12 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         t0 = monotonic()
         test_id = request.data.get("practice_test")
         user = request.user
-        base = PracticeTest.objects.all().select_related("mock_exam", "pastpaper_pack")
+        # Prevent starting attempts on empty tests (no questions) — runner cannot render.
+        base = (
+            PracticeTest.objects.filter(modules__questions__isnull=False)
+            .select_related("mock_exam", "pastpaper_pack")
+            .distinct()
+        )
         if can_browse_standalone_practice_library(user):
             allowed = filter_practice_tests_for_user(user, base).distinct()
         elif normalized_role(user) == acc_const.ROLE_STUDENT:
