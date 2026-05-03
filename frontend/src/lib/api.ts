@@ -50,7 +50,13 @@ export { InvalidApiPayloadError, emptyNormalizedExamList } from "@/lib/examsPubl
 export type { Assignment, AdminPastpaperPack, BulkAssignmentDispatch, Classroom, NormalizedList, UserMe } from "@/lib/criticalApiContract";
 export { emptyNormalizedList } from "@/lib/criticalApiContract";
 
+/** Tighter budget for bootstrap identity probes (UX: fail faster to login/error path). */
 export const ME_REQUEST_TIMEOUT_MS = 10_000;
+/**
+ * Axios default timeout for all other requests (CSRF/refresh/etc.).
+ * Required so a wedged `/auth/refresh/` cannot leave `/users/me` hanging forever behind the 401 interceptor.
+ */
+export const HTTP_CLIENT_TIMEOUT_MS = 35_000;
 
 const API_URL = '/api';
 const IS_PROD = process.env.NODE_ENV === 'production';
@@ -156,6 +162,8 @@ async function persistMeCookie(rememberMe: boolean) {
 
 const api = axios.create({
     baseURL: API_URL,
+    timeout: HTTP_CLIENT_TIMEOUT_MS,
+    withCredentials: true,
 });
 
 /** POST with retries on 429 (and transient 503): exponential backoff, honors Retry-After when present. */
