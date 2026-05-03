@@ -111,7 +111,8 @@ export const practiceTestPublicSchema = z
     form_type: z.enum(["INTERNATIONAL", "US"]).optional(),
     modules: z.array(moduleListPublicSchema),
     created_at: z.string(),
-    pastpaper_pack: pastpaperPackBriefStudentSchema,
+    /** Standalone sections / legacy rows omit the nested pack; serializer returns `null`. */
+    pastpaper_pack: pastpaperPackBriefStudentSchema.nullable(),
     mock_exam_id: z.number().nullable(),
   })
   .passthrough();
@@ -148,7 +149,7 @@ export function parsePracticeTestPublicList(
   const env = extractNormalizedListEnvelope(data, endpoint);
   const items = env.itemsUnknown.map((row, i) =>
     parseWithSchema(practiceTestPublicSchema, row, `${endpoint}[${i}]`),
-  );
+  ) as PracticeTestPublic[];
   return {
     items,
     count: env.count,
@@ -168,7 +169,7 @@ export function parseMockExamPublicList(
   const env = extractNormalizedListEnvelope(data, endpoint);
   const items = env.itemsUnknown.map((row, i) =>
     parseWithSchema(mockExamPublicSchema, row, `${endpoint}[${i}]`),
-  );
+  ) as MockExamPublic[];
   return {
     items,
     count: env.count,

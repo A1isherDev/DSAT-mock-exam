@@ -3385,6 +3385,46 @@ paths:
       responses:
         '200':
           description: No response body
+  /api/vocab/all/:
+    get:
+      operationId: vocab_all_retrieve
+      description: |-
+        GET /api/vocab/all/
+        User progress rows with nested word + definitions.
+      tags:
+      - vocab
+      responses:
+        '200':
+          description: No response body
+  /api/vocab/review/:
+    post:
+      operationId: vocab_review_create
+      description: |-
+        POST /api/vocab/review/
+        Body: { word_id, result: again|hard|good|easy }
+      tags:
+      - vocab
+      responses:
+        '200':
+          description: No response body
+  /api/vocab/today/:
+    get:
+      operationId: vocab_today_retrieve
+      description: |-
+        GET /api/vocab/today/
+
+        Response: ``{ review: [...due progress cards], new: [...words without progress] }``
+
+        Ordering in ``review``: overdue (`next_review_at` null or `< now`),
+        then due today (`now ≤ next_review_at < local next midnight`).
+        Caps: ``settings.VOCAB_MAX_*``; optional ``?max_new`` / ``?max_review`` (cannot exceed caps).
+        Remaining slots subtract per-day usage: review tallies exclude first-ever ``again`` per word;
+        new tallies count only successful ``good``/``easy`` introductions via ``introduced_at``.
+      tags:
+      - vocab
+      responses:
+        '200':
+          description: No response body
   /api/vocabulary/admin/words/:
     get:
       operationId: vocabulary_admin_words_retrieve
@@ -5465,6 +5505,7 @@ components:
           allOf:
           - $ref: '#/components/schemas/PastpaperPackBrief'
           readOnly: true
+          nullable: true
         mock_exam_id:
           type: integer
           readOnly: true

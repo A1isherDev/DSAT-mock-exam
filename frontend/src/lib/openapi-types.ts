@@ -1946,6 +1946,73 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/vocab/all/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description GET /api/vocab/all/
+         *     User progress rows with nested word + definitions.
+         */
+        get: operations["vocab_all_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/vocab/review/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description POST /api/vocab/review/
+         *     Body: { word_id, result: again|hard|good|easy }
+         */
+        post: operations["vocab_review_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/vocab/today/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description GET /api/vocab/today/
+         *
+         *     Response: ``{ review: [...due progress cards], new: [...words without progress] }``
+         *
+         *     Ordering in ``review``: overdue (`next_review_at` null or `< now`),
+         *     then due today (`now ≤ next_review_at < local next midnight`).
+         *     Caps: ``settings.VOCAB_MAX_*``; optional ``?max_new`` / ``?max_review`` (cannot exceed caps).
+         *     Remaining slots subtract per-day usage: review tallies exclude first-ever ``again`` per word;
+         *     new tallies count only successful ``good``/``easy`` introductions via ``introduced_at``.
+         */
+        get: operations["vocab_today_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/vocabulary/admin/words/": {
         parameters: {
             query?: never;
@@ -2896,7 +2963,7 @@ export interface components {
             readonly modules: components["schemas"]["ModuleList"][];
             /** Format: date-time */
             readonly created_at: string;
-            readonly pastpaper_pack: components["schemas"]["PastpaperPackBrief"];
+            readonly pastpaper_pack: components["schemas"]["PastpaperPackBrief"] | null;
             readonly mock_exam_id: number | null;
         };
         Question: {
@@ -6695,6 +6762,60 @@ export interface operations {
         };
     };
     users_telegram_link_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    vocab_all_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    vocab_review_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    vocab_today_retrieve: {
         parameters: {
             query?: never;
             header?: never;

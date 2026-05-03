@@ -167,7 +167,8 @@ class PracticeTestSerializer(serializers.ModelSerializer):
 
     modules = ModuleListSerializer(many=True, read_only=True)
     subject = serializers.CharField()
-    pastpaper_pack = PastpaperPackBriefSerializer(read_only=True)
+    # Standalone / legacy sections have no FK pack; omit null from schema hints without this.
+    pastpaper_pack = PastpaperPackBriefSerializer(read_only=True, allow_null=True)
     mock_exam_id = serializers.IntegerField(read_only=True, allow_null=True)
 
     class Meta:
