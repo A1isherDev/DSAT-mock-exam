@@ -151,8 +151,18 @@ python3 manage.py check --deploy    # Django deploy checklist passes
 
 After pushing code changes to git:
 
+**1. Database backup (PostgreSQL production, recommended before every deploy):**
+
 ```bash
 ssh satapp@YOUR_SERVER_IP
+bash /var/www/satapp/deploy/backup_postgres.sh
+```
+
+This writes a custom-format dump under `/var/www/satapp/backups/pg_backup_YYYY-MM-DD_HHMMSS.dump`.
+
+**2. Deploy application:**
+
+```bash
 bash /var/www/satapp/deploy/deploy.sh
 ```
 
