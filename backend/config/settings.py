@@ -103,6 +103,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     # Populate JWT user before host-based API guards (DRF auth runs later per-view).
     'access.middleware.JWTUserMiddleware',
+    'config.auth_correlation_middleware.AuthCorrelationMiddleware',
     'access.middleware.StaffSubjectRequiredMiddleware',
     'access.host_guard.SubdomainAPIGuardMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
@@ -253,6 +254,48 @@ CELERY_TASK_EAGER_PROPAGATES = True
 
 # Exams: when Celery broker is not configured (local/dev), score inline so attempts can complete.
 EXAMS_SCORE_INLINE_IF_NO_CELERY = _env_bool("EXAMS_SCORE_INLINE_IF_NO_CELERY", default_when_unset=DEBUG)
+# Stored idempotency responses: floor TTL (seconds). Actual TTL also considers summed module time limits + slack.
+EXAM_ATTEMPT_IDEMPOTENCY_TTL_SECONDS = int(os.getenv("EXAM_ATTEMPT_IDEMPOTENCY_TTL_SECONDS", str(24 * 60 * 60)))
+# Persist ``AttemptEngineAudit`` rows for exam state transitions (debugging / forensic replay).
+EXAM_ENGINE_AUDIT_DB = _env_bool("EXAM_ENGINE_AUDIT_DB", default_when_unset=True)
+# Question ordering: sparse gap between sibling ``order`` values (reduces UNIQUE collisions & reindex cost).
+EXAM_QUESTION_ORDER_SPARSE_STEP = int(os.getenv("EXAM_QUESTION_ORDER_SPARSE_STEP", "1024"))
+# Retries when concurrent writers hit UNIQUE(module_id, order).
+EXAM_QUESTION_ORDER_MAX_RETRY = int(os.getenv("EXAM_QUESTION_ORDER_MAX_RETRY", "8"))
+# If True, post-delete compacts to dense 0..n-1 (O(n); default leaves sparse gaps).
+EXAM_QUESTION_COMPACT_ON_DELETE = _env_bool("EXAM_QUESTION_COMPACT_ON_DELETE", default_when_unset=False)
+# Automatic dense compaction when duplicate (module_id, order) keys exist and pair count ≤ this (0 = off).
+EXAM_QUESTION_ORDER_AUTO_CORRECT_MAX_DUP_PAIRS = int(
+    os.getenv("EXAM_QUESTION_ORDER_AUTO_CORRECT_MAX_DUP_PAIRS", "4")
+)
+# Trigger sparse→dense compaction when Module.question_order_high_water exceeds this (long-run safety).
+EXAM_QUESTION_ORDER_COMPACTION_THRESHOLD = int(
+    os.getenv("EXAM_QUESTION_ORDER_COMPACTION_THRESHOLD", str(50_000_000))
+)
+# Additional compaction trigger: compact when high_water / question_count >= this ratio (sparse drift vs size).
+EXAM_QUESTION_ORDER_COMPACTION_RATIO_THRESHOLD = float(
+    os.getenv("EXAM_QUESTION_ORDER_COMPACTION_RATIO_THRESHOLD", "5000")
+)
+# Minimum question count before the ratio trigger applies (avoids compacting tiny modules).
+EXAM_QUESTION_ORDER_COMPACTION_MIN_QUESTIONS_FOR_RATIO = int(
+    os.getenv("EXAM_QUESTION_ORDER_COMPACTION_MIN_QUESTIONS_FOR_RATIO", "40")
+)
+# When no Celery broker, run dense compaction in a daemon thread after commit (keeps request path light).
+EXAM_QUESTION_ORDER_COMPACT_THREAD_FALLBACK = _env_bool(
+    "EXAM_QUESTION_ORDER_COMPACT_THREAD_FALLBACK", default_when_unset=True
+)
+# If False (recommended in production), UNIQUE-conflict retries use skew/step only — no blocking sleep on workers.
+EXAM_QUESTION_RETRY_BLOCKING_SLEEP = _env_bool(
+    "EXAM_QUESTION_RETRY_BLOCKING_SLEEP", default_when_unset=False
+)
+# Log ERROR when UNIQUE(order) retries exceed this rate per rolling minute bucket (0 = off).
+EXAM_QUESTION_ORDER_CONFLICT_ALERT_PER_MINUTE = int(
+    os.getenv("EXAM_QUESTION_ORDER_CONFLICT_ALERT_PER_MINUTE", "200")
+)
+# Jittered exponential backoff (ms) after UNIQUE collisions on concurrent inserts (reduces thundering herds).
+EXAM_QUESTION_RETRY_BACKOFF_BASE_MS = int(os.getenv("EXAM_QUESTION_RETRY_BACKOFF_BASE_MS", "8"))
+EXAM_QUESTION_RETRY_BACKOFF_CAP_MS = int(os.getenv("EXAM_QUESTION_RETRY_BACKOFF_CAP_MS", "750"))
+EXAM_QUESTION_RETRY_JITTER_MS = int(os.getenv("EXAM_QUESTION_RETRY_JITTER_MS", "48"))
 
 # Deadlock / serialization retries for classroom submission transactions.
 CLASSROOM_DB_DEADLOCK_MAX_ATTEMPTS = int(os.getenv("CLASSROOM_DB_DEADLOCK_MAX_ATTEMPTS", "4"))
@@ -294,6 +337,12 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(hour=4, minute=40),
     },
 }
+
+# Vocabulary SRS queue caps for GET /api/vocab/today/ (query params cannot exceed these).
+_VOCAB_MAX_NEW_PER_DAY = int(os.getenv("VOCAB_MAX_NEW_PER_DAY", "10"))
+VOCAB_MAX_NEW_PER_DAY = max(0, _VOCAB_MAX_NEW_PER_DAY)
+_VOCAB_MAX_REVIEW_PER_DAY = int(os.getenv("VOCAB_MAX_REVIEW_PER_DAY", "50"))
+VOCAB_MAX_REVIEW_PER_DAY = max(0, _VOCAB_MAX_REVIEW_PER_DAY)
 
 # Assessments: attempt inactivity timeout (seconds) before auto-abandon.
 ASSESSMENT_ATTEMPT_INACTIVITY_TIMEOUT_SECONDS = int(
@@ -501,6 +550,8 @@ REST_FRAMEWORK = {
         # Per classroom (all staff combined) and global (entire system).
         'assessment_assign_classroom': os.getenv('ASSESSMENT_ASSIGN_CLASSROOM_THROTTLE', '120/hour'),
         'assessment_assign_global': os.getenv('ASSESSMENT_ASSIGN_GLOBAL_THROTTLE', '2000/hour'),
+        # SPA auth client telemetry (batched; default allows ~1 flush/min + beacons + retries).
+        'client_auth_telemetry': os.getenv('AUTH_CLIENT_TELEMETRY_THROTTLE', '120/hour'),
         # Tighter limit when a classroom is under mitigation (auto after abuse spike).
         'assessment_assign_classroom_mitigated': os.getenv(
             'ASSESSMENT_ASSIGN_CLASSROOM_MITIGATED_THROTTLE',

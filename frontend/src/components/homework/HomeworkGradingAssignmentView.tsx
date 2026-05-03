@@ -7,6 +7,7 @@ import { crInputClass } from "@/components/classroom";
 import HomeworkFilePreviewTile from "@/components/classroom/HomeworkFilePreviewTile";
 import { fileNameFromUrl } from "@/lib/homeworkFileDisplay";
 import { ArrowLeft, ClipboardCheck, Loader2, RotateCcw, Trophy, User } from "lucide-react";
+import { useAuthCriticalGate } from "@/hooks/useAuthCriticalGate";
 
 type Member = {
   role: string;
@@ -33,6 +34,7 @@ export default function HomeworkGradingAssignmentView({
   classId,
   assignmentId,
 }: HomeworkGradingAssignmentViewProps) {
+  const { assertCriticalAuth, criticalAuthReady } = useAuthCriticalGate();
   const hubHref = basePath.replace(/\/$/, "");
 
   const [loading, setLoading] = useState(true);
@@ -62,7 +64,7 @@ export default function HomeworkGradingAssignmentView({
       setClassName(cls?.name || `Class #${classId}`);
 
       const assigns = await classesApi.listAssignments(classId);
-      const list = Array.isArray(assigns) ? assigns : [];
+      const list = assigns.items;
       const a = list.find((x) => Number(x.id) === assignmentId);
       setAssignmentTitle(a?.title ? String(a.title) : `Assignment #${assignmentId}`);
       setAssignmentLocksFileUpload(Boolean(a?.locks_file_upload));
@@ -137,6 +139,9 @@ export default function HomeworkGradingAssignmentView({
 
   const saveGrade = async () => {
     if (!selectedSub?.id) return;
+    if (!assertCriticalAuth()) {
+      return;
+    }
     setSaving(true);
     setError(null);
     setSuccess(null);
@@ -165,6 +170,9 @@ export default function HomeworkGradingAssignmentView({
 
   const doReturn = async () => {
     if (!selectedSub?.id) return;
+    if (!assertCriticalAuth()) {
+      return;
+    }
     setSaving(true);
     setError(null);
     setSuccess(null);
@@ -405,7 +413,7 @@ export default function HomeworkGradingAssignmentView({
                       </div>
                       <button
                         type="button"
-                        disabled={saving}
+                        disabled={saving || !criticalAuthReady}
                         onClick={() => void saveGrade()}
                         className="ms-btn-primary ms-cta-fill inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold sm:w-auto"
                       >
@@ -426,7 +434,7 @@ export default function HomeworkGradingAssignmentView({
                           />
                           <button
                             type="button"
-                            disabled={saving}
+                            disabled={saving || !criticalAuthReady}
                             onClick={() => void doReturn()}
                             className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-violet-300 bg-card px-4 py-2.5 text-sm font-bold text-violet-900 hover:bg-violet-100/80 dark:border-violet-800 dark:text-violet-100 dark:hover:bg-violet-900/40 sm:w-auto"
                           >

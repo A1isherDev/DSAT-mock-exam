@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from decimal import Decimal
-
 from django.db import IntegrityError, transaction
 from django.db.models import Max, Avg, Count
 from django.shortcuts import get_object_or_404
@@ -10,6 +8,7 @@ from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from drf_spectacular.utils import extend_schema
 from django.http import HttpResponse
 
 import secrets
@@ -17,7 +16,12 @@ from time import monotonic
 
 from django.conf import settings as dj_settings
 
-from access.permissions import CanManageQuestions, CanViewTests, CanEditTests, CanAssignTests
+from access.permissions import (
+    CanAuthorAssessmentContent,
+    CanManageQuestions,
+    CanAssignTests,
+    CanViewTests,
+)
 from access.services import is_global_scope_staff, user_domain_subject, normalized_role
 from access import constants as acc_const
 from users.permissions import IsAuthenticatedAndNotFrozen
@@ -25,7 +29,6 @@ from users.permissions import IsAuthenticatedAndNotFrozen
 from classes.models import Assignment, Classroom, ClassroomMembership
 from classes.security import classroom_authz_for_user
 
-from .grading import grade_answer
 from .models import (
     AssessmentSet,
     AssessmentQuestion,
@@ -61,8 +64,16 @@ from .serializers import (
     SubmitAttemptSerializer,
     AttemptSerializer,
     ResultSerializer,
-    AssessmentSetSerializer,
     AssessmentQuestionSerializer,
+    ApiAssessmentDetailSerializer,
+    SaveAnswerStaleWriteSerializer,
+    SaveAnswerStoredSerializer,
+    AttemptBundleResponseSerializer,
+    SubmitAttemptQueuedResponseSerializer,
+    SubmitAttemptCompleteResponseSerializer,
+    SubmitAssessmentVersionConflictSerializer,
+    SubmitAttemptBadRequestSerializer,
+    MyAssessmentResultResponseSerializer,
 )
 
 
@@ -73,7 +84,7 @@ class AdminAssessmentSetListCreateView(APIView):
     def get_permissions(self):
         if (self.request.method or "GET").upper() == "GET":
             return [p() for p in (IsAuthenticatedAndNotFrozen, CanViewTests)]
-        return [p() for p in (IsAuthenticatedAndNotFrozen, CanEditTests)]
+        return [p() for p in (IsAuthenticatedAndNotFrozen, CanAuthorAssessmentContent)]
 
     def get(self, request):
         subject = (request.query_params.get("subject") or "").strip().lower()
@@ -255,7 +266,7 @@ class AdminAssessmentSetDetailView(APIView):
     def get_permissions(self):
         if (self.request.method or "GET").upper() == "GET":
             return [p() for p in (IsAuthenticatedAndNotFrozen, CanViewTests)]
-        return [p() for p in (IsAuthenticatedAndNotFrozen, CanEditTests)]
+        return [p() for p in (IsAuthenticatedAndNotFrozen, CanAuthorAssessmentContent)]
 
     def get(self, request, pk: int):
         inst = get_object_or_404(AssessmentSet.objects.prefetch_related("questions"), pk=pk)
@@ -292,7 +303,7 @@ class AdminAssessmentSetDetailView(APIView):
 
 
 class AdminAssessmentQuestionCreateView(APIView):
-    permission_classes = [IsAuthenticatedAndNotFrozen, CanEditTests]
+    permission_classes = [IsAuthenticatedAndNotFrozen, CanAuthorAssessmentContent]
 
     def post(self, request, set_pk: int):
         aset = get_object_or_404(AssessmentSet, pk=set_pk)
@@ -310,7 +321,7 @@ class AdminAssessmentQuestionCreateView(APIView):
 
 
 class AdminAssessmentQuestionDetailView(APIView):
-    permission_classes = [IsAuthenticatedAndNotFrozen, CanEditTests]
+    permission_classes = [IsAuthenticatedAndNotFrozen, CanAuthorAssessmentContent]
 
     def patch(self, request, pk: int):
         q = get_object_or_404(AssessmentQuestion, pk=pk)
@@ -397,19 +408,19 @@ class AssignAssessmentHomeworkView(APIView):
         instructions = (data.get("instructions") or "").strip()
         due_at = data.get("due_at")
 
-        # Create core homework row in existing system (atomic + idempotent).
-        # DB uniqueness on (classroom, assessment_set) makes retries safe.
+        # Create core homework row in existing system — UNIQUE(classroom, assessment_set) + locks.
+        # Nested ``atomic()`` establishes a SAVEPOINT so an IntegrityError on duplicate insert
+        # does not invalidate the outer transaction under PostgreSQL.
         with transaction.atomic():
-            existing = (
+            hw = (
                 HomeworkAssignment.objects.select_for_update()
                 .select_related("assignment")
                 .filter(classroom=classroom, assessment_set=aset)
-                .order_by("-id")
+                .order_by("id")
                 .first()
             )
-            if existing:
+            if hw:
                 assessments_metric_incr("homework_duplicate_prevented")
-                hw = existing
             else:
                 assignment = Assignment.objects.create(
                     classroom=classroom,
@@ -419,22 +430,21 @@ class AssignAssessmentHomeworkView(APIView):
                     due_at=due_at,
                 )
                 try:
-                    hw = HomeworkAssignment.objects.create(
-                        classroom=classroom,
-                        assessment_set=aset,
-                        assignment=assignment,
-                        assigned_by=request.user,
-                    )
+                    with transaction.atomic():
+                        hw = HomeworkAssignment.objects.create(
+                            classroom=classroom,
+                            assessment_set=aset,
+                            assignment=assignment,
+                            assigned_by=request.user,
+                        )
                 except IntegrityError:
                     assessments_metric_incr("homework_duplicate_prevented")
-                    # Another request created the homework concurrently.
-                    # Clean up the now-orphaned assignment and return canonical homework.
-                    assignment.delete()
+                    Assignment.objects.filter(pk=assignment.pk).delete()
                     hw = (
                         HomeworkAssignment.objects.select_for_update()
                         .select_related("assignment")
                         .filter(classroom=classroom, assessment_set=aset)
-                        .order_by("-id")
+                        .order_by("id")
                         .first()
                     )
                     if not hw:
@@ -482,6 +492,16 @@ def _audit_attempt(attempt: AssessmentAttempt, *, actor, event_type: str, payloa
 class StartAttemptView(APIView):
     permission_classes = [IsAuthenticatedAndNotFrozen]
 
+    @extend_schema(
+        tags=["assessments"],
+        summary="Start or resume attempt",
+        request=StartAttemptSerializer,
+        responses={
+            200: AttemptSerializer,
+            403: ApiAssessmentDetailSerializer,
+            404: ApiAssessmentDetailSerializer,
+        },
+    )
     @transaction.atomic
     def post(self, request):
         ser = StartAttemptSerializer(data=request.data)
@@ -542,6 +562,15 @@ class AttemptBundleView(APIView):
 
     permission_classes = [IsAuthenticatedAndNotFrozen]
 
+    @extend_schema(
+        tags=["assessments"],
+        summary="Attempt bundle (attempt + set + questions)",
+        responses={
+            200: AttemptBundleResponseSerializer,
+            403: ApiAssessmentDetailSerializer,
+            404: ApiAssessmentDetailSerializer,
+        },
+    )
     def get(self, request, attempt_id: int):
         att = AssessmentAttempt.objects.select_related("homework__classroom", "homework__assessment_set").filter(
             pk=attempt_id, student=request.user
@@ -575,6 +604,18 @@ class SaveAnswerView(APIView):
     permission_classes = [IsAuthenticatedAndNotFrozen]
     throttle_classes = [AssessmentAnswerPerAttemptThrottle]
 
+    @extend_schema(
+        tags=["assessments"],
+        summary="Save answer for one question",
+        request=SaveAnswerSerializer,
+        responses={
+            200: SaveAnswerStoredSerializer,
+            400: ApiAssessmentDetailSerializer,
+            404: ApiAssessmentDetailSerializer,
+            409: SaveAnswerStaleWriteSerializer,
+            410: ApiAssessmentDetailSerializer,
+        },
+    )
     @transaction.atomic
     def post(self, request):
         ser = SaveAnswerSerializer(data=request.data)
@@ -685,6 +726,19 @@ class SaveAnswerView(APIView):
 class SubmitAttemptView(APIView):
     permission_classes = [IsAuthenticatedAndNotFrozen]
 
+    @extend_schema(
+        tags=["assessments"],
+        summary="Submit attempt for grading",
+        request=SubmitAttemptSerializer,
+        responses={
+            200: SubmitAttemptCompleteResponseSerializer,
+            202: SubmitAttemptQueuedResponseSerializer,
+            400: SubmitAttemptBadRequestSerializer,
+            404: ApiAssessmentDetailSerializer,
+            409: SubmitAssessmentVersionConflictSerializer,
+            410: ApiAssessmentDetailSerializer,
+        },
+    )
     @transaction.atomic
     def post(self, request):
         ser = SubmitAttemptSerializer(data=request.data)
@@ -734,12 +788,7 @@ class SubmitAttemptView(APIView):
             for a in AssessmentAnswer.objects.filter(attempt=att, question_id__in=q_by_id.keys())
         }
 
-        max_points = Decimal("0")
-        score = Decimal("0")
-        correct = 0
-        total_time = 0
-
-        # Completeness: treat unanswered as wrong (still valid), but optionally enforce answered-for-all.
+        # Completeness: optionally require an answer row for every question (grading itself is deferred).
         missing = [q.id for q in questions if q.id not in answers]
         enforce = str(getattr(dj_settings, "ASSESSMENT_ENFORCE_COMPLETENESS", "False")).lower() in ("1", "true", "yes")
         if enforce and missing:
@@ -748,68 +797,59 @@ class SubmitAttemptView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        for q in questions:
-            max_points += Decimal(str(q.points or 0))
-            a = answers.get(q.id)
-            total_time += int(getattr(a, "time_spent_seconds", 0) or 0)
-            ok = False
-            if a is not None:
-                ok = grade_answer(
-                    question_type=q.question_type,
-                    correct_answer=q.correct_answer,
-                    answer=a.answer,
-                    config=q.grading_config or {},
-                )
-                a.is_correct = ok
-                a.points_awarded = Decimal(str(q.points or 0)) if ok else Decimal("0")
-                a.save(update_fields=["is_correct", "points_awarded", "updated_at"])
-            if ok:
-                correct += 1
-                score += Decimal(str(q.points or 0))
+        total_answer_time = sum(
+            int(getattr(answers.get(q.id), "time_spent_seconds", 0) or 0) for q in questions
+        )
 
         now = timezone.now()
-        # Mark submitted first (locks the attempt). Grading is synchronous, then we promote to graded.
+        prev_activity_for_slice = att.last_activity_at or att.started_at
         att.status = AssessmentAttempt.STATUS_SUBMITTED
         att.submitted_at = now
-        att.last_activity_at = now
         # Harden total time: derive primarily from server attempt span, not per-answer time.
         span = int((now - att.started_at).total_seconds()) if att.started_at else 0
         span_cap = 6 * 60 * 60  # 6h safety cap
         span = max(0, min(span_cap, span))
-        # Use span as truth source; keep per-question sum only as a lower bound signal.
-        att.total_time_seconds = max(span, min(span_cap, total_time))
-        # Active time: also consider the final slice since last activity.
-        prev = att.last_activity_at or att.started_at
+        att.total_time_seconds = max(span, min(span_cap, total_answer_time))
+        # Active time: final slice uses activity *before* we stamp submitted_at / last_activity_at.
+        prev = prev_activity_for_slice
         if prev and prev < now:
             idle_threshold = int(getattr(dj_settings, "ASSESSMENT_ACTIVE_IDLE_THRESHOLD_SECONDS", 90) or 90)
             slice_cap = int(getattr(dj_settings, "ASSESSMENT_ACTIVE_SLICE_CAP_SECONDS", 45) or 45)
+            idle_threshold = max(10, min(15 * 60, idle_threshold))
+            slice_cap = max(1, min(idle_threshold, slice_cap))
             delta = int((now - prev).total_seconds())
-            if 0 < delta <= max(10, idle_threshold):
+            if 0 < delta <= idle_threshold:
                 att.active_time_seconds = int(att.active_time_seconds or 0) + int(min(slice_cap, delta))
-        att.save(update_fields=["status", "submitted_at", "total_time_seconds", "last_activity_at"])
-        _audit_attempt(att, actor=request.user, event_type=AssessmentAttemptAuditEvent.EVENT_SUBMITTED, payload={"total_time_seconds": att.total_time_seconds})
+        att.last_activity_at = now
 
-        total_q = len(questions)
-        percent = Decimal("0")
-        if max_points > 0:
-            percent = (score / max_points) * Decimal("100")
-
-        # Async grading toggle: if Celery is configured (or eager), enqueue grading work.
         broker = str(getattr(dj_settings, "CELERY_BROKER_URL", "") or "").strip()
         eager = bool(getattr(dj_settings, "CELERY_TASK_ALWAYS_EAGER", False))
         use_async = bool(broker) or eager
 
+        submit_update_fields = [
+            "status",
+            "submitted_at",
+            "total_time_seconds",
+            "last_activity_at",
+            "active_time_seconds",
+        ]
         if use_async:
             att.grading_status = AssessmentAttempt.GRADING_PENDING
             att.grading_error = ""
-            att.save(update_fields=["grading_status", "grading_error"])
-            grade_attempt_task.delay(att.pk)
+            submit_update_fields.extend(["grading_status", "grading_error"])
+
+        att.save(update_fields=submit_update_fields)
+        _audit_attempt(att, actor=request.user, event_type=AssessmentAttemptAuditEvent.EVENT_SUBMITTED, payload={"total_time_seconds": att.total_time_seconds})
+
+        if use_async:
+            transaction.on_commit(lambda pk=att.pk: grade_attempt_task.delay(pk))
+            att.refresh_from_db()
             return Response(
-                {"attempt": AttemptSerializer(att).data, "result": None, "grading": "queued"},
+                {"attempt": AttemptSerializer(att).data, "result": None, "grading": "pending"},
                 status=status.HTTP_202_ACCEPTED,
             )
 
-        # Fallback: grade inline (same idempotent service as async).
+        # No broker / not eager — single synchronous run of the shared grading service.
         res = grade_attempt(attempt_id=att.pk)
         att.refresh_from_db()
         return Response({"attempt": AttemptSerializer(att).data, "result": ResultSerializer(res).data if res else None})
@@ -958,6 +998,15 @@ class MyAssessmentResultForAssignmentView(APIView):
 
     permission_classes = [IsAuthenticatedAndNotFrozen]
 
+    @extend_schema(
+        tags=["assessments"],
+        summary="My latest attempt and result for assignment",
+        responses={
+            200: MyAssessmentResultResponseSerializer,
+            403: ApiAssessmentDetailSerializer,
+            404: ApiAssessmentDetailSerializer,
+        },
+    )
     def get(self, request, assignment_id: int):
         hw = HomeworkAssignment.objects.select_related("assessment_set", "assignment", "classroom").filter(
             assignment_id=assignment_id

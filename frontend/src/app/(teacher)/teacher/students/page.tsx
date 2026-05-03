@@ -37,7 +37,7 @@ export default function TeacherStudentsPage() {
       setError(null);
       try {
         const all = await classesApi.list();
-        const teacherGroups = (Array.isArray(all) ? all : []).filter((g) => g.my_role === "ADMIN");
+        const teacherGroups = all.items.filter((g) => g.my_role === "ADMIN");
         if (cancelled) return;
         setGroups(teacherGroups);
         const gid = teacherGroups[0]?.id;
@@ -76,11 +76,10 @@ export default function TeacherStudentsPage() {
       setTestsLoading(true);
       setGrantMsg(null);
       try {
-        const list = await examsPublicApi.getPracticeTests();
-        const raw: unknown[] = Array.isArray(list) ? (list as unknown[]) : [];
+        const bundle = await examsPublicApi.getPracticeTests();
         // Teacher access UI: standalone practice library only (exclude timed mock section rows).
-        const standalone = raw.filter((t) => {
-          if (isTimedMockSectionRow(t as any)) return false;
+        const standalone = bundle.items.filter((t) => {
+          if (isTimedMockSectionRow(t)) return false;
           if (!_hasSubject(t)) return false;
           return canAbacTestSubject(t.subject);
         });

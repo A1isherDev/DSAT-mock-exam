@@ -7,6 +7,15 @@ from exams.models import PracticeTest, Module, TestAttempt
 
 
 @override_settings(CELERY_TASK_ALWAYS_EAGER=False, EXAMS_SCORE_INLINE_IF_NO_CELERY=False)
+def _rewind_m1_timer(attempt_pk: int) -> None:
+    """Timer anchor for module 1 is ``module_1_started_at`` (not only ``current_module_start_time``)."""
+    past = timezone.now() - timezone.timedelta(minutes=5)
+    TestAttempt.objects.filter(pk=attempt_pk).update(
+        module_1_started_at=past,
+        current_module_start_time=past,
+    )
+
+
 class AttemptTimerEnforcementTests(APITestCase):
     def setUp(self):
         User = get_user_model()
@@ -34,10 +43,7 @@ class AttemptTimerEnforcementTests(APITestCase):
 
     def test_autosave_rejected_when_module_expired(self):
         att = self._create_attempt_and_start_m1()
-        # Force expiry by rewinding start time.
-        TestAttempt.objects.filter(pk=att.pk).update(
-            current_module_start_time=timezone.now() - timezone.timedelta(minutes=5)
-        )
+        _rewind_m1_timer(att.pk)
 
         r = self.client.post(
             f"/api/exams/attempts/{att.pk}/save_attempt/",
@@ -67,17 +73,29 @@ class AttemptTimerEnforcementTests(APITestCase):
         self.assertEqual(r2.status_code, 200)
         self.assertEqual(r1.data, r2.data)
 
-    def test_submit_allowed_when_module_expired_but_marks_expired(self):
+    def test_explicit_submit_rejected_when_module_deadline_passed(self):
         att = self._create_attempt_and_start_m1()
-        TestAttempt.objects.filter(pk=att.pk).update(
-            current_module_start_time=timezone.now() - timezone.timedelta(minutes=5)
-        )
+        _rewind_m1_timer(att.pk)
 
         r = self.client.post(
             f"/api/exams/attempts/{att.pk}/submit_module/",
             {"answers": {}, "flagged": []},
             format="json",
         )
+        self.assertEqual(r.status_code, 409)
+        self.assertEqual(r.data.get("code"), "exam_module_deadline_passed")
+        self.assertIn("attempt", r.data)
+
+    def test_deadline_via_save_attempt_auto_advances_via_server_timer(self):
+        att = self._create_attempt_and_start_m1()
+        _rewind_m1_timer(att.pk)
+
+        r = self.client.post(
+            f"/api/exams/attempts/{att.pk}/save_attempt/",
+            {"answers": {"1": "A"}, "flagged": []},
+            format="json",
+        )
         self.assertEqual(r.status_code, 200)
         self.assertTrue(r.data.get("is_expired"))
+        self.assertEqual(r.data.get("current_state"), TestAttempt.STATE_MODULE_2_ACTIVE)
 

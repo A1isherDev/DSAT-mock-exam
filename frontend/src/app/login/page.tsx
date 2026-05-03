@@ -1,10 +1,14 @@
 "use client";
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { authApi, usersApi } from "@/lib/api";
+import { invalidateMe } from "@/hooks/useMe";
 import { useRouter } from 'next/navigation';
 import { AlertCircle, Loader2, LogIn } from 'lucide-react';
 import Link from 'next/link';
 import TelegramLoginButton, { type TelegramAuthUser } from '@/components/TelegramLoginButton';
+import type { AuthNoticeRecord } from "@/lib/auth/authTabSync";
+import { consumeAuthNotice } from "@/lib/auth/authTabSync";
 
 declare global {
     interface Window {
@@ -13,6 +17,7 @@ declare global {
 }
 
 export default function LoginPage() {
+    const queryClient = useQueryClient();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
@@ -28,6 +33,13 @@ export default function LoginPage() {
         bot_username: string | null;
     } | null>(null);
 
+    const [authRouteNotice, setAuthRouteNotice] = useState<AuthNoticeRecord | null>(null);
+
+    useEffect(() => {
+        const rec = consumeAuthNotice();
+        if (rec) setAuthRouteNotice(rec);
+    }, []);
+
     useEffect(() => {
         usersApi
             .getTelegramWidgetConfig()
@@ -41,8 +53,8 @@ export default function LoginPage() {
         setError('');
         try {
             await authApi.login(email, password, rememberMe);
-            // Hardened boot flow: always confirm /users/me after login so we never "look logged out".
             await usersApi.getMe().catch(() => null);
+            void invalidateMe(queryClient);
             const host = (typeof window !== "undefined" ? window.location.hostname.toLowerCase() : "");
             if (host.startsWith("admin.")) {
                 router.push("/admin");
@@ -65,6 +77,7 @@ export default function LoginPage() {
             setError('');
             try {
                 await authApi.telegramAuth(user, rememberMe);
+                void invalidateMe(queryClient);
                 router.push('/');
             } catch (err: any) {
                 setError(err?.response?.data?.detail || 'Telegram sign-in failed.');
@@ -80,6 +93,7 @@ export default function LoginPage() {
         setError('');
         try {
             await authApi.googleAuth(credential, profile, rememberMe);
+            void invalidateMe(queryClient);
             router.push('/');
         } catch (err: any) {
             const missing = err?.response?.data?.missing_fields;
@@ -129,6 +143,42 @@ export default function LoginPage() {
 
                 <div className="hero-shell p-8 transition-colors duration-300">
                     <form className="space-y-5" onSubmit={handleSubmit}>
+                        {authRouteNotice?.reason === "EXPIRED" && (
+                            <div
+                                className="flex items-start gap-3 text-amber-900 dark:text-amber-100 text-sm font-medium bg-amber-50 dark:bg-amber-950/40 p-4 rounded-xl border border-amber-200/80 dark:border-amber-800/60 animate-in fade-in slide-in-from-top-2 duration-200"
+                                role="status"
+                            >
+                                <AlertCircle className="w-5 h-5 shrink-0 text-amber-600 dark:text-amber-400" />
+                                <span>Your session has expired. Please sign in again.</span>
+                            </div>
+                        )}
+                        {authRouteNotice?.reason === "NO_SESSION" && (
+                            <div
+                                className="flex items-start gap-3 text-slate-800 dark:text-slate-200 text-sm font-medium bg-slate-100 dark:bg-slate-900/60 p-4 rounded-xl border border-slate-200 dark:border-slate-800 animate-in fade-in slide-in-from-top-2 duration-200"
+                                role="status"
+                            >
+                                <AlertCircle className="w-5 h-5 shrink-0 text-slate-500 dark:text-slate-400" />
+                                <span>No active session found. Sign in to continue.</span>
+                            </div>
+                        )}
+                        {authRouteNotice?.reason === "NETWORK" && (
+                            <div
+                                className="flex items-start gap-3 text-slate-800 dark:text-slate-200 text-sm font-medium bg-slate-100 dark:bg-slate-900/60 p-4 rounded-xl border border-slate-200 dark:border-slate-800 animate-in fade-in slide-in-from-top-2 duration-200"
+                                role="status"
+                            >
+                                <AlertCircle className="w-5 h-5 shrink-0 text-slate-500 dark:text-slate-400" />
+                                <span>The network was interrupted while loading your profile. Sign in again to continue.</span>
+                            </div>
+                        )}
+                        {authRouteNotice?.reason === "SERVER" && (
+                            <div
+                                className="flex items-start gap-3 text-slate-800 dark:text-slate-200 text-sm font-medium bg-slate-100 dark:bg-slate-900/60 p-4 rounded-xl border border-slate-200 dark:border-slate-800 animate-in fade-in slide-in-from-top-2 duration-200"
+                                role="status"
+                            >
+                                <AlertCircle className="w-5 h-5 shrink-0 text-slate-500 dark:text-slate-400" />
+                                <span>The server could not validate your profile. Sign in again, or retry after a short wait.</span>
+                            </div>
+                        )}
                         {error && (
                             <div className="flex items-start gap-3 text-red-600 dark:text-red-400 text-sm font-medium bg-red-50 dark:bg-red-900/20 p-4 rounded-xl border border-red-100 dark:border-red-900/50 animate-in fade-in slide-in-from-top-2 duration-200">
                                 <AlertCircle className="w-5 h-5 shrink-0" />

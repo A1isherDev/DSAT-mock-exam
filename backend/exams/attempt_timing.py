@@ -28,17 +28,26 @@ class ModuleTiming:
         return self.elapsed_seconds >= int(self.limit_seconds)
 
 
+def _module_started_anchor(attempt: TestAttempt, mod: Module) -> timezone.datetime | None:
+    order = int(getattr(mod, "module_order", 0) or 0)
+    if order == 1:
+        return getattr(attempt, "module_1_started_at", None)
+    if order == 2:
+        return getattr(attempt, "module_2_started_at", None)
+    return None
+
+
 def get_active_module_timing(
     attempt: TestAttempt, *, now: timezone.datetime | None = None
 ) -> ModuleTiming | None:
     """
-    Compute timing for the currently active module (if any).
-    Server-authoritative: uses stored module start timestamps + Module.time_limit_minutes.
+    Timing for the active module row. Server-authoritative: prefers per-module_started_at anchors,
+    then legacy current_module_start_time.
     """
     mod: Module | None = getattr(attempt, "current_module", None)
     if not mod:
         return None
-    started = getattr(attempt, "current_module_start_time", None)
+    started = _module_started_anchor(attempt, mod) or getattr(attempt, "current_module_start_time", None)
     if not started:
         return None
     if now is None:
@@ -48,4 +57,3 @@ def get_active_module_timing(
         # Defensive: treat missing limits as "no expiry" rather than expiring instantly.
         limit_seconds = 10**9
     return ModuleTiming(now=now, started_at=started, limit_seconds=limit_seconds)
-

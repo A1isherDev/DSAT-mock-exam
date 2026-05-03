@@ -162,6 +162,31 @@ export function singleDisplayTitle(test: any) {
   return `${form}${letter} · ${subjectLabel(test.subject)}`.trim();
 }
 
+/** Title from nested `pastpaper_pack` — matches `/exams/` PracticeTestSerializer only (no nested mock_exam). */
+export function pastpaperPackDisplayTitle(test: any): string {
+  const p = test?.pastpaper_pack;
+  if (p && typeof p === "object" && "title" in p) {
+    const s = String((p as { title?: string }).title ?? "").trim();
+    if (s) return s;
+  }
+  return "";
+}
+
+/** Search / filter text using public practice-test API fields only (no `mock_exam`). */
+export function practiceTestSearchBlob(test: any): string {
+  const pack = pastpaperPackDisplayTitle(test);
+  return [
+    singleDisplayTitle(test),
+    test.label || "",
+    (test.title && String(test.title).trim()) || "",
+    pack,
+    test.practice_date || "",
+    subjectLabel(String(test.subject || "")),
+  ]
+    .join(" ")
+    .toLowerCase();
+}
+
 export function sharedPastpaperPackTitle(tests: any[]): string {
   if (tests.length === 0) return "Practice test";
   if (tests.length === 1) return singleDisplayTitle(tests[0]);

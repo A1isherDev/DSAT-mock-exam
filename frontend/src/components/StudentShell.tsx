@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import Cookies from "js-cookie";
-import { authApi, usersApi } from "@/lib/api";
+import { useQueryClient } from "@tanstack/react-query";
+import { authApi } from "@/lib/api";
+import { useMe } from "@/hooks/useMe";
 import { useTheme } from "next-themes";
 import {
   LayoutDashboard,
@@ -66,7 +67,9 @@ function pageTitle(pathname: string): string {
 export default function StudentShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const queryClient = useQueryClient();
+  const { isAuthenticated, me, globalInteractionBlockedHard } = useMe();
+  const isLoggedIn = isAuthenticated;
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -90,35 +93,22 @@ export default function StudentShell({ children }: { children: React.ReactNode }
 
   useEffect(() => {
     setMounted(true);
-    // Auth is cookie-based (HttpOnly); rely on presence of non-HttpOnly session hints.
-    setIsLoggedIn(!!Cookies.get("lms_user") || !!Cookies.get("role") || !!Cookies.get("is_admin"));
   }, [pathname]);
 
   useEffect(() => {
-    if (!isLoggedIn) {
+    if (!isLoggedIn || !me) {
       setProfileImageUrl(undefined);
       setProfileAvatarFailed(false);
       return;
     }
-    let cancelled = false;
+    const m = me as { profile_image_url?: unknown };
     setProfileAvatarFailed(false);
-    (async () => {
-      try {
-        const me = await usersApi.getMe();
-        if (cancelled) return;
-        const url =
-          typeof me?.profile_image_url === "string" && me.profile_image_url.trim()
-            ? me.profile_image_url.trim()
-            : null;
-        setProfileImageUrl(url);
-      } catch {
-        if (!cancelled) setProfileImageUrl(null);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [isLoggedIn, pathname]);
+    const url =
+      typeof m.profile_image_url === "string" && m.profile_image_url.trim()
+        ? m.profile_image_url.trim()
+        : null;
+    setProfileImageUrl(url);
+  }, [isLoggedIn, me, pathname]);
 
   useEffect(() => {
     setProfileAvatarFailed(false);
@@ -177,7 +167,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
     );
 
   return (
-    <AuthGuard isOptional>
+    <AuthGuard>
       <div className="app-bg flex min-h-screen flex-col text-foreground transition-colors duration-300 md:h-[100dvh] md:max-h-[100dvh] md:flex-row md:overflow-hidden">
         {/* Mobile drawer overlay */}
         {mobileOpen ? (
@@ -325,7 +315,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
             {isLoggedIn ? (
               <button
                 type="button"
-                onClick={() => authApi.logout()}
+                onClick={() => authApi.logout(queryClient)}
                 className={cn(
                   "mt-4 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-muted-foreground transition-all hover:bg-surface-2 hover:text-foreground",
                   sidebarCollapsed && "md:justify-center md:px-2",
@@ -496,7 +486,13 @@ export default function StudentShell({ children }: { children: React.ReactNode }
             </div>
           </header>
 
-          <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain bg-transparent px-2 pb-8 pt-2 md:px-4 md:pt-3 lg:px-6">
+          <main
+            className={cn(
+              "min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain bg-transparent px-2 pb-8 pt-2 md:px-4 md:pt-3 lg:px-6",
+              globalInteractionBlockedHard && "pointer-events-none select-none",
+            )}
+            aria-busy={globalInteractionBlockedHard || undefined}
+          >
             {children}
           </main>
         </div>

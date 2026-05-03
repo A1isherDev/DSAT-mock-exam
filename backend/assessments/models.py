@@ -113,6 +113,10 @@ class HomeworkAssignment(models.Model):
         ordering = ["-created_at", "-id"]
         constraints = [
             models.UniqueConstraint(fields=["classroom", "assignment"], name="uniq_assessment_hw_class_assignment"),
+            models.UniqueConstraint(
+                fields=["classroom", "assessment_set"],
+                name="uniq_assessment_hw_classroom_set",
+            ),
         ]
 
 

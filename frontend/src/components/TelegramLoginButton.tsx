@@ -1,18 +1,9 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import type { TelegramAuthUser } from "@/types/telegramAuth";
 
-export type TelegramAuthUser = {
-    id: number;
-    first_name?: string;
-    last_name?: string;
-    username?: string;
-    photo_url?: string;
-    /** Present when the widget uses ``data-request-access`` including ``phone`` and the user approves. */
-    phone_number?: string;
-    auth_date: number;
-    hash: string;
-};
+export type { TelegramAuthUser };
 
 declare global {
     interface Window {

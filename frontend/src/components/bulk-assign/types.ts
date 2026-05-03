@@ -31,9 +31,10 @@ export type AssignmentDispatchRow = {
   assigned_by: number | null;
   assigned_by_name: string;
   status: string;
-  payload: Record<string, unknown>;
-  result: Record<string, unknown>;
-  rerun_of: number | null;
+  /** Present on detail responses; list history rows may omit these. */
+  payload?: Record<string, unknown>;
+  result?: Record<string, unknown>;
+  rerun_of?: number | null;
   created_at: string;
 };
 

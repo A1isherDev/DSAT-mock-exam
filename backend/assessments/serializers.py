@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from django.utils import timezone
+from drf_spectacular.utils import extend_schema_serializer
 from rest_framework import serializers
 
 from .models import (
@@ -13,6 +13,7 @@ from .models import (
 )
 
 
+@extend_schema_serializer(component_name="AssessmentQuestion")
 class AssessmentQuestionSerializer(serializers.ModelSerializer):
     class Meta:
         model = AssessmentQuestion
@@ -44,6 +45,7 @@ class AssessmentQuestionAdminWriteSerializer(serializers.ModelSerializer):
         ]
 
 
+@extend_schema_serializer(component_name="AssessmentSet")
 class AssessmentSetSerializer(serializers.ModelSerializer):
     questions = AssessmentQuestionSerializer(many=True, read_only=True)
 
@@ -83,8 +85,9 @@ class HomeworkAssignmentSerializer(serializers.ModelSerializer):
         fields = ["id", "classroom_id", "assignment_id", "assessment_set", "assigned_by_id", "created_at"]
 
 
+@extend_schema_serializer(component_name="AssessmentAttemptAnswer")
 class AttemptAnswerSerializer(serializers.ModelSerializer):
-    question_id = serializers.IntegerField(source="question_id", read_only=True)
+    question_id = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = AssessmentAnswer
@@ -99,9 +102,10 @@ class AttemptAnswerSerializer(serializers.ModelSerializer):
         ]
 
 
+@extend_schema_serializer(component_name="AssessmentAttempt")
 class AttemptSerializer(serializers.ModelSerializer):
     answers = AttemptAnswerSerializer(many=True, read_only=True)
-    homework_id = serializers.IntegerField(source="homework_id", read_only=True)
+    homework_id = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = AssessmentAttempt
@@ -123,6 +127,7 @@ class AttemptSerializer(serializers.ModelSerializer):
         ]
 
 
+@extend_schema_serializer(component_name="AssessmentResult")
 class ResultSerializer(serializers.ModelSerializer):
     class Meta:
         model = AssessmentResult
@@ -161,4 +166,62 @@ class SaveAnswerSerializer(serializers.Serializer):
 
 class SubmitAttemptSerializer(serializers.Serializer):
     attempt_id = serializers.IntegerField()
+
+
+class ApiAssessmentDetailSerializer(serializers.Serializer):
+    """Minimal `{detail}` error payloads returned by assessments student APIs."""
+
+    detail = serializers.CharField()
+
+
+class SaveAnswerStaleWriteSerializer(serializers.Serializer):
+    detail = serializers.CharField()
+    code = serializers.CharField()
+    server_client_seq = serializers.IntegerField()
+    answer_id = serializers.IntegerField()
+
+
+class SaveAnswerStoredSerializer(serializers.Serializer):
+    answer_id = serializers.IntegerField()
+
+
+@extend_schema_serializer(component_name="AssessmentAttemptBundleResponse")
+class AttemptBundleResponseSerializer(serializers.Serializer):
+    attempt = AttemptSerializer()
+    set = AssessmentSetSerializer()
+    questions = AssessmentQuestionSerializer(many=True)
+
+
+@extend_schema_serializer(component_name="AssessmentSubmitQueuedResponse")
+class SubmitAttemptQueuedResponseSerializer(serializers.Serializer):
+    """Async grading accepted; poll `my-result` or re-fetch bundle for graded state."""
+
+    attempt = AttemptSerializer()
+    result = ResultSerializer(required=True, allow_null=True)
+    grading = serializers.ChoiceField(choices=[("pending", "Pending")])
+
+
+@extend_schema_serializer(component_name="AssessmentSubmitCompleteResponse")
+class SubmitAttemptCompleteResponseSerializer(serializers.Serializer):
+    """Submit completed synchronously or idempotent replay of submitted/graded attempt."""
+
+    attempt = AttemptSerializer()
+    result = ResultSerializer(required=False, allow_null=True)
+
+
+@extend_schema_serializer(component_name="AssessmentSnapshotConflictResponse")
+class SubmitAssessmentVersionConflictSerializer(serializers.Serializer):
+    detail = serializers.CharField()
+
+
+@extend_schema_serializer(component_name="AssessmentSubmitBadRequestResponse")
+class SubmitAttemptBadRequestSerializer(serializers.Serializer):
+    detail = serializers.CharField()
+    missing_question_ids = serializers.ListField(child=serializers.IntegerField(), required=False)
+
+
+@extend_schema_serializer(component_name="AssessmentMyResultResponse")
+class MyAssessmentResultResponseSerializer(serializers.Serializer):
+    attempt = AttemptSerializer(required=True, allow_null=True)
+    result = ResultSerializer(required=True, allow_null=True)
 

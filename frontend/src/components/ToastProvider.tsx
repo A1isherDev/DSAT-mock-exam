@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/cn";
 
 export type Toast = { id: string; message: string; tone?: "neutral" | "success" | "error" };
@@ -22,6 +22,16 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       setToasts((prev) => prev.filter((x) => x.id !== id));
     }, 3200);
   }, []);
+
+  useEffect(() => {
+    const onEvt = (e: Event) => {
+      const d = (e as CustomEvent<{ tone?: Toast["tone"]; message?: string }>).detail;
+      if (!d?.message) return;
+      push({ tone: d.tone || "neutral", message: String(d.message) });
+    };
+    window.addEventListener("mastersat-toast", onEvt as EventListener);
+    return () => window.removeEventListener("mastersat-toast", onEvt as EventListener);
+  }, [push]);
 
   const value = useMemo(() => ({ push }), [push]);
 

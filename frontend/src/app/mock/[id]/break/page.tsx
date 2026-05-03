@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import AuthGuard from "@/components/AuthGuard";
+import { useAuthCriticalGate } from "@/hooks/useAuthCriticalGate";
 import { examsPublicApi } from "@/lib/api";
 import { platformSubjectIsMath } from "@/lib/permissions";
 import { ArrowLeft, Timer } from "lucide-react";
@@ -10,6 +11,7 @@ import { ArrowLeft, Timer } from "lucide-react";
 const BREAK_SECONDS = 10 * 60;
 
 function BreakInner() {
+  const { assertCriticalAuth } = useAuthCriticalGate();
   const { id } = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -45,6 +47,13 @@ function BreakInner() {
     setStartingMath(true);
 
     (async () => {
+      if (!assertCriticalAuth()) {
+        mathAutostartStarted.current = false;
+        if (!cancelled) {
+          router.replace(`/mock/${mockId}`);
+        }
+        return;
+      }
       try {
         localStorage.setItem(`mastersat_mock_${mockId}_break_done`, "1");
         localStorage.setItem(`mastersat_mock_${mockId}_break_after_rw`, rwAttempt);
@@ -63,10 +72,9 @@ function BreakInner() {
         if (!mathTest?.id || !firstMod?.id) {
           throw new Error("No Math module");
         }
-        const attemptsData = await examsPublicApi.getAttempts();
-        let attempt = attemptsData.find(
-          (a: { practice_test?: number; is_completed?: boolean; is_expired?: boolean }) =>
-            a.practice_test === mathTest.id && !a.is_completed && !a.is_expired
+        const attemptsBundle = await examsPublicApi.getAttempts();
+        let attempt = attemptsBundle.items.find(
+          (a) => a.practice_test === mathTest.id && !a.is_completed && !a.is_expired,
         );
         if (!attempt) {
           attempt = await examsPublicApi.startTest(mathTest.id);
@@ -87,7 +95,7 @@ function BreakInner() {
     return () => {
       cancelled = true;
     };
-  }, [left, rwAttempt, mockId, router]);
+  }, [left, rwAttempt, mockId, router, assertCriticalAuth]);
 
   const mm = Math.floor(left / 60);
   const ss = left % 60;

@@ -8,6 +8,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.views import APIView
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -46,7 +47,10 @@ from .security_risk import clear_security_step_up, record_failed_refresh_attempt
 from .telegram_auth import verify_telegram_login
 from .phone_utils import normalize_phone
 from .telegram_bot_info import telegram_bot_username_for_token
+from .authentication import CookieOrHeaderJWTAuthentication
 from .auth_cookies import clear_auth_cookies, set_access_cookie, set_auth_cookies, REFRESH_COOKIE
+from .auth_correlation_controls import escalate_on_telemetry_anomaly
+from .client_auth_telemetry import score_telemetry_anomalies, validate_client_auth_telemetry_body
 from .security_metrics import incr as security_metric_incr
 from core.metrics import incr as metric_incr, incr_role as metric_incr_role
 from core.drills import env_flag
@@ -458,6 +462,78 @@ class RevokeSessionView(APIView):
                 severity="info",
             )
         return Response({"ok": True}, status=status.HTTP_200_OK)
+
+
+class ClientAuthTelemetryIngestView(APIView):
+    """
+    Best-effort batch sink for SPA auth concurrency telemetry (logs + Prometheus-friendly counters).
+
+    Responses are deliberately tiny; ingestion is gated by Api CSRF middleware for /api/auth/*.
+    Payload is aggregates + recent client events — no persisted PII requirement.
+    """
+
+    authentication_classes = [
+        CookieOrHeaderJWTAuthentication,
+    ]
+    permission_classes = []
+    parser_classes = [JSONParser]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "client_auth_telemetry"
+    MAX_BODY_BYTES = 262_144
+
+    def post(self, request):
+        try:
+            declared = int(request.META.get("CONTENT_LENGTH") or "0") or 0
+        except (TypeError, ValueError):
+            declared = 0
+        raw_len = declared if declared > 0 else len(request.body or b"")
+
+        if raw_len > self.MAX_BODY_BYTES:
+            return Response(
+                {"detail": "Payload too large."},
+                status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            )
+
+        body = request.data if isinstance(request.data, dict) else {}
+        ok, err_code = validate_client_auth_telemetry_body(body)
+        if not ok:
+            security_metric_incr("client_auth_telemetry_rejected_total")
+            return Response({"detail": "Invalid payload.", "code": err_code}, status=status.HTTP_400_BAD_REQUEST)
+
+        events = body.get("events") or []
+        events_len = len(events) if isinstance(events, list) else 0
+        client_ts = int(body.get("client_ts") or 0)
+        now_ms = int(time.time() * 1000)
+        anomaly_flags = score_telemetry_anomalies(body, events_len, client_ts, now_ms)
+
+        security_metric_incr("client_auth_telemetry_batches_total")
+
+        correlation_headers = {
+            "x_mastersat_auth_boot": request.META.get("HTTP_X_MASTERSAT_AUTH_BOOT"),
+            "x_mastersat_auth_loss_active": request.META.get("HTTP_X_MASTERSAT_AUTH_LOSS_ACTIVE"),
+            "x_mastersat_auth_loss_ver": request.META.get("HTTP_X_MASTERSAT_AUTH_LOSS_VER"),
+            "x_mastersat_auth_recovery_ver": request.META.get("HTTP_X_MASTERSAT_AUTH_RECOVERY_VER"),
+            "x_mastersat_auth_loss_reason": request.META.get("HTTP_X_MASTERSAT_AUTH_LOSS_REASON"),
+            "x_mastersat_me_guard_depth": request.META.get("HTTP_X_MASTERSAT_ME_GUARD_DEPTH"),
+        }
+        log_payload = {
+            "schema": body.get("schema"),
+            "events_len": events_len,
+            "client_ts": client_ts,
+            "snapshot": body.get("snapshot"),
+            "correl": body.get("correl"),
+            "headers": correlation_headers,
+            "anomaly_flags": anomaly_flags,
+        }
+        if anomaly_flags:
+            security_metric_incr("client_auth_telemetry_anomaly_batches_total")
+            escalate_on_telemetry_anomaly(request, anomaly_flags)
+            logger.warning("client_auth_telemetry ingest suspicious %s", log_payload)
+        else:
+            logger.info("client_auth_telemetry ingest ok %s", log_payload)
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
 
 class UserListView(generics.ListAPIView):
     serializer_class = UserSerializer

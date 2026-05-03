@@ -1,8 +1,20 @@
 "use client";
 import React, { useState, useEffect, useRef, memo, useCallback, Suspense } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
+import { isAxiosError } from 'axios';
 import { examsStudentApi } from "@/features/examsStudent/api";
+import {
+  type ExamQuestion,
+  type TestAttempt,
+  InvalidTestAttemptPayloadError,
+  normalizeFlaggedList,
+  normalizeSavedAnswersForForm,
+  parseAttemptBootstrapHints,
+  parseExamLocalDraft,
+  parseTestAttempt,
+} from "@/features/examsStudent/testAttemptSchema";
 import AuthGuard from '@/components/AuthGuard';
+import { useAuthCriticalGate } from "@/hooks/useAuthCriticalGate";
 import { platformSubjectIsMath, platformSubjectIsReadingWriting } from '@/lib/permissions';
 import { renderMath } from '@/lib/mathRender';
 import { Bookmark, ChevronDown, Highlighter, ZoomIn, Calculator, ChevronUp, X, Eye, EyeOff, MinusCircle, Info, Eye as EyeIcon, Play, Pause, ChevronLeft, ChevronRight, AlertCircle, BookOpen, Trash2, MoreVertical, Save } from 'lucide-react';
@@ -18,12 +30,90 @@ const getImageUrl = (path: string | null | undefined) => {
 const examsPublicApi = examsStudentApi;
 
 /** `/exams/attempts/` payload may not use strict DB enum strings for `practice_test_details.subject`. */
-function attemptPtSubjectIsRW(attempt: { practice_test_details?: { subject?: string } } | null | undefined) {
+function attemptPtSubjectIsRW(attempt: TestAttempt | null | undefined) {
     return platformSubjectIsReadingWriting(attempt?.practice_test_details?.subject);
 }
-function attemptPtSubjectIsMath(attempt: { practice_test_details?: { subject?: string } } | null | undefined) {
+function attemptPtSubjectIsMath(attempt: TestAttempt | null | undefined) {
     return platformSubjectIsMath(attempt?.practice_test_details?.subject);
 }
+
+function randomIdemSegment(): string {
+    if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+        return crypto.randomUUID();
+    }
+    return String(Date.now());
+}
+
+function optionEntryImage(val: unknown): string | undefined {
+    if (val && typeof val === "object" && "image" in val && typeof (val as { image?: unknown }).image === "string") {
+        return (val as { image: string }).image;
+    }
+    return undefined;
+}
+
+function optionEntryText(val: unknown): string {
+    if (typeof val === "string") return val;
+    if (val && typeof val === "object" && "text" in val && typeof (val as { text?: unknown }).text === "string") {
+        return (val as { text: string }).text;
+    }
+    return "";
+}
+
+function optionLetterKeys(q: ExamQuestion): string[] {
+    const opts = q.options as unknown;
+    if (opts && typeof opts === "object" && !Array.isArray(opts)) {
+        return Object.keys(opts as Record<string, unknown>);
+    }
+    return ["A", "B", "C", "D"];
+}
+
+function moduleWallClockLimitSec(attempt: TestAttempt): number {
+    const fromModule = attempt.current_module_details
+        ? attempt.current_module_details.time_limit_minutes * 60
+        : 0;
+    if (attempt.module_duration_seconds != null && Number.isFinite(attempt.module_duration_seconds)) {
+        return Math.max(0, Math.floor(attempt.module_duration_seconds));
+    }
+    return Math.max(0, Math.floor(fromModule));
+}
+
+function clampedRemainingFromServer(attempt: TestAttempt): number | null {
+    if (attempt.remaining_seconds != null && Number.isFinite(attempt.remaining_seconds)) {
+        return Math.max(0, Math.floor(attempt.remaining_seconds));
+    }
+    return null;
+}
+
+type ExamAttemptBcPayload = { t?: string; attemptId?: string; from?: string };
+
+type QuestionPaneProps = {
+  currentQuestion: ExamQuestion;
+  zoomLevel: number;
+  highlighterActive: boolean;
+  passageHtml: string | undefined;
+  handleShowPopover: (targetId: string, e?: React.MouseEvent) => void;
+};
+
+type RightPaneProps = {
+  currentQuestion: ExamQuestion;
+  currentQuestionIndex: number;
+  attempt: TestAttempt;
+  zoomLevel: number;
+  highlighterActive: boolean;
+  handleShowPopover: (targetId: string, e?: React.MouseEvent) => void;
+  questionHighlights: Record<number, string>;
+  questionPromptHighlights: Record<number, string>;
+  optionHighlights: Record<string, string>;
+  answers: Record<string, string>;
+  setAnswers: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  eliminatedOptions: Record<string, string[]>;
+  setEliminatedOptions: React.Dispatch<React.SetStateAction<Record<string, string[]>>>;
+  isEliminationMode: boolean;
+  setIsEliminationMode: React.Dispatch<React.SetStateAction<boolean>>;
+  flagged: number[];
+  setFlagged: React.Dispatch<React.SetStateAction<number[]>>;
+  showCalculator: boolean;
+};
 
 const formatFraction = (ans: string | undefined | null) => {
     if (!ans) return 'Omit';
@@ -50,7 +140,7 @@ const SprFraction = ({ text }: { text: string }) => {
     return <span>{text}</span>;
 };
 
-const QuestionPane = memo(({ currentQuestion, zoomLevel, highlighterActive, passageHtml, handleShowPopover }: any) => {
+const QuestionPane = memo(({ currentQuestion, zoomLevel, highlighterActive, passageHtml, handleShowPopover }: QuestionPaneProps) => {
     // Fix for image URL if it's relative
     return (
         <div
@@ -99,7 +189,7 @@ const RightPane = memo(({
     flagged,
     setFlagged,
     showCalculator,
-}: any) => {
+}: RightPaneProps) => {
 
     const toggleFlag = useCallback(() => {
         const qId = currentQuestion.id;
@@ -107,14 +197,14 @@ const RightPane = memo(({
     }, [currentQuestion.id, setFlagged]);
 
     const handleOptionSelect = useCallback((optionKey: string) => {
-        setAnswers((prev: any) => ({ ...prev, [currentQuestion.id]: optionKey }));
+        setAnswers((prev) => ({ ...prev, [currentQuestion.id]: optionKey }));
     }, [currentQuestion.id, setAnswers]);
 
     const toggleElimination = useCallback((optionKey: string) => {
         const qId = currentQuestion.id;
 
         // Deselect if currently selected as answer
-        setAnswers((prev: any) => {
+        setAnswers((prev) => {
             if (prev[qId] === optionKey) {
                 const next = { ...prev };
                 delete next[qId];
@@ -123,8 +213,8 @@ const RightPane = memo(({
             return prev;
         });
 
-        setEliminatedOptions((prev: any) => {
-            const current = prev[qId] || [];
+        setEliminatedOptions((prev) => {
+            const current = prev[qId] ?? [];
             if (current.includes(optionKey)) {
                 return { ...prev, [qId]: current.filter((o: string) => o !== optionKey) };
             } else {
@@ -265,17 +355,17 @@ const RightPane = memo(({
                                                 className={`w-full mathjax-process ${highlighterActive ? 'cursor-text' : ''}`}
                                                 onMouseUp={(e) => highlighterActive && handleShowPopover(`option-${key}`, e)}
                                             >
-                                                {typeof val === 'object' && val !== null && (val as any).image ? (
+                                                {optionEntryImage(val) ? (
                                                     <div className="py-2">
                                                         {/* eslint-disable-next-line @next/next/no-img-element */}
                                                         <img 
-                                                            src={getImageUrl((val as any).image)} 
+                                                            src={getImageUrl(optionEntryImage(val))} 
                                                             alt={`Option ${key}`} 
                                                             className="max-w-full h-auto max-h-[200px] object-contain rounded-lg border border-slate-100 shadow-sm" 
                                                         />
                                                     </div>
                                                 ) : (
-                                                    <SafeHtml html={optionHighlights[key] || (typeof val === "object" && val !== null ? (val as any).text : (val as string))?.replace(/\n/g, "<br/>") || ""} />
+                                                    <SafeHtml html={(optionHighlights[key] ?? optionEntryText(val).replace(/\n/g, "<br/>")) || ""} />
                                                 )}
                                             </div>
                                         </div>
@@ -315,7 +405,7 @@ function ExamPlayerInner() {
     const searchParams = useSearchParams();
     const mockFlow = searchParams.get('mockFlow') === '1';
     const [midtermMode, setMidtermMode] = useState(() => searchParams.get('midterm') === '1');
-    const [attempt, setAttempt] = useState<any>(null);
+    const [attempt, setAttempt] = useState<TestAttempt | null>(null);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
     const [reloadNonce, setReloadNonce] = useState(0);
@@ -324,21 +414,26 @@ function ExamPlayerInner() {
     
     // SAFE STATE UPDATE: Enforces version_number checks to prevent stale background polls
     // from overwriting fresh state set by manual mutations like submitModule.
-    const safeSetAttempt = useCallback((data: any) => {
-        if (!data) return;
-        setAttempt((prev: any) => {
+    const mergeAttemptFromServer = useCallback((data: TestAttempt) => {
+        setAttempt((prev) => {
             if (!prev) return data;
-            const prevV = Number(prev.version_number || 0);
-            const newV = Number(data.version_number || 0);
-            
+            const prevV = prev.version_number;
+            const newV = data.version_number;
+
             // Critical guard: never overwrite with an older version.
             if (newV < prevV) {
                 return prev;
             }
-            
+
             // Critical guard: never overwrite with an older module order.
-            const prevOrder = Number(prev?.current_module_details?.module_order || 0);
-            const newOrder = Number(data?.current_module_details?.module_order || 0);
+            const prevOrder =
+                prev.current_module_details?.module_order != null
+                    ? Number(prev.current_module_details.module_order)
+                    : 0;
+            const newOrder =
+                data.current_module_details?.module_order != null
+                    ? Number(data.current_module_details.module_order)
+                    : 0;
             // Only apply the module-order regression guard when both sides have a real module.
             // Legit states like SCORING/COMPLETED will have no active module (order=0).
             if (prevOrder > 0 && newOrder > 0 && newOrder < prevOrder && !data.is_completed) {
@@ -351,12 +446,15 @@ function ExamPlayerInner() {
 
     const prevModuleOrderRef = useRef<number | null>(null);
     const serverOffsetMsRef = useRef<number>(0);
-    const scoringPollRef = useRef<any>(null);
-    const activePollRef = useRef<any>(null);
+    const scoringPollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const activePollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const submitLockRef = useRef<boolean>(false);
     const multiTabRef = useRef<{ bc?: BroadcastChannel; id: string } | null>(null);
     const [multiTabBlocked, setMultiTabBlocked] = useState(false);
 
+    const { assertCriticalAuth, criticalAuthReady } = useAuthCriticalGate();
+    const assertCritRef = useRef(assertCriticalAuth);
+    assertCritRef.current = assertCriticalAuth;
 
     const [timeLeft, setTimeLeft] = useState<number>(0);
     const lastAnswersModuleIdRef = useRef<number | null>(null);
@@ -408,11 +506,11 @@ function ExamPlayerInner() {
     const [isNavigating, setIsNavigating] = useState(false);
     const [showFiveMinuteWarning, setShowFiveMinuteWarning] = useState(false);
     const [warningShownForModule, setWarningShownForModule] = useState<number | null>(null);
-    const warningTimeoutRef = useRef<any>(null);
+    const warningTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    const { current_module_details } = attempt || {};
-    const questions = current_module_details?.questions || [];
-    const currentQuestion = questions?.[currentQuestionIndex];
+    const current_module_details = attempt?.current_module_details ?? null;
+    const questions: ExamQuestion[] = current_module_details?.questions ?? [];
+    const currentQuestion = questions[currentQuestionIndex];
 
     useEffect(() => {
         if (typeof window === "undefined") return;
@@ -430,29 +528,50 @@ function ExamPlayerInner() {
     useEffect(() => {
         if (typeof window === "undefined") return;
         const key = `mastersat.attempt.bootstrap.${String(attemptId || "")}`;
+        const raw = sessionStorage.getItem(key);
+        if (!raw) return;
+        let json: unknown;
         try {
-            const raw = sessionStorage.getItem(key);
-            if (!raw) return;
-            const boot = JSON.parse(raw);
-            if (boot && boot.id && String(boot.id) === String(attemptId)) {
+            json = JSON.parse(raw) as unknown;
+        } catch (e) {
+            console.error("[exam] bootstrap sessionStorage JSON.parse failed; removing key", key, e);
+            try {
                 sessionStorage.removeItem(key);
-                safeSetAttempt(boot);
-                if (boot.current_module_details) setLoading(false);
+            } catch {
+                /* ignore */
             }
-        } catch {
-            /* ignore */
+            return;
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [attemptId]);
+        try {
+            const boot = parseTestAttempt(json, "sessionStorage bootstrap");
+            if (String(boot.id) !== String(attemptId)) return;
+            sessionStorage.removeItem(key);
+            mergeAttemptFromServer(boot);
+            if (boot.current_module_details) setLoading(false);
+        } catch (e) {
+            if (e instanceof InvalidTestAttemptPayloadError) {
+                console.error(e);
+                try {
+                    sessionStorage.removeItem(key);
+                } catch {
+                    /* ignore */
+                }
+            } else {
+                console.error("[exam] bootstrap unexpected error", e);
+            }
+        }
+    }, [attemptId, mergeAttemptFromServer]);
 
     useEffect(() => {
         const fetchAttempt = async () => {
             try {
                 setLoadError(null);
                 const attemptIdNum = Number(attemptId);
-                const data = await examsPublicApi.getAttemptStatus(attemptIdNum);
+                let snapshot = await examsPublicApi.getAttemptStatus(attemptIdNum);
+                mergeAttemptFromServer(snapshot);
+
                 try {
-                    const sn = data?.server_now ? new Date(data.server_now).getTime() : NaN;
+                    const sn = snapshot.server_now ? new Date(snapshot.server_now).getTime() : NaN;
                     if (Number.isFinite(sn)) serverOffsetMsRef.current = sn - Date.now();
                 } catch {
                     /* ignore */
@@ -460,33 +579,34 @@ function ExamPlayerInner() {
 
                 // If the backend reports NOT_STARTED, explicitly start the engine once.
                 // This guarantees "Start test -> Module 1 opens" even for legacy rows.
-                if (data?.current_state === "NOT_STARTED") {
+                if (snapshot.current_state === "NOT_STARTED") {
+                    if (!assertCritRef.current()) {
+                        setLoading(false);
+                        return;
+                    }
                     const idemKeyStorage = `mastersat.idem.startAttempt.${attemptIdNum}`;
                     const idem =
                         (typeof window !== "undefined" && sessionStorage.getItem(idemKeyStorage)) ||
-                        `start.${attemptIdNum}.${(typeof crypto !== "undefined" && "randomUUID" in crypto ? (crypto as any).randomUUID() : String(Date.now()))}`;
+                        `start.${attemptIdNum}.${randomIdemSegment()}`;
                     try {
                         sessionStorage.setItem(idemKeyStorage, idem);
                     } catch {
                         /* ignore */
                     }
-                    const started = await examsPublicApi.startAttemptEngine(attemptIdNum, idem);
-                    safeSetAttempt(started);
-                } else {
-                    safeSetAttempt(data);
+                    snapshot = await examsPublicApi.startAttemptEngine(attemptIdNum, idem);
+                    mergeAttemptFromServer(snapshot);
+                    snapshot = await examsPublicApi.getAttemptStatus(attemptIdNum);
+                    mergeAttemptFromServer(snapshot);
                 }
                 // Set uniform zoom level to 100% (1.0) for both Math and English
                 setZoomLevel(1.0);
-                
-                const rendered = (data?.current_state === "NOT_STARTED") ? await examsPublicApi.getAttemptStatus(attemptIdNum) : data;
 
                 // Route to review only when backend explicitly says COMPLETED.
-                if (rendered.is_completed && rendered?.current_state === "COMPLETED") {
-
+                if (snapshot.is_completed && snapshot.current_state === "COMPLETED") {
                     router.push(`/review/${attemptId}`);
                     return;
                 }
-                if (rendered.is_expired) {
+                if (snapshot.is_expired) {
                     setLoadError("This module has expired. Please click Retry to sync.");
                     return;
                 }
@@ -494,19 +614,31 @@ function ExamPlayerInner() {
                 // Self-heal: backend may briefly return active state without module payload.
                 // Re-check status once more before leaving the UI stuck on the loader.
                 if (
-                    !rendered?.current_module_details &&
-                    (rendered?.current_state === "MODULE_1_ACTIVE" || rendered?.current_state === "MODULE_2_ACTIVE")
+                    !snapshot.current_module_details &&
+                    (snapshot.current_state === "MODULE_1_ACTIVE" ||
+                        snapshot.current_state === "MODULE_2_ACTIVE")
                 ) {
                     try {
                         await new Promise((r) => setTimeout(r, 450));
-                        const st = await examsPublicApi.getAttemptStatus(attemptIdNum);
-                        safeSetAttempt(st);
-                        if (!st?.current_module_details) {
-                            setLoadError("The attempt state loaded, but the module payload is missing. Please click Retry.");
+                        snapshot = await examsPublicApi.getAttemptStatus(attemptIdNum);
+                        mergeAttemptFromServer(snapshot);
+                        if (!snapshot.current_module_details) {
+                            setLoadError(
+                                "The attempt state loaded, but the module payload is missing. Please click Retry.",
+                            );
                             return;
                         }
-                    } catch {
-                        setLoadError("The attempt state loaded, but the module payload is missing. Please click Retry.");
+                    } catch (healErr) {
+                        if (healErr instanceof InvalidTestAttemptPayloadError) {
+                            console.error(healErr);
+                            setLoadError(
+                                "The attempt state loaded, but the module payload is missing. Please click Retry.",
+                            );
+                            return;
+                        }
+                        setLoadError(
+                            "The attempt state loaded, but the module payload is missing. Please click Retry.",
+                        );
                         return;
                     }
                 }
@@ -514,46 +646,57 @@ function ExamPlayerInner() {
                 setLoading(false);
             } catch (err) {
                 setLoading(false);
-                const status = (err as any)?.response?.status;
-                if ((err as any)?.__mastersatAuthRequired || status === 401) {
+                if (err instanceof InvalidTestAttemptPayloadError) {
+                    console.error(err);
+                    setLoadError(
+                        "The server returned an unexpected attempt shape. Please click Retry.",
+                    );
+                    return;
+                }
+                const status = isAxiosError(err) ? err.response?.status : undefined;
+                const authHint =
+                    err &&
+                    typeof err === "object" &&
+                    "__mastersatAuthRequired" in err &&
+                    (err as { __mastersatAuthRequired?: boolean }).__mastersatAuthRequired;
+
+                if (authHint || status === 401) {
                     setLoadError("Your session needs re-authentication. Please click Retry to reconnect.");
                     return;
                 }
-                const data = (err as any)?.response?.data;
-                const detail =
-                    (typeof data === "string" && data) ||
-                    data?.detail ||
-                    data?.error ||
-                    (data && typeof data === "object" ? JSON.stringify(data) : "");
+                const data = isAxiosError(err) ? err.response?.data : undefined;
+                let detail = "";
+                if (typeof data === "string") detail = data;
+                else if (data && typeof data === "object") {
+                    const o = data as Record<string, unknown>;
+                    if (typeof o.detail === "string") detail = o.detail;
+                    else if (typeof o.error === "string") detail = o.error;
+                    else detail = JSON.stringify(data);
+                }
                 const msg = `Could not load the attempt.${status ? ` HTTP ${status}.` : ""}${detail ? ` ${detail}` : ""}`;
                 setLoadError(msg);
 
                 // Stale/invalid attempt id recovery: try to route back to canonical start entry.
                 if (status === 404 && typeof window !== "undefined") {
                     const bootKey = `mastersat.attempt.bootstrap.${String(attemptId || "")}`;
-                    try {
-                        const raw = sessionStorage.getItem(bootKey);
-                        if (raw) {
-                            const boot = JSON.parse(raw);
-                            const ptId =
-                                boot?.practice_test_details?.id ??
-                                boot?.practice_test_details?.pk ??
-                                boot?.practice_test ??
-                                boot?.practice_test_id;
-                            if (ptId) {
-                                router.replace(`/practice-test/${ptId}`);
+                    const rawBoot = sessionStorage.getItem(bootKey);
+                    if (rawBoot) {
+                        try {
+                            const hints = parseAttemptBootstrapHints(JSON.parse(rawBoot) as unknown);
+                            if (hints?.practiceTestId) {
+                                router.replace(`/practice-test/${hints.practiceTestId}`);
                                 return;
                             }
+                        } catch (e) {
+                            console.error("[exam] 404 recovery: bootstrap JSON invalid", e);
                         }
-                    } catch {
-                        /* ignore */
                     }
                     router.replace("/");
                 }
             }
         };
         fetchAttempt();
-    }, [attemptId, router, reloadNonce, safeSetAttempt]);
+    }, [attemptId, router, reloadNonce, mergeAttemptFromServer]);
 
     // Hard-stop: never allow the loader to spin forever.
     useEffect(() => {
@@ -576,8 +719,8 @@ function ExamPlayerInner() {
             ch?.postMessage({ t: "hello", attemptId: aid, from: myId });
         } catch {}
 
-        const onMessage = (ev: any) => {
-            const m = ev?.data;
+        const onMessage = (ev: MessageEvent) => {
+            const m = ev.data as ExamAttemptBcPayload | undefined;
             if (!m || m.attemptId !== aid) return;
             if (m.from && m.from !== myId) setMultiTabBlocked(true);
         };
@@ -597,32 +740,41 @@ function ExamPlayerInner() {
     useEffect(() => {
         if (!attempt?.current_module_details?.id) return;
         const key = `mastersat.examDraft.${attemptId}.${attempt.current_module_details.id}`;
-        let local: any = null;
+        let localParsed = null as ReturnType<typeof parseExamLocalDraft>;
         try {
-            local = JSON.parse(localStorage.getItem(key) || "null");
-        } catch {
-            local = null;
+            const ls = localStorage.getItem(key);
+            if (ls) {
+                const json = JSON.parse(ls) as unknown;
+                localParsed = parseExamLocalDraft(json);
+            }
+        } catch (e) {
+            console.error("[exam] exam draft JSON.parse failed", key, e);
+            localParsed = null;
         }
-        const localV = local?.v ?? null;
-        const serverV = attempt?.version_number ?? null;
+        const localV = localParsed?.v ?? null;
+        const serverV = attempt.version_number ?? null;
         if (localV != null && serverV != null && Number(localV) !== Number(serverV)) {
             // Stale draft; discard to avoid overwriting backend truth.
-            local = null;
+            localParsed = null;
             try { localStorage.removeItem(key); } catch {}
         }
-        const localModId = local?.moduleId ?? null;
+        const localModId = localParsed?.moduleId ?? null;
         if (!localModId || String(localModId) !== String(attempt.current_module_details.id)) {
             // Draft belongs to a different module (or is legacy/unknown); discard.
-            local = null;
+            localParsed = null;
         }
 
-        const serverAnswers = attempt?.current_module_saved_answers || {};
-        const serverFlagged = Array.isArray(attempt?.current_module_flagged_questions)
-            ? attempt.current_module_flagged_questions
-            : [];
-            
-        setAnswers({ ...(local?.answers || {}), ...serverAnswers });
-        setFlagged(Array.from(new Set([...(local?.flagged || []), ...serverFlagged])));
+        const serverAnswers = normalizeSavedAnswersForForm(
+            attempt.current_module_saved_answers ?? undefined,
+            "hydrate answers",
+        );
+        const serverFlagged = normalizeFlaggedList(
+            attempt.current_module_flagged_questions ?? undefined,
+            "hydrate flagged",
+        );
+
+        setAnswers({ ...(localParsed?.answers ?? {}), ...serverAnswers });
+        setFlagged(Array.from(new Set([...(localParsed?.flagged ?? []), ...serverFlagged])));
         
         // Mark that the 'answers' state now belongs to this module
         lastAnswersModuleIdRef.current = attempt.current_module_details.id;
@@ -667,18 +819,18 @@ function ExamPlayerInner() {
         const tick = async () => {
             if (cancelled) return;
             try {
-                    const st = await examsPublicApi.getAttemptStatus(Number(attemptId));
+                const st = await examsPublicApi.getAttemptStatus(Number(attemptId));
                 if (cancelled) return; // guard against stale response after cleanup
                 try {
-                    const sn = st?.server_now ? new Date(st.server_now).getTime() : NaN;
+                    const sn = st.server_now ? new Date(st.server_now).getTime() : NaN;
                     if (Number.isFinite(sn)) serverOffsetMsRef.current = sn - Date.now();
                 } catch {}
-                safeSetAttempt(st);
+                mergeAttemptFromServer(st);
 
-                if (st?.is_completed && st?.current_state === "COMPLETED") {
+                if (st.is_completed && st.current_state === "COMPLETED") {
                     // route based on existing mockFlow logic
                     const meid = searchParams.get('mockExamId');
-                    const subj = st?.practice_test_details?.subject;
+                    const subj = st.practice_test_details?.subject;
                     if (mockFlow && meid && platformSubjectIsReadingWriting(subj)) {
                         router.push(`/mock/${meid}/break?rwAttempt=${attemptId}`);
                         return;
@@ -697,6 +849,7 @@ function ExamPlayerInner() {
                 }
                 delayMs = 1200;
             } catch (e) {
+                if (e instanceof InvalidTestAttemptPayloadError) console.error(e);
                 delayMs = Math.min(30_000, Math.floor(delayMs * 1.6));
             }
             scoringPollRef.current = setTimeout(tick, delayMs);
@@ -708,7 +861,7 @@ function ExamPlayerInner() {
             scoringPollRef.current = null;
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [attempt?.current_state, attemptId, mockFlow, router, searchParams]);
+    }, [attempt?.current_state, attemptId, mockFlow, router, searchParams, mergeAttemptFromServer]);
 
     // Active module polling: refresh backend truth + server_now offset periodically.
     // IMPORTANT: `cancelled` is checked both before AND after the await to prevent a stale
@@ -731,23 +884,23 @@ function ExamPlayerInner() {
                 // the stale Module-1 response would overwrite the fresh Module-2 state.
                 if (cancelled) return;
                 try {
-                    const sn = st?.server_now ? new Date(st.server_now).getTime() : NaN;
+                    const sn = st.server_now ? new Date(st.server_now).getTime() : NaN;
                     if (Number.isFinite(sn)) serverOffsetMsRef.current = sn - Date.now();
                 } catch {}
-                
-                safeSetAttempt(st);
 
-                if (st?.is_completed && st?.current_state === "COMPLETED") {
+                mergeAttemptFromServer(st);
 
+                if (st.is_completed && st.current_state === "COMPLETED") {
                     router.push(`/review/${attemptId}`);
                     return;
                 }
-                if (st?.is_expired) {
+                if (st.is_expired) {
                     setLoadError("This module has expired. Please click Retry to sync.");
                     return;
                 }
                 delayMs = 10_000;
-            } catch {
+            } catch (e) {
+                if (e instanceof InvalidTestAttemptPayloadError) console.error(e);
                 delayMs = Math.min(30_000, Math.floor(delayMs * 1.6));
             }
             activePollRef.current = setTimeout(tick, delayMs);
@@ -759,7 +912,7 @@ function ExamPlayerInner() {
             if (activePollRef.current) clearTimeout(activePollRef.current);
             activePollRef.current = null;
         };
-    }, [attempt?.current_state, attemptId, router]);
+    }, [attempt?.current_state, attemptId, router, mergeAttemptFromServer]);
 
     useEffect(() => {
         if (searchParams.get('midterm') === '1') setMidtermMode(true);
@@ -888,6 +1041,7 @@ function ExamPlayerInner() {
     }, [highlighterActive]);
 
     const applyAnnotation = (style: 'yellow' | 'blue' | 'pink' | 'underline' | 'clear') => {
+        if (!currentQuestion) return;
         if (!annotationPopover.targetId) return;
 
         let containerId = '';
@@ -977,11 +1131,11 @@ function ExamPlayerInner() {
             delete newState[currentQuestion.id];
             return newState;
         });
-        setOptionHighlights(prev => {
+        setOptionHighlights((prev) => {
             const newState = { ...prev };
-            currentQuestion.options?.forEach((opt: any) => {
-                delete newState[opt.id];
-            });
+            for (const letter of optionLetterKeys(currentQuestion)) {
+                delete newState[letter];
+            }
             return newState;
         });
     };
@@ -1022,7 +1176,10 @@ function ExamPlayerInner() {
         if (!attempt || !attempt.current_module_details) return;
         if (multiTabBlocked) return;
         if (submitLockRef.current) return;
-        
+        if (!assertCriticalAuth()) {
+            return;
+        }
+
         submitLockRef.current = true;
         setLoading(true);
         // Prevent the background polling loop from racing this submit.
@@ -1032,30 +1189,38 @@ function ExamPlayerInner() {
         activePollRef.current = null;
         
         const attemptIdNum = Number(attemptId);
-        const prevOrder = Number(attempt?.current_module_details?.module_order || 0);
+        const prevOrder =
+            attempt.current_module_details.module_order != null
+                ? Number(attempt.current_module_details.module_order)
+                : 0;
         const currentModId = attempt.current_module_details.id;
         const idem = `submit.${attempt.id}.${currentModId}.v${attempt.version_number}`;
-        
-        // --- Self-Healing Utility: apply update and cleanup ---
-        const applyAttemptUpdate = (data: any) => {
-            if (!data) return;
-            const nextOrder = Number(data?.current_module_details?.module_order || 0) || null;
-            const nextModId = data?.current_module_details?.id ?? null;
+
+        // --- Self-Healing Utility: apply update and cleanup (already validated TestAttempt) ---
+        const applyParsedSubmitResult = (data: TestAttempt) => {
+            const nextOrder =
+                data.current_module_details?.module_order != null
+                    ? Number(data.current_module_details.module_order)
+                    : null;
+            const nextModId = data.current_module_details?.id ?? null;
             const didModuleChange = Boolean(nextModId && Number(nextModId) !== Number(currentModId));
-            
+
             // If we are already on M2 or scoring, ensure we transition UI immediately
             // Only route to review when backend explicitly says COMPLETED.
-            if (data.is_completed && data?.current_state === "COMPLETED") {
+            if (data.is_completed && data.current_state === "COMPLETED") {
                 submitLockRef.current = false;
-                const meid = searchParams.get('mockExamId');
+                const meid = searchParams.get("mockExamId");
                 const subj = data.practice_test_details?.subject;
                 if (mockFlow && meid && platformSubjectIsReadingWriting(subj)) {
                     router.push(`/mock/${meid}/break?rwAttempt=${attemptId}`);
                     return;
                 }
                 if (mockFlow && meid && platformSubjectIsMath(subj)) {
-                    const rw = searchParams.get('rwAttempt');
-                    const qs = rw && rw.length > 0 ? `?rwAttempt=${encodeURIComponent(rw)}&mathAttempt=${attemptId}` : `?mathAttempt=${attemptId}`;
+                    const rw = searchParams.get("rwAttempt");
+                    const qs =
+                        rw && rw.length > 0
+                            ? `?rwAttempt=${encodeURIComponent(rw)}&mathAttempt=${attemptId}`
+                            : `?mathAttempt=${attemptId}`;
                     router.push(`/mock/${meid}/results${qs}`);
                     return;
                 }
@@ -1063,8 +1228,8 @@ function ExamPlayerInner() {
                 return;
             }
 
-            if (data?.current_state === 'SCORING') {
-                safeSetAttempt(data);
+            if (data.current_state === "SCORING") {
+                mergeAttemptFromServer(data);
                 setLoading(false);
                 submitLockRef.current = false;
                 return;
@@ -1072,14 +1237,14 @@ function ExamPlayerInner() {
 
             // If backend says we're in MODULE_2_ACTIVE but payload is missing, immediately re-fetch status.
             // This prevents getting stuck on the loader if an intermediate/stale response arrives.
-            if (data?.current_state === "MODULE_2_ACTIVE" && !data?.current_module_details) {
-                safeSetAttempt(data);
+            if (data.current_state === "MODULE_2_ACTIVE" && !data.current_module_details) {
+                mergeAttemptFromServer(data);
                 const aid = Number(attemptIdNum);
                 setLoading(true);
                 setTimeout(async () => {
                     try {
-                        const st = await examsPublicApi.getAttemptStatus(aid);
-                        applyAttemptUpdate(st);
+                        const stRec = await examsPublicApi.getAttemptStatus(aid);
+                        applyParsedSubmitResult(stRec);
                     } catch {
                         setLoading(false);
                         submitLockRef.current = false;
@@ -1096,7 +1261,7 @@ function ExamPlayerInner() {
             }
 
             // Update attempt state first (backend truth).
-            safeSetAttempt(data);
+            mergeAttemptFromServer(data);
 
             // Only clear per-module local UI state when we actually moved to a different module.
             // If submit failed or was idempotently ignored, clearing here would "lose answers" in the UI.
@@ -1108,14 +1273,14 @@ function ExamPlayerInner() {
                 setQuestionHighlights({});
                 setShowAnswerPreview(false);
             }
-            
-            if (data?.current_module_details?.id) {
+
+            if (data.current_module_details?.id) {
                 lastAnswersModuleIdRef.current = data.current_module_details.id;
             }
 
             setLoading(false);
             submitLockRef.current = false;
-            
+
             // Cleanup persistence only if we moved off this module.
             if (didModuleChange) {
                 try {
@@ -1133,16 +1298,32 @@ function ExamPlayerInner() {
             if (!watchdogActive) return;
             try {
                 const recoveryData = await examsPublicApi.getAttemptStatus(attemptIdNum);
-                const recoveryOrder = Number(recoveryData?.current_module_details?.module_order || 0);
-                if (recoveryOrder > prevOrder || recoveryData.is_completed || recoveryData.current_state === 'SCORING') {
+                const recoveryOrder =
+                    recoveryData.current_module_details?.module_order != null
+                        ? Number(recoveryData.current_module_details.module_order)
+                        : 0;
+                if (
+                    recoveryOrder > prevOrder ||
+                    recoveryData.is_completed ||
+                    recoveryData.current_state === "SCORING"
+                ) {
                     watchdogActive = false;
-                    applyAttemptUpdate(recoveryData);
+                    applyParsedSubmitResult(recoveryData);
                 }
-            } catch {}
+            } catch (e) {
+                if (e instanceof InvalidTestAttemptPayloadError) console.error(e);
+            }
         }, 5000);
 
         // --- Autonomous Recovery: Retry Loop ---
         const performSubmit = async (attemptCount = 0) => {
+            if (!assertCriticalAuth()) {
+                watchdogActive = false;
+                clearTimeout(watchdogTimer);
+                setLoading(false);
+                submitLockRef.current = false;
+                return;
+            }
             try {
                 const expected = attempt?.version_number;
                 const resp = await examsPublicApi.submitModule(
@@ -1154,26 +1335,51 @@ function ExamPlayerInner() {
                 
                 watchdogActive = false;
                 clearTimeout(watchdogTimer);
-                applyAttemptUpdate(resp);
-            } catch (err: any) {
-                const status = err?.response?.status;
-                
+                applyParsedSubmitResult(resp);
+            } catch (err: unknown) {
+                const status = isAxiosError(err) ? err.response?.status : undefined;
+
                 // If 409, the backend is already ahead of us. Use the data in the body.
-                if (status === 409 && err?.response?.data?.attempt) {
+                if (
+                    status === 409 &&
+                    isAxiosError(err) &&
+                    err.response?.data &&
+                    typeof err.response.data === "object" &&
+                    err.response.data !== null &&
+                    "attempt" in err.response.data
+                ) {
                     watchdogActive = false;
                     clearTimeout(watchdogTimer);
-                    const serverAttempt = err.response.data.attempt;
-                    applyAttemptUpdate(serverAttempt);
+                    const rawAttempt = (err.response.data as { attempt?: unknown }).attempt;
+                    let conflict: TestAttempt;
+                    try {
+                        conflict = parseTestAttempt(rawAttempt, "submitModule 409 conflict body");
+                    } catch (e) {
+                        if (e instanceof InvalidTestAttemptPayloadError) console.error(e);
+                        setLoading(false);
+                        submitLockRef.current = false;
+                        setLoadError(
+                            "Received an invalid attempt response from the server. Please click Retry.",
+                        );
+                        return;
+                    }
+                    applyParsedSubmitResult(conflict);
 
                     // If we are still on module 1, retry once with the fresh version_number.
                     // This fixes the common case where background autosave/other tab bumped the version
                     // right before submit, causing a conflict but not applying the transition.
                     try {
-                        const st = serverAttempt?.current_state;
-                        const mo = Number(serverAttempt?.current_module_details?.module_order || 0);
+                        const st = conflict.current_state;
+                        const mo =
+                            conflict.current_module_details?.module_order != null
+                                ? Number(conflict.current_module_details.module_order)
+                                : 0;
                         if (st === "MODULE_1_ACTIVE" && mo === 1) {
-                            const newV = serverAttempt?.version_number;
-                            const newModId = serverAttempt?.current_module_details?.id ?? currentModId;
+                            if (!assertCriticalAuth()) {
+                                return;
+                            }
+                            const newV = conflict.version_number;
+                            const newModId = conflict.current_module_details?.id ?? currentModId;
                             const retryIdem = `submit.${attemptIdNum}.${newModId}.v${newV}.retry`;
                             const resp2 = await examsPublicApi.submitModule(
                                 attemptIdNum,
@@ -1181,7 +1387,7 @@ function ExamPlayerInner() {
                                 flagged,
                                 { idempotencyKey: retryIdem, expectedVersionNumber: newV },
                             );
-                            applyAttemptUpdate(resp2);
+                            applyParsedSubmitResult(resp2);
                         }
                     } catch {
                         // If retry fails, fall through to allow user retry manually.
@@ -1198,14 +1404,14 @@ function ExamPlayerInner() {
                 } else {
                     // Final fallback: try one last status check before giving up
                     try {
-                        const finalData = await examsPublicApi.getAttemptStatus(attemptIdNum);
-                        applyAttemptUpdate(finalData);
+                        const finalSnap = await examsPublicApi.getAttemptStatus(attemptIdNum);
+                        applyParsedSubmitResult(finalSnap);
                     } catch {
                         setLoading(false);
                         submitLockRef.current = false;
                         setLoadError(
                             `Submit failed.${status ? ` HTTP ${status}.` : ""} ` +
-                            `Please click Retry and try submitting again.`
+                            `Please click Retry and try submitting again.`,
                         );
                     }
                 }
@@ -1213,7 +1419,18 @@ function ExamPlayerInner() {
         };
 
         void performSubmit();
-    }, [attempt, attemptId, answers, flagged, router, mockFlow, searchParams, multiTabBlocked]);
+    }, [
+        attempt,
+        attemptId,
+        answers,
+        flagged,
+        router,
+        mockFlow,
+        searchParams,
+        multiTabBlocked,
+        assertCriticalAuth,
+        mergeAttemptFromServer,
+    ]);
 
     useEffect(() => {
         timeLeftRef.current = timeLeft;
@@ -1223,16 +1440,8 @@ function ExamPlayerInner() {
         if (!attempt?.current_module_details || !attempt?.current_module_start_time) {
             return;
         }
-        const limitSecRaw =
-            (typeof (attempt as any)?.module_duration_seconds === "number" && Number.isFinite((attempt as any).module_duration_seconds))
-                ? (attempt as any).module_duration_seconds
-                : attempt.current_module_details.time_limit_minutes * 60;
-        const limitSec = Math.max(0, Math.floor(limitSecRaw));
-
-        const remainingFromServer =
-            (typeof (attempt as any)?.remaining_seconds === "number" && Number.isFinite((attempt as any).remaining_seconds))
-                ? Math.max(0, Math.floor((attempt as any).remaining_seconds))
-                : null;
+        const limitSec = moduleWallClockLimitSec(attempt);
+        const remainingFromServer = clampedRemainingFromServer(attempt);
 
         const startMs = new Date(attempt.current_module_start_time).getTime();
         const nowMs = Date.now() + serverOffsetMsRef.current;
@@ -1250,18 +1459,20 @@ function ExamPlayerInner() {
         moduleTimerSubmitDoneRef.current = false;
         wasTimerPausedRef.current = false;
         setTimeLeft(remaining);
-    }, [attempt?.current_module_details?.id, attempt?.current_module_start_time, attempt?.current_module_details?.time_limit_minutes]);
+    }, [
+        attempt?.current_module_details?.id,
+        attempt?.current_module_start_time,
+        attempt?.current_module_details?.time_limit_minutes,
+        attempt?.module_duration_seconds,
+        attempt?.remaining_seconds,
+    ]);
 
 
     // After resume from pause, realign virtual start so remaining time matches the frozen display (no wall-clock jump).
     useEffect(() => {
         const paused = isPaused && !mockFlow;
         if (!attempt?.current_module_details || !attempt?.current_module_start_time) return;
-        const limitSecRaw =
-            (typeof (attempt as any)?.module_duration_seconds === "number" && Number.isFinite((attempt as any).module_duration_seconds))
-                ? (attempt as any).module_duration_seconds
-                : attempt.current_module_details.time_limit_minutes * 60;
-        const limitSec = Math.max(0, Math.floor(limitSecRaw));
+        const limitSec = moduleWallClockLimitSec(attempt);
         if (wasTimerPausedRef.current && !paused) {
             const rem = timeLeftRef.current;
             const nowMs = Date.now() + serverOffsetMsRef.current;
@@ -1269,18 +1480,21 @@ function ExamPlayerInner() {
             lastRenderedSecRef.current = -1;
         }
         wasTimerPausedRef.current = paused;
-    }, [isPaused, mockFlow, attempt?.current_module_details?.id, attempt?.current_module_details?.time_limit_minutes, attempt?.current_module_start_time]);
+    }, [
+        isPaused,
+        mockFlow,
+        attempt?.current_module_details?.id,
+        attempt?.current_module_details?.time_limit_minutes,
+        attempt?.current_module_start_time,
+        attempt?.module_duration_seconds,
+    ]);
 
     // rAF-driven timer: checks every frame, updates React only when the whole-second display changes.
     useEffect(() => {
         if (!attempt?.current_module_details || !attempt?.current_module_start_time) return;
         if (isPaused && !mockFlow) return;
 
-        const limitSecRaw =
-            (typeof (attempt as any)?.module_duration_seconds === "number" && Number.isFinite((attempt as any).module_duration_seconds))
-                ? (attempt as any).module_duration_seconds
-                : attempt.current_module_details.time_limit_minutes * 60;
-        const limitSec = Math.max(0, Math.floor(limitSecRaw));
+        const limitSec = moduleWallClockLimitSec(attempt);
         let rafId = 0;
 
         const loop = () => {
@@ -1309,6 +1523,7 @@ function ExamPlayerInner() {
         attempt?.current_module_details?.id,
         attempt?.current_module_start_time,
         attempt?.current_module_details?.time_limit_minutes,
+        attempt?.module_duration_seconds,
         isPaused,
         mockFlow,
         handleSubmitModule,
@@ -1500,6 +1715,9 @@ function ExamPlayerInner() {
     };
 
     const handleSaveAndExit = async () => {
+        if (!assertCriticalAuth()) {
+            return;
+        }
         try {
             setLoading(true);
             const currentModId = attempt?.current_module_details?.id || "x";
@@ -1507,7 +1725,7 @@ function ExamPlayerInner() {
             const idemKeyStorage = `mastersat.idem.saveAttempt.${attemptId}.${currentModId}.${ver}`;
             const idem =
                 (typeof window !== "undefined" && sessionStorage.getItem(idemKeyStorage)) ||
-                `save.${attemptId}.${currentModId}.v${ver}.${(typeof crypto !== "undefined" && "randomUUID" in crypto ? (crypto as any).randomUUID() : String(Date.now()))}`;
+                `save.${attemptId}.${currentModId}.v${ver}.${randomIdemSegment()}`;
             try {
                 sessionStorage.setItem(idemKeyStorage, idem);
             } catch {
@@ -1753,20 +1971,24 @@ function ExamPlayerInner() {
                                 <>
                                     <div className="fixed inset-0 z-40" onClick={() => setShowMoreMenu(false)} />
                                     <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden py-1">
-                                        <button 
+                                        <button
+                                            type="button"
+                                            disabled={!criticalAuthReady}
                                             onClick={handleSaveAndExit}
-                                            className="w-full flex items-center px-4 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+                                            className="w-full flex items-center px-4 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:pointer-events-none"
                                         >
                                             <Save className="w-4 h-4 mr-3 text-slate-400" />
                                             Save and Exit
                                         </button>
                                         <div className="h-px bg-slate-100 mx-2" />
-                                        <button 
+                                        <button
+                                            type="button"
+                                            disabled={!criticalAuthReady}
                                             onClick={() => {
                                                 setShowMoreMenu(false);
                                                 setShowAnswerPreview(true);
                                             }}
-                                            className="w-full flex items-center px-4 py-3 text-sm font-bold text-emerald-600 hover:bg-emerald-50 transition-colors"
+                                            className="w-full flex items-center px-4 py-3 text-sm font-bold text-emerald-600 hover:bg-emerald-50 transition-colors disabled:opacity-50 disabled:pointer-events-none"
                                         >
                                             <ChevronRight className="w-4 h-4 mr-3" />
                                             Submit Section
@@ -1865,7 +2087,7 @@ function ExamPlayerInner() {
 
                             <div className="p-8 max-h-[50vh] overflow-y-auto">
                                 <div className="flex flex-wrap gap-[6px] justify-center">
-                                    {questions.map((q: any, idx: number) => {
+                                    {questions.map((q, idx) => {
                                         const isAnswered = answers[q.id] !== undefined;
                                         const isFlagged = flagged.includes(q.id);
                                         const isCurrent = currentQuestionIndex === idx;
@@ -1925,7 +2147,7 @@ function ExamPlayerInner() {
                             </div>
                             <div className="flex-1 overflow-y-auto p-10 bg-slate-50/50">
                                 <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-7 lg:grid-cols-10 gap-4">
-                                    {questions.map((q: any, idx: number) => {
+                                    {questions.map((q, idx) => {
                                         const isAnswered = answers[q.id];
                                         const isFlagged = flagged.includes(q.id);
 
@@ -1970,8 +2192,10 @@ function ExamPlayerInner() {
                                     </div>
                                 </div>
                                 <button
+                                    type="button"
+                                    disabled={!criticalAuthReady || loading || transitioning}
                                     onClick={handleSubmitModule}
-                                    className="bg-emerald-600 text-white font-bold px-10 py-4 rounded-2xl hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-500/20 active:scale-95 text-lg flex items-center gap-3"
+                                    className="bg-emerald-600 text-white font-bold px-10 py-4 rounded-2xl hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-500/20 active:scale-95 text-lg flex items-center gap-3 disabled:opacity-50 disabled:pointer-events-none"
                                 >
                                     Confirm Submission
                                     <ChevronRight className="w-5 h-5" />
@@ -2089,7 +2313,7 @@ function ExamPlayerInner() {
 
                     <div className="flex-1 flex items-center">
                         <span className="text-sm font-bold text-black uppercase tracking-tight">
-                            {attempt?.student_details?.first_name} {attempt?.student_details?.last_name || attempt?.student_name}
+                            {attempt?.student_details?.first_name} {attempt?.student_details?.last_name ?? ""}
                         </span>
                     </div>
 

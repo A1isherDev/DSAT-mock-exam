@@ -1,4 +1,4 @@
-from django.urls import path, include
+from django.urls import path, include, re_path
 from rest_framework.routers import DefaultRouter
 from .views import (
     AdminMockExamViewSet,
@@ -20,7 +20,11 @@ from .views import (
 router = DefaultRouter()
 router.register(r'attempts', TestAttemptViewSet, basename='test-attempt')
 router.register(r'mock-exams', MockExamViewSet, basename='mock-exam')
-router.register(r'', PracticeTestViewSet, basename='practice-test')
+#
+# IMPORTANT: do NOT register the practice-test viewset at the empty prefix with DefaultRouter.
+# The generated `/<pk>/` pattern (string pk) would match `/attempts/` and `/mock-exams/`,
+# causing those endpoints to 404 by routing into PracticeTestViewSet.retrieve(pk="attempts").
+# Instead, expose the practice library at the same API contract via explicit int-path routes.
 
 # ── Admin routes (manual nested) ────────────────────────────────────────────
 admin_mock_exam_router = DefaultRouter()
@@ -68,5 +72,8 @@ urlpatterns = [
     path('admin/pastpaper-packs/', include(admin_pastpaper_pack_router.urls)),
 
     # Student / Common routes
+    # Pastpaper practice library (explicit int-pk routes avoid router prefix conflicts)
+    re_path(r"^$", PracticeTestViewSet.as_view({"get": "list"}), name="practice-test-list"),
+    re_path(r"^(?P<pk>\\d+)/$", PracticeTestViewSet.as_view({"get": "retrieve"}), name="practice-test-detail"),
     path('', include(router.urls)),
 ]

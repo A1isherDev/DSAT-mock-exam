@@ -1,3 +1,4 @@
+from drf_spectacular.utils import extend_schema_field, extend_schema_serializer
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.conf import settings
@@ -55,12 +56,23 @@ class ExamDateOptionPublicSerializer(serializers.ModelSerializer):
         fields = ["id", "exam_date", "label"]
 
 
+@extend_schema_serializer(component_name="UserMeLastMockResult")
+class UserMeLastMockResultSerializer(serializers.Serializer):
+    """Shape of ``UserMeSerializer.get_last_mock_result`` (latest completed practice/mock attempt)."""
+
+    score = serializers.IntegerField(allow_null=True)
+    mock_exam_title = serializers.CharField(allow_null=True, allow_blank=True, required=False)
+    practice_test_subject = serializers.CharField(allow_null=True, allow_blank=True, required=False)
+    completed_at = serializers.CharField(allow_null=True, required=False)
+
+
 class UserMeSerializer(serializers.ModelSerializer):
     last_mock_result = serializers.SerializerMethodField(read_only=True)
     profile_image_url = serializers.SerializerMethodField(read_only=True)
     clear_profile_image = serializers.BooleanField(write_only=True, required=False)
     role = serializers.SerializerMethodField()
     permissions = serializers.SerializerMethodField()
+    is_admin = serializers.SerializerMethodField(read_only=True)
     telegram_linked = serializers.SerializerMethodField()
     security_step_up_active = serializers.SerializerMethodField()
     has_recent_security_alerts = serializers.SerializerMethodField()
@@ -74,6 +86,8 @@ class UserMeSerializer(serializers.ModelSerializer):
             "first_name",
             "last_name",
             "phone_number",
+            "is_frozen",
+            "is_admin",
             "telegram_linked",
             "profile_image",
             "profile_image_url",
@@ -94,6 +108,7 @@ class UserMeSerializer(serializers.ModelSerializer):
             "first_name": {"required": False},
             "last_name": {"required": False},
             "email": {"required": False},
+            "is_frozen": {"read_only": True},
             "subject": {"read_only": True},
             "last_password_change": {"read_only": True},
         }
@@ -166,6 +181,7 @@ class UserMeSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("This phone number is already in use.")
         return normalized
 
+    @extend_schema_field(serializers.URLField(allow_null=True, read_only=True))
     def get_profile_image_url(self, obj):
         if not obj.profile_image:
             return None
@@ -175,6 +191,7 @@ class UserMeSerializer(serializers.ModelSerializer):
             return request.build_absolute_uri(url)
         return url
 
+    @extend_schema_field(UserMeLastMockResultSerializer(allow_null=True, required=False, read_only=True))
     def get_last_mock_result(self, obj):
         from exams.models import TestAttempt
 
@@ -208,18 +225,26 @@ class UserMeSerializer(serializers.ModelSerializer):
         data.pop("profile_image", None)
         return data
 
+    @extend_schema_field(serializers.CharField(read_only=True))
     def get_role(self, obj):
         return obj.role
 
+    @extend_schema_field(serializers.BooleanField(read_only=True))
+    def get_is_admin(self, obj):
+        return bool(obj.is_admin)
+
+    @extend_schema_field(serializers.BooleanField(read_only=True))
     def get_telegram_linked(self, obj):
         return obj.telegram_id is not None
 
+    @extend_schema_field(serializers.BooleanField(read_only=True))
     def get_security_step_up_active(self, obj):
         until = getattr(obj, "security_step_up_required_until", None)
         if not until:
             return False
         return bool(until > timezone.now())
 
+    @extend_schema_field(serializers.BooleanField(read_only=True))
     def get_has_recent_security_alerts(self, obj):
         from users.models import SecurityAuditEvent
         from datetime import timedelta
@@ -229,6 +254,7 @@ class UserMeSerializer(serializers.ModelSerializer):
             user=obj, severity__in=("warning", "critical"), created_at__gte=since
         ).exists()
 
+    @extend_schema_field(serializers.ListField(child=serializers.CharField(), read_only=True))
     def get_permissions(self, obj):
         return sorted(get_effective_permission_codenames(obj))
 

@@ -41,11 +41,11 @@ export default function HomeworkGradingHub({
       setError(null);
       try {
         const all = await classesApi.list();
-        const groups = (Array.isArray(all) ? all : []).filter((g) => g.my_role === "ADMIN");
+        const groups = all.items.filter((g) => g.my_role === "ADMIN");
         const out: Row[] = [];
         for (const g of groups) {
           const list = await classesApi.listAssignments(g.id);
-          const arr = Array.isArray(list) ? list : [];
+          const arr = list.items;
           for (const a of arr) {
             out.push({
               id: Number(a.id),

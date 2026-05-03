@@ -6,6 +6,7 @@ from django.db.models import Sum
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers
 from django.utils import timezone
+from drf_spectacular.utils import extend_schema_field, extend_schema_serializer
 
 from .models import (
     BulkAssignmentDispatch,
@@ -79,6 +80,39 @@ class ModuleListSerializer(serializers.ModelSerializer):
         model = Module
         fields = ['id', 'module_order', 'time_limit_minutes']
 
+
+@extend_schema_serializer(component_name="ExamAttemptModuleDetail")
+class ExamAttemptModuleSerializer(ModuleSerializer):
+    """Serialized ``current_module_details`` payload (questions + timings) for runners / status."""
+
+    class Meta(ModuleSerializer.Meta):
+        pass
+
+
+class AttemptModuleQuestionResultSerializer(serializers.Serializer):
+    """Mirror of ``TestAttempt.get_module_results`` inner question rows (review payload)."""
+
+    id = serializers.IntegerField()
+    is_correct = serializers.BooleanField()
+    student_answer = serializers.JSONField(allow_null=True)
+    correct_answers = serializers.CharField()
+    score = serializers.IntegerField()
+    text = serializers.CharField()
+    question_prompt = serializers.CharField(allow_blank=True, required=False, default="")
+    image = serializers.CharField(required=False, allow_null=True)
+    type = serializers.CharField()
+    options = serializers.JSONField(allow_null=True)
+    is_math_input = serializers.BooleanField()
+
+
+class AttemptModuleResultsItemSerializer(serializers.Serializer):
+    module_id = serializers.IntegerField()
+    module_order = serializers.IntegerField()
+    module_earned = serializers.IntegerField()
+    capped_earned = serializers.IntegerField()
+    questions = AttemptModuleQuestionResultSerializer(many=True)
+
+
 class PracticeTestMockExamBriefSerializer(serializers.ModelSerializer):
     class Meta:
         model = MockExam
@@ -107,6 +141,25 @@ class PastpaperPackBriefSerializer(serializers.ModelSerializer):
     class Meta:
         model = PastpaperPack
         fields = ["id", "title", "practice_date", "label", "form_type"]
+
+
+class AttemptPracticeTestDetailsSerializer(serializers.Serializer):
+    """
+    Embedded snapshot on ``TestAttempt`` via ``practice_test_details`` (SerializerMethodField).
+    Schema must mirror ``get_practice_test_details`` for OpenAPI.
+    """
+
+    id = serializers.IntegerField()
+    subject = serializers.CharField()
+    title = serializers.CharField()
+    label = serializers.CharField(allow_blank=True, allow_null=True, required=False)
+    form_type = serializers.CharField(allow_blank=True, allow_null=True, required=False)
+    practice_date = serializers.CharField(allow_blank=True, allow_null=True, required=False)
+    pastpaper_pack = PastpaperPackBriefSerializer(required=False, allow_null=True)
+    is_active = serializers.BooleanField(required=False)
+    mock_exam_id = serializers.IntegerField(allow_null=True, required=False)
+    mock_kind = serializers.CharField(allow_blank=True, allow_null=True, required=False)
+    modules = ModuleListSerializer(many=True)
 
 
 class PracticeTestSerializer(serializers.ModelSerializer):
@@ -183,20 +236,42 @@ class TestAttemptSerializer(serializers.ModelSerializer):
     can_submit = serializers.SerializerMethodField()
     can_resume = serializers.SerializerMethodField()
     results_ready = serializers.SerializerMethodField()
+    engine_phase = serializers.SerializerMethodField()
+    scoring_notice = serializers.SerializerMethodField()
 
+    @extend_schema_field(serializers.BooleanField())
     def get_is_expired(self, obj):
         return getattr(obj, 'is_expired', False)
-        
+
+    @extend_schema_field(
+        serializers.ListSerializer(
+            child=AttemptModuleResultsItemSerializer(),
+            allow_null=True,
+            required=False,
+        )
+    )
     def get_module_results(self, obj):
         return obj.get_module_results() if obj.is_completed else None
-    
+
+    @extend_schema_field(serializers.DateTimeField())
     def get_server_now(self, obj):
         return timezone.now().isoformat()
 
+    @extend_schema_field(serializers.DateTimeField(allow_null=True, required=False))
     def get_module_started_at(self, obj):
+        mod = getattr(obj, "current_module", None)
+        if mod is not None:
+            mo = getattr(mod, "module_order", None)
+            if mo == 1:
+                v = getattr(obj, "module_1_started_at", None) or getattr(obj, "current_module_start_time", None)
+                return v.isoformat() if v else None
+            if mo == 2:
+                v = getattr(obj, "module_2_started_at", None) or getattr(obj, "current_module_start_time", None)
+                return v.isoformat() if v else None
         v = getattr(obj, "current_module_start_time", None)
         return v.isoformat() if v else None
 
+    @extend_schema_field(serializers.IntegerField(allow_null=True, required=False))
     def get_module_duration_seconds(self, obj):
         mod = getattr(obj, "current_module", None)
         if not mod:
@@ -214,13 +289,55 @@ class TestAttemptSerializer(serializers.ModelSerializer):
             mins = 0
         return max(0, mins * 60)
 
+    @extend_schema_field(serializers.IntegerField(allow_null=True, required=False))
     def get_remaining_seconds(self, obj):
+        """Server-derived from stored module anchors + ``Module.time_limit_minutes`` (never client clock)."""
         try:
+            st = getattr(obj, "current_state", None)
+            if st in (TestAttempt.STATE_SCORING, TestAttempt.STATE_COMPLETED):
+                return None
             timing = get_active_module_timing(obj)
             return int(timing.remaining_seconds) if timing else None
         except Exception:
             return None
 
+    @extend_schema_field(
+        serializers.ChoiceField(
+            choices=[
+                "pending",
+                "active",
+                "scoring",
+                "completed",
+                "abandoned",
+                "other",
+            ]
+        )
+    )
+    def get_engine_phase(self, obj):
+        """Stable UI phase: ``pending`` | ``active`` | ``scoring`` | ``completed``."""
+        st = getattr(obj, "current_state", None)
+        if getattr(obj, "is_completed", False) or st == TestAttempt.STATE_COMPLETED:
+            return "completed"
+        if st == TestAttempt.STATE_SCORING:
+            return "scoring"
+        if st in (TestAttempt.STATE_MODULE_1_ACTIVE, TestAttempt.STATE_MODULE_2_ACTIVE):
+            return "active"
+        if st == TestAttempt.STATE_NOT_STARTED:
+            return "pending"
+        if st == TestAttempt.STATE_ABANDONED:
+            return "abandoned"
+        return "other"
+
+    @extend_schema_field(serializers.CharField(allow_null=True, required=False, allow_blank=False))
+    def get_scoring_notice(self, obj):
+        if getattr(obj, "current_state", None) == TestAttempt.STATE_SCORING:
+            return (
+                "Your test responses are queued for scoring on the server. "
+                "This screen will update automatically when results are ready."
+            )
+        return None
+
+    @extend_schema_field(serializers.IntegerField(allow_null=True, required=False))
     def get_active_module_order(self, obj):
         mod = getattr(obj, "current_module", None)
         if mod and getattr(mod, "module_order", None) in (1, 2):
@@ -233,19 +350,31 @@ class TestAttemptSerializer(serializers.ModelSerializer):
             return 2
         return None
 
+    @extend_schema_field(serializers.BooleanField())
     def get_can_submit(self, obj):
         st = getattr(obj, "current_state", None)
-        return bool(st in (TestAttempt.STATE_MODULE_1_ACTIVE, TestAttempt.STATE_MODULE_2_ACTIVE))
+        if st not in (TestAttempt.STATE_MODULE_1_ACTIVE, TestAttempt.STATE_MODULE_2_ACTIVE):
+            return False
+        try:
+            timing = get_active_module_timing(obj)
+            if timing and timing.is_expired:
+                return False
+        except Exception:
+            pass
+        return True
 
+    @extend_schema_field(serializers.BooleanField())
     def get_can_resume(self, obj):
         st = getattr(obj, "current_state", None)
         if getattr(obj, "is_completed", False) or st == TestAttempt.STATE_COMPLETED:
             return False
         return bool(st in (TestAttempt.STATE_NOT_STARTED, TestAttempt.STATE_MODULE_1_ACTIVE, TestAttempt.STATE_MODULE_2_ACTIVE, TestAttempt.STATE_ABANDONED, TestAttempt.STATE_MODULE_1_SUBMITTED, TestAttempt.STATE_MODULE_2_SUBMITTED))
 
+    @extend_schema_field(serializers.BooleanField())
     def get_results_ready(self, obj):
         return bool(getattr(obj, "is_completed", False) and getattr(obj, "current_state", None) == TestAttempt.STATE_COMPLETED)
 
+    @extend_schema_field(ExamAttemptModuleSerializer(allow_null=True, required=False))
     def get_current_module_details(self, obj):
         mod = getattr(obj, "current_module", None)
         if mod:
@@ -260,6 +389,13 @@ class TestAttemptSerializer(serializers.ModelSerializer):
             return ModuleSerializer(m).data if m else None
         return None
 
+    @extend_schema_field(
+        serializers.DictField(
+            child=serializers.JSONField(allow_null=True),
+            allow_null=True,
+            required=False,
+        )
+    )
     def get_current_module_saved_answers(self, obj):
         """
         Resume support: return saved answers for the currently active module only.
@@ -279,6 +415,13 @@ class TestAttemptSerializer(serializers.ModelSerializer):
         except Exception:
             return {}
 
+    @extend_schema_field(
+        serializers.ListField(
+            child=serializers.IntegerField(),
+            allow_null=True,
+            required=False,
+        )
+    )
     def get_current_module_flagged_questions(self, obj):
         mod = getattr(obj, "current_module", None)
         if not mod:
@@ -295,18 +438,37 @@ class TestAttemptSerializer(serializers.ModelSerializer):
         except Exception:
             return []
 
+    @extend_schema_field(AttemptPracticeTestDetailsSerializer)
     def get_practice_test_details(self, obj):
         pt = obj.practice_test
-        mock = pt.mock_exam
+        mock = getattr(pt, "mock_exam", None)
         subj = _normalize_platform_subject_value(pt.subject) or pt.subject
+        pack = getattr(pt, "pastpaper_pack", None)
+        pt_title = (getattr(pt, "title", None) or "").strip()
+        pack_title = (getattr(pack, "title", None) or "").strip() if pack is not None else ""
+        mock_title = (getattr(mock, "title", None) or "").strip() if mock is not None else ""
+        resolved_title = pt_title or mock_title or pack_title
+
+        if mock is not None and getattr(mock, "practice_date", None):
+            practice_date_iso = mock.practice_date.isoformat()
+        elif getattr(pt, "practice_date", None):
+            practice_date_iso = pt.practice_date.isoformat()
+        else:
+            practice_date_iso = None
+
+        pastpaper_pack_payload = PastpaperPackBriefSerializer(pack).data if pack is not None else None
+
         return {
             "id": pt.id,
             "subject": subj,
-            "title": mock.title if mock else "",
-            "practice_date": mock.practice_date.isoformat() if mock and mock.practice_date else None,
-            "is_active": mock.is_active if mock else True,
-            "mock_exam_id": mock.id if mock else None,
-            "mock_kind": mock.kind if mock else None,
+            "title": resolved_title,
+            "label": getattr(pt, "label", "") or "",
+            "form_type": getattr(pt, "form_type", "") or "INTERNATIONAL",
+            "practice_date": practice_date_iso,
+            "pastpaper_pack": pastpaper_pack_payload,
+            "is_active": getattr(mock, "is_active", True) if mock is not None else True,
+            "mock_exam_id": getattr(pt, "mock_exam_id", None),
+            "mock_kind": getattr(mock, "kind", None) if mock is not None else None,
             "modules": ModuleListSerializer(pt.modules.all(), many=True).data,
         }
     
@@ -331,6 +493,8 @@ class TestAttemptSerializer(serializers.ModelSerializer):
             'can_submit',
             'can_resume',
             'results_ready',
+            'engine_phase',
+            'scoring_notice',
         ]
 
         read_only_fields = [
@@ -355,6 +519,8 @@ class TestAttemptSerializer(serializers.ModelSerializer):
             'can_submit',
             'can_resume',
             'results_ready',
+            'engine_phase',
+            'scoring_notice',
         ]
 
 # ── Admin Serializers ────────────────────────────────────────────────────────

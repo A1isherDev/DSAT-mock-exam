@@ -1,6 +1,14 @@
 from django.contrib import admin
 
-from .models import VocabularyWord, UserVocabularyProgress, UserVocabularyReviewEvent
+from .models import (
+    ReviewLog,
+    Word,
+    WordDefinition,
+    UserWordProgress,
+    UserVocabularyProgress,
+    UserVocabularyReviewEvent,
+    VocabularyWord,
+)
 
 
 @admin.register(VocabularyWord)
@@ -32,4 +40,42 @@ class UserVocabularyReviewEventAdmin(admin.ModelAdmin):
     list_display = ("id", "user", "word", "result", "reviewed_at")
     search_fields = ("user__email", "user__username", "word__word")
     list_filter = ("result", "reviewed_at")
+
+
+class WordDefinitionInline(admin.TabularInline):
+    model = WordDefinition
+    extra = 0
+
+
+@admin.register(Word)
+class WordAdmin(admin.ModelAdmin):
+    list_display = ("id", "text", "language", "created_at")
+    search_fields = ("text",)
+    list_filter = ("language",)
+    inlines = [WordDefinitionInline]
+
+
+@admin.register(UserWordProgress)
+class UserWordProgressAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "user",
+        "word",
+        "ease_factor",
+        "interval",
+        "repetitions",
+        "next_review_at",
+        "introduced_at",
+        "learning_phase",
+        "updated_at",
+    )
+    search_fields = ("user__email", "word__text")
+    list_filter = ("next_review_at",)
+
+
+@admin.register(ReviewLog)
+class VocabReviewLogAdmin(admin.ModelAdmin):
+    list_display = ("id", "user", "word", "result", "created_at")
+    search_fields = ("user__email", "word__text")
+    list_filter = ("result",)
 

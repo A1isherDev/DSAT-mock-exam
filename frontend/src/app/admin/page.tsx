@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { useQueryClient } from "@tanstack/react-query";
 import AuthGuard from '@/components/AuthGuard';
+import { useMe } from "@/hooks/useMe";
 import { authApi, usersApi } from '@/lib/api';
 import { examsAdminApi as adminExamsFeatureApi } from "@/features/examsAdmin/api";
 import { assessmentsAdminApi as adminAssessmentsFeatureApi } from "@/features/assessmentsAdmin/api";
@@ -49,23 +51,22 @@ const getImageUrl = (path: string | null | undefined) => {
 };
 
 function getSessionLabel(): { label: string; role: string } {
-    const role = String(Cookies.get("role") || "").toLowerCase();
     try {
         const raw = Cookies.get("lms_user");
         if (raw) {
-            const u = JSON.parse(raw) as any;
+            const u = JSON.parse(raw) as { first_name?: string; last_name?: string; username?: string; email?: string; role?: string };
             const name = [u?.first_name, u?.last_name].filter(Boolean).join(" ").trim();
             const label =
                 name ||
                 String(u?.username || "").trim() ||
                 String(u?.email || "").trim() ||
                 "";
-            return { label, role };
+            return { label, role: String(u?.role || "").toLowerCase() };
         }
     } catch {
         // ignore parse errors
     }
-    return { label: "", role };
+    return { label: "", role: "" };
 }
 
 function cookieDomain(): string | undefined {
@@ -275,6 +276,8 @@ const STAFF_ROLE_OPTIONS: { value: string; label: string }[] = [
 ];
 
 export default function AdminPage() {
+    const queryClient = useQueryClient();
+    const { me: meProfile } = useMe();
     const consoleMode = (typeof window !== "undefined" ? Cookies.get("lms_console") : null) as
         | "admin"
         | "questions"
@@ -288,49 +291,16 @@ export default function AdminPage() {
     const [session, setSession] = useState(() => getSessionLabel());
 
     useEffect(() => {
-        // If we don't have a cached label yet (common when navigating directly to subdomains),
-        // fetch /users/me and populate the header label.
-        const isLoggedIn = !!Cookies.get("lms_user") || !!Cookies.get("role") || !!Cookies.get("is_admin");
-        if (!isLoggedIn) return;
-        if (session.label) return;
-        let cancelled = false;
-        (async () => {
-            try {
-                const me = await usersApi.getMe();
-                if (cancelled) return;
-                const name = [me?.first_name, me?.last_name].filter(Boolean).join(" ").trim();
-                const label =
-                    name ||
-                    String(me?.username || "").trim() ||
-                    String(me?.email || "").trim() ||
-                    "";
-                const role = String(Cookies.get("role") || "").toLowerCase();
-                setSession({ label, role });
-                // Best-effort: cache for future header renders.
-                Cookies.set(
-                    "lms_user",
-                    JSON.stringify({
-                        id: me?.id,
-                        email: me?.email,
-                        username: me?.username,
-                        first_name: me?.first_name,
-                        last_name: me?.last_name,
-                    }),
-                    {
-                        path: "/",
-                        secure: process.env.NODE_ENV === "production",
-                        sameSite: "strict",
-                        domain: process.env.NODE_ENV === "production" ? cookieDomain() : undefined,
-                    },
-                );
-            } catch {
-                // ignore; role-only header is still fine
-            }
-        })();
-        return () => {
-            cancelled = true;
-        };
-    }, [session.label]);
+        if (!meProfile || typeof meProfile !== "object") return;
+        const m = meProfile as Record<string, unknown>;
+        const name = [m.first_name, m.last_name].filter(Boolean).join(" ").trim();
+        const label =
+            name ||
+            String(m.username ?? "").trim() ||
+            String(m.email ?? "").trim() ||
+            "";
+        setSession({ label, role: String(m.role ?? "").trim().toLowerCase() });
+    }, [meProfile]);
 
     // Data
     const [users, setUsers] = useState<any[]>([]);
@@ -525,7 +495,7 @@ export default function AdminPage() {
     const fetchPastpaperPacks = useCallback(async () => {
         try {
             const data = await adminExamsFeatureApi.getPastpaperPacks();
-            setPastpaperPacks(Array.isArray(data) ? data : []);
+            setPastpaperPacks(data.items);
         } catch (e: any) {
             const d = e?.response?.data;
             const msg = d?.detail || 'Could not load pastpaper cards.';
@@ -1868,7 +1838,7 @@ export default function AdminPage() {
                         ) : null}
                         <button
                             type="button"
-                            onClick={() => authApi.logout()}
+                            onClick={() => authApi.logout(queryClient)}
                             className="flex items-center gap-2 text-slate-400 hover:text-white text-xs font-bold transition-colors"
                         >
                             <LogOut className="w-4 h-4" /> Exit

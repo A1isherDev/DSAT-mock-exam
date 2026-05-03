@@ -108,7 +108,8 @@ def _role_permissions_map() -> dict[str, FrozenSet[str]]:
             {
                 constants.PERM_VIEW_DASHBOARD,
                 constants.PERM_MANAGE_TESTS,
-                constants.PERM_ASSIGN_ACCESS,
+                # No PERM_ASSIGN_ACCESS: library authors configure sets on questions.*;
+                # assignment into classrooms stays with teachers/class admins via admin subdomain.
                 constants.PERM_SUBMIT_TEST,
             }
         ),
@@ -123,6 +124,10 @@ def role_permissions_matrix() -> dict[str, FrozenSet[str]]:
     Notes:
     - This is **role-level** policy (RBAC). ABAC subject rules are enforced by `authorize(...)`.
     - Callers should treat this mapping as read-only.
+    - Teachers keep ``PERM_MANAGE_TESTS`` for practice/midterm editing; **assessment catalogue**
+      writes use ``CanAuthorAssessmentContent`` (global staff only).
+    - ``ROLE_TEST_ADMIN`` omits ``PERM_ASSIGN_ACCESS`` so authoring does not implicitly include
+      assigning assessment homework — use classroom teachers on the admin subdomain for that flow.
     """
     return _role_permissions_map()
 

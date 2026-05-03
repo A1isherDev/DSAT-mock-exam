@@ -62,7 +62,7 @@ export default function AssignAssessmentContainer() {
     setClassroomError(null);
     setClassroomLoading(true);
     try {
-      const all = (await classesApi.list()) as ClassroomRow[];
+      const all = (await classesApi.list()).items as ClassroomRow[];
       setClassrooms(Array.isArray(all) ? all : []);
     } catch (e) {
       setClassroomError(normalizeApiError(e).message);
@@ -75,7 +75,7 @@ export default function AssignAssessmentContainer() {
     setExistingAssessmentAssignmentId(null);
     if (!cid || !targetSetId) return;
     try {
-      const list = await classesApi.listAssignments(cid);
+      const list = (await classesApi.listAssignments(cid)).items;
       const rows = Array.isArray(list) ? list : [];
       const hit = rows.find((a: any) => Number(a?.assessment_homework?.set?.id) === Number(targetSetId));
       if (hit?.id) {

@@ -31,20 +31,20 @@ def grade_attempt(*, attempt_id: int) -> AssessmentResult | None:
     )
     if not att:
         return None
-    # Mark processing (idempotent).
-    att.grading_status = AssessmentAttempt.GRADING_PROCESSING
-    att.grading_last_attempt_at = timezone.now()
-    att.grading_attempts = int(att.grading_attempts or 0) + 1
-    att.grading_error = ""
-    att.save(update_fields=["grading_status", "grading_last_attempt_at", "grading_attempts", "grading_error"])
+    # Idempotent: duplicate Celery deliveries must not re-enter scoring or bump attempts.
     if att.status == AssessmentAttempt.STATUS_GRADED:
         if att.grading_status != AssessmentAttempt.GRADING_COMPLETED:
             att.grading_status = AssessmentAttempt.GRADING_COMPLETED
             att.save(update_fields=["grading_status"])
         return AssessmentResult.objects.filter(attempt=att).first()
     if att.status != AssessmentAttempt.STATUS_SUBMITTED:
-        # Only grade submitted attempts.
         return AssessmentResult.objects.filter(attempt=att).first()
+
+    att.grading_status = AssessmentAttempt.GRADING_PROCESSING
+    att.grading_last_attempt_at = timezone.now()
+    att.grading_attempts = int(att.grading_attempts or 0) + 1
+    att.grading_error = ""
+    att.save(update_fields=["grading_status", "grading_last_attempt_at", "grading_attempts", "grading_error"])
 
     aset = att.homework.assessment_set
     base_questions = list(

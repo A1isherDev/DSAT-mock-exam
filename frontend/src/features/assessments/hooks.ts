@@ -2,10 +2,21 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { normalizeApiError } from "@/lib/apiError";
+import { useAuthCriticalGate } from "@/hooks/useAuthCriticalGate";
 import { assessmentsAdminApi } from "@/features/assessmentsAdmin/api";
 import { assessmentsStudentApi } from "@/features/assessmentsStudent/api";
+import type { components } from "@/lib/openapi-types";
 import { assessmentsKeys } from "./queryKeys";
-import type { AssessmentQuestion, AssessmentSet, Attempt, HomeworkAssignmentCreateRequest, Subject } from "./types";
+import type { SaveAnswerResponse, SubmitResponse } from "@/features/assessments/schemas";
+
+import type {
+  AssessmentQuestion,
+  AssessmentSet,
+  Attempt,
+  AttemptAnswerRequest,
+  HomeworkAssignmentCreateRequest,
+  Subject,
+} from "./types";
 
 export function useAssessmentSetsList(params?: { subject?: Subject; category?: string }) {
   return useQuery({
@@ -86,8 +97,12 @@ export function useAssignAssessmentHomework() {
 }
 
 export function useStartAttempt() {
+  const { assertCriticalAuth } = useAuthCriticalGate();
   return useMutation({
     mutationFn: async (payload: { assignment_id: number }): Promise<Attempt> => {
+      if (!assertCriticalAuth()) {
+        throw new Error("AUTH_ACTION_BLOCKED");
+      }
       return await assessmentsStudentApi.start(payload);
     },
     onError: (e) => {
@@ -98,13 +113,12 @@ export function useStartAttempt() {
 
 export function useSaveAnswer() {
   const qc = useQueryClient();
+  const { assertCriticalAuth } = useAuthCriticalGate();
   return useMutation({
-    mutationFn: async (payload: {
-      attempt_id: number;
-      question_id: number;
-      answer: any;
-      time_spent_seconds?: number;
-    }): Promise<Attempt> => {
+    mutationFn: async (payload: AttemptAnswerRequest): Promise<SaveAnswerResponse> => {
+      if (!assertCriticalAuth()) {
+        throw new Error("AUTH_ACTION_BLOCKED");
+      }
       return await assessmentsStudentApi.saveAnswer(payload);
     },
     onSuccess: async (_data, vars) => {
@@ -117,8 +131,12 @@ export function useSaveAnswer() {
 }
 
 export function useSubmitAttempt() {
+  const { assertCriticalAuth } = useAuthCriticalGate();
   return useMutation({
-    mutationFn: async (payload: { attempt_id: number }): Promise<Attempt> => {
+    mutationFn: async (payload: { attempt_id: number }): Promise<SubmitResponse> => {
+      if (!assertCriticalAuth()) {
+        throw new Error("AUTH_ACTION_BLOCKED");
+      }
       return await assessmentsStudentApi.submit(payload);
     },
     onError: (e) => {
@@ -128,7 +146,7 @@ export function useSubmitAttempt() {
 }
 
 export function useMyAssessmentResult(assignmentId: number) {
-  return useQuery({
+  return useQuery<components["schemas"]["AssessmentMyResultResponse"]>({
     queryKey: assessmentsKeys.myResult(assignmentId),
     queryFn: () => assessmentsStudentApi.myResult(assignmentId),
     enabled: Number.isFinite(assignmentId) && assignmentId > 0,
@@ -141,7 +159,7 @@ export function useMyAssessmentResult(assignmentId: number) {
 }
 
 export function useAttemptBundle(attemptId: number) {
-  return useQuery({
+  return useQuery<components["schemas"]["AssessmentAttemptBundleResponse"]>({
     queryKey: assessmentsKeys.attemptBundle(attemptId),
     queryFn: () => assessmentsStudentApi.bundle(attemptId),
     enabled: Number.isFinite(attemptId) && attemptId > 0,

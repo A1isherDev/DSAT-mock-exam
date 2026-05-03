@@ -77,9 +77,16 @@ from .prometheus import render_exams_prometheus_text
 from .attempt_timing import get_active_module_timing
 from .engine_integrity import autoheal_attempt_for_runtime
 from config.error_reporting import report_error
-from core.idempotency import idempotency_key_from_request
+from config.reliability import conflict_response
+
+from exams.engine_db_guard import TransitionConflict
 
 logger = logging.getLogger(__name__)
+
+
+def _enforce_attempt_student(request, attempt: TestAttempt) -> None:
+    if getattr(attempt, "student_id", None) != getattr(request.user, "pk", None):
+        raise PermissionDenied("This attempt belongs to another user.")
 
 def _expected_attempt_version(request) -> int | None:
     raw = request.data.get("expected_version_number")
@@ -93,6 +100,18 @@ def _expected_attempt_version(request) -> int | None:
         return None
 
 
+def _enqueue_scoring_when_in_scoring_state(*, attempt_id: int, request=None) -> None:
+    """After module-2 submission the attempt is persisted as SCORING; worker completes scoring."""
+    trace_id = getattr(request, "trace_id", None) if request is not None else None
+    broker = str(getattr(settings, "CELERY_BROKER_URL", "") or "").strip()
+    eager = bool(getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False))
+    if broker or eager:
+        score_attempt_async.delay(attempt_id, trace_id=trace_id)
+    elif bool(getattr(settings, "EXAMS_SCORE_INLINE_IF_NO_CELERY", False)):
+        score_attempt_async(attempt_id, trace_id=trace_id)
+    metric_incr("scoring_enqueued")
+
+
 def _version_conflict_response(view, request, *, attempt: TestAttempt) -> Response:
     metric_incr("version_conflict")
     # Always return canonical state so client can resync.
@@ -104,6 +123,37 @@ def _version_conflict_response(view, request, *, attempt: TestAttempt) -> Respon
             "attempt": view.get_serializer(attempt).data,
         },
         status=status.HTTP_409_CONFLICT,
+    )
+
+
+def _refetch_attempt_for_api(view, pk: int) -> TestAttempt:
+    return (
+        TestAttempt.objects.select_related("practice_test", "current_module")
+        .prefetch_related("practice_test__modules", "current_module__questions")
+        .get(pk=pk)
+    )
+
+
+def _transition_conflict_response(view, *, attempt_pk: int, detail: str | None = None) -> Response:
+    """After a guarded state transition misses (0-row update), reload and return authoritative attempt JSON."""
+    metric_incr("exam_engine_transition_conflict_total")
+    refreshed = _refetch_attempt_for_api(view, attempt_pk)
+    return conflict_response(
+        detail=detail
+        or "Exam engine state changed concurrently; use the snapshot in this response and retry if needed.",
+        code="exam_engine_transition_conflict",
+        extra={"attempt": view.get_serializer(refreshed).data},
+    )
+
+
+def _exam_deadline_hit_response(view, *, attempt_pk: int) -> Response:
+    """Explicit submit after module deadline (server timers); autosave-only path submits on timer expiry."""
+    refreshed = _refetch_attempt_for_api(view, attempt_pk)
+    setattr(refreshed, "is_expired", True)
+    return conflict_response(
+        detail="Module time limit has elapsed; explicit submit is not accepted. Answers are persisted via autosave before the cutoff.",
+        code="exam_module_deadline_passed",
+        extra={"attempt": view.get_serializer(refreshed).data},
     )
 
 def _is_student(user) -> bool:
@@ -377,9 +427,18 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, RequiresSubmitTest]
     serializer_class = TestAttemptSerializer
     throttle_scope = "burst"
+    http_method_names = ["get", "post", "head", "options"]
 
     def get_queryset(self):
-        return TestAttempt.objects.filter(student=self.request.user)
+        return (
+            TestAttempt.objects.filter(student=self.request.user)
+            .select_related(
+                "current_module",
+                "practice_test",
+                "practice_test__mock_exam",
+                "practice_test__pastpaper_pack",
+            )
+        )
 
     def create(self, request, *args, **kwargs):
         t0 = monotonic()
@@ -446,6 +505,7 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                             )
                             raise
 
+                    _enforce_attempt_student(request, attempt)
                     # Authoritative start/resume: entering the runner should immediately be in MODULE_1_ACTIVE
                     # for new attempts, or return canonical current state for existing incomplete attempts.
                     ensure_full_mock_practice_test_modules(attempt.practice_test)
@@ -453,6 +513,12 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                     attempt.start_attempt()
                 last_exc = None
                 break
+            except TransitionConflict:
+                return _transition_conflict_response(
+                    self,
+                    attempt_pk=attempt.pk,
+                    detail="Exam attempt raced while starting; use the snapshot in this response and retry.",
+                )
             except OperationalError as exc:
                 last_exc = exc
                 time.sleep(0.05)
@@ -493,11 +559,11 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="resume")
     def resume(self, request, pk=None):
         """
-        Canonical resume endpoint (backend authoritative).
-        Locks the attempt row, auto-heals invariants, runs resume normalization,
-        then returns the canonical payload.
+        Locks the attempt row and normalizes canonical engine state via ``start_attempt`` only.
+        Legacy ``*_SUBMITTED`` repairs are CLI-only (`repair_exam_integrity`).
         """
         attempt0 = self.get_object()
+        _enforce_attempt_student(request, attempt0)
 
         def _compute():
             try:
@@ -508,9 +574,10 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                         .select_related("practice_test", "current_module")
                         .get(pk=attempt0.pk)
                     )
+                    _enforce_attempt_student(request, locked)
                     ensure_full_mock_practice_test_modules(locked.practice_test)
                     autoheal_attempt_for_runtime(locked)
-                    locked.resume_attempt()
+                    locked.start_attempt()
                 attempt = (
                     TestAttempt.objects.select_related("practice_test", "current_module")
                     .prefetch_related("practice_test__modules", "current_module__questions")
@@ -521,6 +588,12 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                 metric_incr("slo_exam_resume_latency_ms_sum", int((monotonic() - t0) * 1000))
                 metric_incr("slo_exam_resume_latency_ms_count")
                 return Response(self.get_serializer(attempt).data)
+            except TransitionConflict:
+                return _transition_conflict_response(
+                    self,
+                    attempt_pk=attempt0.pk,
+                    detail="Exam attempt state conflict; refresh from the snapshot.",
+                )
             except Exception as exc:
                 metric_incr("slo_exam_resume_fail_total")
                 metric_incr_role("slo_exam_resume_fail_total", actor=getattr(request, "user", None))
@@ -536,6 +609,7 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         attempt = self.get_object()
         if attempt.is_completed:
             return Response({"error": "Cannot start a completed attempt."}, status=status.HTTP_400_BAD_REQUEST)
+        _enforce_attempt_student(request, attempt)
 
         ensure_full_mock_practice_test_modules(attempt.practice_test)
         m1 = attempt.practice_test.modules.filter(module_order=1).order_by("id").first()
@@ -547,6 +621,7 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                 t0 = monotonic()
                 with transaction.atomic():
                     locked = TestAttempt.objects.select_for_update().get(pk=attempt.pk)
+                    _enforce_attempt_student(request, locked)
                     autoheal_attempt_for_runtime(locked)
                     locked.start_attempt()
                 metric_incr("slo_exam_engine_start_ok_total")
@@ -554,20 +629,14 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                 metric_incr("slo_exam_engine_start_latency_ms_sum", int((monotonic() - t0) * 1000))
                 metric_incr("slo_exam_engine_start_latency_ms_count")
                 return Response(self.get_serializer(TestAttempt.objects.get(pk=attempt.pk)).data)
+            except TransitionConflict:
+                return _transition_conflict_response(self, attempt_pk=attempt.pk, detail="Exam attempt state conflict; refresh from the snapshot.")
             except Exception as exc:
                 metric_incr("slo_exam_engine_start_fail_total")
                 metric_incr_role("slo_exam_engine_start_fail_total", actor=getattr(request, "user", None))
                 return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         return consume_idempotency(attempt=attempt, endpoint="start", request=request, compute=_compute)
-
-        AuditLog.objects.create(
-            user=request.user,
-            action="START_TEST_ENGINE",
-            details=f"Started module 1 of {attempt.practice_test}",
-        )
-        serializer = self.get_serializer(TestAttempt.objects.get(pk=attempt.pk))
-        return Response(serializer.data)
 
     @action(detail=True, methods=['post'])
     def start_module(self, request, pk=None):
@@ -581,24 +650,26 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         
         if attempt.is_completed:
             return Response({'error': 'Cannot start module for a completed test'}, status=status.HTTP_400_BAD_REQUEST)
+        _enforce_attempt_student(request, attempt)
 
         def _compute():
             try:
-                # If current module is already expired, prevent arbitrary module hopping.
-                timing = get_active_module_timing(attempt)
-                if timing and timing.is_expired and attempt.current_state in (
-                    TestAttempt.STATE_MODULE_1_ACTIVE,
-                    TestAttempt.STATE_MODULE_2_ACTIVE,
-                ):
-                    attempt.is_expired = True  # serializer reads this attribute
-                    return Response({"error": "Module time expired."}, status=status.HTTP_409_CONFLICT)
-
                 with transaction.atomic():
-                    locked = (
+                    locked_pre = (
                         TestAttempt.objects.select_for_update()
                         .select_related("practice_test", "current_module")
                         .get(pk=attempt.pk)
                     )
+                    _enforce_attempt_student(request, locked_pre)
+                    timing = get_active_module_timing(locked_pre)
+                    if timing and timing.is_expired and locked_pre.current_state in (
+                        TestAttempt.STATE_MODULE_1_ACTIVE,
+                        TestAttempt.STATE_MODULE_2_ACTIVE,
+                    ):
+                        locked_pre.is_expired = True  # serializer reads this attribute
+                        return Response({"error": "Module time expired."}, status=status.HTTP_409_CONFLICT)
+
+                    locked = locked_pre
                     autoheal_attempt_for_runtime(locked)
                     # Legacy endpoint: keep for compatibility, but enforce canonical rules:
                     # - module 1 start → start_attempt
@@ -608,6 +679,8 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                     else:
                         locked.start_module(module)
                 return Response(self.get_serializer(TestAttempt.objects.get(pk=attempt.pk)).data)
+            except TransitionConflict:
+                return _transition_conflict_response(self, attempt_pk=attempt.pk, detail="Exam attempt state conflict; refresh from the snapshot.")
             except Exception as exc:
                 return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         
@@ -622,6 +695,7 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def submit_module(self, request, pk=None):
         attempt0 = self.get_object()
+        _enforce_attempt_student(request, attempt0)
         expected_v = _expected_attempt_version(request)
 
         def _compute():
@@ -635,6 +709,7 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                     # Postgres limitation: FOR UPDATE cannot target the nullable side of an OUTER JOIN.
                     # Since `current_module` is nullable, avoid joining it in the locked query.
                     attempt = TestAttempt.objects.select_for_update().get(pk=attempt0.pk)
+                    _enforce_attempt_student(request, attempt)
                     attempt = (
                         TestAttempt.objects.select_related("practice_test", "current_module")
                         .get(pk=attempt.pk)
@@ -656,52 +731,36 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                     if not attempt.current_module:
                         logger.error("[FORENSIC] submit_module_no_active_module attempt_id=%s", attempt.id)
                         return Response({'error': 'No active module to submit'}, status=status.HTTP_400_BAD_REQUEST)
-                        
+
                     timing = get_active_module_timing(attempt)
-                    expired = bool(timing and timing.is_expired)
-                        
+                    if timing and timing.is_expired:
+                        metric_incr("exam_module_deadline_blocked_submit_total")
+                        return _exam_deadline_hit_response(self, attempt_pk=attempt.pk)
+
                     module_answers = request.data.get('answers', {})
                     flagged = request.data.get('flagged', [])
                     
-                    submitting_module_id = attempt.current_module_id
                     submitting_module_order = int(getattr(attempt.current_module, "module_order", 0) or 0)
 
-                    # Duplicate submit guard: if this module was already submitted, do not re-run logic.
-                    if attempt.completed_modules.filter(pk=submitting_module_id).exists():
-                        logger.info("[FORENSIC] submit_module_already_processed attempt_id=%s mod_id=%s", attempt.id, submitting_module_id)
-                        metric_incr("submit_duplicate_prevented")
+                    transitioned_to_scoring = False
+                    if submitting_module_order == 1:
+                        attempt.submit_module_1(module_answers, flagged)
+                    elif submitting_module_order == 2:
+                        transitioned_to_scoring = bool(attempt.submit_module_2(module_answers, flagged))
                     else:
-                        # Canonical dispatch based on the actual active module order.
-                        # Production safety: state can be stale/corrupted; module_order is the ground truth for what the
-                        # student is submitting right now.
-                        if submitting_module_order == 1:
-                            attempt.submit_module_1(module_answers, flagged)
-                        elif submitting_module_order == 2:
-                            attempt.submit_module_2(module_answers, flagged)
-                        else:
-                            raise DRFValidationError(
-                                f"Cannot submit: invalid current module order {submitting_module_order} (state={attempt.current_state})"
-                            )
+                        raise DRFValidationError(
+                            f"Cannot submit: invalid current module order {submitting_module_order} (state={attempt.current_state})"
+                        )
 
-                    # After transition, if state is MODULE_2_SUBMITTED, enter SCORING then enqueue task.
-                    if attempt.current_state == TestAttempt.STATE_MODULE_2_SUBMITTED:
-                        attempt.enter_scoring()
-                    if attempt.current_state == TestAttempt.STATE_SCORING:
-                        
-                        broker = str(getattr(settings, "CELERY_BROKER_URL", "") or "").strip()
-                        eager = bool(getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False))
-                        if broker or eager:
-                            score_attempt_async.delay(attempt.pk, trace_id=getattr(request, "trace_id", None))
-                        else:
-                            if bool(getattr(settings, "EXAMS_SCORE_INLINE_IF_NO_CELERY", False)):
-                                score_attempt_async(attempt.pk, trace_id=getattr(request, "trace_id", None))
-                        metric_incr("scoring_enqueued")
+                    # First successful M2→SCORING transition enqueues; duplicate submits noop (no duplicate jobs).
+                    if transitioned_to_scoring:
+                        _enqueue_scoring_when_in_scoring_state(attempt_id=attempt.pk, request=request)
 
                 # Re-fetch canonical state after transaction commit for response.
-                attempt = TestAttempt.objects.select_related("current_module").prefetch_related("current_module__questions").get(pk=attempt0.pk)
-                if expired:
-                    attempt.is_expired = True
-                
+                attempt = TestAttempt.objects.select_related("practice_test", "current_module").prefetch_related(
+                    "practice_test__modules", "current_module__questions"
+                ).get(pk=attempt0.pk)
+
                 serializer = self.get_serializer(attempt)
                 resp_data = serializer.data
                 logger.info(
@@ -714,6 +773,13 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                 metric_incr("slo_module_submit_latency_ms_count")
                 return Response(resp_data)
 
+            except TransitionConflict as e:
+                logger.warning(
+                    "[FORENSIC] submit_module_transition_conflict attempt_id=%s error=%s",
+                    getattr(attempt0, "id", None),
+                    str(e),
+                )
+                return _transition_conflict_response(self, attempt_pk=attempt0.pk)
             except Exception as e:
                 logger.exception("[FORENSIC] submit_module_exception attempt_id=%s error=%s", getattr(attempt0, "id", None), str(e))
                 metric_incr("slo_module_submit_fail_total")
@@ -726,54 +792,60 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def save_attempt(self, request, pk=None):
         attempt0 = self.get_object()
+        _enforce_attempt_student(request, attempt0)
         expected_v = _expected_attempt_version(request)
 
         def _compute():
             expired = False
-            with transaction.atomic():
+            scoring_from_timeout = False
+            try:
+                with transaction.atomic():
+                    attempt = (
+                        TestAttempt.objects.select_for_update()
+                        .select_related("current_module")
+                        .get(pk=attempt0.pk)
+                    )
+                    _enforce_attempt_student(request, attempt)
+                    if not attempt.current_module:
+                        return Response({'error': 'No active module to save'}, status=status.HTTP_400_BAD_REQUEST)
+                    if expected_v is not None and int(attempt.version_number or 0) != int(expected_v):
+                        return _version_conflict_response(self, request, attempt=attempt)
+
+                    timing = get_active_module_timing(attempt)
+                    if timing and timing.is_expired:
+                        module_answers = request.data.get('answers', {}) or {}
+                        flagged = request.data.get('flagged', []) or []
+                        order = int(getattr(attempt.current_module, "module_order", 0) or 0)
+                        if order == 1:
+                            attempt.submit_module_1(module_answers, flagged)
+                        elif order == 2:
+                            scoring_from_timeout = bool(attempt.submit_module_2(module_answers, flagged))
+                        else:
+                            attempt.is_expired = True
+                            return Response({"error": "Module time expired."}, status=status.HTTP_409_CONFLICT)
+                        expired = True
+
+                    module_answers = request.data.get('answers', {}) if not (timing and timing.is_expired) else None
+                    flagged = request.data.get('flagged', []) if not (timing and timing.is_expired) else None
+
+                    if module_answers is not None:
+                        attempt.module_answers[str(attempt.current_module.id)] = module_answers
+                        attempt.flagged_questions[str(attempt.current_module.id)] = flagged
+                        attempt.version_number = int(attempt.version_number or 0) + 1
+                        attempt.save(update_fields=["module_answers", "flagged_questions", "version_number", "updated_at"])
+
                 attempt = (
-                    TestAttempt.objects.select_for_update()
-                    .select_related("current_module")
+                    TestAttempt.objects.select_related("practice_test", "current_module")
+                    .prefetch_related("practice_test__modules", "current_module__questions")
                     .get(pk=attempt0.pk)
                 )
-                if not attempt.current_module:
-                    return Response({'error': 'No active module to save'}, status=status.HTTP_400_BAD_REQUEST)
-                if expected_v is not None and int(attempt.version_number or 0) != int(expected_v):
-                    return _version_conflict_response(self, request, attempt=attempt)
-
-                timing = get_active_module_timing(attempt)
-                if timing and timing.is_expired:
-                    # Backend-authoritative timeout behavior: auto-submit using the last provided payload.
-                    module_answers = request.data.get('answers', {}) or {}
-                    flagged = request.data.get('flagged', []) or []
-                    order = int(getattr(attempt.current_module, "module_order", 0) or 0)
-                    if order == 1:
-                        attempt.submit_module_1(module_answers, flagged)
-                    elif order == 2:
-                        attempt.submit_module_2(module_answers, flagged)
-                    else:
-                        attempt.is_expired = True
-                        return Response({"error": "Module time expired."}, status=status.HTTP_409_CONFLICT)
-                    expired = True
-
-                module_answers = request.data.get('answers', {}) if not (timing and timing.is_expired) else None
-                flagged = request.data.get('flagged', []) if not (timing and timing.is_expired) else None
-
-                if module_answers is not None:
-                    attempt.module_answers[str(attempt.current_module.id)] = module_answers
-                    attempt.flagged_questions[str(attempt.current_module.id)] = flagged
-                    attempt.version_number = int(attempt.version_number or 0) + 1
-                    attempt.save(update_fields=["module_answers", "flagged_questions", "version_number", "updated_at"])
-
-            # Return canonical attempt payload so the frontend can update version_number and avoid stale overwrites.
-            attempt = (
-                TestAttempt.objects.select_related("practice_test", "current_module")
-                .prefetch_related("practice_test__modules", "current_module__questions")
-                .get(pk=attempt0.pk)
-            )
-            if expired:
-                attempt.is_expired = True
-            return Response(self.get_serializer(attempt).data)
+                if expired:
+                    attempt.is_expired = True
+                if scoring_from_timeout and attempt.current_state == TestAttempt.STATE_SCORING:
+                    _enqueue_scoring_when_in_scoring_state(attempt_id=attempt.pk, request=request)
+                return Response(self.get_serializer(attempt).data)
+            except TransitionConflict:
+                return _transition_conflict_response(self, attempt_pk=attempt0.pk)
 
         return consume_idempotency(attempt=attempt0, endpoint="save_attempt", request=request, compute=_compute)
 

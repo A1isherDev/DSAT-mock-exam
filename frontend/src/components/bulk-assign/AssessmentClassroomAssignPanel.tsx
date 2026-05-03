@@ -72,7 +72,7 @@ export function AssessmentClassroomAssignPanel({ canAssign, showToast }: Assessm
     setClassroomLoading(true);
     try {
       const all = await classesApi.list();
-      setClassrooms(Array.isArray(all) ? all : []);
+      setClassrooms(all.items);
     } catch (e: unknown) {
       setClassrooms([]);
       const ax = e as { response?: { status?: number; data?: { detail?: string } } };
@@ -95,7 +95,7 @@ export function AssessmentClassroomAssignPanel({ canAssign, showToast }: Assessm
     if (!cid || !sid) return;
     try {
       const rows = await classesApi.listAssignments(cid);
-      const list = Array.isArray(rows) ? rows : [];
+      const list = rows.items;
       const hit = list.find((a: any) => Number(a?.assessment_homework?.set?.id) === Number(sid));
       if (hit?.id) setDupAssignmentId(Number(hit.id));
     } catch {

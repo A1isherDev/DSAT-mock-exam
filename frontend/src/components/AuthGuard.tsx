@@ -1,9 +1,10 @@
 "use client";
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Cookies from 'js-cookie';
-import { getPermissionList } from '@/lib/permissions';
-import { usersApi } from '@/lib/api';
+
+import Link from "next/link";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { Loader2 } from "lucide-react";
+import { useMe } from "@/hooks/useMe";
 
 function consoleFromHostname(): "admin" | "questions" | "main" {
     if (typeof window === "undefined") return "main";
@@ -16,76 +17,130 @@ function consoleFromHostname(): "admin" | "questions" | "main" {
     return "main";
 }
 
-export default function AuthGuard({ children, isOptional = false, adminOnly = false }: { children: React.ReactNode; isOptional?: boolean; adminOnly?: boolean }) {
-    const [isAuthenticated, setIsAuthenticated] = useState(false);
-    const [isLoading, setIsLoading] = useState(true);
+function permissionList(me: Record<string, unknown> | undefined | null): string[] {
+    if (!me) return [];
+    const p = me.permissions;
+    if (!Array.isArray(p)) return [];
+    return p.filter((x): x is string => typeof x === "string");
+}
+
+function staffAccess(perms: string[]): boolean {
+    return (
+        perms.includes("*") ||
+        perms.includes("manage_users") ||
+        perms.includes("assign_access") ||
+        perms.includes("manage_tests")
+    );
+}
+
+/**
+ * `isOptional`: public shell (Marketing / browse) — never blocks on `/users/me`.
+ * Strict guards: session required; `UNAUTHENTICATED` redirects to `/login` (`useMe` may set session notice → login page).
+ *
+ * Permission fields on `me` are **UX hints only** — backend remains authoritative on every mutation.
+ */
+export default function AuthGuard({
+    children,
+    isOptional = false,
+    adminOnly = false,
+}: {
+    children: React.ReactNode;
+    isOptional?: boolean;
+    adminOnly?: boolean;
+}) {
     const router = useRouter();
+    const { bootState, me } = useMe();
+
+    const consoleMode = consoleFromHostname();
+
+    const roleRaw = String(me?.role ?? "").trim().toLowerCase();
+    const perms = permissionList(me);
+    const frozen = !!me?.is_frozen;
+    const isTester = roleRaw === "test_admin";
+    const isStudent = roleRaw === "student";
+    const hasStaff = staffAccess(perms);
 
     useEffect(() => {
-        let cancelled = false;
-        const run = async () => {
-            const hasSessionHint =
-                !!Cookies.get("lms_user") || !!Cookies.get("role") || !!Cookies.get("is_admin");
-            const consoleMode = consoleFromHostname();
-            const isFrozen = Cookies.get('is_frozen') === 'true';
+        if (bootState !== "AUTHENTICATED" || !me) return;
+        if (frozen && !hasStaff) {
+            router.replace("/frozen");
+            return;
+        }
+        if (consoleMode === "questions" && isStudent) {
+            router.replace("/");
+            return;
+        }
+        if (consoleMode === "admin" && (isStudent || isTester)) {
+            router.replace("/");
+            return;
+        }
+        if (adminOnly && (!hasStaff || (consoleMode === "admin" && isTester))) {
+            router.replace("/");
+            return;
+        }
+    }, [
+        bootState,
+        me,
+        frozen,
+        hasStaff,
+        isStudent,
+        isTester,
+        adminOnly,
+        consoleMode,
+        router,
+    ]);
 
-            if (!hasSessionHint && !isOptional) {
-                router.push('/login');
-                return;
-            }
+    useEffect(() => {
+        if (isOptional || bootState !== "UNAUTHENTICATED") return;
+        router.replace("/login");
+    }, [isOptional, bootState, router]);
 
-            // Single source of truth for identity: /users/me.
-            // This also refreshes the cached lms_user cookie via persistMeCookie() in login flows.
-            let me: any = null;
-            try {
-                me = hasSessionHint ? await usersApi.getMe() : null;
-            } catch (e: any) {
-                const status = e?.response?.status;
-                // If the token is invalid/expired, do not allow UI drift: force re-auth.
-                if (status === 401 && !isOptional) {
-                    // Let the axios interceptor handle cookie clearing + redirect.
-                    router.push('/login');
-                    return;
-                }
-                me = null;
-            }
-            const role = String(me?.role || "").toLowerCase();
-            const perms = getPermissionList();
+    if (isOptional) {
+        return <>{children}</>;
+    }
 
-            const isTester = role === "test_admin";
-            const isStudent = role === "student";
-            const hasStaffAccess =
-                perms.includes("*") ||
-                perms.includes("manage_users") ||
-                perms.includes("assign_access") ||
-                perms.includes("manage_tests");
+    if (bootState === "BOOTING") {
+        return (
+            <div className="min-h-screen bg-background flex items-center justify-center">
+                <Loader2 className="h-10 w-10 animate-spin text-primary/60" aria-label="Loading" />
+            </div>
+        );
+    }
 
-            if (isFrozen && !hasStaffAccess && !isOptional) {
-                router.push('/frozen');
-                return;
-            }
-            if (consoleMode === "questions" && isStudent && !isOptional) {
-                router.push('/');
-                return;
-            }
-            if (consoleMode === "admin" && (isStudent || isTester) && !isOptional) {
-                router.push('/');
-                return;
-            }
-            if (adminOnly && (!hasStaffAccess || (consoleMode === "admin" && isTester)) && !isOptional) {
-                router.push('/');
-                return;
-            }
-            if (!cancelled) {
-                setIsAuthenticated(!!me);
-                setIsLoading(false);
-            }
-        };
-        void run();
-        return () => { cancelled = true; };
-    }, [router, isOptional, adminOnly]);
+    if (bootState === "UNAUTHENTICATED") {
+        return (
+            <div className="min-h-screen bg-background flex items-center justify-center">
+                <Loader2 className="h-10 w-10 animate-spin text-primary/60" aria-label="Redirecting" />
+            </div>
+        );
+    }
 
-    if (isLoading && !isOptional) return <div className="min-h-screen bg-background flex items-center justify-center"><div className="animate-pulse h-10 w-10 rounded-full bg-primary/20"></div></div>;
+    if (!me) {
+        return (
+            <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4 px-6">
+                <p className="text-sm text-muted-foreground text-center max-w-md">
+                    Session could not be verified.
+                </p>
+                <Link href="/login" className="text-sm font-semibold text-primary underline">
+                    Sign in
+                </Link>
+            </div>
+        );
+    }
+
+    const willRedirectAway =
+        (frozen && !hasStaff) ||
+        (consoleMode === "questions" && isStudent) ||
+        (consoleMode === "admin" && (isStudent || isTester)) ||
+        (adminOnly && (!hasStaff || (consoleMode === "admin" && isTester)));
+
+    if (willRedirectAway) {
+        return (
+            <div className="min-h-screen bg-background flex items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-primary/60" aria-label="Redirecting" />
+            </div>
+        );
+    }
 
     return <>{children}</>;
 }

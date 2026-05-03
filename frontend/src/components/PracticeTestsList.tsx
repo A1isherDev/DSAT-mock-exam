@@ -7,14 +7,15 @@ import {
   buildHomeworkPastpaperCards,
   formatLineDate,
   isTimedMockSectionRow,
+  practiceTestSearchBlob,
   sharedPastpaperPackTitle,
   singleDisplayTitle,
   sortPastpaperSections,
   subjectLabel,
 } from "@/lib/practiceTestCards";
 import { ArrowRight, FileText, RefreshCw, Search, X } from "lucide-react";
-import Cookies from "js-cookie";
 import { cn } from "@/lib/cn";
+import { useMe } from "@/hooks/useMe";
 import { platformSubjectIsMath } from "@/lib/permissions";
 
 type PracticeTestsListProps = {
@@ -109,31 +110,38 @@ export default function PracticeTestsList({
 }: PracticeTestsListProps) {
   const [tests, setTests] = useState<any[]>([]);
   const [attempts, setAttempts] = useState<any[]>([]);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [listRefreshKey, setListRefreshKey] = useState(0);
   const router = useRouter();
   const pathname = usePathname();
+  const { isAuthenticated } = useMe();
+  const isLoggedIn = isAuthenticated;
 
   useEffect(() => {
     let cancelled = false;
 
     const fetchData = async () => {
-      const isLogged = !!Cookies.get("lms_user") || !!Cookies.get("role") || !!Cookies.get("is_admin");
-      if (!cancelled) setIsLoggedIn(isLogged);
+      const isLogged = isLoggedIn;
       try {
-        const list = await examsPublicApi.getPracticeTests();
+        setFetchError(null);
+        const bundle = await examsPublicApi.getPracticeTests();
         if (cancelled) return;
-        const raw = Array.isArray(list) ? list : [];
-        setTests(raw.filter((t) => !isTimedMockSectionRow(t)));
+        setTests(bundle.items.filter((t) => !isTimedMockSectionRow(t)));
         if (isLogged) {
           const attemptsData = await examsPublicApi.getAttempts();
-          if (!cancelled) setAttempts(Array.isArray(attemptsData) ? attemptsData : []);
+          if (!cancelled) setAttempts(attemptsData.items);
         } else {
           setAttempts([]);
         }
       } catch (err) {
-        console.error(err);
+        console.error("[practice-tests] failed to load catalog or attempts", err);
+        if (!cancelled) {
+          const message = err instanceof Error ? err.message : "Could not load practice tests.";
+          setFetchError(message);
+          setTests([]);
+          setAttempts([]);
+        }
       }
     };
 
@@ -148,7 +156,7 @@ export default function PracticeTestsList({
       cancelled = true;
       window.removeEventListener("visibilitychange", onVisible);
     };
-  }, [pathname, listRefreshKey]);
+  }, [pathname, listRefreshKey, isLoggedIn]);
 
   const cards = useMemo(() => buildHomeworkPastpaperCards(tests), [tests]);
 
@@ -161,8 +169,7 @@ export default function PracticeTestsList({
         return blob.includes(q);
       }
       const t = c.test;
-      const blob = `${singleDisplayTitle(t)} ${t.label || ""} ${t.mock_exam?.title || ""} ${t.practice_date || ""}`.toLowerCase();
-      return blob.includes(q);
+      return practiceTestSearchBlob(t).includes(q);
     });
   }, [cards, searchQuery]);
 
@@ -172,6 +179,22 @@ export default function PracticeTestsList({
   return (
     <div className="mx-auto max-w-7xl px-8 py-12">
       <div className="mb-12">
+        {fetchError ? (
+          <div
+            className="mb-6 rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-100"
+            role="alert"
+          >
+            <p className="font-bold">We couldn&apos;t load the practice list.</p>
+            <p className="mt-1 opacity-90">{fetchError}</p>
+            <button
+              type="button"
+              className="mt-3 rounded-lg bg-foreground px-3 py-1.5 text-xs font-bold text-background"
+              onClick={() => setListRefreshKey((k) => k + 1)}
+            >
+              Try again
+            </button>
+          </div>
+        ) : null}
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <span className="h-1 w-12 rounded-full bg-primary" />

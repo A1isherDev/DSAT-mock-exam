@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { bulkAssignApi } from "@/features/bulkAssign/api";
+import type { Assignment } from "@/lib/api";
 import { getSubject } from "@/lib/permissions";
 import {
   formatMockExamAdminLabel,
@@ -182,7 +183,7 @@ export function BulkAssignWizard({
     setHistoryError(null);
     try {
       const data = await examsAdminApi.listBulkAssignmentHistory();
-      setHistory(Array.isArray(data) ? data : []);
+      setHistory(data.items);
     } catch (e: any) {
       const msg = e?.response?.data?.detail;
       setHistoryError(typeof msg === "string" ? msg : "Could not load assignment history.");
@@ -226,7 +227,7 @@ export function BulkAssignWizard({
     setAssessmentClassroomsLoading(true);
     try {
       const all = await classesApi.list();
-      setAssessmentClassrooms(Array.isArray(all) ? (all as Array<Record<string, unknown>>) : []);
+      setAssessmentClassrooms(all.items as Array<Record<string, unknown>>);
     } catch (e: unknown) {
       setAssessmentClassrooms([]);
       const ax = e as { response?: { status?: number; data?: { detail?: string } } };
@@ -282,10 +283,8 @@ export function BulkAssignWizard({
     void (async () => {
       try {
         const rows = await classesApi.listAssignments(assessmentClassroomId);
-        const list = Array.isArray(rows) ? rows : [];
-        const hit = list.find((a: { assessment_homework?: { set?: { id?: number } }; id?: number }) => {
-          return Number(a?.assessment_homework?.set?.id) === Number(assessmentSetId);
-        });
+        const list = rows.items;
+        const hit = list.find((a: Assignment) => a.assessment_homework?.set?.id === Number(assessmentSetId));
         if (!cancelled) setAssessmentDupAssignmentId(hit?.id != null ? Number(hit.id) : null);
       } catch {
         if (!cancelled) setAssessmentDupAssignmentId(null);
@@ -643,10 +642,9 @@ export function BulkAssignWizard({
           if (assessmentClassroomId && assessmentSetId) {
             try {
               const rows = await classesApi.listAssignments(assessmentClassroomId);
-              const list = Array.isArray(rows) ? rows : [];
+              const list = rows.items;
               const hit = list.find(
-                (a: { assessment_homework?: { set?: { id?: number } }; id?: number }) =>
-                  Number(a?.assessment_homework?.set?.id) === Number(assessmentSetId),
+                (a: Assignment) => a.assessment_homework?.set?.id === Number(assessmentSetId),
               );
               setAssessmentDupAssignmentId(hit?.id != null ? Number(hit.id) : null);
             } catch {

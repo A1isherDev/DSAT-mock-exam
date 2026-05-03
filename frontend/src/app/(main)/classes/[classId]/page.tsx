@@ -14,6 +14,33 @@ function memberAvatarInitials(u: { first_name?: string; last_name?: string; emai
   const b = (u.last_name?.trim()?.[0] || "").toUpperCase();
   return b ? `${a}${b}` : a;
 }
+
+/** Class assignment row from workspace serializer — assessments expose `assessment_homework`. */
+function isAssessmentAssignmentRow(a: { assessment_homework?: unknown | null } | null | undefined): boolean {
+  return a != null && a.assessment_homework != null;
+}
+
+function studentClassworkAssignmentHref(
+  classId: number,
+  assignment: { id: number; assessment_homework?: unknown | null },
+): string {
+  if (isAssessmentAssignmentRow(assignment)) return `/assessments/${assignment.id}`;
+  return `/classes/${classId}/assignments/${assignment.id}`;
+}
+
+/**
+ * Recently graded panel: submission rows have `submission_id`; auto-graded assessments only have
+ * `assignment: { id, title }` plus `assessment_result` (no nested `assessment_homework`).
+ */
+function studentRecentlyGradedHref(
+  classId: number,
+  row: { assignment?: { id?: number }; submission_id?: number | null; assessment_result?: unknown },
+): string {
+  const aid = Number(row.assignment?.id);
+  if (!Number.isFinite(aid)) return `/classes/${classId}`;
+  if (row.assessment_result != null) return `/assessments/${aid}`;
+  return `/classes/${classId}/assignments/${aid}`;
+}
 import CreateAssignmentModal from "@/components/CreateAssignmentModal";
 import {
   ClassroomAlert,
@@ -303,7 +330,7 @@ export default function ClassDetailPage() {
                           {(workspace.due_soon || []).map((a: any) => (
                             <li key={a.id}>
                               <Link
-                                href={`/classes/${id}/assignments/${a.id}`}
+                                href={studentClassworkAssignmentHref(id, a)}
                                 className="text-sm font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
                               >
                                 {a.title}
@@ -323,9 +350,9 @@ export default function ClassDetailPage() {
                       ) : (
                         <ul className="mt-3 space-y-2">
                           {(workspace.recently_graded || []).map((row: any) => (
-                            <li key={row.submission_id}>
+                            <li key={`rg-${row.assignment?.id}-${row.submission_id ?? "assessment"}`}>
                               <Link
-                                href={`/classes/${id}/assignments/${row.assignment?.id}`}
+                                href={studentRecentlyGradedHref(id, row)}
                                 className="text-sm font-semibold text-indigo-600 dark:text-indigo-400"
                               >
                                 {row.assignment?.title}
@@ -399,7 +426,10 @@ export default function ClassDetailPage() {
                       key={a.id}
                       className="cr-surface flex flex-col gap-4 rounded-2xl p-5 transition-all duration-200 hover:border-indigo-200/60 hover:shadow-md dark:hover:border-indigo-500/25 sm:flex-row sm:items-stretch"
                     >
-                      <Link href={`/classes/${id}/assignments/${a.id}`} className="min-w-0 flex-1">
+                      <Link
+                        href={isClassAdmin ? `/classes/${id}/assignments/${a.id}` : studentClassworkAssignmentHref(id, a)}
+                        className="min-w-0 flex-1"
+                      >
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">

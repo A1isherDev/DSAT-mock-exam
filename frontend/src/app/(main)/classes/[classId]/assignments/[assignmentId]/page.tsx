@@ -19,6 +19,7 @@ import {
   crSelectClass,
 } from "@/components/classroom";
 import HomeworkFilePreviewTile from "@/components/classroom/HomeworkFilePreviewTile";
+import { useAuthCriticalGate } from "@/hooks/useAuthCriticalGate";
 import { fileNameFromUrl } from "@/lib/homeworkFileDisplay";
 import {
   ArrowLeft,
@@ -76,6 +77,7 @@ function fileKindIcon(fileType: string | undefined, fileName: string) {
 }
 
 export default function AssignmentDetailPage() {
+  const { assertCriticalAuth, criticalAuthReady } = useAuthCriticalGate();
   const router = useRouter();
   const { classId, assignmentId } = useParams();
   const cid = Number(classId);
@@ -111,7 +113,7 @@ export default function AssignmentDetailPage() {
       setClassMeta(cls);
 
       const list = await classesApi.listAssignments(cid);
-      const found = Array.isArray(list) ? list.find((a) => Number(a.id) === aid) : null;
+      const found = list.items.find((a) => Number(a.id) === aid) ?? null;
       setAssignment(found || null);
       const mine = await classesApi.getMySubmission(cid, aid);
       const sub = mine && typeof mine === "object" && "id" in mine && mine.id != null ? mine : null;
@@ -142,7 +144,7 @@ export default function AssignmentDetailPage() {
         setAttemptsLoading(true);
         try {
           const att = await examsPublicApi.getAttempts();
-          setMyAttempts(Array.isArray(att) ? att : []);
+          setMyAttempts(att.items);
         } catch {
           setMyAttempts([]);
         } finally {
@@ -175,7 +177,18 @@ export default function AssignmentDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cid, aid]);
 
+  useEffect(() => {
+    if (!Number.isFinite(cid) || !Number.isFinite(aid) || loading) return;
+    if (isClassAdmin) return;
+    if (assignment?.assessment_homework != null) {
+      router.replace(`/assessments/${aid}`);
+    }
+  }, [cid, aid, loading, isClassAdmin, assignment, router]);
+
   const submit = async (finalSubmit: boolean) => {
+    if (!assertCriticalAuth()) {
+      return;
+    }
     setSaving(true);
     setError(null);
     setSuccessMsg(null);
@@ -221,6 +234,9 @@ export default function AssignmentDetailPage() {
   };
 
   const removeServerFile = async (fileId: number) => {
+    if (!assertCriticalAuth()) {
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -306,7 +322,7 @@ export default function AssignmentDetailPage() {
     setAttemptsLoading(true);
     try {
       const att = await examsPublicApi.getAttempts();
-      setMyAttempts(Array.isArray(att) ? att : []);
+      setMyAttempts(att.items);
     } catch {
       setMyAttempts([]);
     } finally {
@@ -315,6 +331,9 @@ export default function AssignmentDetailPage() {
   }, [isClassAdmin]);
 
   const gradeOne = async (submissionId: number) => {
+    if (!assertCriticalAuth()) {
+      return;
+    }
     const g = grading[String(submissionId)] || {};
     setError(null);
     try {
@@ -340,6 +359,9 @@ export default function AssignmentDetailPage() {
   };
 
   const returnOne = async (submissionId: number) => {
+    if (!assertCriticalAuth()) {
+      return;
+    }
     const note = (returnDraft[String(submissionId)] ?? "").trim();
     setReturningId(submissionId);
     setError(null);
@@ -818,11 +840,21 @@ export default function AssignmentDetailPage() {
                       (you can still save again after if allowed).
                     </p>
                     <div className="flex flex-wrap gap-2">
-                      <ClassroomButton variant="secondary" size="md" onClick={() => submit(false)} disabled={saving || !canEditSubmission}>
+                      <ClassroomButton
+                        variant="secondary"
+                        size="md"
+                        onClick={() => submit(false)}
+                        disabled={saving || !canEditSubmission || !criticalAuthReady}
+                      >
                         <Save className="h-4 w-4" />
                         Save draft
                       </ClassroomButton>
-                      <ClassroomButton variant="primary" size="md" onClick={() => submit(true)} disabled={saving || !canEditSubmission}>
+                      <ClassroomButton
+                        variant="primary"
+                        size="md"
+                        onClick={() => submit(true)}
+                        disabled={saving || !canEditSubmission || !criticalAuthReady}
+                      >
                         <Send className="h-4 w-4" />
                         Submit to teacher
                       </ClassroomButton>
@@ -951,7 +983,13 @@ export default function AssignmentDetailPage() {
                               className={crInputClass}
                             />
                           </div>
-                          <ClassroomButton variant="primary" size="sm" className="mt-3 w-full" onClick={() => gradeOne(s.id)}>
+                          <ClassroomButton
+                            variant="primary"
+                            size="sm"
+                            className="mt-3 w-full"
+                            disabled={!criticalAuthReady}
+                            onClick={() => gradeOne(s.id)}
+                          >
                             Save review
                           </ClassroomButton>
                           {(s.status === "SUBMITTED" || s.status === "REVIEWED") && (
@@ -975,7 +1013,7 @@ export default function AssignmentDetailPage() {
                                 variant="secondary"
                                 size="sm"
                                 className="w-full"
-                                disabled={returningId === s.id}
+                                disabled={returningId === s.id || !criticalAuthReady}
                                 onClick={() => void returnOne(s.id)}
                               >
                                 <RotateCcw className="h-4 w-4" />

@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import Cookies from "js-cookie";
-import { classesApi, usersApi } from "@/lib/api";
+import { classesApi, emptyNormalizedExamList, emptyNormalizedList, type UserMe, usersApi } from "@/lib/api";
+import { useMe } from "@/hooks/useMe";
 import { examsStudentApi } from "@/features/examsStudent/api";
 import { ArrowRight, BarChart3, Calendar, Loader2, Pencil, PlayCircle, Target, TrendingUp } from "lucide-react";
 import { ClassroomButton } from "@/components/classroom";
@@ -28,20 +28,6 @@ type ExamDateOptionRow = {
   id: number;
   exam_date: string;
   label: string;
-};
-
-type Me = {
-  id?: number;
-  first_name?: string;
-  last_name?: string;
-  sat_exam_date?: string | null;
-  target_score?: number | null;
-  last_mock_result?: {
-    score: number | null;
-    mock_exam_title?: string | null;
-    practice_test_subject?: string | null;
-    completed_at?: string | null;
-  } | null;
 };
 
 function daysUntil(iso: string | null | undefined): number | null {
@@ -91,9 +77,9 @@ function readStoredSectionGoals(
 
 export function HomeDashboard() {
   const router = useRouter();
-  const [hasToken, setHasToken] = useState(false);
+  const { bootState } = useMe();
   const [loading, setLoading] = useState(true);
-  const [me, setMe] = useState<Me | null>(null);
+  const [me, setMe] = useState<UserMe | null>(null);
   const [attempts, setAttempts] = useState<Attempt[]>([]);
   const [classCount, setClassCount] = useState(0);
   const [goalModalOpen, setGoalModalOpen] = useState(false);
@@ -103,28 +89,24 @@ export function HomeDashboard() {
   const [examDateError, setExamDateError] = useState<string | null>(null);
 
   useEffect(() => {
-    setHasToken(!!Cookies.get("lms_user") || !!Cookies.get("role") || !!Cookies.get("is_admin"));
-  }, []);
-
-  useEffect(() => {
-    if (!hasToken) {
+    if (bootState !== "AUTHENTICATED") {
       setLoading(false);
       return;
     }
     let cancelled = false;
     (async () => {
       try {
-        const [meData, rawAttempts, classes, examDatesRaw] = await Promise.all([
+        const [meData, attemptsBundle, classes, examDatesRaw] = await Promise.all([
           usersApi.getMe(),
-          examsPublicApi.getAttempts().catch(() => []),
-          classesApi.list().catch(() => []),
+          examsPublicApi.getAttempts().catch(() => emptyNormalizedExamList<Attempt>()),
+          classesApi.list().catch(() => emptyNormalizedList()),
           usersApi.listExamDates().catch(() => []),
         ]);
         if (cancelled) return;
-        setMe(meData as Me);
+        setMe(meData);
         setExamDateOptions(Array.isArray(examDatesRaw) ? (examDatesRaw as ExamDateOptionRow[]) : []);
-        setAttempts(Array.isArray(rawAttempts) ? (rawAttempts as Attempt[]) : []);
-        setClassCount(Array.isArray(classes) ? classes.length : 0);
+        setAttempts((attemptsBundle.items ?? []) as Attempt[]);
+        setClassCount(classes.items.length);
       } catch {
         if (!cancelled) setMe(null);
       } finally {
@@ -134,7 +116,7 @@ export function HomeDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [hasToken]);
+  }, [bootState]);
 
   const incomplete = useMemo(
     () => attempts.find((a) => !a.is_completed) || null,
@@ -194,7 +176,7 @@ export function HomeDashboard() {
       const updated = await usersApi.patchMe({
         sat_exam_date: value.trim() ? value : null,
       });
-      setMe((prev) => (prev ? { ...prev, ...(updated as Me) } : prev));
+      setMe((prev) => (prev ? { ...prev, ...updated } : prev));
     } catch (err: unknown) {
       const d = (err as { response?: { data?: Record<string, unknown> } })?.response?.data;
       const text =
@@ -220,7 +202,7 @@ export function HomeDashboard() {
       } catch {
         /* ignore quota */
       }
-      setMe((prev) => (prev ? { ...prev, ...(updated as Me) } : prev));
+      setMe((prev) => (prev ? { ...prev, ...updated } : prev));
       setGoalModalOpen(false);
     } finally {
       setSavingGoal(false);
@@ -261,7 +243,21 @@ export function HomeDashboard() {
     [attempts, classCount, me?.last_mock_result, profileFieldsFilled],
   );
 
-  if (!hasToken) {
+  if (bootState === "BOOTING") {
+    return (
+      <div className="mx-auto max-w-6xl px-3 py-6 md:px-4 lg:px-6">
+        <div className="mb-8 h-10 max-w-md ds-skeleton rounded-xl" />
+        <div className="mb-4 h-28 rounded-2xl ds-skeleton" />
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="h-44 rounded-2xl ds-skeleton" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (bootState !== "AUTHENTICATED") {
     return (
       <div className="mx-auto max-w-lg px-4 py-16 text-center">
         <DashboardCard accent="gold" padding="lg">

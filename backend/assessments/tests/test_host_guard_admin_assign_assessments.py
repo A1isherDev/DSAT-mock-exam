@@ -46,3 +46,26 @@ class AdminAssignAssessmentsHostGuardSurfaceTests(TestCase):
         detail = str((r.json() or {}).get("detail") or "").lower()
         self.assertNotIn("not available on admin subdomain", detail)
 
+    def test_questions_host_blocks_assessment_homework_assign_post(self):
+        self.client.force_authenticate(user=self.admin)
+        r = self.client.post(
+            "/api/assessments/homework/assign/",
+            data={"classroom_id": 0, "set_id": 0},
+            format="json",
+            HTTP_HOST="questions.mastersat.uz",
+        )
+        self.assertEqual(r.status_code, 403)
+        self.assertIn("admin subdomain", (r.json().get("detail") or "").lower())
+
+    def test_main_host_blocks_assessment_homework_assign_post(self):
+        """Apex/main API host cannot assign assessments (admin console only)."""
+        self.client.force_authenticate(user=self.admin)
+        r = self.client.post(
+            "/api/assessments/homework/assign/",
+            data={"classroom_id": 0, "set_id": 0},
+            format="json",
+            HTTP_HOST="testserver",
+        )
+        self.assertEqual(r.status_code, 403)
+        self.assertIn("admin subdomain", (r.json().get("detail") or "").lower())
+

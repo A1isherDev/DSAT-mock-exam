@@ -3,7 +3,7 @@ from __future__ import annotations
 from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
 
-from exams.models import Module, PracticeTest, TestAttempt
+from exams.models import Module, PracticeTest, Question, TestAttempt
 
 
 class ScoringTransitionTests(APITestCase):
@@ -24,8 +24,10 @@ class ScoringTransitionTests(APITestCase):
             form_type="INTERNATIONAL",
             skip_default_modules=True,
         )
-        Module.objects.create(practice_test=self.test, module_order=1, time_limit_minutes=1)
-        Module.objects.create(practice_test=self.test, module_order=2, time_limit_minutes=1)
+        m1 = Module.objects.create(practice_test=self.test, module_order=1, time_limit_minutes=1)
+        m2 = Module.objects.create(practice_test=self.test, module_order=2, time_limit_minutes=1)
+        Question.objects.create(module=m1, question_type="READING", question_text="Q1", correct_answers="a")
+        Question.objects.create(module=m2, question_type="READING", question_text="Q2", correct_answers="a")
 
     def test_submit_module2_enters_scoring_and_sets_timestamp(self):
         a = self.client.post("/api/exams/attempts/", {"practice_test": self.test.id}, format="json").data
@@ -38,6 +40,10 @@ class ScoringTransitionTests(APITestCase):
         # Submit module 2 -> scoring
         r2 = self.client.post(f"/api/exams/attempts/{attempt_id}/submit_module/", {"answers": {}, "flagged": []}, format="json")
         self.assertEqual(r2.status_code, 200)
+        self.assertIn(r2.data.get("engine_phase"), ("scoring", "completed"))
+        if r2.data.get("current_state") == TestAttempt.STATE_SCORING:
+            self.assertEqual(r2.data.get("engine_phase"), "scoring")
+            self.assertIsNotNone(r2.data.get("scoring_notice"))
         # Depending on test settings, scoring may be enqueued (SCORING) or executed inline (COMPLETED).
         self.assertIn(r2.data.get("current_state"), (TestAttempt.STATE_SCORING, TestAttempt.STATE_COMPLETED))
 

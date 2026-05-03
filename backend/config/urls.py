@@ -4,6 +4,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 
 from users.views import (
+    ClientAuthTelemetryIngestView,
     CookieLogoutView,
     CookieTokenObtainPairView,
     CookieTokenRefreshView,
@@ -24,6 +25,7 @@ urlpatterns = [
     path('api/auth/refresh/', CookieTokenRefreshView.as_view(), name='token_refresh'),
     path('api/auth/logout/', CookieLogoutView.as_view(), name='token_logout'),
     path('api/auth/csrf/', CsrfTokenView.as_view(), name='csrf-token'),
+    path('api/auth/client-telemetry/', ClientAuthTelemetryIngestView.as_view(), name='auth-client-telemetry'),
     path('api/auth/sessions/', SessionListView.as_view(), name='auth-sessions'),
     path('api/auth/sessions/revoke_all/', RevokeAllSessionsView.as_view(), name='auth-revoke-all'),
     path('api/auth/sessions/<int:session_id>/revoke/', RevokeSessionView.as_view(), name='auth-revoke-session'),
@@ -39,5 +41,6 @@ urlpatterns = [
     path('api/access/', include('access.urls')),
     path('api/realtime/', include('realtime.urls')),
     path('api/vocabulary/', include('vocabulary.urls')),
+    path("api/vocab/", include("vocabulary.vocab_urls")),
     path('api/assessments/', include('assessments.urls')),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

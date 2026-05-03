@@ -53,6 +53,8 @@ def infer_state_from_attempt(attempt: TestAttempt) -> str:
         completed_orders = set()
 
     if 2 in completed_orders:
+        if getattr(attempt, "scoring_started_at", None) or getattr(attempt, "module_2_submitted_at", None):
+            return TestAttempt.STATE_SCORING
         return TestAttempt.STATE_MODULE_2_SUBMITTED
     if 1 in completed_orders:
         return TestAttempt.STATE_MODULE_1_SUBMITTED
@@ -66,6 +68,8 @@ def infer_state_from_attempt(attempt: TestAttempt) -> str:
             Module.objects.filter(id__in=answered_ids).values_list("module_order", flat=True)
         )
         if 2 in orders:
+            if getattr(attempt, "scoring_started_at", None) or getattr(attempt, "module_2_submitted_at", None):
+                return TestAttempt.STATE_SCORING
             return TestAttempt.STATE_MODULE_2_SUBMITTED
         if 1 in orders:
             return TestAttempt.STATE_MODULE_1_SUBMITTED
@@ -131,8 +135,16 @@ def autoheal_attempt_for_runtime(attempt: TestAttempt) -> list[IntegrityFinding]
         desired = attempt.practice_test.modules.filter(module_order=desired_order).order_by("id").first()
         if desired:
             attempt.current_module = desired
-            attempt.current_module_start_time = attempt.current_module_start_time or now
-            updates.update({"current_module", "current_module_start_time"})
+            o = int(getattr(desired, "module_order", 0) or 0)
+            if o == 1:
+                attempt.module_1_started_at = getattr(attempt, "module_1_started_at", None) or now
+                attempt.current_module_start_time = attempt.module_1_started_at
+            elif o == 2:
+                attempt.module_2_started_at = getattr(attempt, "module_2_started_at", None) or now
+                attempt.current_module_start_time = attempt.module_2_started_at
+            updates.update(
+                {"current_module", "current_module_start_time", "module_1_started_at", "module_2_started_at"}
+            )
 
     # In scoring/completed, force current_module null.
     if attempt.current_state in (TestAttempt.STATE_SCORING, TestAttempt.STATE_COMPLETED) and attempt.current_module_id:

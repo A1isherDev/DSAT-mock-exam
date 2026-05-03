@@ -228,6 +228,7 @@ export interface paths {
             cookie?: never;
         };
         /**
+         * Attempt bundle (attempt + set + questions)
          * @description Student-facing attempt bootstrap: return attempt + sanitized question list
          *     (no correct answers), ordered by the per-attempt shuffle.
          */
@@ -265,6 +266,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Save answer for one question */
         post: operations["assessments_attempts_answer_create"];
         delete?: never;
         options?: never;
@@ -281,6 +283,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Start or resume attempt */
         post: operations["assessments_attempts_start_create"];
         delete?: never;
         options?: never;
@@ -297,6 +300,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Submit attempt for grading */
         post: operations["assessments_attempts_submit_create"];
         delete?: never;
         options?: never;
@@ -312,6 +316,7 @@ export interface paths {
             cookie?: never;
         };
         /**
+         * My latest attempt and result for assignment
          * @description Convenience endpoint for the homework page: given a class assignment id, return the
          *     student's latest attempt/result for that assessment homework.
          */
@@ -338,6 +343,28 @@ export interface paths {
          *     Creates a linked `classes.Assignment` so it appears in the normal homework feed.
          */
         post: operations["assessments_homework_assign_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/client-telemetry/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Best-effort batch sink for SPA auth concurrency telemetry (logs + Prometheus-friendly counters).
+         *
+         *     Responses are deliberately tiny; ingestion is gated by Api CSRF middleware for /api/auth/*.
+         *     Payload is aggregates + recent client events — no persisted PII requirement.
+         */
+        post: operations["auth_client_telemetry_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -948,10 +975,11 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * @description Staff consoles must use backend-authoritative authoring APIs (``/api/exams/admin/...``).
-         *     The public practice library endpoint (``/api/exams/``) is intentionally a different surface.
-         *     If a staff console accidentally calls this endpoint, fail loudly instead of returning an
-         *     empty list that looks like “no tests exist”.
+         * @description Pastpaper / skill practice only: standalone PracticeTest rows (no mock_exam).
+         *     Timed mocks and their sections are only exposed via mock-exams + /mock/:id.
+         *
+         *     List/retrieve are **AllowAny** so the Next.js practice catalog can load without cookies;
+         *     starting an attempt still requires auth on ``TestAttemptViewSet``.
          */
         get: operations["exams_list"];
         put?: never;
@@ -1334,12 +1362,12 @@ export interface paths {
             cookie?: never;
         };
         get: operations["exams_attempts_retrieve"];
-        put: operations["exams_attempts_update"];
+        put?: never;
         post?: never;
-        delete: operations["exams_attempts_destroy"];
+        delete?: never;
         options?: never;
         head?: never;
-        patch: operations["exams_attempts_partial_update"];
+        patch?: never;
         trace?: never;
     };
     "/api/exams/attempts/{id}/results/": {
@@ -1369,9 +1397,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * @description Canonical resume endpoint (backend authoritative).
-         *     Locks the attempt row, auto-heals invariants, runs resume normalization,
-         *     then returns the canonical payload.
+         * @description Locks the attempt row and normalizes canonical engine state via ``start_attempt`` only.
+         *     Legacy ``*_SUBMITTED`` repairs are CLI-only (`repair_exam_integrity`).
          */
         post: operations["exams_attempts_resume_create"];
         delete?: never;
@@ -1477,29 +1504,6 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["exams_attempts_submit_module_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/exams/bulk_assign/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * @description Pastpaper / skill practice only: standalone PracticeTest rows (no mock_exam).
-         *     Timed mocks and their sections are only exposed via mock-exams + /mock/:id.
-         *
-         *     List/retrieve are **AllowAny** so the Next.js practice catalog can load without cookies;
-         *     starting an attempt still requires auth on ``TestAttemptViewSet``.
-         */
-        post: operations["exams_bulk_assign_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1657,6 +1661,38 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/realtime/ops/incidents/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["realtime_ops_incidents_retrieve"];
+        put?: never;
+        post: operations["realtime_ops_incidents_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/realtime/ops/incidents/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["realtime_ops_incidents_partial_update"];
         trace?: never;
     };
     "/api/schema/": {
@@ -2102,7 +2138,7 @@ export interface components {
             readonly id: number;
             readonly module_id: number;
             readonly practice_test_id: number;
-            question_type: components["schemas"]["QuestionTypeEnum"];
+            question_type: components["schemas"]["QuestionTypeE1eEnum"];
             question_text: string;
             /** @description Secondary text displayed above answer choices. */
             question_prompt?: string;
@@ -2136,6 +2172,128 @@ export interface components {
             clear_option_c_image?: boolean;
             clear_option_d_image?: boolean;
         };
+        /** @description Minimal `{detail}` error payloads returned by assessments student APIs. */
+        ApiAssessmentDetail: {
+            detail: string;
+        };
+        AssessmentAttempt: {
+            readonly id: number;
+            readonly homework_id: number;
+            readonly student_id: number;
+            status?: components["schemas"]["AssessmentAttemptStatusEnum"];
+            /** Format: date-time */
+            started_at?: string;
+            /** Format: date-time */
+            submitted_at?: string | null;
+            /** Format: date-time */
+            abandoned_at?: string | null;
+            /** Format: date-time */
+            last_activity_at?: string | null;
+            /** Format: int64 */
+            total_time_seconds?: number;
+            /** Format: int64 */
+            active_time_seconds?: number;
+            grading_status?: components["schemas"]["GradingStatusEnum"];
+            /** Format: int64 */
+            grading_attempts?: number;
+            question_order?: unknown;
+            readonly answers: components["schemas"]["AssessmentAttemptAnswer"][];
+        };
+        AssessmentAttemptAnswer: {
+            readonly id: number;
+            readonly question_id: number;
+            answer?: unknown;
+            /** Format: int64 */
+            time_spent_seconds?: number;
+            is_correct?: boolean | null;
+            /** Format: decimal */
+            points_awarded?: string | null;
+            /** Format: date-time */
+            answered_at?: string | null;
+        };
+        AssessmentAttemptBundleResponse: {
+            attempt: components["schemas"]["AssessmentAttempt"];
+            set: components["schemas"]["AssessmentSet"];
+            questions: components["schemas"]["AssessmentQuestion"][];
+        };
+        /**
+         * @description * `in_progress` - In progress
+         *     * `submitted` - Submitted
+         *     * `graded` - Graded
+         *     * `abandoned` - Abandoned
+         * @enum {string}
+         */
+        AssessmentAttemptStatusEnum: "in_progress" | "submitted" | "graded" | "abandoned";
+        AssessmentMyResultResponse: {
+            attempt: components["schemas"]["AssessmentAttempt"] | null;
+            result: components["schemas"]["AssessmentResult"] | null;
+        };
+        AssessmentQuestion: {
+            readonly id: number;
+            /** Format: int64 */
+            order?: number;
+            prompt: string;
+            question_type: components["schemas"]["AssessmentQuestionQuestionTypeEnum"];
+            choices?: unknown;
+            /** Format: int64 */
+            points?: number;
+            is_active?: boolean;
+        };
+        /**
+         * @description * `multiple_choice` - Multiple choice
+         *     * `short_text` - Short text
+         *     * `numeric` - Numeric
+         *     * `boolean` - True/False
+         * @enum {string}
+         */
+        AssessmentQuestionQuestionTypeEnum: "multiple_choice" | "short_text" | "numeric" | "boolean";
+        AssessmentResult: {
+            readonly id: number;
+            readonly attempt_id: number;
+            /** Format: decimal */
+            score_points?: string;
+            /** Format: decimal */
+            max_points?: string;
+            /** Format: decimal */
+            percent?: string;
+            /** Format: int64 */
+            correct_count?: number;
+            /** Format: int64 */
+            total_questions?: number;
+            /** Format: date-time */
+            graded_at?: string;
+        };
+        AssessmentSet: {
+            readonly id: number;
+            subject: components["schemas"]["Subject0bfEnum"];
+            category?: string;
+            title: string;
+            description?: string;
+            is_active?: boolean;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+            readonly questions: components["schemas"]["AssessmentQuestion"][];
+        };
+        AssessmentSnapshotConflictResponse: {
+            detail: string;
+        };
+        AssessmentSubmitBadRequestResponse: {
+            detail: string;
+            missing_question_ids?: number[];
+        };
+        /** @description Submit completed synchronously or idempotent replay of submitted/graded attempt. */
+        AssessmentSubmitCompleteResponse: {
+            attempt: components["schemas"]["AssessmentAttempt"];
+            result?: components["schemas"]["AssessmentResult"] | null;
+        };
+        /** @description Async grading accepted; poll `my-result` or re-fetch bundle for graded state. */
+        AssessmentSubmitQueuedResponse: {
+            attempt: components["schemas"]["AssessmentAttempt"];
+            result: components["schemas"]["AssessmentResult"] | null;
+            grading: components["schemas"]["GradingEnum"];
+        };
         Assignment: {
             readonly id: number;
             title: string;
@@ -2148,19 +2306,83 @@ export interface components {
             practice_test_ids?: unknown;
             /** @default BOTH */
             practice_scope: components["schemas"]["PracticeScopeEnum"];
-            readonly practice_bundle_tests: string;
-            readonly locks_file_upload: string;
-            readonly assessment_homework: string;
+            readonly practice_bundle_tests: components["schemas"]["AssignmentPracticeBundleTest"][];
+            readonly locks_file_upload: boolean;
+            readonly assessment_homework: components["schemas"]["AssignmentAssessmentHomework"] | null;
             module?: number | null;
             external_url?: string;
             /** Format: uri */
             attachment_file?: string | null;
-            readonly attachment_file_url: string;
-            readonly attachment_urls: string;
+            /** Format: uri */
+            readonly attachment_file_url: string | null;
+            readonly attachment_urls: string[];
             /** Format: date-time */
             readonly created_at: string;
-            readonly created_by: string;
+            readonly created_by: components["schemas"]["AssignmentCreatedBy"];
             readonly submissions_count: number;
+        };
+        AssignmentAssessmentHomework: {
+            homework_id: number;
+            set?: components["schemas"]["AssignmentAssessmentHomeworkSet"] | null;
+        };
+        AssignmentAssessmentHomeworkSet: {
+            id: number;
+            subject: string;
+            category: string;
+            title: string;
+            description: string;
+        };
+        AssignmentCreatedBy: {
+            id: number;
+            /** Format: email */
+            email: string;
+            username?: string | null;
+            first_name?: string;
+            last_name?: string;
+        };
+        AssignmentPracticeBundleTest: {
+            id: number;
+            title: string;
+            subject: string;
+        };
+        /** @description Mirror of ``TestAttempt.get_module_results`` inner question rows (review payload). */
+        AttemptModuleQuestionResult: {
+            id: number;
+            is_correct: boolean;
+            student_answer: unknown;
+            correct_answers: string;
+            score: number;
+            text: string;
+            /** @default  */
+            question_prompt: string;
+            image?: string | null;
+            type: string;
+            options: unknown;
+            is_math_input: boolean;
+        };
+        AttemptModuleResultsItem: {
+            module_id: number;
+            module_order: number;
+            module_earned: number;
+            capped_earned: number;
+            questions: components["schemas"]["AttemptModuleQuestionResult"][];
+        };
+        /**
+         * @description Embedded snapshot on ``TestAttempt`` via ``practice_test_details`` (SerializerMethodField).
+         *     Schema must mirror ``get_practice_test_details`` for OpenAPI.
+         */
+        AttemptPracticeTestDetails: {
+            id: number;
+            subject: string;
+            title: string;
+            label?: string | null;
+            form_type?: string | null;
+            practice_date?: string | null;
+            pastpaper_pack?: components["schemas"]["PastpaperPackBrief"] | null;
+            is_active?: boolean;
+            mock_exam_id?: number | null;
+            mock_kind?: string | null;
+            modules: components["schemas"]["ModuleList"][];
         };
         BulkAssignmentDispatch: {
             readonly id: number;
@@ -2217,7 +2439,7 @@ export interface components {
             /** Format: int64 */
             max_students?: number | null;
             teacher?: number | null;
-            readonly teacher_details: string;
+            readonly teacher_details: components["schemas"]["ClassroomTeacherDetails"] | null;
             readonly join_code: string;
             is_active?: boolean;
             /** @description Optional day list for ODD groups on the class page. EVEN groups show EVEN; Monday/Saturday appear in the header. */
@@ -2253,6 +2475,14 @@ export interface components {
             /** Format: date-time */
             readonly created_at: string;
         };
+        ClassroomTeacherDetails: {
+            id: number;
+            /** Format: email */
+            email: string;
+            username?: string | null;
+            first_name?: string;
+            last_name?: string;
+        };
         /**
          * @description * `NOT_STARTED` - Not started
          *     * `MODULE_1_ACTIVE` - Module 1 active
@@ -2265,6 +2495,24 @@ export interface components {
          * @enum {string}
          */
         CurrentStateEnum: "NOT_STARTED" | "MODULE_1_ACTIVE" | "MODULE_1_SUBMITTED" | "MODULE_2_ACTIVE" | "MODULE_2_SUBMITTED" | "SCORING" | "COMPLETED" | "ABANDONED";
+        /**
+         * @description * `pending` - pending
+         *     * `active` - active
+         *     * `scoring` - scoring
+         *     * `completed` - completed
+         *     * `abandoned` - abandoned
+         *     * `other` - other
+         * @enum {string}
+         */
+        EnginePhaseEnum: "pending" | "active" | "scoring" | "completed" | "abandoned" | "other";
+        /** @description Serialized ``current_module_details`` payload (questions + timings) for runners / status. */
+        ExamAttemptModuleDetail: {
+            readonly id: number;
+            module_order: components["schemas"]["ModuleOrderEnum"];
+            /** Format: int64 */
+            time_limit_minutes: number;
+            readonly questions: components["schemas"]["Question"][];
+        };
         /** @description Full fields for admin CRUD. */
         ExamDateOption: {
             readonly id: number;
@@ -2290,6 +2538,19 @@ export interface components {
          * @enum {string}
          */
         FormTypeEnum: "INTERNATIONAL" | "US";
+        /**
+         * @description * `pending` - Pending
+         * @enum {string}
+         */
+        GradingEnum: "pending";
+        /**
+         * @description * `pending` - Pending
+         *     * `processing` - Processing
+         *     * `completed` - Completed
+         *     * `failed` - Failed
+         * @enum {string}
+         */
+        GradingStatusEnum: "pending" | "processing" | "completed" | "failed";
         /**
          * @description * `MOCK_SAT` - Full SAT mock (Reading & Writing + Math)
          *     * `MIDTERM` - Midterm (custom time, 1–2 modules, one subject)
@@ -2436,7 +2697,7 @@ export interface components {
             readonly id?: number;
             readonly module_id?: number;
             readonly practice_test_id?: number;
-            question_type?: components["schemas"]["QuestionTypeEnum"];
+            question_type?: components["schemas"]["QuestionTypeE1eEnum"];
             question_text?: string;
             /** @description Secondary text displayed above answer choices. */
             question_prompt?: string;
@@ -2482,18 +2743,19 @@ export interface components {
             practice_test_ids?: unknown;
             /** @default BOTH */
             practice_scope: components["schemas"]["PracticeScopeEnum"];
-            readonly practice_bundle_tests?: string;
-            readonly locks_file_upload?: string;
-            readonly assessment_homework?: string;
+            readonly practice_bundle_tests?: components["schemas"]["AssignmentPracticeBundleTest"][];
+            readonly locks_file_upload?: boolean;
+            readonly assessment_homework?: components["schemas"]["AssignmentAssessmentHomework"] | null;
             module?: number | null;
             external_url?: string;
             /** Format: uri */
             attachment_file?: string | null;
-            readonly attachment_file_url?: string;
-            readonly attachment_urls?: string;
+            /** Format: uri */
+            readonly attachment_file_url?: string | null;
+            readonly attachment_urls?: string[];
             /** Format: date-time */
             readonly created_at?: string;
-            readonly created_by?: string;
+            readonly created_by?: components["schemas"]["AssignmentCreatedBy"];
             readonly submissions_count?: number;
         };
         PatchedClassPost: {
@@ -2541,50 +2803,6 @@ export interface components {
             /** Format: date-time */
             readonly created_at?: string;
         };
-        PatchedTestAttempt: {
-            readonly id?: number;
-            practice_test?: number;
-            readonly practice_test_details?: string;
-            readonly student?: number;
-            readonly student_details?: components["schemas"]["User"];
-            /** Format: date-time */
-            readonly started_at?: string | null;
-            /** Format: date-time */
-            readonly submitted_at?: string | null;
-            readonly current_module?: number | null;
-            readonly current_module_details?: string;
-            /** Format: date-time */
-            readonly current_module_start_time?: string | null;
-            readonly current_state?: components["schemas"]["CurrentStateEnum"];
-            /** Format: date-time */
-            readonly module_1_started_at?: string | null;
-            /** Format: date-time */
-            readonly module_1_submitted_at?: string | null;
-            /** Format: date-time */
-            readonly module_2_started_at?: string | null;
-            /** Format: date-time */
-            readonly module_2_submitted_at?: string | null;
-            /** Format: date-time */
-            readonly scoring_started_at?: string | null;
-            /** Format: date-time */
-            readonly completed_at?: string | null;
-            readonly version_number?: number;
-            readonly is_completed?: boolean;
-            readonly is_expired?: string;
-            readonly score?: number | null;
-            readonly completed_modules?: number[];
-            readonly module_results?: string;
-            readonly server_now?: string;
-            readonly current_module_saved_answers?: string;
-            readonly current_module_flagged_questions?: string;
-            readonly remaining_seconds?: string;
-            readonly module_duration_seconds?: string;
-            readonly module_started_at?: string;
-            readonly active_module_order?: string;
-            readonly can_submit?: string;
-            readonly can_resume?: string;
-            readonly results_ready?: string;
-        };
         PatchedUser: {
             readonly id?: number;
             /** Format: email */
@@ -2618,10 +2836,13 @@ export interface components {
             last_name?: string;
             /** @description E.164-style or local digits; optional, unique when set (e.g. for Telegram users). */
             phone_number?: string | null;
-            readonly telegram_linked?: string;
+            readonly is_frozen?: boolean;
+            readonly is_admin?: boolean;
+            readonly telegram_linked?: boolean;
             /** Format: uri */
             profile_image?: string | null;
-            readonly profile_image_url?: string;
+            /** Format: uri */
+            readonly profile_image_url?: string | null;
             /**
              * Format: date
              * @description Planned SAT exam date
@@ -2632,7 +2853,7 @@ export interface components {
              * @description Target total SAT score (400–1600)
              */
             target_score?: number | null;
-            readonly last_mock_result?: string;
+            readonly last_mock_result?: components["schemas"]["UserMeLastMockResult"] | null;
             clear_profile_image?: boolean;
             readonly role?: string;
             /**
@@ -2641,15 +2862,15 @@ export interface components {
              *     * `math` - Math
              *     * `english` - English
              */
-            readonly subject?: (components["schemas"]["UserMeSubjectEnum"] | components["schemas"]["NullEnum"]) | null;
-            readonly permissions?: string;
+            readonly subject?: (components["schemas"]["Subject0bfEnum"] | components["schemas"]["NullEnum"]) | null;
+            readonly permissions?: string[];
             /**
              * Format: date-time
              * @description Set when the user changes password via API (adaptive security).
              */
             readonly last_password_change?: string | null;
-            readonly security_step_up_active?: string;
-            readonly has_recent_security_alerts?: string;
+            readonly security_step_up_active?: boolean;
+            readonly has_recent_security_alerts?: boolean;
         };
         /**
          * @description * `BOTH` - Both (English & Math)
@@ -2678,13 +2899,51 @@ export interface components {
             readonly pastpaper_pack: components["schemas"]["PastpaperPackBrief"];
             readonly mock_exam_id: number | null;
         };
+        Question: {
+            readonly id: number;
+            question_type: components["schemas"]["QuestionTypeE1eEnum"];
+            question_text: string;
+            /** @description Secondary text displayed above answer choices. */
+            question_prompt?: string;
+            /** Format: uri */
+            question_image?: string | null;
+            is_math_input?: boolean;
+            /** Format: uri */
+            option_a_image?: string | null;
+            /** Format: uri */
+            option_b_image?: string | null;
+            /** Format: uri */
+            option_c_image?: string | null;
+            /** Format: uri */
+            option_d_image?: string | null;
+        };
         /**
          * @description * `MATH` - Math
          *     * `READING` - Reading
          *     * `WRITING` - Writing
          * @enum {string}
          */
-        QuestionTypeEnum: "MATH" | "READING" | "WRITING";
+        QuestionTypeE1eEnum: "MATH" | "READING" | "WRITING";
+        SaveAnswer: {
+            attempt_id: number;
+            question_id: number;
+            answer?: unknown;
+            client_seq?: number;
+            /** Format: date-time */
+            answered_at?: string;
+        };
+        SaveAnswerStaleWrite: {
+            detail: string;
+            code: string;
+            server_client_seq: number;
+            answer_id: number;
+        };
+        SaveAnswerStored: {
+            answer_id: number;
+        };
+        StartAttempt: {
+            assignment_id: number;
+        };
         /**
          * @description * `pending` - Pending
          *     * `processing` - Processing
@@ -2694,6 +2953,12 @@ export interface components {
          * @enum {string}
          */
         StatusFdcEnum: "pending" | "processing" | "delivered" | "completed" | "failed";
+        /**
+         * @description * `math` - Math
+         *     * `english` - English
+         * @enum {string}
+         */
+        Subject0bfEnum: "math" | "english";
         /**
          * @description * `ENGLISH` - English
          *     * `MATH` - Math
@@ -2734,10 +2999,13 @@ export interface components {
          * @enum {string}
          */
         SubmissionStatusEnum: "DRAFT" | "SUBMITTED" | "REVIEWED" | "RETURNED";
+        SubmitAttempt: {
+            attempt_id: number;
+        };
         TestAttempt: {
             readonly id: number;
             practice_test: number;
-            readonly practice_test_details: string;
+            readonly practice_test_details: components["schemas"]["AttemptPracticeTestDetails"];
             readonly student: number;
             readonly student_details: components["schemas"]["User"];
             /** Format: date-time */
@@ -2745,9 +3013,10 @@ export interface components {
             /** Format: date-time */
             readonly submitted_at: string | null;
             readonly current_module: number | null;
-            readonly current_module_details: string;
+            readonly current_module_details: components["schemas"]["ExamAttemptModuleDetail"] | null;
             /** Format: date-time */
             readonly current_module_start_time: string | null;
+            /** @default NOT_STARTED */
             readonly current_state: components["schemas"]["CurrentStateEnum"];
             /** Format: date-time */
             readonly module_1_started_at: string | null;
@@ -2762,21 +3031,28 @@ export interface components {
             /** Format: date-time */
             readonly completed_at: string | null;
             readonly version_number: number;
+            /** @default false */
             readonly is_completed: boolean;
-            readonly is_expired: string;
+            readonly is_expired: boolean;
             readonly score: number | null;
             readonly completed_modules: number[];
-            readonly module_results: string;
+            readonly module_results: components["schemas"]["AttemptModuleResultsItem"][] | null;
+            /** Format: date-time */
             readonly server_now: string;
-            readonly current_module_saved_answers: string;
-            readonly current_module_flagged_questions: string;
-            readonly remaining_seconds: string;
-            readonly module_duration_seconds: string;
-            readonly module_started_at: string;
-            readonly active_module_order: string;
-            readonly can_submit: string;
-            readonly can_resume: string;
-            readonly results_ready: string;
+            readonly current_module_saved_answers: {
+                [key: string]: unknown;
+            } | null;
+            readonly current_module_flagged_questions: number[] | null;
+            readonly remaining_seconds: number | null;
+            readonly module_duration_seconds: number | null;
+            /** Format: date-time */
+            readonly module_started_at: string | null;
+            readonly active_module_order: number | null;
+            readonly can_submit: boolean;
+            readonly can_resume: boolean;
+            readonly results_ready: boolean;
+            readonly engine_phase: components["schemas"]["EnginePhaseEnum"];
+            readonly scoring_notice: string | null;
         };
         TokenRefresh: {
             readonly access: string;
@@ -2815,10 +3091,13 @@ export interface components {
             last_name?: string;
             /** @description E.164-style or local digits; optional, unique when set (e.g. for Telegram users). */
             phone_number?: string | null;
-            readonly telegram_linked: string;
+            readonly is_frozen: boolean;
+            readonly is_admin: boolean;
+            readonly telegram_linked: boolean;
             /** Format: uri */
             profile_image?: string | null;
-            readonly profile_image_url: string;
+            /** Format: uri */
+            readonly profile_image_url: string | null;
             /**
              * Format: date
              * @description Planned SAT exam date
@@ -2829,7 +3108,7 @@ export interface components {
              * @description Target total SAT score (400–1600)
              */
             target_score?: number | null;
-            readonly last_mock_result: string;
+            readonly last_mock_result: components["schemas"]["UserMeLastMockResult"] | null;
             clear_profile_image?: boolean;
             readonly role: string;
             /**
@@ -2838,22 +3117,23 @@ export interface components {
              *     * `math` - Math
              *     * `english` - English
              */
-            readonly subject: (components["schemas"]["UserMeSubjectEnum"] | components["schemas"]["NullEnum"]) | null;
-            readonly permissions: string;
+            readonly subject: (components["schemas"]["Subject0bfEnum"] | components["schemas"]["NullEnum"]) | null;
+            readonly permissions: string[];
             /**
              * Format: date-time
              * @description Set when the user changes password via API (adaptive security).
              */
             readonly last_password_change: string | null;
-            readonly security_step_up_active: string;
-            readonly has_recent_security_alerts: string;
+            readonly security_step_up_active: boolean;
+            readonly has_recent_security_alerts: boolean;
         };
-        /**
-         * @description * `math` - Math
-         *     * `english` - English
-         * @enum {string}
-         */
-        UserMeSubjectEnum: "math" | "english";
+        /** @description Shape of ``UserMeSerializer.get_last_mock_result`` (latest completed practice/mock attempt). */
+        UserMeLastMockResult: {
+            score: number | null;
+            mock_exam_title?: string | null;
+            practice_test_subject?: string | null;
+            completed_at?: string | null;
+        };
     };
     responses: never;
     parameters: never;
@@ -3180,12 +3460,29 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AssessmentAttemptBundleResponse"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiAssessmentDetail"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiAssessmentDetail"];
+                };
             };
         };
     };
@@ -3214,14 +3511,53 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveAnswer"];
+                "application/x-www-form-urlencoded": components["schemas"]["SaveAnswer"];
+                "multipart/form-data": components["schemas"]["SaveAnswer"];
+            };
+        };
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SaveAnswerStored"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiAssessmentDetail"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiAssessmentDetail"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SaveAnswerStaleWrite"];
+                };
+            };
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiAssessmentDetail"];
+                };
             };
         };
     };
@@ -3232,14 +3568,37 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartAttempt"];
+                "application/x-www-form-urlencoded": components["schemas"]["StartAttempt"];
+                "multipart/form-data": components["schemas"]["StartAttempt"];
+            };
+        };
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AssessmentAttempt"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiAssessmentDetail"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiAssessmentDetail"];
+                };
             };
         };
     };
@@ -3250,14 +3609,61 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmitAttempt"];
+                "application/x-www-form-urlencoded": components["schemas"]["SubmitAttempt"];
+                "multipart/form-data": components["schemas"]["SubmitAttempt"];
+            };
+        };
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AssessmentSubmitCompleteResponse"];
+                };
+            };
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentSubmitQueuedResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentSubmitBadRequestResponse"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiAssessmentDetail"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentSnapshotConflictResponse"];
+                };
+            };
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiAssessmentDetail"];
+                };
             };
         };
     };
@@ -3272,6 +3678,41 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentMyResultResponse"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiAssessmentDetail"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiAssessmentDetail"];
+                };
+            };
+        };
+    };
+    assessments_homework_assign_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
             /** @description No response body */
             200: {
                 headers: {
@@ -3281,7 +3722,7 @@ export interface operations {
             };
         };
     };
-    assessments_homework_assign_create: {
+    auth_client_telemetry_create: {
         parameters: {
             query?: never;
             header?: never;
@@ -4316,8 +4757,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description A unique integer value identifying this practice test. */
-                id: number;
+                id: string;
             };
             cookie?: never;
         };
@@ -5377,80 +5817,6 @@ export interface operations {
             };
         };
     };
-    exams_attempts_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TestAttempt"];
-                "application/x-www-form-urlencoded": components["schemas"]["TestAttempt"];
-                "multipart/form-data": components["schemas"]["TestAttempt"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TestAttempt"];
-                };
-            };
-        };
-    };
-    exams_attempts_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    exams_attempts_partial_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["PatchedTestAttempt"];
-                "application/x-www-form-urlencoded": components["schemas"]["PatchedTestAttempt"];
-                "multipart/form-data": components["schemas"]["PatchedTestAttempt"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TestAttempt"];
-                };
-            };
-        };
-    };
     exams_attempts_results_retrieve: {
         parameters: {
             query?: never;
@@ -5649,31 +6015,6 @@ export interface operations {
             };
         };
     };
-    exams_bulk_assign_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PracticeTest"];
-                "application/x-www-form-urlencoded": components["schemas"]["PracticeTest"];
-                "multipart/form-data": components["schemas"]["PracticeTest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PracticeTest"];
-                };
-            };
-        };
-    };
     exams_metrics_retrieve: {
         parameters: {
             query?: never;
@@ -5809,6 +6150,62 @@ export interface operations {
             query?: never;
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    realtime_ops_incidents_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    realtime_ops_incidents_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    realtime_ops_incidents_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
             cookie?: never;
         };
         requestBody?: never;

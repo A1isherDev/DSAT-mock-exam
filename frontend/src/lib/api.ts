@@ -1,5 +1,56 @@
 import axios, { type AxiosError, type AxiosResponse } from 'axios';
+import type { TelegramAuthUser } from "@/types/telegramAuth";
+import { buildSanitizedAuthCorrelationHeaders } from "@/lib/auth/authCorrelation";
+import { evaluateAuthCircuitBreaker, noteTemporalStaleRejection } from "@/lib/auth/authCircuitBreaker";
+import {
+    getAuthLossVersion,
+    markAuthLossDetected,
+    shouldBlockMutatingRequests,
+    tryScheduleAuthRedirect,
+} from "@/lib/auth/authConcurrency";
+import { pushGlobalToastOnce } from "@/lib/toastBus";
+import type { QueryClient } from "@tanstack/react-query";
 import Cookies from 'js-cookie';
+import {
+    AUTH_NOTICE_STORAGE_KEY,
+    broadcastLogoutToOtherTabs,
+} from "@/lib/auth/authTabSync";
+import { meQueryKey } from "@/lib/auth/meQueryKey";
+import type { TestAttempt } from "@/features/examsStudent/testAttemptSchema";
+import {
+    parseMockExamPublicList,
+    parseMockExamPublicPayload,
+    parsePracticeTestPublicList,
+    parsePracticeTestPublicPayload,
+    parseTestAttemptApiPayload,
+    parseTestAttemptList,
+    type MockExamPublic,
+    type NormalizedExamList,
+    type PracticeTestPublic,
+} from "@/lib/examsPublicContract";
+import {
+    parseAdminPastpaperPackList,
+    parseAssignmentList,
+    parseAuthSessionPayload,
+    parseBulkAssignResponse,
+    parseBulkAssignmentHistoryList,
+    parseClassroomList,
+    parseCsrfPayload,
+    parseUserMePayload,
+    type Assignment,
+    type BulkAssignmentDispatch,
+    type AdminPastpaperPack,
+    type Classroom,
+    type NormalizedList,
+    type UserMe,
+} from "@/lib/criticalApiContract";
+
+export type { MockExamPublic, NormalizedExamList, PracticeTestPublic } from "@/lib/examsPublicContract";
+export { InvalidApiPayloadError, emptyNormalizedExamList } from "@/lib/examsPublicContract";
+export type { Assignment, AdminPastpaperPack, BulkAssignmentDispatch, Classroom, NormalizedList, UserMe } from "@/lib/criticalApiContract";
+export { emptyNormalizedList } from "@/lib/criticalApiContract";
+
+export const ME_REQUEST_TIMEOUT_MS = 10_000;
 
 const API_URL = '/api';
 const IS_PROD = process.env.NODE_ENV === 'production';
@@ -24,7 +75,25 @@ const AUTH_COOKIE_NAMES = [
     "lms_user",
 ] as const;
 
-function clearAuthCookiesEverywhere() {
+/** Remove JS-readable auth **projection** cookies only (not HttpOnly session cookies). */
+export function clearDerivedAuthProjectionCookies() {
+    if (typeof window === "undefined") return;
+    const host = window.location.hostname;
+    const sharedDomain = cookieDomain();
+    const domains = [undefined, host, sharedDomain].filter(Boolean) as (string | undefined)[];
+    const paths = ["/"];
+    const names = ["lms_user", "lms_permissions"] as const;
+    for (const name of names) {
+        for (const path of paths) {
+            Cookies.remove(name, { path });
+            for (const domain of domains) {
+                Cookies.remove(name, { path, domain });
+            }
+        }
+    }
+}
+
+export function clearAuthCookiesEverywhere() {
     if (typeof window === "undefined") return;
     const host = window.location.hostname;
     const sharedDomain = cookieDomain();
@@ -41,33 +110,47 @@ function clearAuthCookiesEverywhere() {
     }
 }
 
+/** JS-readable projection of GET /users/me/ — not used for authorization decisions */
+export function writeLmsUserCacheFromMe(me: unknown, rememberMe: boolean): void {
+    if (typeof window === "undefined" || !me || typeof me !== "object") return;
+    const m = me as Record<string, unknown>;
+    const cookieOptions = {
+        secure: IS_PROD,
+        sameSite: "lax" as const,
+        expires: rememberMe ? 7 : undefined,
+        domain: IS_PROD ? cookieDomain() : undefined,
+        path: "/" as const,
+    };
+    const rawPerms = m.permissions;
+    const permissions = Array.isArray(rawPerms) ? rawPerms.filter((x) => typeof x === "string") : [];
+    Cookies.set(
+        "lms_user",
+        JSON.stringify({
+            id: m.id,
+            email: m.email,
+            username: m.username,
+            first_name: m.first_name,
+            last_name: m.last_name,
+            role: m.role ? String(m.role).toLowerCase() : "",
+            subject: m.subject ? String(m.subject).toLowerCase() : "",
+            permissions,
+            is_frozen: !!m.is_frozen,
+            is_admin: !!m.is_admin,
+        }),
+        cookieOptions,
+    );
+    Cookies.remove("lms_subject", { path: "/", domain: IS_PROD ? cookieDomain() : undefined });
+}
+
 async function persistMeCookie(rememberMe: boolean) {
     try {
-        const me = await usersApi.getMe();
-        const cookieOptions = {
-            secure: IS_PROD,
-            sameSite: "lax" as const,
-            expires: rememberMe ? 7 : undefined,
-            domain: IS_PROD ? cookieDomain() : undefined,
-            path: "/",
-        };
-        Cookies.set(
-            "lms_user",
-            JSON.stringify({
-                id: me?.id,
-                email: me?.email,
-                username: me?.username,
-                first_name: me?.first_name,
-                last_name: me?.last_name,
-                role: me?.role ? String(me.role).toLowerCase() : "",
-                subject: me?.subject ? String(me.subject).toLowerCase() : "",
-            }),
-            cookieOptions,
-        );
-        // Stop persisting `lms_subject`: `/users/me/` is the source of truth.
-        Cookies.remove("lms_subject", { path: "/", domain: IS_PROD ? cookieDomain() : undefined });
+        const r = await api.get("/users/me/", {
+            timeout: ME_REQUEST_TIMEOUT_MS,
+        });
+        const me = parseUserMePayload(r.data, "GET /users/me/ (persist cookie)");
+        writeLmsUserCacheFromMe(me, rememberMe);
     } catch {
-        // best-effort; UI will fall back to role-only if this fails
+        clearDerivedAuthProjectionCookies();
     }
 }
 
@@ -118,16 +201,36 @@ function unwrapAdminList<T>(data: unknown): T[] {
 /** Admin exam list payloads always include a numeric primary key. */
 type AdminListEntity = { id: number };
 
+function urlSkipsTemporalStaleCheck(relUrl: string): boolean {
+    const u = String(relUrl || "").toLowerCase();
+    return (
+        u.includes("/auth/refresh") ||
+        u.includes("/auth/login") ||
+        u.includes("/auth/logout") ||
+        u.includes("/auth/csrf") ||
+        u.includes("/auth/client-telemetry")
+    );
+}
+
 api.interceptors.request.use((config) => {
     // Auth is cookie-based (HttpOnly access token). Do not attach Authorization header.
     // CSRF hardening: send X-CSRFToken for unsafe methods when csrftoken cookie exists.
     try {
+        (config as unknown as Record<string, unknown>).__mastersatEnqueueLossVer = getAuthLossVersion();
         const method = String(config.method || "get").toLowerCase();
+        if (shouldBlockMutatingRequests(method, String(config.url || ""))) {
+            return Promise.reject(
+                Object.assign(new Error("AUTH_CONCURRENCY_BLOCKED"), { __mastersatConcurrencyBlocked: true }),
+            );
+        }
+        const hdrs = buildSanitizedAuthCorrelationHeaders();
+        (config.headers as any) = config.headers || {};
+        Object.assign(config.headers as Record<string, string>, hdrs);
+
         const unsafe = method !== "get" && method !== "head" && method !== "options";
         if (unsafe) {
             const csrf = Cookies.get("csrftoken");
             if (csrf) {
-                (config.headers as any) = config.headers || {};
                 (config.headers as any)["X-CSRFToken"] = csrf;
             }
         }
@@ -138,8 +241,45 @@ api.interceptors.request.use((config) => {
 });
 
 api.interceptors.response.use(
-    (response) => response,
+    (response: AxiosResponse) => {
+        try {
+            const cfg = response.config as unknown as Record<string, unknown> | undefined;
+            const url = String(cfg?.url ?? "");
+            if (!urlSkipsTemporalStaleCheck(url) && typeof cfg?.__mastersatEnqueueLossVer === "number") {
+                const enq = cfg.__mastersatEnqueueLossVer as number;
+                if (getAuthLossVersion() > enq) {
+                    return Promise.reject(
+                        Object.assign(new Error("AUTH_TEMPORAL_STALE"), {
+                            __mastersatTemporalStale: true,
+                            __mastersatStaleResponse: response,
+                        }),
+                    );
+                }
+            }
+        } catch {
+            /* ignore */
+        }
+        return response;
+    },
     async (error) => {
+        const ex = error as { message?: string; __mastersatTemporalStale?: boolean };
+        if (ex?.message === "AUTH_TEMPORAL_STALE" || ex?.__mastersatTemporalStale) {
+            noteTemporalStaleRejection();
+            pushGlobalToastOnce(
+                "auth.temporal-stale.retry",
+                {
+                    tone: "neutral",
+                    message:
+                        "Your session advanced while we were completing that step. Anything already saved stayed saved — please try once more.",
+                },
+                16_000,
+            );
+            if (evaluateAuthCircuitBreaker()) {
+                window.dispatchEvent(new Event("mastersat-auth-circuit-trip"));
+            }
+            return Promise.reject(error);
+        }
+
         if (error.response?.status === 403 && error.response?.data?.detail) {
             if (typeof window !== 'undefined') {
                 // Avoid blocking alerts (and leaking backend detail strings) in production UX.
@@ -178,10 +318,13 @@ api.interceptors.response.use(
             }
 
             if (typeof window !== "undefined") {
+                const url = String(original?.url ?? "");
+                // `/users/me` is bootstrap-only; app layer (`useMe`, `AuthGuard`) decides redirect/session UX.
+                if (url.includes("users/me")) {
+                    return Promise.reject(error);
+                }
                 const inExamRunner = String(window.location?.pathname || "").startsWith("/exam/");
                 if (inExamRunner) {
-                    // Exam runner must not "kick out" on transient auth failures.
-                    // Let the page render a reconnect/auth-required state instead of redirecting.
                     const e: any = error;
                     e.__mastersatAuthRequired = true;
                     return Promise.reject(e);
@@ -189,8 +332,11 @@ api.interceptors.response.use(
                 (globalThis as any).__mastersatLogoutInProgress = true;
             }
             clearAuthCookiesEverywhere();
-            if (typeof window !== 'undefined') {
-                window.location.href = '/login';
+            if (typeof window !== "undefined") {
+                markAuthLossDetected("EXPIRED");
+                tryScheduleAuthRedirect(() => {
+                    window.location.href = "/login";
+                });
             }
         }
         return Promise.reject(error);
@@ -198,13 +344,20 @@ api.interceptors.response.use(
 );
 
 export const usersApi = {
-    getMe: async () => {
-        const r = await api.get('/users/me/');
-        return r.data;
+    getMe: async (opts?: { signal?: AbortSignal }): Promise<UserMe> => {
+        const signal = opts?.signal;
+        const r = await api.get("/users/me/", {
+            signal,
+            timeout: ME_REQUEST_TIMEOUT_MS,
+        });
+        if (signal?.aborted) {
+            throw new DOMException("Aborted", "AbortError");
+        }
+        return parseUserMePayload(r.data, "GET /users/me/");
     },
-    patchMe: async (data: FormData | Record<string, unknown>) => {
+    patchMe: async (data: FormData | Record<string, unknown>): Promise<UserMe> => {
         const r = await api.patch('/users/me/', data);
-        return r.data;
+        return parseUserMePayload(r.data, "PATCH /users/me/");
     },
     /** Public: Telegram widget bot username when TELEGRAM_BOT_TOKEN is set (uses getMe if TELEGRAM_BOT_USERNAME unset). */
     getTelegramWidgetConfig: async (): Promise<{ enabled: boolean; bot_username: string | null }> => {
@@ -212,9 +365,9 @@ export const usersApi = {
         return r.data;
     },
     /** Link Telegram to the logged-in user (profile). */
-    linkTelegram: async (payload: Record<string, unknown>) => {
+    linkTelegram: async (payload: TelegramAuthUser): Promise<UserMe> => {
         const r = await api.post('/users/telegram/link/', payload);
-        return r.data;
+        return parseUserMePayload(r.data, "POST /users/telegram/link/");
     },
     /** Active SAT/exam dates for profile dropdown (admin-managed). */
     listExamDates: async () => {
@@ -244,7 +397,7 @@ export const authApi = {
     csrf: async () => {
         // Must be called before login/refresh/logout on hardened CSRF flows.
         const r = await api.get("/auth/csrf/");
-        return r.data as { csrfToken: string };
+        return parseCsrfPayload(r.data, "GET /auth/csrf/");
     },
     register: async (firstName: string, lastName: string, username: string, email: string, password: string) => {
         const response = await api.post('/users/register/', { 
@@ -254,51 +407,22 @@ export const authApi = {
             email, 
             password
         });
-        return response.data;
+        return parseAuthSessionPayload(response.data, "POST /users/register/");
     },
     login: async (email: string, password: string, rememberMe = true) => {
         // Avoid "sticky sessions" when old host-only + shared-domain cookies both exist.
         clearAuthCookiesEverywhere();
         await authApi.csrf();
         const response = await api.post('/auth/login/', { email, password, remember_me: rememberMe ? 1 : 0 });
-        const cookieOptions = {
-            secure: IS_PROD,
-            sameSite: 'lax' as const,
-            expires: rememberMe ? 7 : undefined,
-            domain: IS_PROD ? cookieDomain() : undefined,
-            path: "/",
-        };
-        Cookies.set('is_admin', response.data.is_admin ? 'true' : 'false', cookieOptions);
-        Cookies.set('is_frozen', response.data.is_frozen ? 'true' : 'false', cookieOptions);
-        Cookies.set('role', String(response.data.role || 'student').toLowerCase(), cookieOptions);
-        if (Array.isArray(response.data.permissions)) {
-            Cookies.set('lms_permissions', JSON.stringify(response.data.permissions), cookieOptions);
-        }
-        Cookies.remove("lms_subject", { path: "/", domain: IS_PROD ? cookieDomain() : undefined });
         await persistMeCookie(rememberMe);
-        return response.data;
+        return parseAuthSessionPayload(response.data, "POST /auth/login/");
     },
     googleAuth: async (credential: string, profile?: { first_name?: string; last_name?: string; username?: string }, rememberMe = true) => {
         clearAuthCookiesEverywhere();
         await authApi.csrf();
         const response = await api.post('/users/google/', { credential, ...(profile || {}) });
-        const cookieOptions = {
-            secure: IS_PROD,
-            sameSite: 'lax' as const,
-            expires: rememberMe ? 7 : undefined,
-            domain: IS_PROD ? cookieDomain() : undefined,
-            path: "/",
-        };
-        // Google auth currently returns tokens in JSON; server also sets HttpOnly cookies.
-        Cookies.set('is_admin', response.data.is_admin ? 'true' : 'false', cookieOptions);
-        Cookies.set('is_frozen', response.data.is_frozen ? 'true' : 'false', cookieOptions);
-        Cookies.set('role', String(response.data.role || 'student').toLowerCase(), cookieOptions);
-        if (Array.isArray(response.data.permissions)) {
-            Cookies.set('lms_permissions', JSON.stringify(response.data.permissions), cookieOptions);
-        }
-        Cookies.remove("lms_subject", { path: "/", domain: IS_PROD ? cookieDomain() : undefined });
         await persistMeCookie(rememberMe);
-        return response.data;
+        return parseAuthSessionPayload(response.data, "POST /users/google/");
     },
     telegramAuth: async (
         payload: Record<string, unknown> & {
@@ -311,38 +435,30 @@ export const authApi = {
         clearAuthCookiesEverywhere();
         await authApi.csrf();
         const response = await api.post('/users/telegram/', payload);
-        const cookieOptions = {
-            secure: IS_PROD,
-            sameSite: 'lax' as const,
-            expires: rememberMe ? 7 : undefined,
-            domain: IS_PROD ? cookieDomain() : undefined,
-            path: "/",
-        };
-        // Telegram auth currently returns tokens in JSON; server also sets HttpOnly cookies.
-        Cookies.set('is_admin', response.data.is_admin ? 'true' : 'false', cookieOptions);
-        Cookies.set('is_frozen', response.data.is_frozen ? 'true' : 'false', cookieOptions);
-        Cookies.set('role', String(response.data.role || 'student').toLowerCase(), cookieOptions);
-        if (Array.isArray(response.data.permissions)) {
-            Cookies.set('lms_permissions', JSON.stringify(response.data.permissions), cookieOptions);
-        }
-        Cookies.remove("lms_subject", { path: "/", domain: IS_PROD ? cookieDomain() : undefined });
         await persistMeCookie(rememberMe);
-        return response.data;
+        return parseAuthSessionPayload(response.data, "POST /users/telegram/");
     },
-    logout: async () => {
+    logout: async (queryClient?: QueryClient | null) => {
         try {
             await authApi.csrf();
             await api.post("/auth/logout/", {});
         } catch {
-            // Best-effort: still clear JS-readable cookies and redirect.
+            // ignore
         }
+        try {
+            localStorage.removeItem(AUTH_NOTICE_STORAGE_KEY);
+        } catch {
+            /* ignore */
+        }
+        broadcastLogoutToOtherTabs();
         clearAuthCookiesEverywhere();
+        queryClient?.removeQueries({ queryKey: [...meQueryKey] });
         window.location.href = '/login';
     },
     refresh: async (_rememberMe = true) => {
         await authApi.csrf();
         const response = await api.post("/auth/refresh/", {});
-        return response.data;
+        return parseAuthSessionPayload(response.data, "POST /auth/refresh/");
     },
     getSessions: async () => {
         const r = await api.get("/auth/sessions/");
@@ -359,104 +475,111 @@ export const authApi = {
 };
 
 export const examsPublicApi = {
-    getMockExams: async () => {
+    getMockExams: async (): Promise<NormalizedExamList<MockExamPublic>> => {
         const res = await api.get('/exams/mock-exams/');
-        return res.data;
+        return parseMockExamPublicList(res.data, "GET /exams/mock-exams/");
     },
-    getMockExam: async (id: number) => {
+    getMockExam: async (id: number): Promise<MockExamPublic> => {
         const res = await api.get(`/exams/mock-exams/${id}/`);
-        return res.data;
+        return parseMockExamPublicPayload(res.data, `GET /exams/mock-exams/${id}/`);
     },
     /** Pastpaper practice library only (standalone tests). Timed mocks: mock-exams APIs + /mock/:id. */
-    getPracticeTests: async () => {
+    getPracticeTests: async (): Promise<NormalizedExamList<PracticeTestPublic>> => {
         const res = await api.get('/exams/');
-        return unwrapAdminList(res.data);
+        return parsePracticeTestPublicList(res.data, "GET /exams/");
     },
-    getPracticeTest: async (id: number) => {
+    getPracticeTest: async (id: number): Promise<PracticeTestPublic> => {
         const res = await api.get(`/exams/${id}/`);
-        return res.data;
+        return parsePracticeTestPublicPayload(res.data, `GET /exams/${id}/`);
     },
-    getAttempts: async () => {
+    getAttempts: async (): Promise<NormalizedExamList<TestAttempt>> => {
         const res = await api.get('/exams/attempts/');
-        return res.data;
+        return parseTestAttemptList(res.data, "GET /exams/attempts/");
     },
-    startTest: async (testId: number) => {
+    startTest: async (testId: number): Promise<TestAttempt> => {
         const res = await api.post('/exams/attempts/', { practice_test: testId });
-        return res.data;
+        return parseTestAttemptApiPayload(res.data, "POST /exams/attempts/");
     },
-    startModule: async (attemptId: number, moduleId: number) => {
+    startModule: async (attemptId: number, moduleId: number): Promise<TestAttempt> => {
         const key = `start_module.${attemptId}.${moduleId}.${Date.now()}`;
         const res = await api.post(
             `/exams/attempts/${attemptId}/start_module/`,
             { module_id: moduleId },
             { headers: { "Idempotency-Key": key } },
         );
-        return res.data;
+        return parseTestAttemptApiPayload(
+            res.data,
+            `POST /exams/attempts/${attemptId}/start_module/`,
+        );
     },
-    getAttemptStatus: async (attemptId: number) => {
+    getAttemptStatus: async (attemptId: number): Promise<TestAttempt> => {
         // Canonical polling endpoint (new exam engine); fall back to legacy retrieve.
         try {
             const r = await api.get(`/exams/attempts/${attemptId}/status/`);
-            return r.data;
+            return parseTestAttemptApiPayload(
+                r.data,
+                `GET /exams/attempts/${attemptId}/status/`,
+            );
         } catch {
             const res = await api.get(`/exams/attempts/${attemptId}/`);
-            return res.data;
+            return parseTestAttemptApiPayload(res.data, `GET /exams/attempts/${attemptId}/`);
         }
     },
-    startAttemptEngine: async (attemptId: number, idempotencyKey?: string) => {
+    startAttemptEngine: async (attemptId: number, idempotencyKey?: string): Promise<TestAttempt> => {
         const res = await api.post(
             `/exams/attempts/${attemptId}/start/`,
             {},
             { headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined },
         );
-        return res.data;
+        return parseTestAttemptApiPayload(res.data, `POST /exams/attempts/${attemptId}/start/`);
     },
-    resumeAttemptEngine: async (attemptId: number, idempotencyKey?: string) => {
+    resumeAttemptEngine: async (attemptId: number, idempotencyKey?: string): Promise<TestAttempt> => {
         const res = await api.post(
             `/exams/attempts/${attemptId}/resume/`,
             {},
             { headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined },
         );
-        return res.data;
+        return parseTestAttemptApiPayload(res.data, `POST /exams/attempts/${attemptId}/resume/`);
     },
-    submitModule: async (attemptId: number, answers: object, flagged: number[] = [], options?: { idempotencyKey?: string; expectedVersionNumber?: number }) => {
+    submitModule: async (attemptId: number, answers: object, flagged: number[] = [], options?: { idempotencyKey?: string; expectedVersionNumber?: number }): Promise<TestAttempt> => {
         const headers: Record<string, string> = {};
         if (options?.idempotencyKey) headers["Idempotency-Key"] = options.idempotencyKey;
-        const payload: any = { answers, flagged };
+        const payload: Record<string, unknown> = { answers, flagged };
         if (options?.expectedVersionNumber != null) payload.expected_version_number = options.expectedVersionNumber;
         const res = await api.post(`/exams/attempts/${attemptId}/submit_module/`, payload, { headers: Object.keys(headers).length ? headers : undefined });
-        return res.data;
+        return parseTestAttemptApiPayload(
+            res.data,
+            `POST /exams/attempts/${attemptId}/submit_module/`,
+        );
     },
-    saveAttempt: async (attemptId: number, answers: object, flagged: number[] = [], options?: { idempotencyKey?: string; expectedVersionNumber?: number }) => {
+    saveAttempt: async (attemptId: number, answers: object, flagged: number[] = [], options?: { idempotencyKey?: string; expectedVersionNumber?: number }): Promise<TestAttempt> => {
         const headers: Record<string, string> = {};
         if (options?.idempotencyKey) headers["Idempotency-Key"] = options.idempotencyKey;
-        const payload: any = { answers, flagged };
+        const payload: Record<string, unknown> = { answers, flagged };
         if (options?.expectedVersionNumber != null) payload.expected_version_number = options.expectedVersionNumber;
         const res = await api.post(`/exams/attempts/${attemptId}/save_attempt/`, payload, { headers: Object.keys(headers).length ? headers : undefined });
-        return res.data;
+        return parseTestAttemptApiPayload(
+            res.data,
+            `POST /exams/attempts/${attemptId}/save_attempt/`,
+        );
     },
-    getResults: async (attemptId: number) => {
+    getResults: async (attemptId: number): Promise<TestAttempt> => {
         const res = await api.get(`/exams/attempts/${attemptId}/results/`);
-        return res.data;
+        return parseTestAttemptApiPayload(res.data, `GET /exams/attempts/${attemptId}/results/`);
     },
-    getReview: async (attemptId: number, moduleId?: number) => {
+    getReview: async (attemptId: number, moduleId?: number): Promise<TestAttempt> => {
         const url = moduleId
             ? `/exams/attempts/${attemptId}/review/?module_id=${moduleId}`
             : `/exams/attempts/${attemptId}/review/`;
         const res = await api.get(url);
-        return res.data;
+        return parseTestAttemptApiPayload(res.data, `GET ${url}`);
     }
 };
 
 export const classesApi = {
-    list: async () => {
+    list: async (): Promise<NormalizedList<Classroom>> => {
         const r = await api.get('/classes/');
-        const d = r.data;
-        if (Array.isArray(d)) return d;
-        if (d && typeof d === 'object' && Array.isArray((d as { results?: unknown }).results)) {
-            return (d as { results: unknown[] }).results;
-        }
-        return [];
+        return parseClassroomList(r.data, "GET /classes/");
     },
     /** Single classroom (member only); 404 if not enrolled or invalid id. */
     get: async (classId: number) => {
@@ -525,9 +648,9 @@ export const classesApi = {
         return r.data;
     },
     // Assignments
-    listAssignments: async (classId: number) => {
+    listAssignments: async (classId: number): Promise<NormalizedList<Assignment>> => {
         const r = await api.get(`/classes/${classId}/assignments/`);
-        return r.data;
+        return parseAssignmentList(r.data, `GET /classes/${classId}/assignments/`);
     },
     createAssignment: async (classId: number, data: any, isFormData = false) => {
         const r = await api.post(`/classes/${classId}/assignments/`, data, isFormData ? {} : {});
@@ -657,8 +780,8 @@ export const examsAdminApi = {
         formType?: string,
         practiceTestIds?: number[],
         clientContext?: Record<string, unknown>
-    ) => {
-        const payload: any = {
+    ): Promise<Record<string, unknown>> => {
+        const payload: Record<string, unknown> = {
             exam_ids: examIds,
             user_ids: userIds,
             assignment_type: assignmentType,
@@ -667,12 +790,12 @@ export const examsAdminApi = {
         if (practiceTestIds?.length) payload.practice_test_ids = practiceTestIds;
         if (clientContext && Object.keys(clientContext).length) payload.client_context = clientContext;
         const res = await api.post('/exams/bulk_assign/', payload);
-        return res.data;
+        return parseBulkAssignResponse(res.data, "POST /exams/bulk_assign/");
     },
 
-    listBulkAssignmentHistory: async () => {
+    listBulkAssignmentHistory: async (): Promise<NormalizedList<BulkAssignmentDispatch>> => {
         const r = await api.get('/exams/assignments/history/');
-        return r.data;
+        return parseBulkAssignmentHistoryList(r.data, "GET /exams/assignments/history/");
     },
 
     rerunBulkAssignmentDispatch: async (dispatchId: number) => {
@@ -680,9 +803,9 @@ export const examsAdminApi = {
         return r.data;
     },
 
-    getPastpaperPacks: async () => {
+    getPastpaperPacks: async (): Promise<NormalizedList<AdminPastpaperPack>> => {
         const r = await api.get('/exams/admin/pastpaper-packs/');
-        return unwrapAdminList<AdminListEntity>(r.data);
+        return parseAdminPastpaperPackList(r.data, "GET /exams/admin/pastpaper-packs/");
     },
     createPastpaperPack: async (data: object) => {
         const r = await api.post('/exams/admin/pastpaper-packs/', data);

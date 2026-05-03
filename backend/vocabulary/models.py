@@ -143,6 +143,107 @@ class UserVocabularyProgress(models.Model):
             self.status = self.STATUS_MASTERED
 
 
+# ---------------------------------------------------------------------------
+# Spaced repetition vocab (Word + definitions + SM-2-style progress)
+# ---------------------------------------------------------------------------
+
+
+class Word(models.Model):
+    """
+    Lexeme key: surface form + language code (e.g. en, ru).
+    """
+
+    text = models.CharField(max_length=200, db_index=True)
+    language = models.CharField(max_length=16, db_index=True, default="en")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "vocab_words"
+        ordering = ["language", "text", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["text", "language"], name="uniq_vocab_word_text_language"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.language}:{self.text}"
+
+
+class WordDefinition(models.Model):
+    word = models.ForeignKey(Word, on_delete=models.CASCADE, related_name="definitions")
+    definition = models.TextField()
+    example = models.TextField(blank=True, default="")
+    order = models.PositiveSmallIntegerField(default=0, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "vocab_word_definitions"
+        ordering = ["word_id", "order", "id"]
+
+
+class UserWordProgress(models.Model):
+    """
+    One row per (user, Word). ``repetitions`` counts successful steps in the SM-2 loop;
+    ``interval`` is the last scheduled interval in days (0 = learn / re-learn).
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="vocab_word_progress",
+    )
+    word = models.ForeignKey(Word, on_delete=models.CASCADE, related_name="user_progress_rows")
+    ease_factor = models.FloatField(default=2.5)
+    interval = models.PositiveIntegerField(default=0)
+    repetitions = models.PositiveIntegerField(default=0)
+    next_review_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    introduced_at = models.DateTimeField(null=True, blank=True)
+    learning_phase = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
+
+    class Meta:
+        db_table = "vocab_user_word_progress"
+        constraints = [
+            models.UniqueConstraint(fields=["user", "word"], name="uniq_vocab_user_word_progress"),
+        ]
+        indexes = [
+            models.Index(fields=["user", "next_review_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user_id}:{self.word_id}"
+
+
+class ReviewLog(models.Model):
+    RESULT_AGAIN = "again"
+    RESULT_HARD = "hard"
+    RESULT_GOOD = "good"
+    RESULT_EASY = "easy"
+    RESULT_CHOICES = (
+        (RESULT_AGAIN, "Again"),
+        (RESULT_HARD, "Hard"),
+        (RESULT_GOOD, "Good"),
+        (RESULT_EASY, "Easy"),
+    )
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="vocab_review_logs",
+    )
+    word = models.ForeignKey(Word, on_delete=models.CASCADE, related_name="review_logs")
+    result = models.CharField(max_length=16, choices=RESULT_CHOICES, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "vocab_review_logs"
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["user", "created_at"]),
+            models.Index(fields=["user", "word", "created_at"]),
+        ]
+
+
 class UserVocabularyReviewEvent(models.Model):
     RESULT_CORRECT = "correct"
     RESULT_WRONG = "wrong"

@@ -161,14 +161,16 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
     try {
       setSaveState("saving");
       setSaveMsg("Pushing your answer…");
-      const res = await save.mutateAsync({ attempt_id: attemptId, question_id: qid, answer: row.local });
+      await save.mutateAsync({ attempt_id: attemptId, question_id: qid, answer: row.local });
+      const fresh = await refetch();
+      const serverAttempt = fresh.data?.attempt;
       const nextDraft = { ...draftRef.current, [qid]: row.local };
       draftRef.current = nextDraft;
       setDraftById(nextDraft);
-      const serverMap = answersMapFromAttempt(res);
+      const serverMap = answersMapFromAttempt(serverAttempt);
       const still = detectAnswerConflicts(nextDraft, serverMap);
       setConflicts(still);
-      syncFpFromAttempt(res);
+      if (serverAttempt) syncFpFromAttempt(serverAttempt);
       setSaveState("saved");
       setSaveMsg(still.length ? "Saved; verify remaining conflicts." : "Saved your version.");
     } catch (e) {
@@ -236,8 +238,9 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
           const ok = await (async () => {
             for (let attemptNo = 0; attemptNo < 4; attemptNo++) {
               try {
-                const res = await save.mutateAsync({ attempt_id: attemptId, question_id: qid, answer: v });
-                syncFpFromAttempt(res);
+                await save.mutateAsync({ attempt_id: attemptId, question_id: qid, answer: v });
+                const fr = await refetch();
+                if (fr.data?.attempt) syncFpFromAttempt(fr.data.attempt);
                 setConflicts([]);
                 return true;
               } catch (e) {
@@ -269,8 +272,9 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
 
     for (let attemptNo = 0; attemptNo < 4; attemptNo++) {
       try {
-        const res = await save.mutateAsync({ attempt_id: attemptId, question_id: x.qid, answer: x.value });
-        syncFpFromAttempt(res);
+        await save.mutateAsync({ attempt_id: attemptId, question_id: x.qid, answer: x.value });
+        const fr = await refetch();
+        if (fr.data?.attempt) syncFpFromAttempt(fr.data.attempt);
         setConflicts([]);
         setSaveState("saved");
         setSaveMsg("Saved");

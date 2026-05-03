@@ -1,6 +1,7 @@
 import json
 
 from django.core.exceptions import ObjectDoesNotExist, ValidationError as DjangoValidationError
+from drf_spectacular.utils import extend_schema_field, extend_schema_serializer
 from rest_framework import serializers
 from urllib.parse import urlparse
 from django.core.validators import URLValidator
@@ -24,6 +25,46 @@ from .models import (
     raw_target_practice_test_ids_from_fks,
     submission_workflow_status,
 )
+
+
+@extend_schema_serializer(component_name="ClassroomTeacherDetails")
+class ClassroomTeacherDetailsSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    email = serializers.EmailField()
+    username = serializers.CharField(allow_null=True, required=False)
+    first_name = serializers.CharField(allow_blank=True, required=False)
+    last_name = serializers.CharField(allow_blank=True, required=False)
+
+
+@extend_schema_serializer(component_name="AssignmentAssessmentHomeworkSet")
+class AssignmentAssessmentHomeworkSetSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    subject = serializers.CharField()
+    category = serializers.CharField(allow_blank=True)
+    title = serializers.CharField()
+    description = serializers.CharField(allow_blank=True)
+
+
+@extend_schema_serializer(component_name="AssignmentAssessmentHomework")
+class AssignmentAssessmentHomeworkSerializer(serializers.Serializer):
+    homework_id = serializers.IntegerField()
+    set = AssignmentAssessmentHomeworkSetSerializer(allow_null=True, required=False)
+
+
+@extend_schema_serializer(component_name="AssignmentPracticeBundleTest")
+class AssignmentPracticeBundleTestSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    title = serializers.CharField()
+    subject = serializers.CharField()
+
+
+@extend_schema_serializer(component_name="AssignmentCreatedBy")
+class AssignmentCreatedBySerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    email = serializers.EmailField()
+    username = serializers.CharField(allow_null=True, required=False)
+    first_name = serializers.CharField(allow_blank=True, required=False)
+    last_name = serializers.CharField(allow_blank=True, required=False)
 
 
 class ClassroomSerializer(serializers.ModelSerializer):
@@ -63,6 +104,7 @@ class ClassroomSerializer(serializers.ModelSerializer):
         mem = obj.memberships.filter(user=user).only("role").first()
         return mem.role if mem else None
 
+    @extend_schema_field(ClassroomTeacherDetailsSerializer(allow_null=True, required=False, read_only=True))
     def get_teacher_details(self, obj):
         t = obj.teacher
         if not t:
@@ -244,11 +286,13 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "attachment_urls",
         ]
 
+    @extend_schema_field(serializers.BooleanField(read_only=True))
     def get_locks_file_upload(self, obj):
         """True when this homework includes assigned practice/mock sections (auto turn-in when tests finish)."""
         # Also lock for assessment homework (no file submissions / manual grading).
         return bool(assignment_target_practice_test_ids(obj) or getattr(obj, "assessment_homework", None))
 
+    @extend_schema_field(AssignmentAssessmentHomeworkSerializer(allow_null=True, required=False, read_only=True))
     def get_assessment_homework(self, obj):
         """
         When this `classes.Assignment` is backed by an assessment homework, expose enough metadata
@@ -271,6 +315,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
             },
         }
 
+    @extend_schema_field(AssignmentCreatedBySerializer(read_only=True))
     def get_created_by(self, obj):
         u = obj.created_by
         return {
@@ -281,6 +326,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "last_name": u.last_name,
         }
 
+    @extend_schema_field(serializers.URLField(allow_null=True, read_only=True))
     def get_attachment_file_url(self, obj):
         if not obj.attachment_file:
             return None
@@ -290,6 +336,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
             return request.build_absolute_uri(url)
         return url
 
+    @extend_schema_field(serializers.ListField(child=serializers.URLField(), read_only=True))
     def get_attachment_urls(self, obj):
         """Primary file first, then extra attachments (same order as upload)."""
         request = self.context.get("request")
@@ -302,6 +349,9 @@ class AssignmentSerializer(serializers.ModelSerializer):
             urls.append(request.build_absolute_uri(u) if request else u)
         return urls
 
+    @extend_schema_field(
+        serializers.ListField(child=AssignmentPracticeBundleTestSerializer(), read_only=True),
+    )
     def get_practice_bundle_tests(self, obj):
         ids = assignment_target_practice_test_ids(obj)
         if not ids:

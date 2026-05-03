@@ -229,3 +229,47 @@ class AssessmentsSecurityMatrixTests(TestCase):
         )
         self.assertEqual(resp.status_code, 403)
 
+    def test_assignment_post_forbidden_on_questions_subdomain_even_for_valid_teacher(self):
+        self.client.force_authenticate(user=self.teacher_math)
+        r = self.client.post(
+            "/api/assessments/homework/assign/",
+            data={"classroom_id": self.class_math.id, "set_id": self.set_math.id, "title": "HW"},
+            format="json",
+            HTTP_HOST="questions.mastersat.uz",
+        )
+        self.assertEqual(r.status_code, 403)
+        self.assertIn("admin subdomain", (r.json().get("detail") or "").lower())
+
+    def test_assignment_post_forbidden_on_main_api_host(self):
+        self.client.force_authenticate(user=self.teacher_math)
+        r = self.client.post(
+            "/api/assessments/homework/assign/",
+            data={"classroom_id": self.class_math.id, "set_id": self.set_math.id, "title": "HW"},
+            format="json",
+            HTTP_HOST="testserver",
+        )
+        self.assertEqual(r.status_code, 403)
+
+    def test_test_admin_cannot_assign_assessment_homework_without_assign_permission(self):
+        """
+        Default ROLE_TEST_ADMIN lacks assign_access; class admin membership does not override.
+        """
+        self.client.force_authenticate(user=self.test_admin)
+        r = self.client.post(
+            "/api/assessments/homework/assign/",
+            data={"classroom_id": self.class_math.id, "set_id": self.set_math.id, "title": "HW"},
+            format="json",
+            HTTP_HOST="admin.mastersat.uz",
+        )
+        self.assertEqual(r.status_code, 403)
+
+    def test_teacher_cannot_author_assessment_catalog_writes(self):
+        self.client.force_authenticate(user=self.teacher_math)
+        resp = self.client.post(
+            "/api/assessments/admin/sets/",
+            data={"subject": "math", "category": "x", "title": "T", "description": "", "is_active": True},
+            format="json",
+            HTTP_HOST="questions.mastersat.uz",
+        )
+        self.assertEqual(resp.status_code, 403)
+

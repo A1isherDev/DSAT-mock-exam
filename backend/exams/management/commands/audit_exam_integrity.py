@@ -4,10 +4,11 @@ import json
 from collections import defaultdict
 
 from django.core.management.base import BaseCommand
-from django.db.models import Count, Q
+from django.db.models import Count, Max, Q
 
 from exams.engine_integrity import audit_attempt_invariants, required_module_orders_for_test
 from exams.models import MockExam, Module, PracticeTest, Question, TestAttempt
+from exams.question_integrity import audit_question_orders
 
 
 class Command(BaseCommand):
@@ -168,6 +169,56 @@ class Command(BaseCommand):
                     PracticeTest.objects.filter(mock_exam__isnull=False, mock_exam__portal_listing__isnull=True).values_list("id", flat=True)[:limit]
                 ),
             },
+        }
+
+        qa = audit_question_orders()
+
+        # Max(order) > Module.question_order_high_water — bypassed ORM Question.save/bulk edits.
+        hw_drift_n = 0
+        hw_drift_samples: list[dict] = []
+        for m in Module.objects.all().iterator(chunk_size=400):
+            mq_raw = Question.objects.filter(module_id=m.pk).aggregate(m=Max("order"))["m"]
+            mq = int(mq_raw) if mq_raw is not None else 0
+            hw = int(m.question_order_high_water or 0)
+            if mq > hw:
+                hw_drift_n += 1
+                if len(hw_drift_samples) < limit:
+                    hw_drift_samples.append(
+                        {
+                            "module_id": int(m.pk),
+                            "max_question_order_observed": mq,
+                            "question_order_high_water": hw,
+                        }
+                    )
+
+        report["questions"] = {
+            "duplicate_pairs_count": len(qa["duplicate_pairs"]),
+            "duplicate_pairs_sample": qa["duplicate_pairs"][:limit],
+            "modules_with_duplicate_orders_count": len(qa["modules_with_duplicate_orders"]),
+            "modules_with_duplicate_orders_sample": qa["modules_with_duplicate_orders"][:limit],
+            "gap_stats_sample": dict(list(qa["gap_stats"].items())[: min(limit, 25)]),
+            "module_question_order_high_water_drift": {
+                "count": hw_drift_n,
+                "sample": hw_drift_samples,
+                "hint": (
+                    "max(question.order) exceeding Module.question_order_high_water implies QuerySet.update, "
+                    "bulk_update/save, or raw SQL; rerun exam_question_orders / dense_compact_module_orders "
+                    "or resync Module.question_order_high_water via migration repair."
+                ),
+            },
+            "bulk_update_bypass_note": (
+                "Django Question QuerySet.update on `order` does not run Question.save hooks; audits above "
+                "surface drift/inconsistency for operators."
+            ),
+        }
+
+        report["pastpaper_sections_recently_detached"] = {
+            "count": PracticeTest.objects.exclude(pastpaper_detached_at__isnull=True).count(),
+            "practice_test_ids": list(
+                PracticeTest.objects.exclude(pastpaper_detached_at__isnull=True)
+                .order_by("-pastpaper_detached_at")
+                .values_list("id", flat=True)[:limit]
+            ),
         }
 
         if as_json:

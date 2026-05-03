@@ -6,7 +6,8 @@ import AuthGuard from "@/components/AuthGuard";
 import { examsPublicApi } from "@/lib/api";
 import { coalesceArray, platformSubjectIsMath, platformSubjectIsReadingWriting } from "@/lib/permissions";
 import { BookOpen, Calculator, CheckCircle2, ArrowLeft, Play, Eye, Trophy } from "lucide-react";
-import Cookies from "js-cookie";
+import { useMe } from "@/hooks/useMe";
+import { useAuthCriticalGate } from "@/hooks/useAuthCriticalGate";
 
 
 function MockExamDetailInner() {
@@ -20,18 +21,20 @@ function MockExamDetailInner() {
   const [startingModuleId, setStartingModuleId] = useState<number | null>(null);
   const [showReadyOverlay, setShowReadyOverlay] = useState(false);
   const router = useRouter();
+  const { isAuthenticated } = useMe();
+  const { assertCriticalAuth, criticalAuthReady } = useAuthCriticalGate();
+  const isLoggedInProbe = isAuthenticated;
 
   const examIsMidterm = midtermQuery || mockExam?.kind === "MIDTERM";
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const isLoggedIn = !!Cookies.get("lms_user") || !!Cookies.get("role") || !!Cookies.get("is_admin");
         const examData = await examsPublicApi.getMockExam(Number(id));
         setMockExam(examData);
-        if (isLoggedIn) {
+        if (isLoggedInProbe) {
           const attemptsData = await examsPublicApi.getAttempts();
-          setAttempts(attemptsData);
+          setAttempts(attemptsData.items);
         }
       } catch (err) {
         console.error(err);
@@ -39,12 +42,15 @@ function MockExamDetailInner() {
         setLoading(false);
       }
     };
-    fetchData();
-  }, [id]);
+    void fetchData();
+  }, [id, isLoggedInProbe]);
 
   const getOrCreateAttempt = async (testId: number) => {
     let attempt = attempts.find((a) => a.practice_test === testId && !a.is_expired && !a.is_completed);
     if (!attempt) {
+      if (!assertCriticalAuth()) {
+        throw new Error("AUTH_ACTION_BLOCKED");
+      }
       attempt = await examsPublicApi.startTest(testId);
       setAttempts([...attempts, attempt]);
     }
@@ -52,6 +58,9 @@ function MockExamDetailInner() {
   };
 
   const handleStartModule = async (testId: number, moduleId: number, querySuffix = "") => {
+    if (!assertCriticalAuth()) {
+      return;
+    }
     setStartingModuleId(moduleId);
     try {
       const attempt = await getOrCreateAttempt(testId);
@@ -206,7 +215,7 @@ function MockExamDetailInner() {
             <button
               type="button"
               onClick={() => handleStartModule(test.id, modules[0]?.id, "?midterm=1")}
-              disabled={startingModuleId !== null}
+              disabled={startingModuleId !== null || !criticalAuthReady}
               className={`ms-btn-primary flex w-full items-center justify-center gap-4 rounded-[18px] py-5 font-black transition-all duration-300 shadow-xl active:scale-[0.98] ${
                 isRW ? "ms-cta-fill text-white" : "bg-emerald-600 text-white shadow-emerald-200 hover:bg-emerald-700"
               }`}
@@ -258,7 +267,7 @@ function MockExamDetailInner() {
               <button
                 type="button"
                 onClick={() => confirmReadyAndStart()}
-                disabled={startingModuleId !== null}
+                disabled={startingModuleId !== null || !criticalAuthReady}
                 className="ms-btn-primary ms-cta-fill flex-1 rounded-2xl py-4 text-sm font-black uppercase tracking-widest disabled:opacity-50"
               >
                 Yes, start
@@ -326,7 +335,7 @@ function MockExamDetailInner() {
                       if (rwAttempt) void startFullMockRw();
                       else setShowReadyOverlay(true);
                     }}
-                    disabled={startingModuleId !== null}
+                    disabled={startingModuleId !== null || !criticalAuthReady}
                     className="ms-btn-primary ms-cta-fill inline-flex items-center justify-center gap-3 rounded-2xl px-10 py-5 text-xs font-black uppercase tracking-widest shadow-xl disabled:opacity-60"
                   >
                     {startingModuleId !== null ? (
@@ -367,7 +376,7 @@ function MockExamDetailInner() {
                     <button
                       type="button"
                       onClick={() => startMathAfterBreak()}
-                      disabled={startingModuleId !== null}
+                      disabled={startingModuleId !== null || !criticalAuthReady}
                       className="shrink-0 flex items-center justify-center gap-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black px-10 py-5 rounded-2xl text-xs uppercase tracking-widest shadow-lg disabled:opacity-60"
                     >
                       {startingModuleId !== null ? (
@@ -400,7 +409,7 @@ function MockExamDetailInner() {
                         setShowReadyOverlay(true);
                       }
                     }}
-                    disabled={startingModuleId !== null}
+                    disabled={startingModuleId !== null || !criticalAuthReady}
                     className="ms-btn-primary ms-cta-fill mt-6 inline-flex items-center gap-3 rounded-2xl px-8 py-4 text-xs font-black uppercase tracking-widest disabled:opacity-60"
                   >
                     <Play className="w-5 h-5 fill-current" />

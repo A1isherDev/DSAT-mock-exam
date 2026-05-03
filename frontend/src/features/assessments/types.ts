@@ -1,3 +1,5 @@
+import type { components } from "@/lib/openapi-types";
+
 export type Subject = "math" | "english";
 
 export type AssessmentSet = {
@@ -40,43 +42,10 @@ export type HomeworkAssignmentCreateRequest = {
 };
 
 export type AttemptStartRequest = { assignment_id: number };
-export type AttemptAnswerRequest = {
-  attempt_id: number;
-  question_id: number;
-  answer: any;
-  time_spent_seconds?: number;
-};
+export type AttemptAnswerRequest = components["schemas"]["SaveAnswer"];
+
 export type AttemptSubmitRequest = { attempt_id: number };
 
-export type Attempt = {
-  id: number;
-  homework_id: number;
-  student_id: number;
-  status: string;
-  started_at: string;
-  submitted_at?: string | null;
-  total_time_seconds?: number;
-  active_time_seconds?: number;
-  answers?: Array<{
-    id: number;
-    question_id: number;
-    answer: any;
-    is_correct?: boolean | null;
-    points_awarded?: number | null;
-    time_spent_seconds?: number;
-  }>;
-  grading_status?: string;
-};
-
-export type Result = {
-  id?: number;
-  attempt?: number;
-  score_points?: number;
-  max_points?: number;
-  percent?: number;
-  correct_count?: number;
-  graded_at?: string;
-  // backend may return rich breakdown
-  [k: string]: any;
-};
+/** Assessments `/attempts/start/` / bundle / submit payload attempt (OpenAPI `AssessmentAttempt`). */
+export type Attempt = components["schemas"]["AssessmentAttempt"];
 

@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useQueryClient } from "@tanstack/react-query";
 import { authApi } from "@/lib/api";
 
 export default function FrozenPage() {
+    const queryClient = useQueryClient();
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-blue-900 flex items-center justify-center p-6">
             <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200 p-10 text-center">
@@ -20,7 +22,7 @@ export default function FrozenPage() {
                     <button
                         type="button"
                         onClick={() => {
-                            authApi.logout();
+                            void authApi.logout(queryClient);
                         }}
                         className="px-5 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-bold text-sm"
                     >

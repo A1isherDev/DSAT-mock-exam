@@ -2,9 +2,24 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import AuthResilienceSubscriber from "@/components/AuthResilienceSubscriber";
+import AuthTabSync from "@/components/AuthTabSync";
+import { installAuthTelemetryGlobal } from "@/lib/auth/authConcurrency";
+import {
+  flushAuthTelemetryQueue,
+  startAuthTelemetryFlushLoop,
+  stopAuthTelemetryFlushLoop,
+} from "@/lib/auth/authClientTelemetry";
 
 export default function QueryProvider({ children }: { children: React.ReactNode }) {
+  useEffect(() => {
+    installAuthTelemetryGlobal();
+    startAuthTelemetryFlushLoop();
+    void flushAuthTelemetryQueue();
+    return () => stopAuthTelemetryFlushLoop();
+  }, []);
+
   const [client] = useState(
     () =>
       new QueryClient({
@@ -31,6 +46,8 @@ export default function QueryProvider({ children }: { children: React.ReactNode 
 
   return (
     <QueryClientProvider client={client}>
+      <AuthResilienceSubscriber />
+      <AuthTabSync />
       {children}
       {process.env.NODE_ENV === "development" ? <ReactQueryDevtools initialIsOpen={false} /> : null}
     </QueryClientProvider>

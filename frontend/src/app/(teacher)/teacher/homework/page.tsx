@@ -18,14 +18,14 @@ export default function TeacherHomeworkPage() {
 
   const refreshGroups = async () => {
     const all = await classesApi.list();
-    const teacherGroups = (Array.isArray(all) ? all : []).filter((g) => g.my_role === "ADMIN");
+    const teacherGroups = all.items.filter((g) => g.my_role === "ADMIN");
     setGroups(teacherGroups);
     if (!selectedGroupId && teacherGroups[0]?.id) setSelectedGroupId(teacherGroups[0].id);
   };
 
   const refreshAssignments = async (gid: number) => {
     const a = await classesApi.listAssignments(gid);
-    setAssignments(Array.isArray(a) ? a : []);
+    setAssignments(a.items);
   };
 
   useEffect(() => {

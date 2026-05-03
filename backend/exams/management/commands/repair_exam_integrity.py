@@ -25,12 +25,18 @@ class Command(BaseCommand):
             action="store_true",
             help="Also normalize non-positive module timers to expected defaults (or midterm config).",
         )
+        parser.add_argument(
+            "--fix-question-orders",
+            action="store_true",
+            help="Dense-reindex Questions in modules violating UNIQUE(module_id, order).",
+        )
 
     def handle(self, *args, **options):
         dry = bool(options["dry_run"])
         limit = int(options["limit"] or 2000)
         as_json = bool(options["json"])
         fix_timers = bool(options["fix_timers"])
+        fix_question_orders = bool(options["fix_question_orders"])
 
         summary = defaultdict(lambda: {"count": 0, "ids": []})
 
@@ -245,12 +251,14 @@ class Command(BaseCommand):
             with transaction.atomic():
                 for extra in extras:
                     locked = TestAttempt.objects.select_for_update().get(pk=extra.pk)
+                    locked.abandoned_checkpoint_state = str(getattr(locked, "current_state", "") or "")
                     locked.current_state = TestAttempt.STATE_ABANDONED
                     locked.current_module = None
                     locked.current_module_start_time = None
                     locked.version_number = int(locked.version_number or 0) + 1
                     locked.save(
                         update_fields=[
+                            "abandoned_checkpoint_state",
                             "current_state",
                             "current_module",
                             "current_module_start_time",
@@ -259,6 +267,45 @@ class Command(BaseCommand):
                         ]
                     )
                     metric_incr("integrity_repairs_applied")
+
+        # ── 7) Persisted MODULE_*_SUBMITTED (no longer healed via HTTP resume) ─
+        legacy_sub_ids = list(
+            TestAttempt.objects.filter(
+                is_completed=False,
+                current_state__in=(
+                    TestAttempt.STATE_MODULE_1_SUBMITTED,
+                    TestAttempt.STATE_MODULE_2_SUBMITTED,
+                ),
+            ).values_list("pk", flat=True)[:limit]
+        )
+        for leg_pk in legacy_sub_ids:
+            _bump("attempt.legacy_submitted_seen", leg_pk)
+            if dry:
+                continue
+            try:
+                with transaction.atomic():
+                    locked = TestAttempt.objects.select_for_update().get(pk=leg_pk)
+                    if locked.current_state not in (
+                        TestAttempt.STATE_MODULE_1_SUBMITTED,
+                        TestAttempt.STATE_MODULE_2_SUBMITTED,
+                    ):
+                        continue
+                    locked.repair_legacy_submitted_states()
+                    metric_incr("integrity_repairs_applied")
+            except Exception:
+                _bump("attempt.legacy_submitted_repair_failed", leg_pk)
+
+        # ── 8) Question (module_id, order) UNIQUE violations ─────────────────────
+        if fix_question_orders:
+            from exams.question_integrity import question_duplicate_order_counts, repair_modules_with_duplicate_orders
+
+            affected = sorted({m for (m, _ord) in question_duplicate_order_counts()})
+            for mid in affected[:limit]:
+                _bump("question.duplicate_order_module", mid)
+
+            if not dry and affected:
+                repair_modules_with_duplicate_orders(limit=limit)
+                metric_incr("integrity_repairs_applied")
 
         out = dict(summary)
         if as_json:

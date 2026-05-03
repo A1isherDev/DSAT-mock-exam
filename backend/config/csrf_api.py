@@ -48,6 +48,13 @@ class APICSRFEnforceMiddleware:
         unsafe = method not in ("GET", "HEAD", "OPTIONS", "TRACE")
 
         if path.startswith("/api/") and unsafe:
+            # Auth client telemetry — `navigator.sendBeacon` cannot attach X-CSRFToken.
+            # Same-origin / trusted Origin only; payload is non-authoritative aggregates.
+            if path.startswith("/api/auth/client-telemetry/"):
+                if not _is_same_site_origin(request):
+                    return JsonResponse({"detail": "Bad origin."}, status=403)
+                return self.get_response(request)
+
             # Always require CSRF for auth endpoints, even before cookies exist.
             # This prevents "login works sometimes" issues across subdomains/sessions.
             enforce = path.startswith("/api/auth/") or bool(request.COOKIES.get("lms_access") or request.COOKIES.get("lms_refresh"))

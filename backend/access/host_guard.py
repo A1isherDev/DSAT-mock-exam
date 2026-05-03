@@ -80,6 +80,14 @@ class SubdomainAPIGuardMiddleware:
         if path.startswith("/api/csp-report/"):
             return self.get_response(request)
 
+        # Assessment homework POST is assignment-console only (never questions.* or apex/main API host).
+        if path.startswith("/api/assessments/homework/assign/") and method == "POST" and kind != "admin":
+            exams_metric_incr("forbidden_admin_route_total")
+            return JsonResponse(
+                {"detail": "Assessment homework assignment is available on the admin subdomain only."},
+                status=403,
+            )
+
         # Ops: Alertmanager webhook (infrastructure).
         if path.startswith("/api/ops/alertmanager/"):
             return self.get_response(request)
@@ -150,6 +158,7 @@ class SubdomainAPIGuardMiddleware:
             # Assessments authoring CRUD endpoints live here (create/edit/delete sets/questions).
             if path.startswith("/api/assessments/admin/"):
                 return self.get_response(request)
+            # Assignment is enforced on admin.* only (`homework/assign` blocked above).
             # Still allow bulk assign if desired from questions (harmless), but not required.
             if path.startswith("/api/exams/bulk_assign"):
                 return self.get_response(request)

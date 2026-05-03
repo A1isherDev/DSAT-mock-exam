@@ -18,7 +18,7 @@ export default function TeacherDashboardPage() {
       setError(null);
       try {
         const all = await classesApi.list();
-        const teacherGroups = (Array.isArray(all) ? all : []).filter((g) => g.my_role === "ADMIN");
+        const teacherGroups = all.items.filter((g) => g.my_role === "ADMIN");
         if (cancelled) return;
         setGroups(teacherGroups);
       } catch (e: any) {

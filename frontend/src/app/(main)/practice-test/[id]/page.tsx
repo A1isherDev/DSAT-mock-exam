@@ -4,9 +4,11 @@ import { Suspense, useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import AuthGuard from "@/components/AuthGuard";
 import { examsStudentApi } from "@/features/examsStudent/api";
+import { pastpaperPackDisplayTitle, singleDisplayTitle } from "@/lib/practiceTestCards";
 import { platformSubjectIsReadingWriting } from "@/lib/permissions";
 import { BookOpen, Calculator, CheckCircle2, ArrowLeft, Play, Eye } from "lucide-react";
-import Cookies from "js-cookie";
+import { useMe } from "@/hooks/useMe";
+import { useAuthCriticalGate } from "@/hooks/useAuthCriticalGate";
 
 const examsPublicApi = examsStudentApi;
 
@@ -16,32 +18,44 @@ function PracticeTestDetailInner() {
   const [test, setTest] = useState<any>(null);
   const [attempts, setAttempts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [startingModuleId, setStartingModuleId] = useState<number | null>(null);
   const router = useRouter();
+  const { isAuthenticated } = useMe();
+  const { assertCriticalAuth, criticalAuthReady } = useAuthCriticalGate();
+  const isLoggedInProbe = isAuthenticated;
 
   useEffect(() => {
     const run = async () => {
       try {
-        const isLoggedIn = !!Cookies.get("lms_user") || !!Cookies.get("role") || !!Cookies.get("is_admin");
+        setFetchError(null);
         const data = await examsPublicApi.getPracticeTest(testId);
-        setTest(data);
-        if (isLoggedIn) {
+        setTest(data && typeof data === "object" ? data : null);
+        if (isLoggedInProbe) {
           const attemptsData = await examsPublicApi.getAttempts();
-          setAttempts(attemptsData);
+          setAttempts(attemptsData.items);
+        } else {
+          setAttempts([]);
         }
       } catch (e) {
-        console.error(e);
+        console.error("[practice-test detail] load failed", { testId, err: e });
+        const message = e instanceof Error ? e.message : "Request failed.";
+        setFetchError(message);
         setTest(null);
+        setAttempts([]);
       } finally {
         setLoading(false);
       }
     };
     run();
-  }, [testId]);
+  }, [testId, isLoggedInProbe]);
 
   const getOrCreateAttempt = async () => {
     let attempt = attempts.find((a) => a.practice_test === testId && !a.is_expired && !a.is_completed);
     if (!attempt) {
+      if (!assertCriticalAuth()) {
+        throw new Error("AUTH_ACTION_BLOCKED");
+      }
       attempt = await examsPublicApi.startTest(testId);
       setAttempts([...attempts, attempt]);
     }
@@ -49,6 +63,9 @@ function PracticeTestDetailInner() {
   };
 
   const handleStartModule = async (moduleId: number) => {
+    if (!assertCriticalAuth()) {
+      return;
+    }
     setStartingModuleId(moduleId);
     try {
       const attempt = await getOrCreateAttempt();
@@ -75,7 +92,14 @@ function PracticeTestDetailInner() {
     return (
       <AuthGuard>
         <div className="min-h-screen flex flex-col items-center justify-center px-6">
-          <p className="text-slate-600 font-bold mb-4">Practice test not found or not assigned to you.</p>
+          {fetchError ? (
+            <>
+              <p className="text-slate-800 dark:text-slate-200 font-bold mb-2">Could not load this practice test.</p>
+              <p className="text-slate-600 dark:text-slate-400 text-sm text-center max-w-md mb-4">{fetchError}</p>
+            </>
+          ) : (
+            <p className="text-slate-600 font-bold mb-4">Practice test not found or not assigned to you.</p>
+          )}
           <button type="button" className="text-emerald-600 font-bold" onClick={() => router.push("/practice-tests")}>
             Back to practice tests
           </button>
@@ -87,7 +111,11 @@ function PracticeTestDetailInner() {
   const isRW = platformSubjectIsReadingWriting(test.subject);
   const Icon = isRW ? BookOpen : Calculator;
   const label = isRW ? "Reading & Writing" : "Mathematics";
-  const modules = test.modules || [];
+  const modules = Array.isArray(test.modules) ? test.modules : [];
+  const apiTitle = typeof test.title === "string" ? test.title.trim() : "";
+  const packTitle = pastpaperPackDisplayTitle(test);
+  const cardSubtitle =
+    apiTitle || (packTitle ? `Past paper pack: ${packTitle}` : singleDisplayTitle(test));
   const attempt = attempts
     .filter((a) => a.practice_test === test.id)
     .sort((a, b) => (b.id || 0) - (a.id || 0))[0];
@@ -112,11 +140,6 @@ function PracticeTestDetailInner() {
           <p className="text-slate-500 dark:text-slate-400 mb-8 max-w-2xl">
             Sectional practice—you can pause the timer. This is not the full mock; for one continuous SAT run with break and
             no pause, use <strong>Mock Exam</strong> (only if an admin has assigned that mock to you there).
-            {test.mock_exam?.title ? (
-              <span className="block mt-2 text-sm font-semibold text-slate-600 dark:text-slate-300">
-                Section from mock pack: {test.mock_exam.title}
-              </span>
-            ) : null}
           </p>
           <div className="max-w-xl">
             <div
@@ -142,6 +165,7 @@ function PracticeTestDetailInner() {
                 </div>
                 <div>
                   <h2 className="text-2xl font-black text-foreground">{label}</h2>
+                  <p className="mt-1 text-sm font-semibold text-muted-foreground">{cardSubtitle}</p>
                   {test.label && (
                     <span className="mt-2 inline-block rounded-lg bg-foreground px-2 py-1 text-[9px] font-black uppercase text-background">
                       {test.label}
@@ -166,7 +190,7 @@ function PracticeTestDetailInner() {
                   <button
                     type="button"
                     onClick={() => handleStartModule(modules[0]?.id)}
-                    disabled={startingModuleId !== null || !modules[0]?.id}
+                    disabled={startingModuleId !== null || !modules[0]?.id || !criticalAuthReady}
                     className={`ms-btn-primary flex w-full items-center justify-center gap-4 rounded-[18px] py-5 text-xs font-black uppercase tracking-widest shadow-xl ${
                       isRW ? "ms-cta-fill text-white" : "bg-emerald-600 text-white hover:bg-emerald-700"
                     }`}

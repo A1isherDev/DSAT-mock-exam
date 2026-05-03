@@ -28,18 +28,20 @@ function ResultsInner() {
         const mathTest = (mock.tests || []).find((t: any) => platformSubjectIsMath(t.subject));
         const rwParam = searchParams.get("rwAttempt");
         const mathParam = searchParams.get("mathAttempt");
-        const attempts = await examsPublicApi.getAttempts();
+        const attemptsBundle = await examsPublicApi.getAttempts();
         if (cancelled) return;
+
+        const attemptItems = attemptsBundle.items;
 
         const pick = (testId: number | undefined, param: string | null) => {
           if (!testId) return null;
           if (param) {
-            const a = attempts.find((x: any) => String(x.id) === param && x.practice_test === testId);
+            const a = attemptItems.find((x) => String(x.id) === param && x.practice_test === testId);
             if (a?.is_completed) return a;
           }
-          const list = attempts
-            .filter((a: any) => a.practice_test === testId && a.is_completed)
-            .sort((a: any, b: any) => (b.id || 0) - (a.id || 0));
+          const list = attemptItems
+            .filter((a) => a.practice_test === testId && a.is_completed)
+            .sort((a, b) => (b.id || 0) - (a.id || 0));
           return list[0] || null;
         };
 

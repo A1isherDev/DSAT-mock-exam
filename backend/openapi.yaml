@@ -203,6 +203,7 @@ paths:
       description: |-
         Student-facing attempt bootstrap: return attempt + sanitized question list
         (no correct answers), ordered by the per-attempt shuffle.
+      summary: Attempt bundle (attempt + set + questions)
       parameters:
       - in: path
         name: attempt_id
@@ -213,7 +214,23 @@ paths:
       - assessments
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssessmentAttemptBundleResponse'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiAssessmentDetail'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiAssessmentDetail'
+          description: ''
   /api/assessments/attempts/abandon/:
     post:
       operationId: assessments_attempts_abandon_create
@@ -225,33 +242,151 @@ paths:
   /api/assessments/attempts/answer/:
     post:
       operationId: assessments_attempts_answer_create
+      summary: Save answer for one question
       tags:
       - assessments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveAnswer'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SaveAnswer'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SaveAnswer'
+        required: true
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaveAnswerStored'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiAssessmentDetail'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiAssessmentDetail'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaveAnswerStaleWrite'
+          description: ''
+        '410':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiAssessmentDetail'
+          description: ''
   /api/assessments/attempts/start/:
     post:
       operationId: assessments_attempts_start_create
+      summary: Start or resume attempt
       tags:
       - assessments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartAttempt'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/StartAttempt'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/StartAttempt'
+        required: true
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssessmentAttempt'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiAssessmentDetail'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiAssessmentDetail'
+          description: ''
   /api/assessments/attempts/submit/:
     post:
       operationId: assessments_attempts_submit_create
+      summary: Submit attempt for grading
       tags:
       - assessments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitAttempt'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SubmitAttempt'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SubmitAttempt'
+        required: true
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssessmentSubmitCompleteResponse'
+          description: ''
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssessmentSubmitQueuedResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssessmentSubmitBadRequestResponse'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiAssessmentDetail'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssessmentSnapshotConflictResponse'
+          description: ''
+        '410':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiAssessmentDetail'
+          description: ''
   /api/assessments/homework/{assignment_id}/my-result/:
     get:
       operationId: assessments_homework_my_result_retrieve
       description: |-
         Convenience endpoint for the homework page: given a class assignment id, return the
         student's latest attempt/result for that assessment homework.
+      summary: My latest attempt and result for assignment
       parameters:
       - in: path
         name: assignment_id
@@ -262,7 +397,23 @@ paths:
       - assessments
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssessmentMyResultResponse'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiAssessmentDetail'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiAssessmentDetail'
+          description: ''
   /api/assessments/homework/assign/:
     post:
       operationId: assessments_homework_assign_create
@@ -271,6 +422,19 @@ paths:
         Creates a linked `classes.Assignment` so it appears in the normal homework feed.
       tags:
       - assessments
+      responses:
+        '200':
+          description: No response body
+  /api/auth/client-telemetry/:
+    post:
+      operationId: auth_client_telemetry_create
+      description: |-
+        Best-effort batch sink for SPA auth concurrency telemetry (logs + Prometheus-friendly counters).
+
+        Responses are deliberately tiny; ingestion is gated by Api CSRF middleware for /api/auth/*.
+        Payload is aggregates + recent client events — no persisted PII requirement.
+      tags:
+      - auth
       responses:
         '200':
           description: No response body
@@ -1263,10 +1427,11 @@ paths:
     get:
       operationId: exams_list
       description: |-
-        Staff consoles must use backend-authoritative authoring APIs (``/api/exams/admin/...``).
-        The public practice library endpoint (``/api/exams/``) is intentionally a different surface.
-        If a staff console accidentally calls this endpoint, fail loudly instead of returning an
-        empty list that looks like “no tests exist”.
+        Pastpaper / skill practice only: standalone PracticeTest rows (no mock_exam).
+        Timed mocks and their sections are only exposed via mock-exams + /mock/:id.
+
+        List/retrieve are **AllowAny** so the Next.js practice catalog can load without cookies;
+        starting an attempt still requires auth on ``TestAttemptViewSet``.
       tags:
       - exams
       security:
@@ -1293,8 +1458,8 @@ paths:
       - in: path
         name: id
         schema:
-          type: integer
-        description: A unique integer value identifying this practice test.
+          type: string
+          pattern: ^\\d+$
         required: true
       tags:
       - exams
@@ -2354,76 +2519,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/TestAttempt'
           description: ''
-    put:
-      operationId: exams_attempts_update
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-        required: true
-      tags:
-      - exams
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/TestAttempt'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/TestAttempt'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/TestAttempt'
-        required: true
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TestAttempt'
-          description: ''
-    patch:
-      operationId: exams_attempts_partial_update
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-        required: true
-      tags:
-      - exams
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PatchedTestAttempt'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/PatchedTestAttempt'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/PatchedTestAttempt'
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TestAttempt'
-          description: ''
-    delete:
-      operationId: exams_attempts_destroy
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-        required: true
-      tags:
-      - exams
-      responses:
-        '204':
-          description: No response body
   /api/exams/attempts/{id}/results/:
     get:
       operationId: exams_attempts_results_retrieve
@@ -2447,9 +2542,8 @@ paths:
     post:
       operationId: exams_attempts_resume_create
       description: |-
-        Canonical resume endpoint (backend authoritative).
-        Locks the attempt row, auto-heals invariants, runs resume normalization,
-        then returns the canonical payload.
+        Locks the attempt row and normalizes canonical engine state via ``start_attempt`` only.
+        Legacy ``*_SUBMITTED`` repairs are CLI-only (`repair_exam_integrity`).
       parameters:
       - in: path
         name: id
@@ -2639,36 +2733,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/TestAttempt'
           description: ''
-  /api/exams/bulk_assign/:
-    post:
-      operationId: exams_bulk_assign_create
-      description: |-
-        Pastpaper / skill practice only: standalone PracticeTest rows (no mock_exam).
-        Timed mocks and their sections are only exposed via mock-exams + /mock/:id.
-
-        List/retrieve are **AllowAny** so the Next.js practice catalog can load without cookies;
-        starting an attempt still requires auth on ``TestAttemptViewSet``.
-      tags:
-      - exams
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PracticeTest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/PracticeTest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/PracticeTest'
-        required: true
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PracticeTest'
-          description: ''
   /api/exams/metrics/:
     get:
       operationId: exams_metrics_retrieve
@@ -2766,6 +2830,35 @@ paths:
       operationId: realtime_metrics_prometheus_retrieve
       description: Prometheus text exposition (staff session — put Nginx basic auth
         or mTLS in front for scraping).
+      tags:
+      - realtime
+      responses:
+        '200':
+          description: No response body
+  /api/realtime/ops/incidents/:
+    get:
+      operationId: realtime_ops_incidents_retrieve
+      tags:
+      - realtime
+      responses:
+        '200':
+          description: No response body
+    post:
+      operationId: realtime_ops_incidents_create
+      tags:
+      - realtime
+      responses:
+        '200':
+          description: No response body
+  /api/realtime/ops/incidents/{id}/:
+    patch:
+      operationId: realtime_ops_incidents_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
       tags:
       - realtime
       responses:
@@ -3579,7 +3672,7 @@ components:
           type: integer
           readOnly: true
         question_type:
-          $ref: '#/components/schemas/QuestionTypeEnum'
+          $ref: '#/components/schemas/QuestionTypeE1eEnum'
         question_text:
           type: string
         question_prompt:
@@ -3652,6 +3745,306 @@ components:
       - practice_test_id
       - question_text
       - question_type
+    ApiAssessmentDetail:
+      type: object
+      description: Minimal `{detail}` error payloads returned by assessments student
+        APIs.
+      properties:
+        detail:
+          type: string
+      required:
+      - detail
+    AssessmentAttempt:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        homework_id:
+          type: integer
+          readOnly: true
+        student_id:
+          type: integer
+          readOnly: true
+        status:
+          $ref: '#/components/schemas/AssessmentAttemptStatusEnum'
+        started_at:
+          type: string
+          format: date-time
+        submitted_at:
+          type: string
+          format: date-time
+          nullable: true
+        abandoned_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_activity_at:
+          type: string
+          format: date-time
+          nullable: true
+        total_time_seconds:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        active_time_seconds:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        grading_status:
+          $ref: '#/components/schemas/GradingStatusEnum'
+        grading_attempts:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        question_order: {}
+        answers:
+          type: array
+          items:
+            $ref: '#/components/schemas/AssessmentAttemptAnswer'
+          readOnly: true
+      required:
+      - answers
+      - homework_id
+      - id
+      - student_id
+    AssessmentAttemptAnswer:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        question_id:
+          type: integer
+          readOnly: true
+        answer:
+          nullable: true
+        time_spent_seconds:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        is_correct:
+          type: boolean
+          nullable: true
+        points_awarded:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,5}(?:\.\d{0,2})?$
+          nullable: true
+        answered_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+      - id
+      - question_id
+    AssessmentAttemptBundleResponse:
+      type: object
+      properties:
+        attempt:
+          $ref: '#/components/schemas/AssessmentAttempt'
+        set:
+          $ref: '#/components/schemas/AssessmentSet'
+        questions:
+          type: array
+          items:
+            $ref: '#/components/schemas/AssessmentQuestion'
+      required:
+      - attempt
+      - questions
+      - set
+    AssessmentAttemptStatusEnum:
+      enum:
+      - in_progress
+      - submitted
+      - graded
+      - abandoned
+      type: string
+      description: |-
+        * `in_progress` - In progress
+        * `submitted` - Submitted
+        * `graded` - Graded
+        * `abandoned` - Abandoned
+    AssessmentMyResultResponse:
+      type: object
+      properties:
+        attempt:
+          allOf:
+          - $ref: '#/components/schemas/AssessmentAttempt'
+          nullable: true
+        result:
+          allOf:
+          - $ref: '#/components/schemas/AssessmentResult'
+          nullable: true
+      required:
+      - attempt
+      - result
+    AssessmentQuestion:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        order:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        prompt:
+          type: string
+        question_type:
+          $ref: '#/components/schemas/AssessmentQuestionQuestionTypeEnum'
+        choices: {}
+        points:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        is_active:
+          type: boolean
+      required:
+      - id
+      - prompt
+      - question_type
+    AssessmentQuestionQuestionTypeEnum:
+      enum:
+      - multiple_choice
+      - short_text
+      - numeric
+      - boolean
+      type: string
+      description: |-
+        * `multiple_choice` - Multiple choice
+        * `short_text` - Short text
+        * `numeric` - Numeric
+        * `boolean` - True/False
+    AssessmentResult:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        attempt_id:
+          type: integer
+          readOnly: true
+        score_points:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,8}(?:\.\d{0,2})?$
+        max_points:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,8}(?:\.\d{0,2})?$
+        percent:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,4}(?:\.\d{0,2})?$
+        correct_count:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        total_questions:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        graded_at:
+          type: string
+          format: date-time
+      required:
+      - attempt_id
+      - id
+    AssessmentSet:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        subject:
+          $ref: '#/components/schemas/Subject0bfEnum'
+        category:
+          type: string
+          maxLength: 255
+        title:
+          type: string
+          maxLength: 200
+        description:
+          type: string
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+        questions:
+          type: array
+          items:
+            $ref: '#/components/schemas/AssessmentQuestion'
+          readOnly: true
+      required:
+      - created_at
+      - id
+      - questions
+      - subject
+      - title
+      - updated_at
+    AssessmentSnapshotConflictResponse:
+      type: object
+      properties:
+        detail:
+          type: string
+      required:
+      - detail
+    AssessmentSubmitBadRequestResponse:
+      type: object
+      properties:
+        detail:
+          type: string
+        missing_question_ids:
+          type: array
+          items:
+            type: integer
+      required:
+      - detail
+    AssessmentSubmitCompleteResponse:
+      type: object
+      description: Submit completed synchronously or idempotent replay of submitted/graded
+        attempt.
+      properties:
+        attempt:
+          $ref: '#/components/schemas/AssessmentAttempt'
+        result:
+          allOf:
+          - $ref: '#/components/schemas/AssessmentResult'
+          nullable: true
+      required:
+      - attempt
+    AssessmentSubmitQueuedResponse:
+      type: object
+      description: Async grading accepted; poll `my-result` or re-fetch bundle for
+        graded state.
+      properties:
+        attempt:
+          $ref: '#/components/schemas/AssessmentAttempt'
+        result:
+          allOf:
+          - $ref: '#/components/schemas/AssessmentResult'
+          nullable: true
+        grading:
+          $ref: '#/components/schemas/GradingEnum'
+      required:
+      - attempt
+      - grading
+      - result
     Assignment:
       type: object
       properties:
@@ -3683,14 +4076,18 @@ components:
           - $ref: '#/components/schemas/PracticeScopeEnum'
           default: BOTH
         practice_bundle_tests:
-          type: string
+          type: array
+          items:
+            $ref: '#/components/schemas/AssignmentPracticeBundleTest'
           readOnly: true
         locks_file_upload:
-          type: string
+          type: boolean
           readOnly: true
         assessment_homework:
-          type: string
+          allOf:
+          - $ref: '#/components/schemas/AssignmentAssessmentHomework'
           readOnly: true
+          nullable: true
         module:
           type: integer
           nullable: true
@@ -3702,16 +4099,22 @@ components:
           nullable: true
         attachment_file_url:
           type: string
+          format: uri
           readOnly: true
+          nullable: true
         attachment_urls:
-          type: string
+          type: array
+          items:
+            type: string
+            format: uri
           readOnly: true
         created_at:
           type: string
           format: date-time
           readOnly: true
         created_by:
-          type: string
+          allOf:
+          - $ref: '#/components/schemas/AssignmentCreatedBy'
           readOnly: true
         submissions_count:
           type: integer
@@ -3726,6 +4129,169 @@ components:
       - locks_file_upload
       - practice_bundle_tests
       - submissions_count
+      - title
+    AssignmentAssessmentHomework:
+      type: object
+      properties:
+        homework_id:
+          type: integer
+        set:
+          allOf:
+          - $ref: '#/components/schemas/AssignmentAssessmentHomeworkSet'
+          nullable: true
+      required:
+      - homework_id
+    AssignmentAssessmentHomeworkSet:
+      type: object
+      properties:
+        id:
+          type: integer
+        subject:
+          type: string
+        category:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+      required:
+      - category
+      - description
+      - id
+      - subject
+      - title
+    AssignmentCreatedBy:
+      type: object
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+          format: email
+        username:
+          type: string
+          nullable: true
+        first_name:
+          type: string
+        last_name:
+          type: string
+      required:
+      - email
+      - id
+    AssignmentPracticeBundleTest:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        subject:
+          type: string
+      required:
+      - id
+      - subject
+      - title
+    AttemptModuleQuestionResult:
+      type: object
+      description: Mirror of ``TestAttempt.get_module_results`` inner question rows
+        (review payload).
+      properties:
+        id:
+          type: integer
+        is_correct:
+          type: boolean
+        student_answer:
+          nullable: true
+        correct_answers:
+          type: string
+        score:
+          type: integer
+        text:
+          type: string
+        question_prompt:
+          type: string
+          default: ''
+        image:
+          type: string
+          nullable: true
+        type:
+          type: string
+        options:
+          nullable: true
+        is_math_input:
+          type: boolean
+      required:
+      - correct_answers
+      - id
+      - is_correct
+      - is_math_input
+      - options
+      - score
+      - student_answer
+      - text
+      - type
+    AttemptModuleResultsItem:
+      type: object
+      properties:
+        module_id:
+          type: integer
+        module_order:
+          type: integer
+        module_earned:
+          type: integer
+        capped_earned:
+          type: integer
+        questions:
+          type: array
+          items:
+            $ref: '#/components/schemas/AttemptModuleQuestionResult'
+      required:
+      - capped_earned
+      - module_earned
+      - module_id
+      - module_order
+      - questions
+    AttemptPracticeTestDetails:
+      type: object
+      description: |-
+        Embedded snapshot on ``TestAttempt`` via ``practice_test_details`` (SerializerMethodField).
+        Schema must mirror ``get_practice_test_details`` for OpenAPI.
+      properties:
+        id:
+          type: integer
+        subject:
+          type: string
+        title:
+          type: string
+        label:
+          type: string
+          nullable: true
+        form_type:
+          type: string
+          nullable: true
+        practice_date:
+          type: string
+          nullable: true
+        pastpaper_pack:
+          allOf:
+          - $ref: '#/components/schemas/PastpaperPackBrief'
+          nullable: true
+        is_active:
+          type: boolean
+        mock_exam_id:
+          type: integer
+          nullable: true
+        mock_kind:
+          type: string
+          nullable: true
+        modules:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModuleList'
+      required:
+      - id
+      - modules
+      - subject
       - title
     BulkAssignmentDispatch:
       type: object
@@ -3897,8 +4463,10 @@ components:
           type: integer
           nullable: true
         teacher_details:
-          type: string
+          allOf:
+          - $ref: '#/components/schemas/ClassroomTeacherDetails'
           readOnly: true
+          nullable: true
         join_code:
           type: string
           readOnly: true
@@ -3992,6 +4560,24 @@ components:
       - lesson_days
       - name
       - subject
+    ClassroomTeacherDetails:
+      type: object
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+          format: email
+        username:
+          type: string
+          nullable: true
+        first_name:
+          type: string
+        last_name:
+          type: string
+      required:
+      - email
+      - id
     CurrentStateEnum:
       enum:
       - NOT_STARTED
@@ -4012,6 +4598,50 @@ components:
         * `SCORING` - Scoring
         * `COMPLETED` - Completed
         * `ABANDONED` - Abandoned
+    EnginePhaseEnum:
+      enum:
+      - pending
+      - active
+      - scoring
+      - completed
+      - abandoned
+      - other
+      type: string
+      description: |-
+        * `pending` - pending
+        * `active` - active
+        * `scoring` - scoring
+        * `completed` - completed
+        * `abandoned` - abandoned
+        * `other` - other
+    ExamAttemptModuleDetail:
+      type: object
+      description: Serialized ``current_module_details`` payload (questions + timings)
+        for runners / status.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        module_order:
+          allOf:
+          - $ref: '#/components/schemas/ModuleOrderEnum'
+          minimum: -9223372036854775808
+          maximum: 9223372036854775807
+        time_limit_minutes:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+        questions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Question'
+          readOnly: true
+      required:
+      - id
+      - module_order
+      - questions
+      - time_limit_minutes
     ExamDateOption:
       type: object
       description: Full fields for admin CRUD.
@@ -4064,6 +4694,23 @@ components:
       description: |-
         * `INTERNATIONAL` - International Form
         * `US` - US Form
+    GradingEnum:
+      enum:
+      - pending
+      type: string
+      description: '* `pending` - Pending'
+    GradingStatusEnum:
+      enum:
+      - pending
+      - processing
+      - completed
+      - failed
+      type: string
+      description: |-
+        * `pending` - Pending
+        * `processing` - Processing
+        * `completed` - Completed
+        * `failed` - Failed
     Kind5b0Enum:
       enum:
       - MOCK_SAT
@@ -4384,7 +5031,7 @@ components:
           type: integer
           readOnly: true
         question_type:
-          $ref: '#/components/schemas/QuestionTypeEnum'
+          $ref: '#/components/schemas/QuestionTypeE1eEnum'
         question_text:
           type: string
         question_prompt:
@@ -4481,14 +5128,18 @@ components:
           - $ref: '#/components/schemas/PracticeScopeEnum'
           default: BOTH
         practice_bundle_tests:
-          type: string
+          type: array
+          items:
+            $ref: '#/components/schemas/AssignmentPracticeBundleTest'
           readOnly: true
         locks_file_upload:
-          type: string
+          type: boolean
           readOnly: true
         assessment_homework:
-          type: string
+          allOf:
+          - $ref: '#/components/schemas/AssignmentAssessmentHomework'
           readOnly: true
+          nullable: true
         module:
           type: integer
           nullable: true
@@ -4500,16 +5151,22 @@ components:
           nullable: true
         attachment_file_url:
           type: string
+          format: uri
           readOnly: true
+          nullable: true
         attachment_urls:
-          type: string
+          type: array
+          items:
+            type: string
+            format: uri
           readOnly: true
         created_at:
           type: string
           format: date-time
           readOnly: true
         created_by:
-          type: string
+          allOf:
+          - $ref: '#/components/schemas/AssignmentCreatedBy'
           readOnly: true
         submissions_count:
           type: integer
@@ -4610,131 +5267,6 @@ components:
           type: string
           format: date-time
           readOnly: true
-    PatchedTestAttempt:
-      type: object
-      properties:
-        id:
-          type: integer
-          readOnly: true
-        practice_test:
-          type: integer
-        practice_test_details:
-          type: string
-          readOnly: true
-        student:
-          type: integer
-          readOnly: true
-        student_details:
-          allOf:
-          - $ref: '#/components/schemas/User'
-          readOnly: true
-        started_at:
-          type: string
-          format: date-time
-          readOnly: true
-          nullable: true
-        submitted_at:
-          type: string
-          format: date-time
-          readOnly: true
-          nullable: true
-        current_module:
-          type: integer
-          readOnly: true
-          nullable: true
-        current_module_details:
-          type: string
-          readOnly: true
-        current_module_start_time:
-          type: string
-          format: date-time
-          readOnly: true
-          nullable: true
-        current_state:
-          allOf:
-          - $ref: '#/components/schemas/CurrentStateEnum'
-          readOnly: true
-        module_1_started_at:
-          type: string
-          format: date-time
-          readOnly: true
-          nullable: true
-        module_1_submitted_at:
-          type: string
-          format: date-time
-          readOnly: true
-          nullable: true
-        module_2_started_at:
-          type: string
-          format: date-time
-          readOnly: true
-          nullable: true
-        module_2_submitted_at:
-          type: string
-          format: date-time
-          readOnly: true
-          nullable: true
-        scoring_started_at:
-          type: string
-          format: date-time
-          readOnly: true
-          nullable: true
-        completed_at:
-          type: string
-          format: date-time
-          readOnly: true
-          nullable: true
-        version_number:
-          type: integer
-          readOnly: true
-        is_completed:
-          type: boolean
-          readOnly: true
-        is_expired:
-          type: string
-          readOnly: true
-        score:
-          type: integer
-          readOnly: true
-          nullable: true
-        completed_modules:
-          type: array
-          items:
-            type: integer
-          readOnly: true
-        module_results:
-          type: string
-          readOnly: true
-        server_now:
-          type: string
-          readOnly: true
-        current_module_saved_answers:
-          type: string
-          readOnly: true
-        current_module_flagged_questions:
-          type: string
-          readOnly: true
-        remaining_seconds:
-          type: string
-          readOnly: true
-        module_duration_seconds:
-          type: string
-          readOnly: true
-        module_started_at:
-          type: string
-          readOnly: true
-        active_module_order:
-          type: string
-          readOnly: true
-        can_submit:
-          type: string
-          readOnly: true
-        can_resume:
-          type: string
-          readOnly: true
-        results_ready:
-          type: string
-          readOnly: true
     PatchedUser:
       type: object
       properties:
@@ -4815,8 +5347,14 @@ components:
           description: E.164-style or local digits; optional, unique when set (e.g.
             for Telegram users).
           maxLength: 20
+        is_frozen:
+          type: boolean
+          readOnly: true
+        is_admin:
+          type: boolean
+          readOnly: true
         telegram_linked:
-          type: string
+          type: boolean
           readOnly: true
         profile_image:
           type: string
@@ -4824,7 +5362,9 @@ components:
           nullable: true
         profile_image_url:
           type: string
+          format: uri
           readOnly: true
+          nullable: true
         sat_exam_date:
           type: string
           format: date
@@ -4838,8 +5378,10 @@ components:
           nullable: true
           description: Target total SAT score (400–1600)
         last_mock_result:
-          type: string
+          allOf:
+          - $ref: '#/components/schemas/UserMeLastMockResult'
           readOnly: true
+          nullable: true
         clear_profile_image:
           type: boolean
           writeOnly: true
@@ -4855,10 +5397,12 @@ components:
             * `math` - Math
             * `english` - English
           oneOf:
-          - $ref: '#/components/schemas/UserMeSubjectEnum'
+          - $ref: '#/components/schemas/Subject0bfEnum'
           - $ref: '#/components/schemas/NullEnum'
         permissions:
-          type: string
+          type: array
+          items:
+            type: string
           readOnly: true
         last_password_change:
           type: string
@@ -4867,10 +5411,10 @@ components:
           nullable: true
           description: Set when the user changes password via API (adaptive security).
         security_step_up_active:
-          type: string
+          type: boolean
           readOnly: true
         has_recent_security_alerts:
-          type: string
+          type: boolean
           readOnly: true
     PracticeScopeEnum:
       enum:
@@ -4932,7 +5476,46 @@ components:
       - modules
       - pastpaper_pack
       - subject
-    QuestionTypeEnum:
+    Question:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        question_type:
+          $ref: '#/components/schemas/QuestionTypeE1eEnum'
+        question_text:
+          type: string
+        question_prompt:
+          type: string
+          description: Secondary text displayed above answer choices.
+        question_image:
+          type: string
+          format: uri
+          nullable: true
+        is_math_input:
+          type: boolean
+        option_a_image:
+          type: string
+          format: uri
+          nullable: true
+        option_b_image:
+          type: string
+          format: uri
+          nullable: true
+        option_c_image:
+          type: string
+          format: uri
+          nullable: true
+        option_d_image:
+          type: string
+          format: uri
+          nullable: true
+      required:
+      - id
+      - question_text
+      - question_type
+    QuestionTypeE1eEnum:
       enum:
       - MATH
       - READING
@@ -4942,6 +5525,54 @@ components:
         * `MATH` - Math
         * `READING` - Reading
         * `WRITING` - Writing
+    SaveAnswer:
+      type: object
+      properties:
+        attempt_id:
+          type: integer
+        question_id:
+          type: integer
+        answer:
+          nullable: true
+        client_seq:
+          type: integer
+          minimum: 0
+        answered_at:
+          type: string
+          format: date-time
+      required:
+      - attempt_id
+      - question_id
+    SaveAnswerStaleWrite:
+      type: object
+      properties:
+        detail:
+          type: string
+        code:
+          type: string
+        server_client_seq:
+          type: integer
+        answer_id:
+          type: integer
+      required:
+      - answer_id
+      - code
+      - detail
+      - server_client_seq
+    SaveAnswerStored:
+      type: object
+      properties:
+        answer_id:
+          type: integer
+      required:
+      - answer_id
+    StartAttempt:
+      type: object
+      properties:
+        assignment_id:
+          type: integer
+      required:
+      - assignment_id
     StatusFdcEnum:
       enum:
       - pending
@@ -4956,6 +5587,14 @@ components:
         * `delivered` - Delivered
         * `completed` - Completed
         * `failed` - Failed
+    Subject0bfEnum:
+      enum:
+      - math
+      - english
+      type: string
+      description: |-
+        * `math` - Math
+        * `english` - English
     Subject49dEnum:
       enum:
       - ENGLISH
@@ -5059,6 +5698,13 @@ components:
         * `SUBMITTED` - Submitted
         * `REVIEWED` - Reviewed
         * `RETURNED` - Returned for revision
+    SubmitAttempt:
+      type: object
+      properties:
+        attempt_id:
+          type: integer
+      required:
+      - attempt_id
     TestAttempt:
       type: object
       properties:
@@ -5068,7 +5714,8 @@ components:
         practice_test:
           type: integer
         practice_test_details:
-          type: string
+          allOf:
+          - $ref: '#/components/schemas/AttemptPracticeTestDetails'
           readOnly: true
         student:
           type: integer
@@ -5092,7 +5739,9 @@ components:
           readOnly: true
           nullable: true
         current_module_details:
-          type: string
+          allOf:
+          - $ref: '#/components/schemas/ExamAttemptModuleDetail'
+          nullable: true
           readOnly: true
         current_module_start_time:
           type: string
@@ -5103,6 +5752,7 @@ components:
           allOf:
           - $ref: '#/components/schemas/CurrentStateEnum'
           readOnly: true
+          default: NOT_STARTED
         module_1_started_at:
           type: string
           format: date-time
@@ -5139,8 +5789,9 @@ components:
         is_completed:
           type: boolean
           readOnly: true
+          default: false
         is_expired:
-          type: string
+          type: boolean
           readOnly: true
         score:
           type: integer
@@ -5152,37 +5803,60 @@ components:
             type: integer
           readOnly: true
         module_results:
-          type: string
+          type: array
+          items:
+            $ref: '#/components/schemas/AttemptModuleResultsItem'
+          nullable: true
           readOnly: true
         server_now:
           type: string
+          format: date-time
           readOnly: true
         current_module_saved_answers:
-          type: string
+          type: object
+          additionalProperties:
+            nullable: true
+          nullable: true
           readOnly: true
         current_module_flagged_questions:
-          type: string
+          type: array
+          items:
+            type: integer
+          nullable: true
           readOnly: true
         remaining_seconds:
-          type: string
+          type: integer
+          nullable: true
           readOnly: true
         module_duration_seconds:
-          type: string
+          type: integer
+          nullable: true
           readOnly: true
         module_started_at:
           type: string
+          format: date-time
+          nullable: true
           readOnly: true
         active_module_order:
-          type: string
+          type: integer
+          nullable: true
           readOnly: true
         can_submit:
-          type: string
+          type: boolean
           readOnly: true
         can_resume:
-          type: string
+          type: boolean
           readOnly: true
         results_ready:
+          type: boolean
+          readOnly: true
+        engine_phase:
+          allOf:
+          - $ref: '#/components/schemas/EnginePhaseEnum'
+          readOnly: true
+        scoring_notice:
           type: string
+          nullable: true
           readOnly: true
       required:
       - active_module_order
@@ -5196,6 +5870,7 @@ components:
       - current_module_saved_answers
       - current_module_start_time
       - current_state
+      - engine_phase
       - id
       - is_completed
       - is_expired
@@ -5211,6 +5886,7 @@ components:
       - remaining_seconds
       - results_ready
       - score
+      - scoring_notice
       - scoring_started_at
       - server_now
       - started_at
@@ -5316,8 +5992,14 @@ components:
           description: E.164-style or local digits; optional, unique when set (e.g.
             for Telegram users).
           maxLength: 20
+        is_frozen:
+          type: boolean
+          readOnly: true
+        is_admin:
+          type: boolean
+          readOnly: true
         telegram_linked:
-          type: string
+          type: boolean
           readOnly: true
         profile_image:
           type: string
@@ -5325,7 +6007,9 @@ components:
           nullable: true
         profile_image_url:
           type: string
+          format: uri
           readOnly: true
+          nullable: true
         sat_exam_date:
           type: string
           format: date
@@ -5339,8 +6023,10 @@ components:
           nullable: true
           description: Target total SAT score (400–1600)
         last_mock_result:
-          type: string
+          allOf:
+          - $ref: '#/components/schemas/UserMeLastMockResult'
           readOnly: true
+          nullable: true
         clear_profile_image:
           type: boolean
           writeOnly: true
@@ -5356,10 +6042,12 @@ components:
             * `math` - Math
             * `english` - English
           oneOf:
-          - $ref: '#/components/schemas/UserMeSubjectEnum'
+          - $ref: '#/components/schemas/Subject0bfEnum'
           - $ref: '#/components/schemas/NullEnum'
         permissions:
-          type: string
+          type: array
+          items:
+            type: string
           readOnly: true
         last_password_change:
           type: string
@@ -5368,14 +6056,16 @@ components:
           nullable: true
           description: Set when the user changes password via API (adaptive security).
         security_step_up_active:
-          type: string
+          type: boolean
           readOnly: true
         has_recent_security_alerts:
-          type: string
+          type: boolean
           readOnly: true
       required:
       - has_recent_security_alerts
       - id
+      - is_admin
+      - is_frozen
       - last_mock_result
       - last_password_change
       - permissions
@@ -5384,11 +6074,22 @@ components:
       - security_step_up_active
       - subject
       - telegram_linked
-    UserMeSubjectEnum:
-      enum:
-      - math
-      - english
-      type: string
-      description: |-
-        * `math` - Math
-        * `english` - English
+    UserMeLastMockResult:
+      type: object
+      description: Shape of ``UserMeSerializer.get_last_mock_result`` (latest completed
+        practice/mock attempt).
+      properties:
+        score:
+          type: integer
+          nullable: true
+        mock_exam_title:
+          type: string
+          nullable: true
+        practice_test_subject:
+          type: string
+          nullable: true
+        completed_at:
+          type: string
+          nullable: true
+      required:
+      - score

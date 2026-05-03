@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.test import override_settings
 from rest_framework.test import APITestCase
 
@@ -185,7 +186,7 @@ class TestAttemptStateMachineTests(APITestCase):
         self.assertEqual(r.data.get("current_state"), TestAttempt.STATE_MODULE_2_ACTIVE)
         self.assertEqual(r.data.get("current_module_details", {}).get("module_order"), 2)
 
-    def test_status_normalizes_module1_submitted_to_module2_active(self):
+    def test_legacy_module1_submitted_repaired_off_cli_then_resume_ok(self):
         attempt = self._start_attempt()
         attempt_id = attempt["id"]
         # Simulate a legacy/partial-write attempt that got stuck in MODULE_1_SUBMITTED with no active module pointer.
@@ -195,7 +196,10 @@ class TestAttemptStateMachineTests(APITestCase):
         att.current_module_start_time = None
         att.save(update_fields=["current_state", "current_module", "current_module_start_time"])
 
-        # Status endpoint is read-only; normalization happens on explicit resume.
+        # HTTP resume no longer folds *_SUBMITTED (repair_exam_integrity / lock path only).
+        with transaction.atomic():
+            locked = TestAttempt.objects.select_for_update().get(pk=attempt_id)
+            locked.repair_legacy_submitted_states()
         r = self.client.post(f"/api/exams/attempts/{attempt_id}/resume/", {}, format="json")
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.data.get("current_state"), TestAttempt.STATE_MODULE_2_ACTIVE)

@@ -1,32 +1,29 @@
 import Cookies from "js-cookie";
 
-function readMeCookie(): any | null {
+function readMeCookie(): Record<string, unknown> | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = Cookies.get("lms_user");
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed : null;
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
   } catch {
     return null;
   }
 }
 
 /**
- * UI-only permission helpers. The backend enforces all authorization.
- * Synced from login / Google auth into the `lms_permissions` cookie (JSON array).
- * UI hints only: every protected action must still succeed or fail based on the API.
+ * UI-only permission helpers (menu visibility, labels). The backend enforces all authorization on every API.
+ * Never use these values as a security gate. Derived from GET `/users/me/` (cached in `lms_user` by `useMe`).
  */
 export function getPermissionList(): string[] {
   if (typeof window === "undefined") return [];
-  try {
-    const raw = Cookies.get("lms_permissions");
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
+  const me = readMeCookie();
+  const p = me?.permissions;
+  if (Array.isArray(p)) {
+    return p.filter((x): x is string => typeof x === "string");
   }
+  return [];
 }
 
 /** Single domain subject for staff (math | english), derived from `/users/me/` (via lms_user cookie cache). */
@@ -37,13 +34,11 @@ export function getSubject(): "math" | "english" | null {
   return null;
 }
 
-/** Role derived from `/users/me/` (via lms_user cookie cache), with cookie fallback. */
+/** Role derived from `/users/me/` (via `lms_user` cache synced from the API). */
 export function getRole(): string {
   if (typeof window === "undefined") return "";
   const me = readMeCookie();
-  const fromMe = me?.role ? String(me.role).trim().toLowerCase() : "";
-  if (fromMe) return fromMe;
-  return (Cookies.get("role") || "").trim().toLowerCase();
+  return me?.role ? String(me.role).trim().toLowerCase() : "";
 }
 
 /** Role is test_admin (backend: global test library staff). */

@@ -118,7 +118,7 @@ export default function ClassesPage() {
     setLoading(true);
     try {
       const data = await classesApi.list();
-      setClasses(Array.isArray(data) ? data : []);
+      setClasses(data.items);
     } catch (e: unknown) {
       const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       setError(typeof d === "string" ? d : "Could not load groups.");

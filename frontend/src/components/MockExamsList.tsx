@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { examsStudentApi } from "@/features/examsStudent/api";
 import { FileText, Search, X, ArrowRight } from "lucide-react";
-import Cookies from "js-cookie";
+import { useMe } from "@/hooks/useMe";
 type ExamKindFilter = "ALL" | "MOCK_SAT" | "MIDTERM";
 
 type MockExamsListProps = {
@@ -38,27 +38,27 @@ export default function MockExamsList({
   const [attempts, setAttempts] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFilter, setDateFilter] = useState<string>("");
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const router = useRouter();
+  const { isAuthenticated } = useMe();
+  const isLoggedIn = isAuthenticated;
 
   useEffect(() => {
-    const isLogged = !!Cookies.get("lms_user") || !!Cookies.get("role") || !!Cookies.get("is_admin");
-    setIsLoggedIn(isLogged);
+    const isLogged = isLoggedIn;
 
     const fetchData = async () => {
       try {
-        const mockExamsData = await examsPublicApi.getMockExams();
-        setMockExams(mockExamsData);
+        const mockBundle = await examsPublicApi.getMockExams();
+        setMockExams(mockBundle.items);
         if (isLogged) {
-          const attemptsData = await examsPublicApi.getAttempts();
-          setAttempts(attemptsData);
+          const attemptsBundle = await examsPublicApi.getAttempts();
+          setAttempts(attemptsBundle.items);
         }
       } catch (err) {
         console.error(err);
       }
     };
-    fetchData();
-  }, []);
+    void fetchData();
+  }, [isLoggedIn]);
 
   const getAvailableDates = () => {
     const dates = new Set<string>();

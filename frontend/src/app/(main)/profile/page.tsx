@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { authApi, classesApi, usersApi } from "@/lib/api";
+import { authApi, classesApi, type Classroom, usersApi } from "@/lib/api";
 import { examsStudentApi } from "@/features/examsStudent/api";
 import { formatLessonDaysMeta } from "@/lib/classroomSchedule";
 import TelegramLoginButton, { type TelegramAuthUser } from "@/components/TelegramLoginButton";
@@ -44,23 +44,13 @@ type MeForm = {
 
 const examsPublicApi = examsStudentApi;
 
-type Classroom = {
-  id: number;
-  name: string;
-  subject?: string;
-  lesson_days?: string;
-  lesson_time?: string;
-  lesson_hours?: number;
-  start_date?: string;
-  room_number?: string;
-  teacher_details?: {
-    first_name?: string;
-    last_name?: string;
-    username?: string;
-  } | null;
-  members_count?: number;
-  my_role?: string | null;
-};
+function formatTeacherLine(c: Classroom): string {
+  const t = c.teacher_details;
+  if (!t) return "—";
+  const parts = [t.first_name?.trim(), t.last_name?.trim()].filter(Boolean) as string[];
+  if (parts.length) return parts.join(" ");
+  return (t.username && String(t.username).trim()) || "—";
+}
 
 type ClassPerson = {
   id: number;
@@ -136,7 +126,7 @@ export default function ProfilePage() {
     setTelegramLinkBusy(true);
     setMessage(null);
     try {
-      const updated = await usersApi.linkTelegram(user as unknown as Record<string, unknown>);
+      const updated = await usersApi.linkTelegram(user);
       setMe(mapMeToForm(updated));
       setMessage("Telegram connected to your account.");
       window.setTimeout(() => setMessage(null), 4000);
@@ -175,7 +165,7 @@ export default function ProfilePage() {
           const meMapped = mapMeToForm(meData);
           setMe(meMapped);
           setLastMockResult(meMapped.last_mock_result || null);
-          const c = Array.isArray(classData) ? (classData as Classroom[]) : [];
+          const c = classData.items;
           setClasses(c);
           if (c.length > 0) setSelectedClassId(c[0].id);
         }
@@ -216,8 +206,8 @@ export default function ProfilePage() {
     (async () => {
       setAnalyticsLoading(true);
       try {
-        const attemptsRaw = await examsPublicApi.getAttempts();
-        const attempts = (Array.isArray(attemptsRaw) ? attemptsRaw : []) as Attempt[];
+        const attemptsBundle = await examsPublicApi.getAttempts();
+        const attempts = attemptsBundle.items as Attempt[];
         const completed = attempts
           .filter((a) => a.is_completed)
           .sort((a, b) => {
@@ -228,7 +218,7 @@ export default function ProfilePage() {
         if (!cancelled) setLastPracticeResult(completed[0] || null);
 
         const myClassesRaw = await classesApi.list();
-        const myClasses = Array.isArray(myClassesRaw) ? myClassesRaw : [];
+        const myClasses = myClassesRaw.items;
         let total = 0;
         let submitted = 0;
         let pending = 0;
@@ -237,7 +227,7 @@ export default function ProfilePage() {
 
         for (const c of myClasses) {
           const assignments = await classesApi.listAssignments(c.id);
-          const asgList = Array.isArray(assignments) ? assignments : [];
+          const asgList = assignments.items;
           for (const asg of asgList) {
             total += 1;
             let sub: any = null;
@@ -782,7 +772,7 @@ export default function ProfilePage() {
                     <BookOpen className="w-4 h-4 text-primary" />
                   </div>
                   <div className="mt-3 pt-3 border-t border-border/70 text-xs text-muted-foreground font-semibold space-y-1">
-                    <p>Teacher: {c.teacher_details?.first_name || c.teacher_details?.username || "—"} {c.teacher_details?.last_name || ""}</p>
+                    <p>Teacher: {formatTeacherLine(c)}</p>
                     <p>Room: {c.room_number || "—"} · Students: {c.members_count || 0}</p>
                   </div>
                 </button>

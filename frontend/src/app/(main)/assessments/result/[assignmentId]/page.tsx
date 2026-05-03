@@ -9,8 +9,8 @@ export default function AssessmentResultPage() {
   const { assignmentId } = useParams();
   const aid = Number(assignmentId);
   const { data, isLoading, error, refetch } = useMyAssessmentResult(aid);
-  const attempt = (data as any)?.attempt || null;
-  const result = (data as any)?.result || null;
+  const attempt = data?.attempt ?? null;
+  const result = data?.result ?? null;
 
   return (
     <AuthGuard>
