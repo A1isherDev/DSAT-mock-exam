@@ -16,6 +16,9 @@ backend/media/
 # Deploy shim: optional local npm lock only (deploy.sh uses frontend/ for npm ci)
 deploy/package-lock.json
 
+# Server-side PostgreSQL dumps (do not git-track or stash away with `stash -u`)
+backups/
+
 # ── Node / Next.js ────────────────────────────────────────────
 frontend/node_modules/
 frontend/.next/
