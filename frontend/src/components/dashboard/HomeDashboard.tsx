@@ -75,9 +75,12 @@ function readStoredSectionGoals(
   }
 }
 
+/** Avoid hanging forever if a non-critical API stalls (``useMe`` already loaded ``/users/me/``). */
+const DASHBOARD_AGGREGATE_TIMEOUT_MS = 45_000;
+
 export function HomeDashboard() {
   const router = useRouter();
-  const { bootState } = useMe();
+  const { bootState, me: sessionMe } = useMe();
   const [loading, setLoading] = useState(true);
   const [me, setMe] = useState<UserMe | null>(null);
   const [attempts, setAttempts] = useState<Attempt[]>([]);
@@ -89,26 +92,37 @@ export function HomeDashboard() {
   const [examDateError, setExamDateError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (bootState !== "AUTHENTICATED") {
+    if (bootState !== "AUTHENTICATED" || !sessionMe) {
       setLoading(false);
+      setMe(null);
       return;
     }
+    setMe(sessionMe as UserMe);
     let cancelled = false;
+    setLoading(true);
     (async () => {
       try {
-        const [meData, attemptsBundle, classes, examDatesRaw] = await Promise.all([
-          usersApi.getMe(),
-          examsPublicApi.getAttempts().catch(() => emptyNormalizedExamList<Attempt>()),
-          classesApi.list().catch(() => emptyNormalizedList()),
-          usersApi.listExamDates().catch(() => []),
+        const bundle = await Promise.race([
+          Promise.all([
+            examsPublicApi.getAttempts().catch(() => emptyNormalizedExamList<Attempt>()),
+            classesApi.list().catch(() => emptyNormalizedList()),
+            usersApi.listExamDates().catch(() => []),
+          ]),
+          new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error("dashboard_aggregate_timeout")), DASHBOARD_AGGREGATE_TIMEOUT_MS);
+          }),
         ]);
         if (cancelled) return;
-        setMe(meData);
+        const [attemptsBundle, classes, examDatesRaw] = bundle;
         setExamDateOptions(Array.isArray(examDatesRaw) ? (examDatesRaw as ExamDateOptionRow[]) : []);
         setAttempts((attemptsBundle.items ?? []) as Attempt[]);
         setClassCount(classes.items.length);
       } catch {
-        if (!cancelled) setMe(null);
+        if (!cancelled) {
+          setExamDateOptions([]);
+          setAttempts([]);
+          setClassCount(0);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -116,7 +130,7 @@ export function HomeDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [bootState]);
+  }, [bootState, sessionMe]);
 
   const incomplete = useMemo(
     () => attempts.find((a) => !a.is_completed) || null,

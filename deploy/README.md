@@ -1,10 +1,36 @@
-# 🚀 Deployment Guide — MasterSAT Mock Exam
+# Deployment Guide — MasterSAT Mock Exam
 
 ## Prerequisites
 
 - Hetzner VPS running **Ubuntu 22.04 LTS** (minimum 2GB RAM)
 - A domain name pointed to your VPS IP
 - SSH access to the server
+
+---
+
+## Production layout (recommended)
+
+Immutable **releases** under `/var/www/satapp/releases/<RELEASE_ID>/`, a **`current`** symlink, and **`shared/`** for secrets and media. See **[RELEASE_LAYOUT.md](RELEASE_LAYOUT.md)** for the full diagram and one-time migration.
+
+**Canonical deploy command:**
+
+```bash
+bash /var/www/satapp/deploy/release_deploy.sh origin/main
+```
+
+This builds a new release from `git archive`, runs `pg_dump` (pre-migrate), `migrate`, `collectstatic`, flips `current`, reloads PM2, prunes old releases, and writes `shared/release_state.json` (including `rollback_db_dump` for `rollback.sh`).
+
+**Rollback (code + DB to state before last cutover):**
+
+```bash
+bash /var/www/satapp/deploy/rollback.sh
+```
+
+Options: `--no-db` (symlink only), `--dump /path/to.dump`, `--release /var/www/satapp/releases/ID`, `--purge-celery`.
+
+**PM2** uses [`ecosystem.config.js`](ecosystem.config.js): `sat-frontend`, `sat-backend`, `sat-celery-worker`, `sat-celery-beat` (all under `/var/www/satapp/current/...`). If you run Celery beat on another host, `pm2 delete sat-celery-beat` on this server.
+
+**Nginx** must serve static from `current` and media from `shared` (see [`nginx.conf`](nginx.conf)).
 
 ---
 
@@ -18,7 +44,7 @@ ssh root@YOUR_SERVER_IP
 bash /path/to/deploy/setup_server.sh yourdomain.com
 ```
 
-This installs: Node.js, PM2, Python 3.12, Nginx, Certbot.
+This installs: Node.js, PM2, Python 3, Nginx, Certbot. Install **`postgresql-client`** on the app host for `pg_dump` / `pg_restore` / `psql`.
 
 ---
 
@@ -31,15 +57,22 @@ git clone https://github.com/YOUR_USERNAME/YOUR_REPO.git /var/www/satapp
 
 ---
 
-## Step 3 — Configure Environment Variables
+## Step 3 — First-time migration to `shared/` + releases
 
-### Backend
 ```bash
-cp /var/www/satapp/backend/.env.example /var/www/satapp/backend/.env
-nano /var/www/satapp/backend/.env
+bash /var/www/satapp/deploy/migrate_to_release_layout.sh
 ```
 
-Fill in:
+Creates `shared/`, moves `backend/.env` → `shared/backend.env` and `frontend/.env.production` → `shared/frontend.env.production`, syncs media into `shared/media/`, and prepares `releases/`.
+
+Fill secrets if the script reported missing files:
+
+```bash
+chmod 600 /var/www/satapp/shared/backend.env /var/www/satapp/shared/frontend.env.production
+```
+
+Example `shared/backend.env` (same variables as before):
+
 ```env
 SECRET_KEY=<generate with: python3 -c "import secrets; print(secrets.token_hex(50))">
 DEBUG=False
@@ -48,70 +81,38 @@ DATABASE_URL=postgres://USER:PASSWORD@127.0.0.1:5432/DBNAME
 DB_SSL=False
 GOOGLE_CLIENT_ID=....apps.googleusercontent.com
 CORS_ALLOWED_ORIGINS=https://yourdomain.com
+REDIS_URL=redis://127.0.0.1:6379/0
+CELERY_BROKER_URL=redis://127.0.0.1:6379/1
+CELERY_RESULT_BACKEND=redis://127.0.0.1:6379/2
 ```
 
-Production uses **PostgreSQL** when `DEBUG=False` (`DATABASE_URL` is required). Local dev can omit `DATABASE_URL` to use SQLite.
+`shared/frontend.env.production`:
 
-User profile photos are stored under `backend/media/profiles/`; `deploy.sh` creates this path. Nginx must serve `/media/` (see `deploy/nginx.conf`).
-
-### Frontend
-```bash
-nano /var/www/satapp/frontend/.env.production
-```
-Update:
 ```env
 NEXT_PUBLIC_API_URL=https://yourdomain.com/api
 ```
 
----
-
-## Step 4 — Run Deployment
-
-Use the script from **any** directory (it uses absolute paths and `npm --prefix` for the frontend):
-
-```bash
-bash /var/www/satapp/deploy/deploy.sh
-```
-
-Do **not** run plain `npm ci` or `npm run build` while your shell’s current directory is `deploy/` unless you only mean the tiny shim `package.json` there. The Next.js app and its real `package-lock.json` live under **`frontend/`**. `deploy/package-lock.json` is gitignored (optional local file only); **`deploy.sh` removes an untracked copy before `git pull`** so merges are not blocked on old servers.
-
-If you install or build the frontend by hand on the server, use one of:
-
-```bash
-cd /var/www/satapp/frontend && npm ci --no-audit --no-fund && npm run build
-```
-
-Or from the repo root:
-
-```bash
-npm ci --prefix /var/www/satapp/frontend --no-audit --no-fund
-npm run build --prefix /var/www/satapp/frontend
-```
-
-Or from `deploy/` (scripts delegate to `../frontend`):
-
-```bash
-cd /var/www/satapp/deploy && npm run ci:frontend && npm run build:frontend
-```
-
-This will:
-1. Pull latest code
-2. Install Python deps + run migrations + collect static
-3. Install Node deps + build Next.js
-4. Start/reload PM2 services
+User profile photos live under **`shared/media/profiles/`** (Nginx `alias` in `nginx.conf`).
 
 ---
 
-## Step 5 — Configure Nginx
+## Step 4 — Configure Nginx (release paths)
 
 ```bash
 sudo cp /var/www/satapp/deploy/nginx.conf /etc/nginx/sites-available/satapp
-# Edit the domain name in the file
-sudo nano /etc/nginx/sites-available/satapp
+# Edit server_name if needed
+sudo nginx -t && sudo systemctl reload nginx
+```
 
-sudo ln -s /etc/nginx/sites-available/satapp /etc/nginx/sites-enabled/
-sudo nginx -t   # Test config
-sudo systemctl reload nginx
+Static files: `/var/www/satapp/current/backend/staticfiles/`. Media: `/var/www/satapp/shared/media/`.
+
+---
+
+## Step 5 — First release + PM2
+
+```bash
+bash /var/www/satapp/deploy/release_deploy.sh origin/main
+pm2 status
 ```
 
 ---
@@ -121,8 +122,6 @@ sudo systemctl reload nginx
 ```bash
 sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com
 ```
-
-Certbot will auto-fill the SSL block in your Nginx config and set up auto-renewal.
 
 ---
 
@@ -138,64 +137,74 @@ pm2 save
 ## Verification Checklist
 
 ```bash
-pm2 status                          # Both services should be "online"
-sudo nginx -t                       # Nginx config OK
-curl https://yourdomain.com/api/    # API responds
-curl https://yourdomain.com         # Frontend loads
-python3 manage.py check --deploy    # Django deploy checklist passes
+pm2 status
+sudo nginx -t
+curl https://yourdomain.com/api/
+curl https://yourdomain.com
 ```
 
 ---
 
-## Ongoing Deployments
-
-After pushing code changes to git:
-
-**1. Database backup (PostgreSQL production, recommended before every deploy):**
+## Ongoing releases
 
 ```bash
-ssh satapp@YOUR_SERVER_IP
+bash /var/www/satapp/deploy/release_deploy.sh origin/main
+# or a SHA:  bash ... abc123def
+```
+
+Optional: `KEEP_LAST_N=10` to retain more release directories. `SKIP_PM2_RELOAD=1` builds only (debug).
+
+**Manual backup** (any time):
+
+```bash
 bash /var/www/satapp/deploy/backup_postgres.sh
 ```
 
-This writes a custom-format dump under `/var/www/satapp/backups/pg_backup_YYYY-MM-DD_HHMMSS.dump`.
-
-**2. Deploy application:**
-
-```bash
-bash /var/www/satapp/deploy/deploy.sh
-```
+Writes a custom-format dump under `shared/backups/` (or `backups/` on legacy trees).
 
 ---
 
-## Post-deploy smoke tests + rollback
-
-Run the release smoke suite **immediately after deploy** and rollback if it fails.
+## Post-deploy smoke + rollback
 
 - **Smoke runner**: `deploy/run_post_deploy_smoke.sh`
 - **Playwright spec**: `frontend/tests/e2e/release_smoke_api.spec.ts`
 
-Suggested pipeline:
+If smoke fails after a release:
 
-- Deploy new version
-- Run `deploy/run_post_deploy_smoke.sh` with `PLAYWRIGHT_BASE_URL=https://yourdomain.com`
-- If smoke fails: rollback to the previous release (previous image/tag) and page on-call
+```bash
+bash /var/www/satapp/deploy/rollback.sh
+```
+
+---
+
+## Legacy in-place deploy (no `releases/`)
+
+`deploy/deploy.sh` still supports a flat tree at `/var/www/satapp` (`git pull`, venv under `backend/venv`, etc.). It uses **[ecosystem.legacy.config.js](ecosystem.legacy.config.js)** (only `sat-frontend` + `sat-backend`). Override with `ECOSYSTEM_FILE=...` if needed.
+
+Do **not** run plain `npm ci` from `deploy/` expecting the Next app; use `frontend/` as documented in older notes:
+
+```bash
+npm ci --prefix /var/www/satapp/frontend --no-audit --no-fund
+npm run build --prefix /var/www/satapp/frontend
+```
+
+---
 
 ## Useful Commands
 
 ```bash
-pm2 status                  # Check service status
-pm2 logs sat-backend        # Backend logs
-pm2 logs sat-frontend       # Frontend logs
-pm2 restart all             # Restart all services
-sudo tail -f /var/log/nginx/satapp-error.log  # Nginx errors
+pm2 status
+pm2 logs sat-backend
+pm2 logs sat-frontend
+pm2 logs sat-celery-worker
+sudo tail -f /var/log/nginx/satapp-error.log
 ```
 
 ---
 
 ## Security Checklist
 
-- [ ] `DEBUG=False` in backend `.env`
+- [ ] `DEBUG=False` in `shared/backend.env`
 - [ ] Unique `SECRET_KEY` generated
 - [ ] UFW firewall active (ports 22, 80, 443 only)
 - [ ] SSL certificate installed

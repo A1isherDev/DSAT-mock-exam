@@ -73,11 +73,12 @@ class RBACSubdomainFlowsTests(TestCase):
         self.assertEqual(created.status_code, 201)
         self.assertEqual(created.json().get("title"), "Created by test_admin")
 
-    def test_questions_host_wrong_endpoint_public_library_fails_loud_for_staff(self):
+    def test_questions_host_public_practice_catalog_is_reachable(self):
+        """``questions.*`` allows ``GET /api/exams/`` (see ``SubdomainAPIGuardMiddleware``)."""
         self.client.force_authenticate(user=self.test_admin)
         r = self.client.get("/api/exams/", **_QUESTIONS_HOST)
-        self.assertEqual(r.status_code, 400)
-        self.assertIn("/api/exams/admin/tests/", r.json().get("detail", ""))
+        self.assertEqual(r.status_code, 200)
+        self.assertIsInstance(r.json(), list)
 
     def test_admin_host_lists_pastpaper_cards_and_sections_for_assignment_console(self):
         self.client.force_authenticate(user=self.admin)

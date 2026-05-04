@@ -17,9 +17,9 @@ def compact_module_question_orders(self, module_id: int) -> dict:
     """
     Dense reindex 0..n-1 for a module (off request path). Safe to run concurrently; work is idempotent.
     """
-    from .question_ordering import dense_compact_module_orders
+    from .question_ordering import dense_compact_module_orders_locked
 
-    updated = dense_compact_module_orders(module_id)
+    updated = dense_compact_module_orders_locked(module_id)
     metric_incr("exam_question_order_compact_task_total")
     logger.info("question_order_compact_task module_id=%s rows_updated=%s", module_id, updated)
     return {"module_id": module_id, "rows_updated": updated}

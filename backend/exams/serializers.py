@@ -669,6 +669,7 @@ class AdminPracticeTestSerializer(serializers.ModelSerializer):
         queryset=PastpaperPack.objects.all(),
         allow_null=True,
         required=False,
+        default=None,
     )
 
     class Meta:

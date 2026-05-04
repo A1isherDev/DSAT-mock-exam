@@ -258,44 +258,9 @@ EXAMS_SCORE_INLINE_IF_NO_CELERY = _env_bool("EXAMS_SCORE_INLINE_IF_NO_CELERY", d
 EXAM_ATTEMPT_IDEMPOTENCY_TTL_SECONDS = int(os.getenv("EXAM_ATTEMPT_IDEMPOTENCY_TTL_SECONDS", str(24 * 60 * 60)))
 # Persist ``AttemptEngineAudit`` rows for exam state transitions (debugging / forensic replay).
 EXAM_ENGINE_AUDIT_DB = _env_bool("EXAM_ENGINE_AUDIT_DB", default_when_unset=True)
-# Question ordering: sparse gap between sibling ``order`` values (reduces UNIQUE collisions & reindex cost).
-EXAM_QUESTION_ORDER_SPARSE_STEP = int(os.getenv("EXAM_QUESTION_ORDER_SPARSE_STEP", "1024"))
-# Retries when concurrent writers hit UNIQUE(module_id, order).
-EXAM_QUESTION_ORDER_MAX_RETRY = int(os.getenv("EXAM_QUESTION_ORDER_MAX_RETRY", "8"))
-# If True, post-delete compacts to dense 0..n-1 (O(n); default leaves sparse gaps).
+# Exam ``Question.order`` is dense (0..n-1) under a per-module lock — see ``exams.question_ordering``.
+# If True, ``post_delete`` on questions compacts the module (O(n); default off).
 EXAM_QUESTION_COMPACT_ON_DELETE = _env_bool("EXAM_QUESTION_COMPACT_ON_DELETE", default_when_unset=False)
-# Automatic dense compaction when duplicate (module_id, order) keys exist and pair count ≤ this (0 = off).
-EXAM_QUESTION_ORDER_AUTO_CORRECT_MAX_DUP_PAIRS = int(
-    os.getenv("EXAM_QUESTION_ORDER_AUTO_CORRECT_MAX_DUP_PAIRS", "4")
-)
-# Trigger sparse→dense compaction when Module.question_order_high_water exceeds this (long-run safety).
-EXAM_QUESTION_ORDER_COMPACTION_THRESHOLD = int(
-    os.getenv("EXAM_QUESTION_ORDER_COMPACTION_THRESHOLD", str(50_000_000))
-)
-# Additional compaction trigger: compact when high_water / question_count >= this ratio (sparse drift vs size).
-EXAM_QUESTION_ORDER_COMPACTION_RATIO_THRESHOLD = float(
-    os.getenv("EXAM_QUESTION_ORDER_COMPACTION_RATIO_THRESHOLD", "5000")
-)
-# Minimum question count before the ratio trigger applies (avoids compacting tiny modules).
-EXAM_QUESTION_ORDER_COMPACTION_MIN_QUESTIONS_FOR_RATIO = int(
-    os.getenv("EXAM_QUESTION_ORDER_COMPACTION_MIN_QUESTIONS_FOR_RATIO", "40")
-)
-# When no Celery broker, run dense compaction in a daemon thread after commit (keeps request path light).
-EXAM_QUESTION_ORDER_COMPACT_THREAD_FALLBACK = _env_bool(
-    "EXAM_QUESTION_ORDER_COMPACT_THREAD_FALLBACK", default_when_unset=True
-)
-# If False (recommended in production), UNIQUE-conflict retries use skew/step only — no blocking sleep on workers.
-EXAM_QUESTION_RETRY_BLOCKING_SLEEP = _env_bool(
-    "EXAM_QUESTION_RETRY_BLOCKING_SLEEP", default_when_unset=False
-)
-# Log ERROR when UNIQUE(order) retries exceed this rate per rolling minute bucket (0 = off).
-EXAM_QUESTION_ORDER_CONFLICT_ALERT_PER_MINUTE = int(
-    os.getenv("EXAM_QUESTION_ORDER_CONFLICT_ALERT_PER_MINUTE", "200")
-)
-# Jittered exponential backoff (ms) after UNIQUE collisions on concurrent inserts (reduces thundering herds).
-EXAM_QUESTION_RETRY_BACKOFF_BASE_MS = int(os.getenv("EXAM_QUESTION_RETRY_BACKOFF_BASE_MS", "8"))
-EXAM_QUESTION_RETRY_BACKOFF_CAP_MS = int(os.getenv("EXAM_QUESTION_RETRY_BACKOFF_CAP_MS", "750"))
-EXAM_QUESTION_RETRY_JITTER_MS = int(os.getenv("EXAM_QUESTION_RETRY_JITTER_MS", "48"))
 
 # Deadlock / serialization retries for classroom submission transactions.
 CLASSROOM_DB_DEADLOCK_MAX_ATTEMPTS = int(os.getenv("CLASSROOM_DB_DEADLOCK_MAX_ATTEMPTS", "4"))

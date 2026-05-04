@@ -1206,24 +1206,12 @@ class AdminModuleViewSet(viewsets.ModelViewSet):
 
 
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
-from django.db import models as db_models
 
-def _normalize_question_orders_for_module(*, module_id: int) -> None:
-    """
-    Keep Question.order deterministic and contiguous per module.
+from .question_ordering import (
+    dense_compact_module_orders_locked,
+    reindex_module_questions_dense_locked,
+)
 
-    Contract:
-    - starts at 0
-    - no gaps / duplicates
-    """
-    qs = Question.objects.filter(module_id=module_id).order_by("order", "id").only("id", "order")
-    to_update = []
-    for idx, q in enumerate(qs):
-        if q.order != idx:
-            q.order = idx
-            to_update.append(q)
-    if to_update:
-        Question.objects.bulk_update(to_update, ["order"])
 
 class AdminQuestionViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, CanManageQuestions]
@@ -1236,45 +1224,53 @@ class AdminQuestionViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         module = get_object_or_404(Module, pk=self.kwargs['module_pk'], practice_test_id=self.kwargs['test_pk'])
-        # Auto-assign order to the end
-        max_order = self.get_queryset().aggregate(db_models.Max('order'))['order__max']
-        q = serializer.save(
-            module=module,
-            order=(max_order + 1) if max_order is not None else 0
-        )
-        _normalize_question_orders_for_module(module_id=q.module_id)
+        n = Question.objects.filter(module_id=module.pk).count()
+        # ``order`` is the dense insert index (append); ``Question.save`` reindexes under a module lock.
+        serializer.save(module=module, order=n)
 
     def perform_update(self, serializer):
-        q = serializer.save()
-        _normalize_question_orders_for_module(module_id=q.module_id)
+        serializer.save()
 
     def perform_destroy(self, instance):
         module_id = instance.module_id
         super().perform_destroy(instance)
-        _normalize_question_orders_for_module(module_id=module_id)
+        dense_compact_module_orders_locked(module_id)
 
     @action(detail=True, methods=['post'])
     def reorder(self, request, test_pk=None, module_pk=None, pk=None):
         question = self.get_object()
-        action_type = request.data.get('action') # 'up' or 'down'
-        queryset = self.get_queryset()
-        
-        if action_type == 'up':
-            target = queryset.filter(order__lt=question.order).order_by('-order').first()
-        elif action_type == 'down':
-            target = queryset.filter(order__gt=question.order).order_by('order').first()
-        else:
-            return Response({'error': 'Invalid action'}, status=status.HTTP_400_BAD_REQUEST)
-            
-        if target:
-            old_order = question.order
-            question.order = target.order
-            target.order = old_order
-            question.save()
-            target.save()
-            _normalize_question_orders_for_module(module_id=question.module_id)
-            return Response({'status': 'reordered'})
-        return Response({'message': 'Already at boundary'}, status=status.HTTP_400_BAD_REQUEST)
+        action_type = request.data.get("action")
+        if action_type not in ("up", "down"):
+            return Response({"error": "Invalid action"}, status=status.HTTP_400_BAD_REQUEST)
+
+        mid = question.module_id
+        with transaction.atomic():
+            Module.objects.select_for_update().get(pk=mid)
+            rows = list(
+                Question.objects.filter(module_id=mid).order_by("order", "id")
+            )
+            idx = next((i for i, q in enumerate(rows) if q.pk == question.pk), None)
+            if idx is None:
+                return Response({"error": "Question not in module."}, status=status.HTTP_400_BAD_REQUEST)
+
+            if action_type == "up":
+                if idx == 0:
+                    return Response(
+                        {"message": "Already at boundary"},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                rows[idx - 1], rows[idx] = rows[idx], rows[idx - 1]
+            else:
+                if idx >= len(rows) - 1:
+                    return Response(
+                        {"message": "Already at boundary"},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                rows[idx + 1], rows[idx] = rows[idx], rows[idx + 1]
+
+            reindex_module_questions_dense_locked(mid, rows)
+
+        return Response({"status": "reordered"})
 
 
 def _as_int_ids_bulk(seq):

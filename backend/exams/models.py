@@ -90,10 +90,10 @@ class Question(TimestampedModel):
 
     def save(self, *args, **kwargs):
         """
-        Sparse ``order`` with retries on UNIQUE(module, order): scales without O(n) reindex each write.
+        When ``module`` is set, ``order`` is assigned under a **dense** 0..n-1 contract with a
+        ``Module`` row lock (see ``question_ordering.save_question_dense_locked``).
 
-        Uses ``dense_compact_module_orders()`` for small duplicate repairs; ratio/absolute compaction
-        is scheduled post-commit (Celery / thread fallback — see ``question_ordering``).
+        Use ``_plain_db_save=True`` only for internal persistence after ordering is finalized.
         """
         if kwargs.pop("_plain_db_save", False):
             super().save(*args, **kwargs)
@@ -103,14 +103,14 @@ class Question(TimestampedModel):
             super().save(*args, **kwargs)
             return
 
-        from .question_ordering import save_question_with_order_retries
+        from .question_ordering import save_question_dense_locked
 
         mid = self.module_id
         if mid is None:
             super().save(*args, **kwargs)
             return
 
-        save_question_with_order_retries(self, *args, **kwargs)
+        save_question_dense_locked(self, *args, **kwargs)
 
 class MockExam(TimestampedModel):
     KIND_MOCK_SAT = "MOCK_SAT"
