@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 # ============================================================
-# rollback.sh — Point current at previous release + optional DB restore
+# rollback.sh — Roll back current/ + optional PostgreSQL restore
 #
-# Default: read shared/release_state.json (rollback_db_dump) and
-#          shared/../previous symlink; stop PM2; pg_restore; flip current;
-#          restart PM2.
+# Uses the same deploy lock as release_deploy.sh (blocking wait).
+#
+# Database restore uses ONLY:
+#   - absolute path in shared/release_state.json -> rollback_db_dump, OR
+#   - absolute path from --dump /path/to.dump
+# No timestamp guessing or inferred paths.
 #
 # Usage:
 #   bash /var/www/satapp/deploy/rollback.sh
 #   bash /var/www/satapp/deploy/rollback.sh --no-db
-#   bash /var/www/satapp/deploy/rollback.sh --dump /path/to.dump
+#   bash /var/www/satapp/deploy/rollback.sh --dump /var/www/satapp/shared/backups/pg_XXX_pre.dump
 #   bash /var/www/satapp/deploy/rollback.sh --release /var/www/satapp/releases/SOME_ID
 #   bash /var/www/satapp/deploy/rollback.sh --purge-celery
 #
@@ -21,6 +24,7 @@ set -Eeuo pipefail
 APP_DIR="${APP_DIR:-/var/www/satapp}"
 SHARED="$APP_DIR/shared"
 STATE_FILE="$SHARED/release_state.json"
+LOCK_FILE="$SHARED/.deploy.lock"
 ECOSYSTEM_FILE="$APP_DIR/deploy/ecosystem.config.js"
 
 NO_DB="0"
@@ -35,15 +39,26 @@ while [[ $# -gt 0 ]]; do
     --release) RELEASE_OVERRIDE="${2:-}"; shift 2 ;;
     --purge-celery) PURGE_CELERY="1"; shift ;;
     -h|--help)
-      sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'
       exit 0 ;;
     *)
       echo "Unknown option: $1"; exit 1 ;;
   esac
 done
 
+release_lock() {
+  flock -u 9 2>/dev/null || true
+  exec 9>&- 2>/dev/null || true
+}
+
+mkdir -p "$SHARED"
+exec 9>>"$LOCK_FILE"
+echo "-> Waiting for deploy lock: $LOCK_FILE"
+flock 9
+trap 'release_lock' EXIT
+
 echo "========================================="
-echo " rollback.sh  APP_DIR=$APP_DIR"
+echo " rollback.sh (locked)  APP_DIR=$APP_DIR"
 echo "========================================="
 
 if [[ ! -f "$ECOSYSTEM_FILE" ]]; then
@@ -74,42 +89,78 @@ else
   exit 1
 fi
 
-DUMP_PATH="$DUMP_OVERRIDE"
-if [[ -z "$DUMP_PATH" ]] && [[ "$NO_DB" != "1" ]]; then
-  if [[ -f "$STATE_FILE" ]]; then
-    DUMP_PATH="$(RB_STATE_FILE="$STATE_FILE" python3 <<'PY'
+DUMP_PATH=""
+if [[ "$NO_DB" == "1" ]]; then
+  if [[ -n "$DUMP_OVERRIDE" ]]; then
+    echo "--dump is ignored with --no-db"
+  fi
+else
+  if [[ -n "$DUMP_OVERRIDE" ]]; then
+    DUMP_PATH="$(readlink -f "$DUMP_OVERRIDE" 2>/dev/null || true)"
+    if [[ "$DUMP_PATH" != /* ]]; then
+      echo "[FAIL] --dump must be an absolute path; got: $DUMP_OVERRIDE"
+      exit 1
+    fi
+    if [[ ! -f "$DUMP_PATH" ]]; then
+      echo "[FAIL] --dump file not found: $DUMP_PATH"
+      exit 1
+    fi
+  else
+    if [[ ! -f "$STATE_FILE" ]]; then
+      echo "[FAIL] Missing $STATE_FILE — cannot read rollback_db_dump."
+      echo "       Pass an explicit dump: rollback.sh --dump /absolute/path/to.dump"
+      exit 1
+    fi
+    DUMP_PATH="$(RB_STATE="$STATE_FILE" python3 <<'PY'
 import json
 import os
+import sys
 from pathlib import Path
 
-p = Path(os.environ["RB_STATE_FILE"])
-data = json.loads(p.read_text(encoding="utf-8"))
-print((data.get("rollback_db_dump") or "").strip())
+p = Path(os.environ["RB_STATE"])
+try:
+    data = json.loads(p.read_text(encoding="utf-8"))
+except json.JSONDecodeError as e:
+    print(f"invalid JSON in state file: {e}", file=sys.stderr)
+    sys.exit(1)
+
+raw = (data.get("rollback_db_dump") or "").strip()
+if not raw:
+    print("rollback_db_dump missing or empty in state file", file=sys.stderr)
+    sys.exit(1)
+path = Path(raw)
+if not path.is_absolute():
+    print("rollback_db_dump must be an absolute path", file=sys.stderr)
+    sys.exit(1)
+if not path.is_file():
+    print(f"rollback_db_dump file does not exist: {path}", file=sys.stderr)
+    sys.exit(1)
+print(path.resolve())
 PY
 )"
+    if [[ -z "$DUMP_PATH" ]]; then
+      echo "[FAIL] Could not resolve rollback_db_dump from $STATE_FILE"
+      exit 1
+    fi
   fi
-fi
 
-if [[ "$NO_DB" != "1" ]]; then
-  if [[ -z "$DUMP_PATH" ]] || [[ ! -f "$DUMP_PATH" ]]; then
-    echo "No database dump found (see $STATE_FILE rollback_db_dump or pass --dump)."
-    echo "Use --no-db to only switch the current symlink."
-    exit 1
-  fi
   if ! command -v pg_restore >/dev/null 2>&1 || ! command -v psql >/dev/null 2>&1; then
     echo "pg_restore and psql required (postgresql-client)."
     exit 1
   fi
 fi
 
-echo "-> Stop PM2 processes"
-pm2 stop sat-frontend 2>/dev/null || true
+echo "-> Stop and remove Celery PM2 apps (no stale workers)"
 pm2 stop sat-celery-worker 2>/dev/null || true
 pm2 stop sat-celery-beat 2>/dev/null || true
+pm2 delete sat-celery-worker 2>/dev/null || true
+pm2 delete sat-celery-beat 2>/dev/null || true
 pm2 stop sat-backend 2>/dev/null || true
+pm2 stop sat-frontend 2>/dev/null || true
+sleep 1
 
 if [[ "$NO_DB" != "1" ]]; then
-  echo "-> Restore PostgreSQL from $DUMP_PATH"
+  echo "-> Restore PostgreSQL from explicit dump: $DUMP_PATH"
   DBURL="$(ENV_FILE="$SHARED/backend.env" python3 <<'PY'
 import os
 import sys
@@ -198,8 +249,11 @@ if p.exists():
 
 state["active_release_id"] = os.environ["RB_ACTIVE"]
 state["previous_release_id"] = os.environ.get("RB_PREV", "")
-if os.environ.get("RB_DUMP"):
-    state["rollback_db_dump"] = os.environ["RB_DUMP"]
+dump = os.environ.get("RB_DUMP", "").strip()
+if dump:
+    dp = Path(dump)
+    if dp.is_absolute() and dp.is_file():
+        state["rollback_db_dump"] = str(dp.resolve())
 state["last_action"] = "rollback"
 state["updated_at"] = datetime.now(timezone.utc).isoformat()
 
@@ -218,11 +272,14 @@ PY
 if [[ -n "$OLD_ACTIVE" ]] && [[ "$OLD_ACTIVE" != "$NEW_ACTIVE" ]]; then
   if [[ -n "$OLD_CURRENT" ]] && [[ -d "$OLD_CURRENT" ]]; then
     ln -sfn "$OLD_CURRENT" "$APP_DIR/previous"
-    echo "-> previous -> (rolled-back release) $OLD_CURRENT"
+    echo "-> previous -> (rolled-back-from) $OLD_CURRENT"
   fi
 fi
 
 echo ""
 echo "========================================="
 echo " Rollback complete. current -> $TARGET_RELEASE"
+if [[ "$NO_DB" != "1" ]]; then
+  echo " DB restored from: $DUMP_PATH"
+fi
 echo "========================================="

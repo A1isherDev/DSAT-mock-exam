@@ -18,7 +18,9 @@ Immutable **releases** under `/var/www/satapp/releases/<RELEASE_ID>/`, a **`curr
 bash /var/www/satapp/deploy/release_deploy.sh origin/main
 ```
 
-This builds a new release from `git archive`, runs `pg_dump` (pre-migrate), `migrate`, `collectstatic`, flips `current`, reloads PM2, prunes old releases, and writes `shared/release_state.json` (including `rollback_db_dump` for `rollback.sh`).
+This acquires a **non-blocking flock** on `shared/.deploy.lock` (no concurrent deploys), builds from `git archive`, stops Celery (including `pm2 delete` so workers cannot linger), runs `pg_dump` (pre-migrate), runs **`migrate` only from the new release’s venv** (before `current/` changes), `collectstatic`, then **`check --deploy`**, **`migrate --check`**, and static/`.next` sanity checks **before** flipping `current/`. If anything fails after the symlink (for example PM2 reload), `current/` is **reverted** to the prior release when possible. `shared/release_state.json` is written **only after** a successful PM2 reload, with an **absolute** `rollback_db_dump` path.
+
+Optional env: `SKIP_HEALTH_CHECKS=1` (emergency only), `SKIP_PM2_RELOAD=1` (debug), `AUTO_DB_RESTORE_ON_FAIL=0` (disable automatic `pg_restore` on failure after migrate), `DEPLOY_HEALTH_URL=` (empty skips post-cutover HTTP curl), `PM2_ONLINE_WAIT_S=45`, `KEEP_BACKUP_DUMPS_N=40` (retain newest N `pg_*.dump` files under `shared/backups/`; this deploy’s dump is never deleted in that pass).
 
 **Rollback (code + DB to state before last cutover):**
 
@@ -26,7 +28,7 @@ This builds a new release from `git archive`, runs `pg_dump` (pre-migrate), `mig
 bash /var/www/satapp/deploy/rollback.sh
 ```
 
-Options: `--no-db` (symlink only), `--dump /path/to.dump`, `--release /var/www/satapp/releases/ID`, `--purge-celery`.
+Uses the **same lock file** (blocking wait). DB restore uses **only** `rollback_db_dump` from `release_state.json` (must be an absolute path to an existing file) or **`--dump /absolute/path/to.dump`**. No path guessing. Options: `--no-db` (symlink only), `--release ...`, `--purge-celery`.
 
 **PM2** uses [`ecosystem.config.js`](ecosystem.config.js): `sat-frontend`, `sat-backend`, `sat-celery-worker`, `sat-celery-beat` (all under `/var/www/satapp/current/...`). If you run Celery beat on another host, `pm2 delete sat-celery-beat` on this server.
 

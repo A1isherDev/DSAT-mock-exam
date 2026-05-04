@@ -50,7 +50,7 @@ After `current` exists, you can remove or ignore the legacy top-level `backend/`
 
 ## State file (`shared/release_state.json`)
 
-Written by `release_deploy.sh` after a successful cutover. Fields include `active_release_id`, `previous_release_id`, and `rollback_db_dump` (the `pg_dump` taken immediately before `migrate` for that deploy). `rollback.sh` uses this for deterministic code + DB rollback.
+Written by `release_deploy.sh` **only after** a successful PM2 reload. Fields include `active_release_id`, `previous_release_id`, and **`rollback_db_dump`**: an **absolute** filesystem path to the `pg_dump -Fc` file taken immediately before that deploy’s `migrate`. `rollback.sh` restores from that path only (or from an explicit `--dump` absolute path); there is no inferred backup path.
 
 ## Backups
 
