@@ -12,6 +12,7 @@ from drf_spectacular.utils import extend_schema_field, extend_schema_serializer
 
 from .models import (
     BulkAssignmentDispatch,
+    Category,
     MockExam,
     Module,
     PastpaperPack,
@@ -71,16 +72,27 @@ class QuestionSerializer(serializers.ModelSerializer):
         return representation
 
 class ModuleSerializer(serializers.ModelSerializer):
-    questions = QuestionSerializer(many=True, read_only=True)
+    questions = serializers.SerializerMethodField()
     
     class Meta:
         model = Module
         fields = ['id', 'module_order', 'time_limit_minutes', 'questions']
 
+    def get_questions(self, obj):
+        qs = obj.ordered_questions()
+        return QuestionSerializer(qs, many=True).data
+
 class ModuleListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Module
         fields = ['id', 'module_order', 'time_limit_minutes']
+
+
+class AdminCategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Category
+        fields = ["id", "name", "subject", "created_at", "updated_at"]
+        read_only_fields = ["created_at", "updated_at"]
 
 
 @extend_schema_serializer(component_name="ExamAttemptModuleDetail")
@@ -530,8 +542,11 @@ class TestAttemptSerializer(serializers.ModelSerializer):
 
 class AdminQuestionSerializer(serializers.ModelSerializer):
     correct_answer = serializers.CharField(source='correct_answers', required=True)
-    module_id = serializers.IntegerField(read_only=True)
-    practice_test_id = serializers.IntegerField(source="module.practice_test_id", read_only=True)
+    module_id = serializers.SerializerMethodField()
+    practice_test_id = serializers.SerializerMethodField()
+    order = serializers.IntegerField(required=False, allow_null=True)
+    is_active = serializers.BooleanField(required=False)
+    usage_count = serializers.IntegerField(read_only=True, required=False)
     option_a = serializers.CharField(required=False, allow_blank=True)
     option_b = serializers.CharField(required=False, allow_blank=True)
     option_c = serializers.CharField(required=False, allow_blank=True)
@@ -545,14 +560,61 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Question
         fields = ['id', 'module_id', 'practice_test_id', 'question_type', 'question_text', 'question_prompt', 'question_image',
-                  'is_math_input', 'correct_answer', 'score', 'explanation', 'order',
+                  'is_math_input', 'correct_answer', 'score', 'explanation', 'order', 'is_active', 'usage_count',
                   'option_a', 'option_b', 'option_c', 'option_d',
                   'option_a_image', 'option_b_image', 'option_c_image', 'option_d_image',
                   'clear_question_image', 'clear_option_a_image', 'clear_option_b_image',
                   'clear_option_c_image', 'clear_option_d_image']
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        try:
+            mid = self.get_module_id(instance)
+            ord_val = instance.order_in_module(mid) if hasattr(instance, "order_in_module") else None
+            data["order"] = ord_val
+        except Exception:
+            data["order"] = None
+        return data
+
+    def get_module_id(self, obj):
+        view = self.context.get("view")
+        if view is not None and hasattr(view, "kwargs"):
+            v = view.kwargs.get("module_pk")
+            if v is not None:
+                try:
+                    return int(v)
+                except (TypeError, ValueError):
+                    pass
+        mid = getattr(obj, "module_id", None)
+        if mid is not None:
+            return int(mid)
+        link = getattr(obj, "module_questions", None)
+        if link is not None:
+            try:
+                first = link.order_by("order", "id").first()
+                return int(first.module_id) if first else None
+            except Exception:
+                return None
+        return None
+
+    def get_practice_test_id(self, obj):
+        view = self.context.get("view")
+        if view is not None and hasattr(view, "kwargs"):
+            v = view.kwargs.get("test_pk")
+            if v is not None:
+                try:
+                    return int(v)
+                except (TypeError, ValueError):
+                    pass
+        try:
+            link = obj.module_questions.select_related("module").order_by("order", "id").first()
+            return int(link.module.practice_test_id) if link and link.module_id else None
+        except Exception:
+            return None
+
     def create(self, validated_data):
         # Clear flags are serializer-only controls and must not be passed to model create().
+        validated_data.pop("order", None)
         validated_data.pop('clear_question_image', None)
         validated_data.pop('clear_option_a_image', None)
         validated_data.pop('clear_option_b_image', None)
@@ -561,6 +623,7 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
+        validated_data.pop("order", None)
         clear_question_image = validated_data.pop('clear_question_image', False)
         clear_option_a_image = validated_data.pop('clear_option_a_image', False)
         clear_option_b_image = validated_data.pop('clear_option_b_image', False)
@@ -657,7 +720,18 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
 
         module = None
         if self.instance is not None:
-            module = self.instance.module
+            view = self.context.get("view")
+            if view is not None and hasattr(view, "kwargs"):
+                module_pk = view.kwargs.get("module_pk")
+                test_pk = view.kwargs.get("test_pk")
+                if module_pk and test_pk:
+                    module = Module.objects.filter(pk=module_pk, practice_test_id=test_pk).first()
+            if module is None:
+                try:
+                    link = self.instance.module_questions.select_related("module").order_by("order", "id").first()
+                    module = link.module if link else None
+                except Exception:
+                    module = None
         else:
             view = self.context.get("view")
             if view is not None and hasattr(view, "kwargs"):
@@ -681,7 +755,7 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
                         }
                     )
 
-                qs = Question.objects.filter(module__practice_test=pt)
+                qs = Question.objects.filter(module_questions__module__practice_test=pt).distinct()
                 if self.instance is not None:
                     qs = qs.exclude(pk=self.instance.pk)
                 current_sum = qs.aggregate(s=Sum("score"))["s"] or 0

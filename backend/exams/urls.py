@@ -1,11 +1,13 @@
 from django.urls import path, include, re_path
 from rest_framework.routers import DefaultRouter
 from .views import (
+    AdminCategoryViewSet,
     AdminMockExamViewSet,
     AdminModuleViewSet,
     AdminPastpaperPackViewSet,
     AdminPracticeTestViewSet,
     AdminQuestionViewSet,
+    AdminStandaloneQuestionViewSet,
     BulkAssignmentHistoryListView,
     BulkAssignmentHistoryDetailView,
     BulkAssignmentHistoryRerunView,
@@ -36,11 +38,17 @@ admin_pastpaper_pack_router.register(r'', AdminPastpaperPackViewSet, basename='a
 admin_test_router = DefaultRouter()
 admin_test_router.register(r'', AdminPracticeTestViewSet, basename='admin-tests')
 
+admin_category_router = DefaultRouter()
+admin_category_router.register(r"", AdminCategoryViewSet, basename="admin-categories")
+
 admin_module_router = DefaultRouter()
 admin_module_router.register(r'', AdminModuleViewSet, basename='admin-modules')
 
 admin_question_router = DefaultRouter()
 admin_question_router.register(r'', AdminQuestionViewSet, basename='admin-questions')
+
+admin_standalone_question_router = DefaultRouter()
+admin_standalone_question_router.register(r"", AdminStandaloneQuestionViewSet, basename="admin-standalone-questions")
 
 urlpatterns = [
     path("metrics/", ExamsMetricsView.as_view(), name="exams-metrics"),
@@ -58,6 +66,12 @@ urlpatterns = [
     ),
     # Admin Questions CRUD: /exams/admin/tests/<test_pk>/modules/<module_pk>/questions/
     path('admin/tests/<int:test_pk>/modules/<int:module_pk>/questions/', include(admin_question_router.urls)),
+
+    # Standalone question bank: /exams/admin/questions/?standalone=1
+    path("admin/questions/", include(admin_standalone_question_router.urls)),
+
+    # Categories: /exams/admin/categories/
+    path("admin/categories/", include(admin_category_router.urls)),
     
     # Admin Modules CRUD: /exams/admin/tests/<test_pk>/modules/
     path('admin/tests/<int:test_pk>/modules/', include(admin_module_router.urls)),

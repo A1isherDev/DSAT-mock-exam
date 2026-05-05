@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from django.test import TestCase
 
-from exams.models import Module, PracticeTest, Question
+from exams.models import Module, ModuleQuestion, PracticeTest, Question
+from exams.question_ordering import assign_question_to_module_dense_locked
 
 
 class QuestionOrderingDenseTests(TestCase):
@@ -22,52 +23,50 @@ class QuestionOrderingDenseTests(TestCase):
 
     def test_create_appends_dense_zero_based(self):
         a = Question.objects.create(
-            module=self.mod,
             question_type="MATH",
             question_text="A",
             correct_answers="1",
-            order=0,
         )
+        assign_question_to_module_dense_locked(module_id=self.mod.id, question=a, insert_at=0)
         b = Question.objects.create(
-            module=self.mod,
             question_type="MATH",
             question_text="B",
             correct_answers="2",
-            order=1,
         )
-        a.refresh_from_db()
-        b.refresh_from_db()
-        self.assertEqual(a.order, 0)
-        self.assertEqual(b.order, 1)
+        assign_question_to_module_dense_locked(module_id=self.mod.id, question=b, insert_at=1)
+        links = list(
+            ModuleQuestion.objects.filter(module=self.mod)
+            .order_by("order", "id")
+            .values_list("question_id", "order")
+        )
+        self.assertEqual(links, [(a.id, 0), (b.id, 1)])
         self.mod.refresh_from_db()
         self.assertEqual(self.mod.question_order_high_water, 1)
 
     def test_insert_at_index_shifts_others(self):
-        Question.objects.create(
-            module=self.mod,
+        a = Question.objects.create(
             question_type="MATH",
             question_text="A",
             correct_answers="1",
-            order=0,
         )
-        Question.objects.create(
-            module=self.mod,
+        assign_question_to_module_dense_locked(module_id=self.mod.id, question=a, insert_at=0)
+        b = Question.objects.create(
             question_type="MATH",
             question_text="B",
             correct_answers="2",
-            order=1,
         )
+        assign_question_to_module_dense_locked(module_id=self.mod.id, question=b, insert_at=1)
         c = Question(
-            module=self.mod,
             question_type="MATH",
             question_text="C",
             correct_answers="3",
-            order=0,
         )
         c.save()
+        assign_question_to_module_dense_locked(module_id=self.mod.id, question=c, insert_at=0)
         orders = list(
-            Question.objects.filter(module=self.mod).order_by("order", "id").values_list(
-                "question_text", "order"
-            )
+            ModuleQuestion.objects.filter(module=self.mod)
+            .select_related("question")
+            .order_by("order", "id")
+            .values_list("question__question_text", "order")
         )
         self.assertEqual(orders, [("C", 0), ("A", 1), ("B", 2)])

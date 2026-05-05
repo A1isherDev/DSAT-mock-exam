@@ -7,6 +7,7 @@ used when starting attempts (see ``TestAttemptViewSet.create``).
 from __future__ import annotations
 
 from exams.models import Module, Question
+from exams.question_ordering import assign_question_to_module_dense_locked
 
 # Mirrors production consoles (see ``access.host_guard.SubdomainAPIGuardMiddleware``).
 MAIN_HOST: dict[str, str] = {}
@@ -32,15 +33,15 @@ def _question_type_for_module(module: Module) -> str:
 
 def seed_mc_question(module: Module, *, stem: str = "Question text", order: int = 0) -> Question:
     """Minimal MC row (two options + letter answer) for attempt-create eligibility."""
-    return Question.objects.create(
-        module=module,
+    q = Question.objects.create(
         question_type=_question_type_for_module(module),
         question_text=stem,
         option_a="Choice A",
         option_b="Choice B",
         correct_answers="a",
-        order=order,
     )
+    assign_question_to_module_dense_locked(module_id=int(module.pk), question=q, insert_at=int(order))
+    return q
 
 
 def seed_mc_questions_for_practice_test(practice_test, *, questions_per_module: int = 1) -> None:

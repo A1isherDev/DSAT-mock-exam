@@ -44,22 +44,39 @@ class Question(TimestampedModel):
     is_math_input = models.BooleanField(default=False)
     score = models.IntegerField(default=10, help_text="Score weight for this question")
     explanation = models.TextField(blank=True)
-    order = models.PositiveIntegerField(default=0, db_index=True)
-    module = models.ForeignKey('Module', on_delete=models.CASCADE, related_name='questions', null=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+    category = models.ForeignKey(
+        "Category",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="questions",
+    )
     
     class Meta:
         db_table = 'questions'
-        ordering = ['order', 'created_at']
-        constraints = [
-            models.UniqueConstraint(
-                fields=["module", "order"],
-                condition=models.Q(module__isnull=False),
-                name="uniq_question_order_per_module",
-            ),
-        ]
+        ordering = ['-created_at', '-id']
+        constraints = []
     
     def __str__(self):
         return f"{self.get_question_type_display()} Q{self.id}"
+
+    def order_in_module(self, module_id: int | None = None) -> int | None:
+        """
+        Module-specific order index from ``ModuleQuestion``.
+        If ``module_id`` is omitted, returns the smallest order among linked modules (if any).
+        """
+        qs = getattr(self, "module_questions", None)
+        if qs is None:
+            return None
+        try:
+            q = qs
+            if module_id is not None:
+                q = q.filter(module_id=int(module_id))
+            row = q.order_by("order", "id").values_list("order", flat=True).first()
+            return int(row) if row is not None else None
+        except Exception:
+            return None
 
     def get_options(self):
         options = {}
@@ -166,12 +183,7 @@ class Question(TimestampedModel):
         return False
 
     def save(self, *args, **kwargs):
-        """
-        When ``module`` is set, ``order`` is assigned under a **dense** 0..n-1 contract with a
-        ``Module`` row lock (see ``question_ordering.save_question_dense_locked``).
-
-        Use ``_plain_db_save=True`` only for internal persistence after ordering is finalized.
-        """
+        """`order` is mirrored from `ModuleQuestion` when assigned to a module."""
         if kwargs.pop("_plain_db_save", False):
             super().save(*args, **kwargs)
             return
@@ -179,15 +191,66 @@ class Question(TimestampedModel):
         if kwargs.pop("_skip_question_order_normalize", False):
             super().save(*args, **kwargs)
             return
+        super().save(*args, **kwargs)
 
-        from .question_ordering import save_question_dense_locked
 
-        mid = self.module_id
-        if mid is None:
-            super().save(*args, **kwargs)
-            return
+class Category(TimestampedModel):
+    """
+    Optional categorization for questions (independent of modules/tests).
+    """
 
-        save_question_dense_locked(self, *args, **kwargs)
+    name = models.CharField(max_length=128, db_index=True)
+    subject = models.CharField(
+        max_length=32,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Optional subject tag (e.g. MATH, READING_WRITING).",
+    )
+
+    class Meta:
+        db_table = "question_categories"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["name", "subject"],
+                name="uniq_category_name_subject",
+            )
+        ]
+
+    def __str__(self) -> str:
+        subj = (self.subject or "").strip()
+        return f"{self.name} ({subj})" if subj else self.name
+
+
+class ModuleQuestion(TimestampedModel):
+    """
+    Explicit module ↔ question assignment with dense ordering per module.
+    """
+
+    module = models.ForeignKey(
+        "Module",
+        on_delete=models.CASCADE,
+        related_name="module_questions",
+        db_index=True,
+    )
+    question = models.ForeignKey(
+        "Question",
+        on_delete=models.CASCADE,
+        related_name="module_questions",
+        db_index=True,
+    )
+    order = models.PositiveIntegerField(default=0, db_index=True)
+
+    class Meta:
+        db_table = "module_questions"
+        ordering = ["order", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["module", "order"], name="uniq_modulequestion_order_per_module"),
+            models.UniqueConstraint(fields=["module", "question"], name="uniq_modulequestion_per_module"),
+        ]
+
+    def __str__(self) -> str:
+        return f"Module#{self.module_id} Q#{self.question_id} @{self.order}"
 
 class MockExam(TimestampedModel):
     KIND_MOCK_SAT = "MOCK_SAT"
@@ -384,7 +447,7 @@ class PracticeTest(TimestampedModel):
         """At least one ``Question`` under some ``Module`` — required to start a ``TestAttempt``."""
         if not self.pk:
             return False
-        return Question.objects.filter(module__practice_test_id=self.pk).exists()
+        return ModuleQuestion.objects.filter(module__practice_test_id=self.pk).exists()
 
     def modules_exist_without_questions(self) -> bool:
         """
@@ -440,7 +503,7 @@ class Module(TimestampedModel):
     time_limit_minutes = models.IntegerField()
     question_order_high_water = models.BigIntegerField(
         default=0,
-        help_text="Monotonic high-water mark for Question.order allocations (avoids Max(order) hotspot).",
+        help_text="Monotonic high-water mark for ModuleQuestion.order allocations (avoids Max(order) hotspot).",
     )
     
     class Meta:
@@ -468,6 +531,16 @@ class Module(TimestampedModel):
             else "Unassigned"
         )
         return f"{exam_title} - {self.practice_test.get_subject_display()} - Mod {self.module_order}"
+
+    def ordered_questions(self):
+        """
+        Canonical per-module question sequence.
+        Returns an ordered list of Question objects.
+        """
+        links = list(
+            self.module_questions.select_related("question").order_by("order", "id")
+        )
+        return [l.question for l in links if l.question_id]
 
 
 def ensure_full_mock_practice_test_modules(practice_test: PracticeTest) -> None:
@@ -1094,10 +1167,12 @@ class TestAttempt(TimestampedModel):
             total_earned = 0
             for module_id_str, answers in self.module_answers.items():
                 try:
-                    module = Module.objects.prefetch_related("questions").get(id=int(module_id_str))
+                    module = Module.objects.prefetch_related(
+                        "module_questions__question",
+                    ).get(id=int(module_id_str))
                 except (ValueError, Module.DoesNotExist):
                     continue
-                for question in module.questions.all():
+                for question in module.ordered_questions():
                     ans = answers.get(str(question.id))
                     if question.check_answer(ans):
                         total_earned += question.score
@@ -1112,9 +1187,11 @@ class TestAttempt(TimestampedModel):
 
             for module_id_str, answers in self.module_answers.items():
                 try:
-                    module = Module.objects.prefetch_related("questions").get(id=int(module_id_str))
+                    module = Module.objects.prefetch_related(
+                        "module_questions__question",
+                    ).get(id=int(module_id_str))
                     module_earned = 0
-                    for question in module.questions.all():
+                    for question in module.ordered_questions():
                         ans = answers.get(str(question.id))
                         if question.check_answer(ans):
                             module_earned += question.score
@@ -1167,14 +1244,16 @@ class TestAttempt(TimestampedModel):
         is_midterm = bool(mock and mock.kind == MockExam.KIND_MIDTERM)
         
         # Prefetch questions for all modules in this test
-        modules = self.practice_test.modules.prefetch_related('questions').order_by('module_order')
+        modules = self.practice_test.modules.prefetch_related(
+            "module_questions__question",
+        ).order_by("module_order")
         
         for module in modules:
             module_answers = self.module_answers.get(str(module.id), {})
             questions_data = []
             module_earned = 0
             
-            for question in module.questions.all():
+            for question in module.ordered_questions():
                 student_ans = module_answers.get(str(question.id))
                 is_correct = question.check_answer(student_ans)
                 if is_correct:

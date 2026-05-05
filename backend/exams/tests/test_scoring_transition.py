@@ -4,6 +4,7 @@ from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
 
 from exams.models import Module, PracticeTest, Question, TestAttempt
+from exams.question_ordering import assign_question_to_module_dense_locked
 
 
 class ScoringTransitionTests(APITestCase):
@@ -26,22 +27,22 @@ class ScoringTransitionTests(APITestCase):
         )
         m1 = Module.objects.create(practice_test=self.test, module_order=1, time_limit_minutes=1)
         m2 = Module.objects.create(practice_test=self.test, module_order=2, time_limit_minutes=1)
-        Question.objects.create(
-            module=m1,
+        q1 = Question.objects.create(
             question_type="READING",
             question_text="Q1",
             option_a="A",
             option_b="B",
             correct_answers="a",
         )
-        Question.objects.create(
-            module=m2,
+        assign_question_to_module_dense_locked(module_id=m1.id, question=q1, insert_at=0)
+        q2 = Question.objects.create(
             question_type="READING",
             question_text="Q2",
             option_a="A",
             option_b="B",
             correct_answers="a",
         )
+        assign_question_to_module_dense_locked(module_id=m2.id, question=q2, insert_at=0)
 
     def test_submit_module2_enters_scoring_and_sets_timestamp(self):
         a = self.client.post("/api/exams/attempts/", {"practice_test": self.test.id}, format="json").data

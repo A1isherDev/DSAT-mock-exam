@@ -19,7 +19,7 @@ from django.http import HttpResponse
 from datetime import timedelta
 import hashlib
 import json
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Q
 
 from access import constants as acc_const
 from access.permissions import CanManageQuestions, RequiresSubmitTest
@@ -46,8 +46,10 @@ from .library_bulk_assign import (
 from .models import (
     AuditLog,
     BulkAssignmentDispatch,
+    Category,
     MockExam,
     Module,
+    ModuleQuestion,
     PastpaperPack,
     PortalMockExam,
     PracticeTest,
@@ -64,6 +66,7 @@ from .serializers import (
     AdminMockExamSerializer,
     AdminPastpaperPackSerializer,
     AdminPracticeTestSerializer,
+    AdminCategorySerializer,
     AdminModuleSerializer,
     AdminQuestionSerializer,
     BulkAssignmentDispatchSerializer,
@@ -129,7 +132,10 @@ def _version_conflict_response(view, request, *, attempt: TestAttempt) -> Respon
 def _refetch_attempt_for_api(view, pk: int) -> TestAttempt:
     return (
         TestAttempt.objects.select_related("practice_test", "current_module")
-        .prefetch_related("practice_test__modules", "current_module__questions")
+        .prefetch_related(
+            "practice_test__modules",
+            "current_module__module_questions__question",
+        )
         .get(pk=pk)
     )
 
@@ -269,11 +275,16 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
         # Student practice library must never surface empty tests (no questions); the exam runner
         # requires a non-empty `current_module_details.questions` payload.
         base = (
-            PracticeTest.objects.filter(mock_exam__isnull=True, modules__questions__isnull=False)
+            PracticeTest.objects.filter(
+                mock_exam__isnull=True,
+            )
             .select_related("mock_exam", "pastpaper_pack")
             .prefetch_related("modules")
             .distinct()
         )
+        # Exclude empty tests (runner requires at least one question). Prefer ModuleQuestion if present,
+        # but keep legacy Question.module support during migration.
+        base = base.filter(Q(modules__module_questions__isnull=False))
         if can_browse_standalone_practice_library(user):
             return filter_practice_tests_for_user(user, base).distinct()
         if not user.is_authenticated:
@@ -584,7 +595,10 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                     locked.start_attempt()
                 attempt = (
                     TestAttempt.objects.select_related("practice_test", "current_module")
-                    .prefetch_related("practice_test__modules", "current_module__questions")
+                    .prefetch_related(
+                        "practice_test__modules",
+                        "current_module__module_questions__question",
+                    )
                     .get(pk=attempt0.pk)
                 )
                 metric_incr("slo_exam_resume_ok_total")
@@ -762,7 +776,8 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
 
                 # Re-fetch canonical state after transaction commit for response.
                 attempt = TestAttempt.objects.select_related("practice_test", "current_module").prefetch_related(
-                    "practice_test__modules", "current_module__questions"
+                    "practice_test__modules",
+                    "current_module__module_questions__question",
                 ).get(pk=attempt0.pk)
 
                 serializer = self.get_serializer(attempt)
@@ -840,7 +855,10 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
 
                 attempt = (
                     TestAttempt.objects.select_related("practice_test", "current_module")
-                    .prefetch_related("practice_test__modules", "current_module__questions")
+                    .prefetch_related(
+                        "practice_test__modules",
+                        "current_module__module_questions__question",
+                    )
                     .get(pk=attempt0.pk)
                 )
                 if expired:
@@ -864,7 +882,10 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         attempt0 = self.get_object()
         attempt = (
             TestAttempt.objects.select_related("practice_test", "current_module")
-            .prefetch_related("practice_test__modules", "current_module__questions")
+            .prefetch_related(
+                "practice_test__modules",
+                "current_module__module_questions__question",
+            )
             .get(pk=attempt0.pk)
         )
         return Response(self.get_serializer(attempt).data)
@@ -885,7 +906,9 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         relevant_module_ids = [mid for mid in attempt.module_answers.keys() 
                              if not module_id_param or str(mid) == str(module_id_param)]
         
-        modules = Module.objects.filter(id__in=relevant_module_ids).prefetch_related('questions')
+        modules = Module.objects.filter(id__in=relevant_module_ids).prefetch_related(
+            "module_questions__question",
+        )
         modules_map = {str(m.id): m for m in modules}
 
         for module_id, answers in attempt.module_answers.items():
@@ -896,7 +919,7 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
             if not module:
                 continue
             
-            for q in module.questions.all():
+            for q in module.ordered_questions():
                 total_questions += 1
                 ans = answers.get(str(q.id))
                 
@@ -1080,7 +1103,7 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
         portal.save(update_fields=["is_active", "updated_at"])
         if exam.assigned_users.exists():
             portal.assigned_users.set(exam.assigned_users.all())
-        exam = MockExam.objects.prefetch_related("tests__modules__questions").get(pk=exam.pk)
+        exam = MockExam.objects.prefetch_related("tests__modules__module_questions__question").get(pk=exam.pk)
         return Response(AdminMockExamSerializer(exam).data)
 
     @action(detail=True, methods=["post"])
@@ -1090,7 +1113,7 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
         exam.published_at = None
         exam.save(update_fields=["is_published", "published_at", "updated_at"])
         PortalMockExam.objects.filter(mock_exam=exam).update(is_active=False)
-        exam = MockExam.objects.prefetch_related("tests__modules__questions").get(pk=exam.pk)
+        exam = MockExam.objects.prefetch_related("tests__modules__module_questions__question").get(pk=exam.pk)
         return Response(AdminMockExamSerializer(exam).data)
 
     @action(detail=True, methods=['post'])
@@ -1192,6 +1215,17 @@ class AdminPracticeTestViewSet(viewsets.ModelViewSet):
         return base
 
 
+class AdminCategoryViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated, CanManageQuestions]
+    serializer_class = AdminCategorySerializer
+
+    def get_queryset(self):
+        qs = Category.objects.all().order_by("subject", "name", "id")
+        if not can_manage_questions(self.request.user):
+            return qs.none()
+        return qs
+
+
 class AdminModuleViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, CanManageQuestions]
     serializer_class = AdminModuleSerializer
@@ -1208,12 +1242,79 @@ class AdminModuleViewSet(viewsets.ModelViewSet):
         test = get_object_or_404(PracticeTest, pk=self.kwargs['test_pk'])
         serializer.save(practice_test=test)
 
+    @action(detail=True, methods=["post"], url_path="assign-question")
+    def assign_question(self, request, test_pk=None, pk=None):
+        """
+        Assign an existing (possibly standalone) Question to this module at an optional order index.
+        Payload: { "question_id": int, "order": int? }
+        """
+        module = self.get_object()
+        qid = request.data.get("question_id")
+        if qid is None:
+            return Response({"detail": "question_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            qid_i = int(qid)
+        except (TypeError, ValueError):
+            return Response({"detail": "question_id must be an integer."}, status=status.HTTP_400_BAD_REQUEST)
+
+        question = get_object_or_404(Question, pk=qid_i)
+        raw_order = request.data.get("order", None)
+        try:
+            insert_at = int(raw_order) if raw_order is not None else None
+        except (TypeError, ValueError):
+            insert_at = None
+
+        with transaction.atomic():
+            Module.objects.select_for_update().get(pk=module.pk)
+            existing = (
+                ModuleQuestion.objects.filter(module_id=module.pk, question_id=question.pk)
+                .order_by("order", "id")
+                .first()
+            )
+            if existing:
+                assert_module_question_dense_integrity(
+                    module_id=int(module.pk),
+                    raise_on_error=False,
+                    context="assign_question:idempotent",
+                )
+                return Response(
+                    {
+                        "status": "exists",
+                        "module_id": module.pk,
+                        "question_id": question.pk,
+                        "order": int(existing.order),
+                    }
+                )
+
+            rows = list(
+                ModuleQuestion.objects.filter(module_id=module.pk)
+                .select_related("question")
+                .order_by("order", "id")
+            )
+
+            if insert_at is None:
+                insert_at = len(rows)
+            insert_at = max(0, min(int(insert_at), len(rows)))
+            link = ModuleQuestion(module_id=module.pk, question_id=question.pk, order=insert_at)
+            link.question = question
+            ordered = rows[:insert_at] + [link] + rows[insert_at:]
+            reindex_module_questions_dense_locked(int(module.pk), ordered)
+            assert_module_question_dense_integrity(
+                module_id=int(module.pk),
+                raise_on_error=True,
+                context="assign_question:after_reindex",
+            )
+
+        return Response({"status": "assigned", "module_id": module.pk, "question_id": question.pk, "order": insert_at})
+
 
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
 from .question_ordering import (
     dense_compact_module_orders_locked,
     reindex_module_questions_dense_locked,
+    assign_question_to_module_dense_locked,
+    assert_module_question_dense_integrity,
 )
 
 
@@ -1266,10 +1367,10 @@ class AdminQuestionViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return (
             Question.objects.filter(
-                module_id=self.kwargs["module_pk"],
-                module__practice_test_id=self.kwargs["test_pk"],
+                module_questions__module_id=self.kwargs["module_pk"],
+                module_questions__module__practice_test_id=self.kwargs["test_pk"],
             )
-            .order_by("order", "id")
+            .order_by("module_questions__order", "id")
         )
 
     def create(self, request, *args, **kwargs):
@@ -1282,17 +1383,32 @@ class AdminQuestionViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         module = get_object_or_404(Module, pk=self.kwargs['module_pk'], practice_test_id=self.kwargs['test_pk'])
-        n = Question.objects.filter(module_id=module.pk).count()
-        # ``order`` is the dense insert index (append); ``Question.save`` reindexes under a module lock.
-        serializer.save(module=module, order=n)
+        try:
+            raw_order = self.request.data.get("order", None)
+            insert_at = int(raw_order) if raw_order is not None else None
+        except (TypeError, ValueError):
+            insert_at = None
+        q = serializer.save()
+        assign_question_to_module_dense_locked(module_id=int(module.pk), question=q, insert_at=insert_at)
+        assert_module_question_dense_integrity(
+            module_id=int(module.pk),
+            raise_on_error=True,
+            context="admin_question_create",
+        )
 
     def perform_update(self, serializer):
         serializer.save()
 
     def perform_destroy(self, instance):
-        module_id = instance.module_id
+        module_id = int(self.kwargs["module_pk"])
+        # Preserve legacy behavior: deleting from module deletes the question (and cascades links).
         super().perform_destroy(instance)
         dense_compact_module_orders_locked(module_id)
+        assert_module_question_dense_integrity(
+            module_id=int(module_id),
+            raise_on_error=False,
+            context="admin_question_destroy",
+        )
 
     @action(detail=True, methods=['post'])
     def reorder(self, request, test_pk=None, module_pk=None, pk=None):
@@ -1301,13 +1417,15 @@ class AdminQuestionViewSet(viewsets.ModelViewSet):
         if action_type not in ("up", "down"):
             return Response({"error": "Invalid action"}, status=status.HTTP_400_BAD_REQUEST)
 
-        mid = question.module_id
+        mid = int(module_pk)
         with transaction.atomic():
             Module.objects.select_for_update().get(pk=mid)
             rows = list(
-                Question.objects.filter(module_id=mid).order_by("order", "id")
+                ModuleQuestion.objects.filter(module_id=mid)
+                .select_related("question")
+                .order_by("order", "id")
             )
-            idx = next((i for i, q in enumerate(rows) if q.pk == question.pk), None)
+            idx = next((i for i, l in enumerate(rows) if l.question_id == question.pk), None)
             if idx is None:
                 return Response({"error": "Question not in module."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1327,8 +1445,66 @@ class AdminQuestionViewSet(viewsets.ModelViewSet):
                 rows[idx + 1], rows[idx] = rows[idx], rows[idx + 1]
 
             reindex_module_questions_dense_locked(mid, rows)
+            assert_module_question_dense_integrity(
+                module_id=int(mid),
+                raise_on_error=True,
+                context="admin_question_reorder",
+            )
 
         return Response({"status": "reordered"})
+
+
+class AdminStandaloneQuestionViewSet(viewsets.ModelViewSet):
+    """
+    Standalone Question CRUD (not nested under a module).
+
+    Use `AdminModuleViewSet.assign_question` to attach an existing question to a module.
+    """
+
+    permission_classes = [IsAuthenticated, CanManageQuestions]
+    serializer_class = AdminQuestionSerializer
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def get_queryset(self):
+        from django.db.models import Count, Q
+
+        qs = Question.objects.all().annotate(usage_count=Count("module_questions", distinct=True))
+
+        # Base scope
+        standalone = self.request.query_params.get("standalone")
+        if standalone in ("1", "true", "yes"):
+            qs = qs.filter(module_questions__isnull=True)
+
+        # Filters
+        cat = self.request.query_params.get("category")
+        if cat not in (None, "", "all"):
+            try:
+                qs = qs.filter(category_id=int(cat))
+            except (TypeError, ValueError):
+                pass
+
+        raw_active = self.request.query_params.get("is_active")
+        if raw_active in ("0", "false", "no"):
+            qs = qs.filter(is_active=False)
+        elif raw_active in ("1", "true", "yes"):
+            qs = qs.filter(is_active=True)
+
+        subj = (self.request.query_params.get("subject") or "").strip().upper()
+        if subj in ("MATH", "READING_WRITING"):
+            if subj == "MATH":
+                qs = qs.filter(question_type="MATH")
+            else:
+                qs = qs.filter(question_type__in=["READING", "WRITING"])
+
+        q = (self.request.query_params.get("q") or "").strip()
+        if q:
+            qs = qs.filter(
+                Q(question_text__icontains=q)
+                | Q(question_prompt__icontains=q)
+                | Q(explanation__icontains=q)
+            )
+
+        return qs.order_by("-created_at", "-id")
 
 
 def _as_int_ids_bulk(seq):

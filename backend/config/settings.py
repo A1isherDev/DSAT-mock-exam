@@ -45,7 +45,13 @@ LMS_AUTHZ_RAISE_ON_CONSISTENCY_DRIFT = _env_bool(
 # Log role/subject and queryset counts around test-library filters (set True to debug prod issues).
 LMS_AUTHZ_DEBUG_FILTERS = _env_bool('LMS_AUTHZ_DEBUG_FILTERS', default_when_unset=False)
 
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+def _csv_env(name: str, default: str) -> list[str]:
+    raw = os.getenv(name, default)
+    parts = [p.strip() for p in str(raw).split(",")]
+    return [p for p in parts if p]
+
+
+ALLOWED_HOSTS = _csv_env('ALLOWED_HOSTS', 'localhost,127.0.0.1')
 GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '')
 # Telegram Login Widget: bot token (server only) + bot username for the widget (public).
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
@@ -425,9 +431,7 @@ SIMPLE_JWT = {
 # ─── CORS ─────────────────────────────────────────────────────────────────────
 
 CORS_ALLOW_ALL_ORIGINS = DEBUG  # Only allow all in debug mode
-CORS_ALLOWED_ORIGINS = os.getenv(
-    'CORS_ALLOWED_ORIGINS', 'http://localhost:3000'
-).split(',')
+CORS_ALLOWED_ORIGINS = _csv_env('CORS_ALLOWED_ORIGINS', 'http://localhost:3000')
 
 CSRF_TRUSTED_ORIGINS = [
     'http://mastersat.uz',

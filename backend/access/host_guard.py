@@ -159,6 +159,11 @@ class SubdomainAPIGuardMiddleware:
                 return self.get_response(request)
             if path.startswith("/api/exams/admin/"):
                 return self.get_response(request)
+            # Clean question bank aliases (prefer these on questions.* UI).
+            if path.startswith("/api/questions/"):
+                return self.get_response(request)
+            if path.startswith("/api/categories/"):
+                return self.get_response(request)
             # Assessments authoring CRUD endpoints live here (create/edit/delete sets/questions).
             if path.startswith("/api/assessments/admin/"):
                 return self.get_response(request)

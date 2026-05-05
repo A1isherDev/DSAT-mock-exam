@@ -1,4 +1,4 @@
-"""Detect and repair inconsistent ``Question.order`` values per module (gaps are normal under sparse mode)."""
+"""Detect and repair inconsistent ``ModuleQuestion.order`` values per module (dense ordering)."""
 
 from __future__ import annotations
 
@@ -10,11 +10,11 @@ from django.db.models import Count
 from .question_ordering import dense_compact_module_orders
 
 
-def question_duplicate_order_counts() -> dict[tuple[int, int], int]:
+def modulequestion_duplicate_order_counts() -> dict[tuple[int, int], int]:
     """Maps (module_id, order_value) → count where count > 1 violates UNIQUE(module_id, order)."""
-    QuestionModel = apps.get_model("exams", "Question")
+    ModuleQuestionModel = apps.get_model("exams", "ModuleQuestion")
     rows = (
-        QuestionModel.objects.exclude(module_id__isnull=True)
+        ModuleQuestionModel.objects.exclude(module_id__isnull=True)
         .values("module_id", "order")
         .annotate(c=Count("id"))
         .filter(c__gt=1)
@@ -27,9 +27,9 @@ def audit_question_orders(*, module_ids: list[int] | None = None) -> dict[str, A
     Duplicate (module_id, order) keys are actionable; sparse gaps between consecutive orders are reported
     separately (acceptable unless you intend dense numbering).
     """
-    QuestionModel = apps.get_model("exams", "Question")
+    ModuleQuestionModel = apps.get_model("exams", "ModuleQuestion")
 
-    dup_index = question_duplicate_order_counts()
+    dup_index = modulequestion_duplicate_order_counts()
     if module_ids:
         dup_filtered = {(m, o): c for ((m, o), c) in dup_index.items() if m in set(module_ids)}
     else:
@@ -40,7 +40,7 @@ def audit_question_orders(*, module_ids: list[int] | None = None) -> dict[str, A
         for ((m, o), c) in sorted(dup_filtered.items(), key=lambda x: (x[0][0], x[0][1]))
     ]
 
-    qs = QuestionModel.objects.exclude(module_id__isnull=True).values_list("module_id", flat=True).distinct()
+    qs = ModuleQuestionModel.objects.exclude(module_id__isnull=True).values_list("module_id", flat=True).distinct()
     if module_ids:
         qs = qs.filter(module_id__in=module_ids)
     mids = sorted(set(qs))
@@ -48,7 +48,7 @@ def audit_question_orders(*, module_ids: list[int] | None = None) -> dict[str, A
     gap_stats: dict[int, dict[str, Any]] = {}
     for mid in mids:
         orders = list(
-            QuestionModel.objects.filter(module_id=mid)
+            ModuleQuestionModel.objects.filter(module_id=mid)
             .order_by("order", "id")
             .values_list("order", flat=True)
         )
@@ -77,7 +77,7 @@ def repair_question_orders_for_module(module_id: int) -> int:
 
 def repair_modules_with_duplicate_orders(*, limit: int | None = None) -> list[int]:
     """Fix every module that still has duplicate (module_id, order) keys."""
-    affected = sorted({m for (m, _o) in question_duplicate_order_counts().keys()})
+    affected = sorted({m for (m, _o) in modulequestion_duplicate_order_counts().keys()})
     if limit is not None:
         affected = affected[: int(limit)]
 
@@ -90,11 +90,11 @@ def repair_modules_with_duplicate_orders(*, limit: int | None = None) -> list[in
 
 def module_has_duplicate_orders(module_id: int) -> bool:
     """Cheap existence check for duplicate (module_id, order) pairs."""
-    QuestionModel = apps.get_model("exams", "Question")
+    ModuleQuestionModel = apps.get_model("exams", "ModuleQuestion")
     from django.db.models import Count
 
     return (
-        QuestionModel.objects.filter(module_id=module_id)
+        ModuleQuestionModel.objects.filter(module_id=module_id)
         .values("order")
         .annotate(c=Count("id"))
         .filter(c__gt=1)
@@ -105,7 +105,7 @@ def module_has_duplicate_orders(module_id: int) -> bool:
 __all__ = [
     "audit_question_orders",
     "module_has_duplicate_orders",
-    "question_duplicate_order_counts",
+    "modulequestion_duplicate_order_counts",
     "repair_modules_with_duplicate_orders",
     "repair_question_orders_for_module",
 ]

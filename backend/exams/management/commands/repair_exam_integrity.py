@@ -10,7 +10,7 @@ from django.utils import timezone
 
 from exams.engine_integrity import infer_state_from_attempt, required_module_orders_for_test
 from exams.metrics import incr as metric_incr
-from exams.models import Module, PracticeTest, Question, TestAttempt, ensure_full_mock_practice_test_modules
+from exams.models import Module, ModuleQuestion, PracticeTest, Question, TestAttempt, ensure_full_mock_practice_test_modules
 
 
 class Command(BaseCommand):
@@ -88,8 +88,8 @@ class Command(BaseCommand):
                 continue
 
             with transaction.atomic():
-                # Move questions
-                Question.objects.filter(module__in=extras).update(module=primary)
+                # Move module-question links (authoritative; Question.module FK removed).
+                ModuleQuestion.objects.filter(module__in=extras).update(module=primary)
                 # Move completed_modules M2M references:
                 # If attempts completed an extra module row, also add primary to completed_modules.
                 for extra in extras:

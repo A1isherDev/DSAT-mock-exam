@@ -8,6 +8,7 @@ from rest_framework.test import APIClient
 
 from access import constants as acc_const
 from exams.models import Module, PracticeTest, Question
+from exams.question_ordering import assign_question_to_module_dense_locked
 
 User = get_user_model()
 
@@ -45,8 +46,10 @@ class AdminTestsListNPlusOneTests(TestCase):
             m1 = Module.objects.create(practice_test=pt, module_order=1, time_limit_minutes=35)
             m2 = Module.objects.create(practice_test=pt, module_order=2, time_limit_minutes=35)
             for j in range(5):
-                Question.objects.create(module=m1, question_type="MATH", question_text=f"Q{i}-1-{j}", correct_answers="a")
-                Question.objects.create(module=m2, question_type="MATH", question_text=f"Q{i}-2-{j}", correct_answers="a")
+                q1 = Question.objects.create(question_type="MATH", question_text=f"Q{i}-1-{j}", correct_answers="a")
+                assign_question_to_module_dense_locked(module_id=m1.id, question=q1, insert_at=j)
+                q2 = Question.objects.create(question_type="MATH", question_text=f"Q{i}-2-{j}", correct_answers="a")
+                assign_question_to_module_dense_locked(module_id=m2.id, question=q2, insert_at=j)
 
         with CaptureQueriesContext(connection) as ctx:
             r = self.client.get("/api/exams/admin/tests/", **_QUESTIONS_HOST)

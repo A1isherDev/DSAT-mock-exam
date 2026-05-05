@@ -37,6 +37,8 @@ urlpatterns = [
     path("api/schema/swagger/", SpectacularSwaggerView.as_view(url_name="openapi-schema"), name="openapi-swagger"),
     path('api/users/', include('users.urls')),
     path('api/exams/', include('exams.urls')),
+    # Question bank clean aliases (no duplicated logic; re-exports exams admin viewsets).
+    path("api/", include("exams.question_bank_urls")),
     path('api/classes/', include('classes.urls')),
     path('api/access/', include('access.urls')),
     path('api/realtime/', include('realtime.urls')),

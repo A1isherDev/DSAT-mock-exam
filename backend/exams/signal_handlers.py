@@ -1,13 +1,23 @@
 import logging
 
-from django.db.models.signals import post_delete, pre_save
+from django.db.models.signals import post_delete, pre_delete, pre_save
 from django.dispatch import receiver
 from django.utils import timezone
 
-from .models import PracticeTest, Question
+from .models import ModuleQuestion, PracticeTest, Question
 from .question_ordering import dense_compact_module_orders_locked
 
 logger = logging.getLogger(__name__)
+
+
+@receiver(pre_delete, sender=Question)
+def question_capture_modules_before_delete(sender, instance, **kwargs):
+    try:
+        instance._deleted_module_ids = list(  # type: ignore[attr-defined]
+            ModuleQuestion.objects.filter(question_id=instance.pk).values_list("module_id", flat=True)
+        )
+    except Exception:
+        instance._deleted_module_ids = []  # type: ignore[attr-defined]
 
 
 @receiver(post_delete, sender=Question)
@@ -16,7 +26,9 @@ def question_normalize_after_delete(sender, instance, **kwargs):
 
     if not getattr(settings, "EXAM_QUESTION_COMPACT_ON_DELETE", False):
         return
-    dense_compact_module_orders_locked(instance.module_id)
+    mids = getattr(instance, "_deleted_module_ids", None) or []
+    for mid in mids:
+        dense_compact_module_orders_locked(mid)
 
 
 @receiver(pre_save, sender=PracticeTest)

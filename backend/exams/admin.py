@@ -1,29 +1,27 @@
 from django.contrib import admin
-from .models import Question, PracticeTest, Module, TestAttempt, AuditLog, MockExam, PortalMockExam, PastpaperPack
 
-class QuestionInline(admin.StackedInline):
-    model = Question
-    extra = 1
-    fieldsets = (
-        (None, {
-            'fields': ('question_type', 'question_text', 'question_prompt', 'question_image')
-        }),
-        ('Answers', {
-            'fields': (('option_a', 'option_b'), ('option_c', 'option_d'), 'correct_answers', 'is_math_input')
-        }),
-    )
+from .models import (
+    AuditLog,
+    MockExam,
+    Module,
+    ModuleQuestion,
+    PastpaperPack,
+    PortalMockExam,
+    PracticeTest,
+    Question,
+    TestAttempt,
+)
 
 @admin.register(Question)
 class QuestionAdmin(admin.ModelAdmin):
-    list_display = ('id', 'question_type', 'get_test_title', 'module')
-    list_filter = ('question_type', 'module__practice_test', 'module')
+    list_display = ("id", "question_type", "get_test_title", "module_count")
+    list_filter = ("question_type",)
     search_fields = ('question_text',)
-    autocomplete_fields = ['module']
     list_per_page = 50
 
     fieldsets = (
         ('Content', {
-            'fields': ('module', 'question_type', 'question_text', 'question_prompt', 'question_image')
+            'fields': ('question_type', 'question_text', 'question_prompt', 'question_image')
         }),
         ('Options', {
             'fields': ('option_a', 'option_b', 'option_c', 'option_d')
@@ -34,10 +32,15 @@ class QuestionAdmin(admin.ModelAdmin):
     )
 
     def get_test_title(self, obj):
-        if obj.module and obj.module.practice_test and obj.module.practice_test.mock_exam:
-            return obj.module.practice_test.mock_exam.title
-        return "No Module"
+        link = ModuleQuestion.objects.select_related("module__practice_test__mock_exam").filter(question=obj).order_by("order", "id").first()
+        if link and link.module and link.module.practice_test and link.module.practice_test.mock_exam:
+            return link.module.practice_test.mock_exam.title
+        return "Unassigned"
     get_test_title.short_description = 'Mock Exam'
+
+    def module_count(self, obj):
+        return ModuleQuestion.objects.filter(question=obj).count()
+    module_count.short_description = "Modules"
 
 class ModuleInline(admin.StackedInline):
     model = Module
@@ -120,7 +123,6 @@ class ModuleAdmin(admin.ModelAdmin):
     list_filter = ('practice_test__subject', 'module_order')
     search_fields = ('practice_test__mock_exam__title',)
     autocomplete_fields = ['practice_test']
-    inlines = [QuestionInline]
     list_select_related = ('practice_test',)
     list_per_page = 50
 

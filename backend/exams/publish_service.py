@@ -27,7 +27,7 @@ def mock_exam_publish_ready(exam: "MockExam") -> Tuple[bool, str]:
         if len(mods) < need_mods:
             return False, f"Add {need_mods} module(s) with questions for this midterm."
         for m in mods[:need_mods]:
-            if m.questions.count() < 1:
+            if m.module_questions.count() < 1:
                 return False, f"Module {m.module_order} must have at least one question."
         return True, ""
 
@@ -42,6 +42,6 @@ def mock_exam_publish_ready(exam: "MockExam") -> Tuple[bool, str]:
         if len(mods) < 1:
             return False, f"{pt.get_subject_display()} needs at least one module."
         for m in mods:
-            if m.questions.count() < 1:
+            if m.module_questions.count() < 1:
                 return False, f"{pt.get_subject_display()} module {m.module_order} needs at least one question."
     return True, ""

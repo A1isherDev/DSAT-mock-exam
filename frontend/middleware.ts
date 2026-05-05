@@ -15,6 +15,7 @@ export function middleware(req: NextRequest) {
   const host = req.headers.get("host");
   const console = consoleFromHost(host);
   const res = NextResponse.next();
+  const pathname = req.nextUrl.pathname;
 
   // Persist a small, explicit console marker for client components.
   if (console) {
@@ -23,8 +24,34 @@ export function middleware(req: NextRequest) {
     res.cookies.delete("lms_console");
   }
 
-  // Subdomain consoles land on /admin (single-page console for now).
-  if (console && req.nextUrl.pathname === "/") {
+  // Questions console: dedicated Question Bank only.
+  if (console === "questions") {
+    const allowPrefixes = [
+      "/questions/bank",
+      "/login",
+      "/register",
+      "/security",
+      "/frozen",
+      "/_not-found",
+    ];
+    const allowed = allowPrefixes.some((p) => pathname === p || pathname.startsWith(p + "/"));
+
+    if (pathname === "/") {
+      const url = req.nextUrl.clone();
+      url.pathname = "/questions/bank";
+      return NextResponse.redirect(url, { headers: res.headers });
+    }
+
+    if (!allowed) {
+      const url = req.nextUrl.clone();
+      url.pathname = "/questions/bank";
+      url.search = "";
+      return NextResponse.redirect(url, { headers: res.headers });
+    }
+  }
+
+  // Admin console can continue to land on /admin.
+  if (console === "admin" && pathname === "/") {
     const url = req.nextUrl.clone();
     url.pathname = "/admin";
     return NextResponse.redirect(url, { headers: res.headers });

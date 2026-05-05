@@ -7,7 +7,7 @@ from django.core.management.base import BaseCommand
 from django.db.models import Count, Max, Q
 
 from exams.engine_integrity import audit_attempt_invariants, required_module_orders_for_test
-from exams.models import MockExam, Module, PracticeTest, Question, TestAttempt
+from exams.models import MockExam, Module, ModuleQuestion, PracticeTest, Question, TestAttempt
 from exams.question_integrity import audit_question_orders
 
 
@@ -177,7 +177,7 @@ class Command(BaseCommand):
         hw_drift_n = 0
         hw_drift_samples: list[dict] = []
         for m in Module.objects.all().iterator(chunk_size=400):
-            mq_raw = Question.objects.filter(module_id=m.pk).aggregate(m=Max("order"))["m"]
+            mq_raw = ModuleQuestion.objects.filter(module_id=m.pk).aggregate(m=Max("order"))["m"]
             mq = int(mq_raw) if mq_raw is not None else 0
             hw = int(m.question_order_high_water or 0)
             if mq > hw:
