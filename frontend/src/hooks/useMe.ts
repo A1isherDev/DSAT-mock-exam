@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import type { QueryClient } from "@tanstack/react-query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePathname } from "next/navigation";
+import Cookies from "js-cookie";
 import type { AuthBootState } from "@/lib/auth/meBoot";
 import {
   clearAuthLossDetected,
@@ -26,6 +27,18 @@ import { deriveAuthBootState, meErrorIsBenignCancellation, mePayloadValid } from
 import { meQueryKey } from "@/lib/auth/meQueryKey";
 import { clearAuthCircuitWindow } from "@/lib/auth/authCircuitBreaker";
 import { clearDerivedAuthProjectionCookies, usersApi, writeLmsUserCacheFromMe } from "@/lib/api";
+
+function readMeProjectionCookie(): Record<string, unknown> | undefined {
+  if (typeof window === "undefined") return undefined;
+  try {
+    const raw = Cookies.get("lms_user");
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 export function invalidateMe(queryClient: QueryClient) {
   // Do not cancel in-flight `/users/me` — overlapping aborts + `fetchMeWithConcurrency` stale
@@ -74,6 +87,13 @@ export function useMe() {
   const q = useQuery({
     queryKey: [...meQueryKey],
     queryFn: ({ signal }) => fetchMeWithConcurrency(queryClient, signal, usersApi.getMe),
+    initialData: () => {
+      const cookie = readMeProjectionCookie();
+      return mePayloadValid(cookie) ? cookie : undefined;
+    },
+    // If we start from cookie, still verify the session ASAP, but do it in the background
+    // (query remains "success" while fetching, so the UI doesn't hard-block on BOOTING).
+    refetchOnMount: "always",
     retry: (failureCount, err: unknown) => {
       if (meErrorIsBenignCancellation(err)) return false;
       const ax = err as { response?: { status?: number } };
