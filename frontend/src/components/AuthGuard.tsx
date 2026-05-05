@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
 import { useMe } from "@/hooks/useMe";
 
 function consoleFromHostname(): "admin" | "questions" | "main" {
@@ -99,20 +98,9 @@ export default function AuthGuard({
         return <>{children}</>;
     }
 
-    if (bootState === "BOOTING") {
-        return (
-            <div className="min-h-screen bg-background flex items-center justify-center">
-                <Loader2 className="h-10 w-10 animate-spin text-primary/60" aria-label="Loading" />
-            </div>
-        );
-    }
-
     if (bootState === "UNAUTHENTICATED") {
-        return (
-            <div className="min-h-screen bg-background flex items-center justify-center">
-                <Loader2 className="h-10 w-10 animate-spin text-primary/60" aria-label="Redirecting" />
-            </div>
-        );
+        // Redirect effect runs; don't block UI with a loading screen.
+        return null;
     }
 
     if (!me) {
@@ -135,11 +123,8 @@ export default function AuthGuard({
         (adminOnly && (!hasStaff || (consoleMode === "admin" && isTester)));
 
     if (willRedirectAway) {
-        return (
-            <div className="min-h-screen bg-background flex items-center justify-center">
-                <Loader2 className="h-8 w-8 animate-spin text-primary/60" aria-label="Redirecting" />
-            </div>
-        );
+        // Redirect effect runs; don't block UI with a loading screen.
+        return null;
     }
 
     return <>{children}</>;
