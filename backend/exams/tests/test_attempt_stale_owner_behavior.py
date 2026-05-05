@@ -3,7 +3,8 @@ from __future__ import annotations
 from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
 
-from exams.models import PracticeTest
+from exams.models import Module, PracticeTest
+from exams.tests.support import seed_mc_questions_for_practice_test
 
 
 class AttemptStaleOwnerContractTests(APITestCase):
@@ -29,6 +30,9 @@ class AttemptStaleOwnerContractTests(APITestCase):
             form_type="INTERNATIONAL",
             skip_default_modules=True,
         )
+        Module.objects.create(practice_test=self.test, module_order=1, time_limit_minutes=1)
+        Module.objects.create(practice_test=self.test, module_order=2, time_limit_minutes=1)
+        seed_mc_questions_for_practice_test(self.test)
 
     def test_wrong_owner_attempt_id_is_404_but_user_can_start_own_attempt(self):
         # User A starts attempt.

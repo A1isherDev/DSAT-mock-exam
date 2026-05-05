@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import threading
+import unittest
 
+import django.db
 from django.contrib.auth import get_user_model
 from django.test import TransactionTestCase
 from rest_framework.test import APIClient
 
-from exams.models import PracticeTest, TestAttempt
+from exams.models import Module, PracticeTest, TestAttempt
+from exams.tests.support import seed_mc_questions_for_practice_test
 
 
 class AttemptActiveUniquenessRaceTests(TransactionTestCase):
@@ -32,6 +35,9 @@ class AttemptActiveUniquenessRaceTests(TransactionTestCase):
             form_type="INTERNATIONAL",
             skip_default_modules=True,
         )
+        Module.objects.create(practice_test=self.test, module_order=1, time_limit_minutes=1)
+        Module.objects.create(practice_test=self.test, module_order=2, time_limit_minutes=1)
+        seed_mc_questions_for_practice_test(self.test)
 
     def _post_create_attempt(self, *, barrier: threading.Barrier, out: list, idx: int):
         c = APIClient()
@@ -40,6 +46,10 @@ class AttemptActiveUniquenessRaceTests(TransactionTestCase):
         resp = c.post("/api/exams/attempts/", {"practice_test": self.test.id}, format="json")
         out[idx] = {"status": resp.status_code, "data": getattr(resp, "data", None)}
 
+    @unittest.skipUnless(
+        django.db.connection.vendor == "postgresql",
+        "Concurrent attempt-create races require PostgreSQL (SQLite locks under threads).",
+    )
     def test_concurrent_create_returns_single_active_attempt(self):
         barrier = threading.Barrier(2)
         out = [None, None]

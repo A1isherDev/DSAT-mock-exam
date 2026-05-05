@@ -6,6 +6,7 @@ from rest_framework.test import APIClient
 
 from access import constants as acc_const
 from exams.models import PastpaperPack, PracticeTest
+from exams.tests.support import seed_mc_questions_for_practice_test
 
 User = get_user_model()
 
@@ -104,6 +105,7 @@ class PastpaperSystemHardeningTests(TestCase):
             title="Assign Section",
             skip_default_modules=False,
         )
+        seed_mc_questions_for_practice_test(section)
 
         # Assign via canonical bulk-assign endpoint (admin host)
         self.client.force_authenticate(user=self.admin)

@@ -444,20 +444,24 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         t0 = monotonic()
         test_id = request.data.get("practice_test")
         user = request.user
-        # Prevent starting attempts on empty tests (no questions) — runner cannot render.
-        base = (
-            PracticeTest.objects.filter(modules__questions__isnull=False)
-            .select_related("mock_exam", "pastpaper_pack")
-            .distinct()
-        )
+        # Permission scope for which PracticeTest rows this user may target (questions checked next).
+        unrestricted = PracticeTest.objects.all().select_related("mock_exam", "pastpaper_pack")
         if can_browse_standalone_practice_library(user):
-            allowed = filter_practice_tests_for_user(user, base).distinct()
+            allowed = filter_practice_tests_for_user(user, unrestricted).distinct()
         elif normalized_role(user) == acc_const.ROLE_STUDENT:
-            allowed = filter_practice_tests_for_user(user, base).distinct()
+            allowed = filter_practice_tests_for_user(user, unrestricted).distinct()
         else:
-            allowed = base.filter(assigned_users=user).distinct()
+            allowed = unrestricted.filter(assigned_users=user).distinct()
 
         test = get_object_or_404(allowed, id=test_id)
+        if not test.has_questions_for_attempts():
+            return Response(
+                {
+                    "code": "practice_test_empty",
+                    "message": "Practice test has no questions",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         # Get-or-create active attempt (concurrency-safe under DB constraint).
         # Business rule: abandoning is recoverable, so we reuse the latest abandoned attempt
@@ -1213,6 +1217,46 @@ from .question_ordering import (
 )
 
 
+def _mutable_admin_question_payload(request) -> dict:
+    """Plain dict for merging create defaults (JSON, multipart, or QueryDict)."""
+    raw = request.data
+    if isinstance(raw, dict):
+        return {k: raw[k] for k in raw}
+    out: dict = {}
+    for key in raw:
+        out[key] = raw.get(key)
+    return out
+
+
+def _merge_admin_question_create_defaults(request, kwargs) -> dict:
+    """
+    Defaults when fields are omitted so admin UI can POST {} for a stub question.
+    ``question_type`` is derived from the module's practice test subject (not client-provided).
+    """
+    data = _mutable_admin_question_payload(request)
+    module = get_object_or_404(Module, pk=kwargs["module_pk"], practice_test_id=kwargs["test_pk"])
+    pt = module.practice_test
+
+    def absent(key: str) -> bool:
+        v = data.get(key)
+        return v is None or v == ""
+
+    if absent("question_type"):
+        data["question_type"] = "MATH" if pt.subject == "MATH" else "READING"
+    if absent("question_text"):
+        data["question_text"] = "New question"
+    if absent("correct_answer") and absent("correct_answers"):
+        data["correct_answer"] = "a"
+    if absent("option_a"):
+        data["option_a"] = "Choice A"
+    if absent("option_b"):
+        data["option_b"] = "Choice B"
+    if absent("score"):
+        data["score"] = 10
+
+    return data
+
+
 class AdminQuestionViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, CanManageQuestions]
     serializer_class = AdminQuestionSerializer
@@ -1220,7 +1264,21 @@ class AdminQuestionViewSet(viewsets.ModelViewSet):
 
 
     def get_queryset(self):
-        return Question.objects.filter(module_id=self.kwargs['module_pk'], module__practice_test_id=self.kwargs['test_pk'])
+        return (
+            Question.objects.filter(
+                module_id=self.kwargs["module_pk"],
+                module__practice_test_id=self.kwargs["test_pk"],
+            )
+            .order_by("order", "id")
+        )
+
+    def create(self, request, *args, **kwargs):
+        merged = _merge_admin_question_create_defaults(request, self.kwargs)
+        serializer = self.get_serializer(data=merged)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
     def perform_create(self, serializer):
         module = get_object_or_404(Module, pk=self.kwargs['module_pk'], practice_test_id=self.kwargs['test_pk'])

@@ -2,9 +2,11 @@ import re
 import unicodedata
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import NON_FIELD_ERRORS, ValidationError as DjangoValidationError
 from django.db.models import Sum
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers
+from rest_framework.settings import api_settings
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema_field, extend_schema_serializer
 
@@ -593,6 +595,53 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
 
         return super().update(instance, validated_data)
 
+    def _question_for_validation(self, attrs):
+        model_fields = {f.name for f in Question._meta.concrete_fields}
+        q = Question()
+        if self.instance is not None:
+            for name in model_fields:
+                setattr(q, name, getattr(self.instance, name))
+        for key, val in attrs.items():
+            if key in (
+                "clear_question_image",
+                "clear_option_a_image",
+                "clear_option_b_image",
+                "clear_option_c_image",
+                "clear_option_d_image",
+            ):
+                continue
+            model_key = "correct_answers" if key == "correct_answer" else key
+            if model_key in model_fields:
+                setattr(q, model_key, val)
+        if attrs.get("clear_question_image") and "question_image" not in attrs:
+            q.question_image = None
+        if attrs.get("clear_option_a_image") and "option_a_image" not in attrs:
+            q.option_a_image = None
+        if attrs.get("clear_option_b_image") and "option_b_image" not in attrs:
+            q.option_b_image = None
+        if attrs.get("clear_option_c_image") and "option_c_image" not in attrs:
+            q.option_c_image = None
+        if attrs.get("clear_option_d_image") and "option_d_image" not in attrs:
+            q.option_d_image = None
+        return q
+
+    def _raise_question_validation_error(self, exc):
+        if hasattr(exc, "error_dict"):
+            out = {}
+            for key, msgs in exc.error_dict.items():
+                if key == "correct_answers":
+                    out["correct_answer"] = msgs
+                elif key == NON_FIELD_ERRORS:
+                    out[api_settings.NON_FIELD_ERRORS_KEY] = msgs
+                else:
+                    out[key] = msgs
+            raise serializers.ValidationError(out)
+        if hasattr(exc, "error_list"):
+            raise serializers.ValidationError(
+                {api_settings.NON_FIELD_ERRORS_KEY: list(exc.error_list)}
+            )
+        raise serializers.ValidationError(str(exc))
+
     def validate(self, attrs):
         attrs = super().validate(attrs)
         score = attrs.get("score")
@@ -619,33 +668,35 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
                         Module, pk=module_pk, practice_test_id=test_pk
                     )
 
-        if module is None:
-            return attrs
+        if module is not None:
+            pt = module.practice_test
+            exam = getattr(pt, "mock_exam", None)
+            if exam is None and pt.mock_exam_id:
+                exam = MockExam.objects.filter(pk=pt.mock_exam_id).first()
+            if exam is not None and exam.kind == MockExam.KIND_MIDTERM:
+                if score not in MIDTERM_ALLOWED_SCORES:
+                    raise serializers.ValidationError(
+                        {
+                            "score": "Midterm questions must use scores 1, 2, 3, 5, 8, or 10."
+                        }
+                    )
 
-        pt = module.practice_test
-        exam = getattr(pt, "mock_exam", None)
-        if exam is None and pt.mock_exam_id:
-            exam = MockExam.objects.filter(pk=pt.mock_exam_id).first()
-        if exam is None or exam.kind != MockExam.KIND_MIDTERM:
-            return attrs
+                qs = Question.objects.filter(module__practice_test=pt)
+                if self.instance is not None:
+                    qs = qs.exclude(pk=self.instance.pk)
+                current_sum = qs.aggregate(s=Sum("score"))["s"] or 0
+                if current_sum + score > MIDTERM_MAX_TOTAL_POINTS:
+                    raise serializers.ValidationError(
+                        {
+                            "score": f"Total midterm points cannot exceed {MIDTERM_MAX_TOTAL_POINTS}."
+                        }
+                    )
 
-        if score not in MIDTERM_ALLOWED_SCORES:
-            raise serializers.ValidationError(
-                {
-                    "score": "Midterm questions must use scores 1, 2, 3, 5, 8, or 10."
-                }
-            )
-
-        qs = Question.objects.filter(module__practice_test=pt)
-        if self.instance is not None:
-            qs = qs.exclude(pk=self.instance.pk)
-        current_sum = qs.aggregate(s=Sum("score"))["s"] or 0
-        if current_sum + score > MIDTERM_MAX_TOTAL_POINTS:
-            raise serializers.ValidationError(
-                {
-                    "score": f"Total midterm points cannot exceed {MIDTERM_MAX_TOTAL_POINTS}."
-                }
-            )
+        q = self._question_for_validation(attrs)
+        try:
+            q.full_clean()
+        except DjangoValidationError as e:
+            self._raise_question_validation_error(e)
         return attrs
 
 

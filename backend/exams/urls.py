@@ -72,6 +72,12 @@ urlpatterns = [
     path('admin/pastpaper-packs/', include(admin_pastpaper_pack_router.urls)),
 
     # Student / Common routes
+    # Bulk library assignment (must not be registered via DefaultRouter empty prefix — conflicts).
+    path(
+        "bulk_assign/",
+        PracticeTestViewSet.as_view({"post": "bulk_assign"}),
+        name="practice-test-bulk-assign",
+    ),
     # Pastpaper practice library (explicit int-pk routes avoid router prefix conflicts)
     re_path(r"^$", PracticeTestViewSet.as_view({"get": "list"}), name="practice-test-list"),
     re_path(r"^(?P<pk>\\d+)/$", PracticeTestViewSet.as_view({"get": "retrieve"}), name="practice-test-detail"),

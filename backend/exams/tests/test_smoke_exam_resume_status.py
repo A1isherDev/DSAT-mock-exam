@@ -5,6 +5,7 @@ from django.test import override_settings
 from rest_framework.test import APITestCase
 
 from exams.models import Module, PracticeTest, TestAttempt
+from exams.tests.support import seed_mc_questions_for_practice_test
 
 
 @override_settings(CELERY_TASK_ALWAYS_EAGER=True, EXAMS_SCORE_INLINE_IF_NO_CELERY=True)
@@ -26,6 +27,7 @@ class ExamRunnerSmokeTests(APITestCase):
         )
         Module.objects.create(practice_test=self.test, module_order=1, time_limit_minutes=1)
         Module.objects.create(practice_test=self.test, module_order=2, time_limit_minutes=1)
+        seed_mc_questions_for_practice_test(self.test)
 
     def test_start_resume_status_smoke(self):
         r = self.client.post("/api/exams/attempts/", {"practice_test": self.test.id}, format="json")

@@ -444,6 +444,12 @@ CSRF_TRUSTED_ORIGINS = [
 CSRF_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_HTTPONLY = False
 
+# Share CSRF + session cookies across subdomains in production so the admin/questions consoles
+# can complete login/refresh flows after navigating from the apex domain.
+if not DEBUG:
+    SESSION_COOKIE_DOMAIN = ".mastersat.uz"
+    CSRF_COOKIE_DOMAIN = ".mastersat.uz"
+
 
 # ─── Classroom homework (submissions) ─────────────────────────────────────────
 # Max size per file; comma-separated lower-case extensions including the dot (e.g. ".pdf,.png").

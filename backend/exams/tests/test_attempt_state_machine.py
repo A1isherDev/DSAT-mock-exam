@@ -5,6 +5,7 @@ from rest_framework.test import APITestCase
 
 from exams.models import MockExam, PracticeTest, Module, TestAttempt
 from exams.tasks import score_attempt_async
+from exams.tests.support import seed_mc_question, seed_mc_questions_for_practice_test
 
 
 @override_settings(CELERY_TASK_ALWAYS_EAGER=False, EXAMS_SCORE_INLINE_IF_NO_CELERY=False)
@@ -29,6 +30,7 @@ class TestAttemptStateMachineTests(APITestCase):
         # Provision modules explicitly for test determinism.
         self.m1 = Module.objects.create(practice_test=self.test, module_order=1, time_limit_minutes=1)
         self.m2 = Module.objects.create(practice_test=self.test, module_order=2, time_limit_minutes=1)
+        seed_mc_questions_for_practice_test(self.test)
 
     def _start_attempt(self) -> dict:
         r = self.client.post("/api/exams/attempts/", {"practice_test": self.test.id}, format="json")
@@ -158,6 +160,7 @@ class TestAttemptStateMachineTests(APITestCase):
         )
         m1 = Module.objects.create(practice_test=test, module_order=1, time_limit_minutes=1)
         # Intentionally do not create module 2.
+        seed_mc_question(m1, stem="Midterm M1 only")
 
         attempt = self.client.post("/api/exams/attempts/", {"practice_test": test.id}, format="json").data
         attempt_id = attempt["id"]
