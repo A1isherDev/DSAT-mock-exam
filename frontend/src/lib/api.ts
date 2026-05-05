@@ -871,6 +871,30 @@ export const examsAdminApi = {
         const r = await api.post(`/exams/admin/tests/${testId}/modules/${moduleId}/questions/${questionId}/reorder/`, { action });
         return r.data;
     },
+
+    // Standalone question bank + categories
+    listStandaloneQuestions: async (params?: {
+        standalone?: "1";
+        q?: string;
+        category?: number | "all";
+        subject?: "MATH" | "READING_WRITING" | "all";
+        is_active?: "1" | "0" | "all";
+    }) => {
+        const r = await api.get("/exams/admin/questions/", { params });
+        return unwrapAdminList<AdminListEntity>(r.data);
+    },
+    updateStandaloneQuestion: async (questionId: number, data: Record<string, unknown>) => {
+        const r = await api.patch(`/exams/admin/questions/${questionId}/`, data);
+        return r.data;
+    },
+    getCategoriesAdmin: async () => {
+        const r = await api.get("/exams/admin/categories/");
+        return unwrapAdminList<AdminListEntity>(r.data);
+    },
+    assignStandaloneQuestionToModule: async (testId: number, moduleId: number, payload: { question_id: number; order?: number }) => {
+        const r = await api.post(`/exams/admin/tests/${testId}/modules/${moduleId}/assign-question/`, payload);
+        return r.data;
+    },
 };
 
 export const vocabularyApi = {
