@@ -257,20 +257,6 @@ export function HomeDashboard() {
     [attempts, classCount, me?.last_mock_result, profileFieldsFilled],
   );
 
-  if (bootState === "BOOTING") {
-    return (
-      <div className="mx-auto max-w-6xl px-3 py-6 md:px-4 lg:px-6">
-        <div className="mb-8 h-10 max-w-md ds-skeleton rounded-xl" />
-        <div className="mb-4 h-28 rounded-2xl ds-skeleton" />
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {[1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="h-44 rounded-2xl ds-skeleton" />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
   if (bootState !== "AUTHENTICATED") {
     return (
       <div className="mx-auto max-w-lg px-4 py-16 text-center">
@@ -284,20 +270,6 @@ export function HomeDashboard() {
             Sign in
           </ClassroomButton>
         </DashboardCard>
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="mx-auto max-w-6xl px-3 py-6 md:px-4 lg:px-6">
-        <div className="mb-8 h-10 max-w-md ds-skeleton rounded-xl" />
-        <div className="mb-4 h-28 rounded-2xl ds-skeleton" />
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {[1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="h-44 rounded-2xl ds-skeleton" />
-          ))}
-        </div>
       </div>
     );
   }
@@ -492,6 +464,11 @@ export function HomeDashboard() {
                   <p className="mt-2 flex items-center gap-2 text-xs font-bold text-white/80">
                     <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden />
                     Saving…
+                  </p>
+                ) : null}
+                {!savingExamDate && loading ? (
+                  <p className="mt-2 text-xs font-semibold text-white/75">
+                    Updating dashboard…
                   </p>
                 ) : null}
                 {examDateError ? (
