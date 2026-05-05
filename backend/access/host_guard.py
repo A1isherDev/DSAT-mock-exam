@@ -153,6 +153,10 @@ class SubdomainAPIGuardMiddleware:
 
         # Questions subdomain: exams admin CRUD endpoints.
         if kind == "questions":
+            # Auth bootstrap must work across consoles. `/api/users/me/` is required for
+            # Next.js session boot + projection cookie refresh on every subdomain.
+            if path.startswith("/api/users/me/"):
+                return self.get_response(request)
             if path.startswith("/api/exams/admin/"):
                 return self.get_response(request)
             # Assessments authoring CRUD endpoints live here (create/edit/delete sets/questions).

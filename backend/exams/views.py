@@ -444,20 +444,24 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         t0 = monotonic()
         test_id = request.data.get("practice_test")
         user = request.user
-        # Prevent starting attempts on empty tests (no questions) — runner cannot render.
-        base = (
-            PracticeTest.objects.filter(modules__questions__isnull=False)
-            .select_related("mock_exam", "pastpaper_pack")
-            .distinct()
-        )
+        # Permission scope for which PracticeTest rows this user may target (questions checked next).
+        unrestricted = PracticeTest.objects.all().select_related("mock_exam", "pastpaper_pack")
         if can_browse_standalone_practice_library(user):
-            allowed = filter_practice_tests_for_user(user, base).distinct()
+            allowed = filter_practice_tests_for_user(user, unrestricted).distinct()
         elif normalized_role(user) == acc_const.ROLE_STUDENT:
-            allowed = filter_practice_tests_for_user(user, base).distinct()
+            allowed = filter_practice_tests_for_user(user, unrestricted).distinct()
         else:
-            allowed = base.filter(assigned_users=user).distinct()
+            allowed = unrestricted.filter(assigned_users=user).distinct()
 
         test = get_object_or_404(allowed, id=test_id)
+        if not test.has_questions_for_attempts():
+            return Response(
+                {
+                    "code": "practice_test_empty",
+                    "message": "Practice test has no questions",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         # Get-or-create active attempt (concurrency-safe under DB constraint).
         # Business rule: abandoning is recoverable, so we reuse the latest abandoned attempt
@@ -1206,24 +1210,52 @@ class AdminModuleViewSet(viewsets.ModelViewSet):
 
 
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
-from django.db import models as db_models
 
-def _normalize_question_orders_for_module(*, module_id: int) -> None:
-    """
-    Keep Question.order deterministic and contiguous per module.
+from .question_ordering import (
+    dense_compact_module_orders_locked,
+    reindex_module_questions_dense_locked,
+)
 
-    Contract:
-    - starts at 0
-    - no gaps / duplicates
+
+def _mutable_admin_question_payload(request) -> dict:
+    """Plain dict for merging create defaults (JSON, multipart, or QueryDict)."""
+    raw = request.data
+    if isinstance(raw, dict):
+        return {k: raw[k] for k in raw}
+    out: dict = {}
+    for key in raw:
+        out[key] = raw.get(key)
+    return out
+
+
+def _merge_admin_question_create_defaults(request, kwargs) -> dict:
     """
-    qs = Question.objects.filter(module_id=module_id).order_by("order", "id").only("id", "order")
-    to_update = []
-    for idx, q in enumerate(qs):
-        if q.order != idx:
-            q.order = idx
-            to_update.append(q)
-    if to_update:
-        Question.objects.bulk_update(to_update, ["order"])
+    Defaults when fields are omitted so admin UI can POST {} for a stub question.
+    ``question_type`` is derived from the module's practice test subject (not client-provided).
+    """
+    data = _mutable_admin_question_payload(request)
+    module = get_object_or_404(Module, pk=kwargs["module_pk"], practice_test_id=kwargs["test_pk"])
+    pt = module.practice_test
+
+    def absent(key: str) -> bool:
+        v = data.get(key)
+        return v is None or v == ""
+
+    if absent("question_type"):
+        data["question_type"] = "MATH" if pt.subject == "MATH" else "READING"
+    if absent("question_text"):
+        data["question_text"] = "New question"
+    if absent("correct_answer") and absent("correct_answers"):
+        data["correct_answer"] = "a"
+    if absent("option_a"):
+        data["option_a"] = "Choice A"
+    if absent("option_b"):
+        data["option_b"] = "Choice B"
+    if absent("score"):
+        data["score"] = 10
+
+    return data
+
 
 class AdminQuestionViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, CanManageQuestions]
@@ -1232,49 +1264,71 @@ class AdminQuestionViewSet(viewsets.ModelViewSet):
 
 
     def get_queryset(self):
-        return Question.objects.filter(module_id=self.kwargs['module_pk'], module__practice_test_id=self.kwargs['test_pk'])
+        return (
+            Question.objects.filter(
+                module_id=self.kwargs["module_pk"],
+                module__practice_test_id=self.kwargs["test_pk"],
+            )
+            .order_by("order", "id")
+        )
+
+    def create(self, request, *args, **kwargs):
+        merged = _merge_admin_question_create_defaults(request, self.kwargs)
+        serializer = self.get_serializer(data=merged)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
     def perform_create(self, serializer):
         module = get_object_or_404(Module, pk=self.kwargs['module_pk'], practice_test_id=self.kwargs['test_pk'])
-        # Auto-assign order to the end
-        max_order = self.get_queryset().aggregate(db_models.Max('order'))['order__max']
-        q = serializer.save(
-            module=module,
-            order=(max_order + 1) if max_order is not None else 0
-        )
-        _normalize_question_orders_for_module(module_id=q.module_id)
+        n = Question.objects.filter(module_id=module.pk).count()
+        # ``order`` is the dense insert index (append); ``Question.save`` reindexes under a module lock.
+        serializer.save(module=module, order=n)
 
     def perform_update(self, serializer):
-        q = serializer.save()
-        _normalize_question_orders_for_module(module_id=q.module_id)
+        serializer.save()
 
     def perform_destroy(self, instance):
         module_id = instance.module_id
         super().perform_destroy(instance)
-        _normalize_question_orders_for_module(module_id=module_id)
+        dense_compact_module_orders_locked(module_id)
 
     @action(detail=True, methods=['post'])
     def reorder(self, request, test_pk=None, module_pk=None, pk=None):
         question = self.get_object()
-        action_type = request.data.get('action') # 'up' or 'down'
-        queryset = self.get_queryset()
-        
-        if action_type == 'up':
-            target = queryset.filter(order__lt=question.order).order_by('-order').first()
-        elif action_type == 'down':
-            target = queryset.filter(order__gt=question.order).order_by('order').first()
-        else:
-            return Response({'error': 'Invalid action'}, status=status.HTTP_400_BAD_REQUEST)
-            
-        if target:
-            old_order = question.order
-            question.order = target.order
-            target.order = old_order
-            question.save()
-            target.save()
-            _normalize_question_orders_for_module(module_id=question.module_id)
-            return Response({'status': 'reordered'})
-        return Response({'message': 'Already at boundary'}, status=status.HTTP_400_BAD_REQUEST)
+        action_type = request.data.get("action")
+        if action_type not in ("up", "down"):
+            return Response({"error": "Invalid action"}, status=status.HTTP_400_BAD_REQUEST)
+
+        mid = question.module_id
+        with transaction.atomic():
+            Module.objects.select_for_update().get(pk=mid)
+            rows = list(
+                Question.objects.filter(module_id=mid).order_by("order", "id")
+            )
+            idx = next((i for i, q in enumerate(rows) if q.pk == question.pk), None)
+            if idx is None:
+                return Response({"error": "Question not in module."}, status=status.HTTP_400_BAD_REQUEST)
+
+            if action_type == "up":
+                if idx == 0:
+                    return Response(
+                        {"message": "Already at boundary"},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                rows[idx - 1], rows[idx] = rows[idx], rows[idx - 1]
+            else:
+                if idx >= len(rows) - 1:
+                    return Response(
+                        {"message": "Already at boundary"},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                rows[idx + 1], rows[idx] = rows[idx], rows[idx + 1]
+
+            reindex_module_questions_dense_locked(mid, rows)
+
+        return Response({"status": "reordered"})
 
 
 def _as_int_ids_bulk(seq):

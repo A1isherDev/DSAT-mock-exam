@@ -1,9 +1,9 @@
 import logging
 
 from django.conf import settings as django_settings
+from django.core.exceptions import NON_FIELD_ERRORS, ValidationError
 from django.db import models
 from django.utils import timezone
-from django.core.exceptions import ValidationError
 from users.models import User
 
 from .attempt_state_machine import (
@@ -73,6 +73,83 @@ class Question(TimestampedModel):
             options['D'] = {'text': self.option_d, 'image': self.option_d_image.url if self.option_d_image else None}
         return options if options else None
 
+    _OPTION_SLOTS = (
+        ("option_a", "option_a_image", "A"),
+        ("option_b", "option_b_image", "B"),
+        ("option_c", "option_c_image", "C"),
+        ("option_d", "option_d_image", "D"),
+    )
+
+    def clean(self):
+        super().clean()
+        errors = {}
+
+        if not (self.question_text or "").strip():
+            errors["question_text"] = "Question text cannot be empty or whitespace-only."
+
+        expl = self.explanation
+        if expl is not None and expl != "" and not expl.strip():
+            errors["explanation"] = "Explanation cannot be whitespace-only."
+
+        filled_letters = []
+        for text_f, img_f, letter in self._OPTION_SLOTS:
+            raw_text = getattr(self, text_f) or ""
+            stripped = raw_text.strip()
+            has_img = bool(getattr(self, img_f))
+            if stripped or has_img:
+                filled_letters.append(letter)
+
+        if not self.is_math_input:
+            if len(filled_letters) < 2:
+                errors[NON_FIELD_ERRORS] = [
+                    "At least two options must have non-empty text or an image."
+                ]
+
+            ca_raw = (self.correct_answers or "").strip()
+            if not ca_raw:
+                errors["correct_answers"] = "Correct answer is required."
+            elif len(ca_raw) != 1 or ca_raw[0].lower() not in "abcd":
+                errors["correct_answers"] = (
+                    "Correct answer must be a single letter A, B, C, or D."
+                )
+            else:
+                chosen = ca_raw.upper()[0]
+                if chosen not in filled_letters:
+                    errors["correct_answers"] = (
+                        "Correct answer must match one of the filled options (A–D)."
+                    )
+        else:
+            self._clean_math_correct_answers(errors)
+
+        if errors:
+            raise ValidationError(errors)
+
+    def _clean_math_correct_answers(self, errors):
+        s = (self.correct_answers or "").strip()
+        if not s:
+            errors["correct_answers"] = "Correct answer is required for math input."
+            return
+        parts = [p.strip() for p in s.split(",")]
+        if not parts:
+            errors["correct_answers"] = "Provide at least one comma-separated answer variant."
+            return
+        if any(not p for p in parts):
+            errors["correct_answers"] = (
+                "Each comma-separated answer variant must be non-empty."
+            )
+            return
+        for p in parts:
+            if len(p) > 512:
+                errors["correct_answers"] = (
+                    "Each answer variant must be at most 512 characters."
+                )
+                return
+            if any(ord(c) < 32 for c in p):
+                errors["correct_answers"] = (
+                    "Answer variants cannot contain control characters."
+                )
+                return
+
     def check_answer(self, student_answer):
         if student_answer is None or str(student_answer).strip() == "":
             return False
@@ -90,10 +167,10 @@ class Question(TimestampedModel):
 
     def save(self, *args, **kwargs):
         """
-        Sparse ``order`` with retries on UNIQUE(module, order): scales without O(n) reindex each write.
+        When ``module`` is set, ``order`` is assigned under a **dense** 0..n-1 contract with a
+        ``Module`` row lock (see ``question_ordering.save_question_dense_locked``).
 
-        Uses ``dense_compact_module_orders()`` for small duplicate repairs; ratio/absolute compaction
-        is scheduled post-commit (Celery / thread fallback — see ``question_ordering``).
+        Use ``_plain_db_save=True`` only for internal persistence after ordering is finalized.
         """
         if kwargs.pop("_plain_db_save", False):
             super().save(*args, **kwargs)
@@ -103,14 +180,14 @@ class Question(TimestampedModel):
             super().save(*args, **kwargs)
             return
 
-        from .question_ordering import save_question_with_order_retries
+        from .question_ordering import save_question_dense_locked
 
         mid = self.module_id
         if mid is None:
             super().save(*args, **kwargs)
             return
 
-        save_question_with_order_retries(self, *args, **kwargs)
+        save_question_dense_locked(self, *args, **kwargs)
 
 class MockExam(TimestampedModel):
     KIND_MOCK_SAT = "MOCK_SAT"
@@ -301,6 +378,31 @@ class PracticeTest(TimestampedModel):
 
             raise ValidationError(
                 {"subject": "PracticeTest.subject must be MATH or READING_WRITING."}
+            )
+
+    def has_questions_for_attempts(self) -> bool:
+        """At least one ``Question`` under some ``Module`` — required to start a ``TestAttempt``."""
+        if not self.pk:
+            return False
+        return Question.objects.filter(module__practice_test_id=self.pk).exists()
+
+    def modules_exist_without_questions(self) -> bool:
+        """
+        Invalid configuration for attempts: module rows exist but no questions were authored.
+        Distinct from 'no modules yet' during draft creation.
+        """
+        if not self.pk:
+            return False
+        if not self.modules.exists():
+            return False
+        return not self.has_questions_for_attempts()
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if self.pk and self.modules_exist_without_questions():
+            logger.warning(
+                "PracticeTest id=%s has modules but no questions; not usable for student attempts.",
+                self.pk,
             )
 
     def __str__(self):

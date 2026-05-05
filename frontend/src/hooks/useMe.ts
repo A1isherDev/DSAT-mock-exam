@@ -11,7 +11,6 @@ import {
   getAuthLossActive,
   getInteractionBlockedPackedSnapshot,
   markAuthLossDetected,
-  recordAuthCancel,
   recordAuthRefresh,
   setClientAuthBootState,
   setMeIdentityRefreshingActive,
@@ -29,14 +28,12 @@ import { clearAuthCircuitWindow } from "@/lib/auth/authCircuitBreaker";
 import { clearDerivedAuthProjectionCookies, usersApi, writeLmsUserCacheFromMe } from "@/lib/api";
 
 export function invalidateMe(queryClient: QueryClient) {
-  recordAuthCancel();
-  void queryClient.cancelQueries({ queryKey: [...meQueryKey] });
+  // Do not cancel in-flight `/users/me` — overlapping aborts + `fetchMeWithConcurrency` stale
+  // completions surface as `AbortError` and used to clear projection cookies while still logged in.
   return queryClient.invalidateQueries({ queryKey: [...meQueryKey] });
 }
 
 export function prefetchMe(queryClient: QueryClient) {
-  recordAuthCancel();
-  void queryClient.cancelQueries({ queryKey: [...meQueryKey] });
   return queryClient.prefetchQuery({
     queryKey: [...meQueryKey],
     queryFn: ({ signal }) => fetchMeWithConcurrency(queryClient, signal, usersApi.getMe),

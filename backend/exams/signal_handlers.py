@@ -5,7 +5,7 @@ from django.dispatch import receiver
 from django.utils import timezone
 
 from .models import PracticeTest, Question
-from .question_ordering import normalize_question_orders_for_module
+from .question_ordering import dense_compact_module_orders_locked
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ def question_normalize_after_delete(sender, instance, **kwargs):
 
     if not getattr(settings, "EXAM_QUESTION_COMPACT_ON_DELETE", False):
         return
-    normalize_question_orders_for_module(instance.module_id)
+    dense_compact_module_orders_locked(instance.module_id)
 
 
 @receiver(pre_save, sender=PracticeTest)

@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import threading
+import unittest
 
+import django.db
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from access import constants as acc_const
-from exams.models import Module, PracticeTest, Question, TestAttempt
+from exams.models import Module, PracticeTest, TestAttempt
+from exams.tests.support import seed_mc_questions_for_practice_test
 
 User = get_user_model()
 
@@ -35,12 +38,14 @@ class ExamEngineChaosConcurrencyTests(TestCase):
             title="Chaos PT",
             skip_default_modules=True,
         )
-        m1 = Module.objects.create(practice_test=self.pt, module_order=1, time_limit_minutes=35)
-        m2 = Module.objects.create(practice_test=self.pt, module_order=2, time_limit_minutes=35)
-        for i in range(2):
-            Question.objects.create(module=m1, question_type="MATH", question_text=f"Q1-{i}", correct_answers="a")
-            Question.objects.create(module=m2, question_type="MATH", question_text=f"Q2-{i}", correct_answers="a")
+        Module.objects.create(practice_test=self.pt, module_order=1, time_limit_minutes=35)
+        Module.objects.create(practice_test=self.pt, module_order=2, time_limit_minutes=35)
+        seed_mc_questions_for_practice_test(self.pt, questions_per_module=2)
 
+    @unittest.skipUnless(
+        django.db.connection.vendor == "postgresql",
+        "Parallel resume stress test requires PostgreSQL (SQLite table locks under threads).",
+    )
     def test_concurrent_resume_is_stable(self):
         self.client.force_authenticate(user=self.student)
         r = self.client.post("/api/exams/attempts/", data={"practice_test": self.pt.id}, format="json")
@@ -74,6 +79,10 @@ class ExamEngineChaosConcurrencyTests(TestCase):
         attempt = TestAttempt.objects.get(pk=attempt_id)
         self.assertFalse(attempt.is_completed)
 
+    @unittest.skipUnless(
+        django.db.connection.vendor == "postgresql",
+        "Parallel submit stress test requires PostgreSQL (SQLite table locks under threads).",
+    )
     def test_concurrent_submit_module_does_not_duplicate_transition(self):
         self.client.force_authenticate(user=self.student)
         r = self.client.post("/api/exams/attempts/", data={"practice_test": self.pt.id}, format="json")
@@ -105,7 +114,6 @@ class ExamEngineChaosConcurrencyTests(TestCase):
 
         self.assertEqual(errs, [])
 
-        # Invariant: attempt row remains valid and version_number does not explode uncontrollably.
         attempt = TestAttempt.objects.get(pk=attempt_id)
         self.assertIsNotNone(attempt.current_state)
         self.assertLessEqual(int(attempt.version_number or 0), 50)
