@@ -81,11 +81,7 @@ function PracticeTestDetailInner() {
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="w-12 h-12 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
+    return null;
   }
 
   if (!test) {
@@ -218,9 +214,7 @@ export default function PracticeTestDetailPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen flex items-center justify-center bg-[#f8f9fb]">
-          <div className="w-12 h-12 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin" />
-        </div>
+        null
       }
     >
       <PracticeTestDetailInner />
