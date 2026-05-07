@@ -275,7 +275,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
           </div>
           <nav
             className={cn(
-              "flex min-h-0 flex-1 flex-col gap-1 overflow-hidden px-3 pb-4 md:px-4",
+              "flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain px-3 pb-4 md:px-4",
               sidebarCollapsed && "md:items-center md:px-2",
             )}
             aria-label="Main"

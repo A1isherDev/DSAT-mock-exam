@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { classesApi, emptyNormalizedExamList, emptyNormalizedList, type UserMe, usersApi } from "@/lib/api";
 import { useMe } from "@/hooks/useMe";
 import { examsStudentApi } from "@/features/examsStudent/api";
-import { ArrowRight, BarChart3, Calendar, Loader2, Pencil, PlayCircle, Target, TrendingUp } from "lucide-react";
+import { ArrowRight, BarChart3, Calendar, Loader2, Pencil, PlayCircle, Target, TrendingUp, ClipboardCheck, BookMarked } from "lucide-react";
 import { ClassroomButton } from "@/components/classroom";
 import { DashboardCard, DashboardEyebrow, DashboardTitle } from "./DashboardCard";
 import { GoalScoreModal, initialSectionsFromTarget } from "./GoalScoreModal";
@@ -568,6 +568,56 @@ export function HomeDashboard() {
                 </div>
               );
             })}
+          </div>
+        </DashboardCard>
+
+        {/* Assessments */}
+        <DashboardCard accent="blue" padding="md">
+          <div className="flex h-full flex-col justify-between">
+            <div>
+              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary/15 to-ds-gold/15 text-primary ring-1 ring-ds-gold/25">
+                <ClipboardCheck className="h-5 w-5" />
+              </div>
+              <DashboardEyebrow>Homework</DashboardEyebrow>
+              <DashboardTitle className="mt-1">Assessments</DashboardTitle>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Check for pending homework assignments from your teachers.
+              </p>
+            </div>
+            <div className="mt-6">
+              <Link
+                href="/assessments"
+                className="ms-btn-secondary inline-flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-bold text-foreground hover:border-primary/30"
+              >
+                View assignments
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
+          </div>
+        </DashboardCard>
+
+        {/* Vocabulary */}
+        <DashboardCard accent="gold" padding="md">
+          <div className="flex h-full flex-col justify-between">
+            <div>
+              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-amber-500/15 to-amber-600/15 text-amber-600 ring-1 ring-amber-500/25 dark:text-amber-400">
+                <BookMarked className="h-5 w-5" />
+              </div>
+              <DashboardEyebrow>Practice</DashboardEyebrow>
+              <DashboardTitle className="mt-1">Vocabulary</DashboardTitle>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Build your word bank with daily spaced repetition.
+              </p>
+            </div>
+            <div className="mt-6">
+              <Link
+                href="/vocabulary"
+                className="ms-btn-secondary inline-flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-bold text-foreground hover:border-amber-500/30"
+              >
+                Start daily review
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
           </div>
         </DashboardCard>
 
