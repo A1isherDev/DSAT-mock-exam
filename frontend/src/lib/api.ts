@@ -919,7 +919,7 @@ export const vocabularyApi = {
 };
 
 export const assessmentsAdminApi = {
-    adminListSets: async (params?: { subject?: "math" | "english"; category?: string }) => {
+    adminListSets: async (params?: { subject?: "math" | "english"; category?: string; limit?: number; offset?: number }) => {
         const r = await api.get("/assessments/admin/sets/", { params });
         return r.data;
     },

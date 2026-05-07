@@ -5,6 +5,7 @@ from django.db.models import Max, Avg, Count
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
+from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -105,7 +106,14 @@ class AdminAssessmentSetListCreateView(APIView):
 
         if category:
             qs = qs.filter(category__iexact=category)
-        qs = qs.order_by("-created_at", "-id")[:500]
+        qs = qs.order_by("-created_at", "-id")
+
+        paginator = LimitOffsetPagination()
+        paginator.default_limit = 50
+        paginator.max_limit = 200
+        page = paginator.paginate_queryset(qs, request)
+        if page is not None:
+            return paginator.get_paginated_response(AssessmentSetSerializer(page, many=True).data)
         return Response(AssessmentSetSerializer(qs, many=True).data)
 
     def post(self, request):

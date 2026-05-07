@@ -7,14 +7,26 @@ import type {
   Subject,
 } from "@/features/assessments/types";
 
+export type PaginatedSets = {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: AssessmentSet[];
+};
+
 /**
  * Staff assessments surface: authoring + homework assignment.
  */
 export const assessmentsAdminApi = {
   // Authoring CRUD
-  listSets: async (params?: { subject?: Subject; category?: string }): Promise<AssessmentSet[]> => {
+  listSets: async (params?: { subject?: Subject; category?: string; limit?: number; offset?: number }): Promise<PaginatedSets> => {
     const data = await assessmentsAdminClient.adminListSets(params);
-    return Array.isArray(data) ? (data as AssessmentSet[]) : [];
+    if (data && typeof data === "object" && Array.isArray((data as any).results)) {
+      return data as PaginatedSets;
+    }
+    // Fallback for legacy flat-array response
+    const arr = Array.isArray(data) ? (data as AssessmentSet[]) : [];
+    return { count: arr.length, next: null, previous: null, results: arr };
   },
   getSet: async (id: number): Promise<AssessmentSet> => {
     return (await assessmentsAdminClient.adminGetSet(id)) as AssessmentSet;

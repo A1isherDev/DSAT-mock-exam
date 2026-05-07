@@ -19,7 +19,7 @@ export default function BuilderSetsPage() {
     scopedSubject ? { subject: scopedSubject } : undefined,
   );
 
-  const sets = Array.isArray(data) ? data : [];
+  const sets = data?.results ?? (Array.isArray(data) ? data : []);
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
     if (!s) return sets;
