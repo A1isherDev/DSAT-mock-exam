@@ -63,6 +63,7 @@ function startsWith(pathname: string, prefix: string): boolean {
 const MAIN_BLOCKED: string[] = [
   "/admin",
   "/builder",
+  "/ops",
   "/teacher",
   "/questions",
 ];
@@ -88,12 +89,17 @@ function isAllowedOnQuestions(pathname: string): boolean {
 
 /**
  * admin.mastersat.uz (operational console)
- * Only operational/management surfaces are allowed; everything else redirects to /admin.
+ * Only operational/management surfaces are allowed; everything else redirects to /ops.
+ * /admin is kept for the legacy monolith during the decomposition transition period.
+ * /ops is the new dedicated operations route group.
+ * /teacher is kept for homework grading workflows.
  */
 const ADMIN_ALLOWED: string[] = [
   "/admin",
+  "/ops",
   "/teacher",
   "/assessments", // includes /assessments/assign
+  "/classes",     // assignment/classroom detail pages
 ];
 
 function isAllowedOnAdmin(pathname: string): boolean {
@@ -131,16 +137,16 @@ export function middleware(req: NextRequest) {
   // 3. questions.mastersat.uz — authoring console
   // ------------------------------------------------------------------
   if (console === "questions") {
-    // Root redirect: land on the canonical authoring surface.
+    // Root redirect: land on the builder dashboard (content health overview).
     if (pathname === "/") {
       const url = req.nextUrl.clone();
-      url.pathname = "/builder/sets";
+      url.pathname = "/builder";
       return NextResponse.redirect(url, { headers: res.headers });
     }
     // Block non-authoring paths.
     if (!isAllowedOnQuestions(pathname)) {
       const url = req.nextUrl.clone();
-      url.pathname = "/builder/sets";
+      url.pathname = "/builder";
       return NextResponse.redirect(url, { headers: res.headers });
     }
     return res;
@@ -150,16 +156,17 @@ export function middleware(req: NextRequest) {
   // 4. admin.mastersat.uz — operational console
   // ------------------------------------------------------------------
   if (console === "admin") {
-    // Root redirect: land on the operational SPA.
+    // Root redirect: land on the new operational dashboard.
+    // /admin is kept as the legacy fallback during the monolith decomposition.
     if (pathname === "/") {
       const url = req.nextUrl.clone();
-      url.pathname = "/admin";
+      url.pathname = "/ops";
       return NextResponse.redirect(url, { headers: res.headers });
     }
     // Block non-operational paths.
     if (!isAllowedOnAdmin(pathname)) {
       const url = req.nextUrl.clone();
-      url.pathname = "/admin";
+      url.pathname = "/ops";
       return NextResponse.redirect(url, { headers: res.headers });
     }
     return res;

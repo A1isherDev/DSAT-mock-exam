@@ -1864,6 +1864,21 @@ export default function AdminPage() {
                     <main className="flex-1 p-8 overflow-y-auto">
                         {activeTab === "assignments" && (
                             <>
+                                {/* § M1 — decomposition migration notice */}
+                                <div className="mb-5 rounded-2xl border border-indigo-200 bg-indigo-50 p-4 flex flex-wrap items-center justify-between gap-3">
+                                    <div>
+                                        <p className="text-sm font-bold text-indigo-900">New dedicated Assignments page available</p>
+                                        <p className="text-sm text-indigo-800 mt-0.5">
+                                            Assignment management has moved to a dedicated operational page with classroom selector, search, and overdue tracking.
+                                        </p>
+                                    </div>
+                                    <a
+                                        href="/ops/assignments"
+                                        className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-700 transition-colors shrink-0"
+                                    >
+                                        Open Assignments page →
+                                    </a>
+                                </div>
                                 <BulkAssignWizard
                                     canAssign={can("assign_access")}
                                     users={users}
@@ -4115,6 +4130,21 @@ export default function AdminPage() {
 
                         {activeTab === 'users' && (
                             <div className="space-y-6 max-w-5xl">
+                                {/* § M1 — decomposition migration notice */}
+                                <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 flex flex-wrap items-center justify-between gap-3">
+                                    <div>
+                                        <p className="text-sm font-bold text-indigo-900">Dedicated Users page available</p>
+                                        <p className="text-sm text-indigo-800 mt-0.5">
+                                            User management has moved to a dedicated operational page with role filters, status filters, and paginated search.
+                                        </p>
+                                    </div>
+                                    <a
+                                        href="/ops/users"
+                                        className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-700 transition-colors shrink-0"
+                                    >
+                                        Open Users page →
+                                    </a>
+                                </div>
                                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                     <div>
                                         <h2 className="text-xl font-bold text-slate-900">
