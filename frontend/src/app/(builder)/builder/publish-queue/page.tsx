@@ -7,6 +7,9 @@ import type { AssessmentSet } from "@/features/assessments/types";
 import { StateTag } from "@/components/governance";
 import { SendHorizonal, CheckCircle2, AlertTriangle, ArrowRight, Rocket } from "lucide-react";
 
+/** Days after which a draft is considered stale — needs review or archival. */
+const STALE_DRAFT_DAYS = 30;
+
 type PublishCandidate = {
   set: AssessmentSet;
   activeQuestions: number;
@@ -14,6 +17,10 @@ type PublishCandidate = {
   totalQuestions: number;
   readyToPublish: boolean;
   issues: string[];
+  /** Draft has not been updated in >STALE_DRAFT_DAYS days. */
+  isStale: boolean;
+  /** Days since last update (null if no updated_at). */
+  daysSinceUpdate: number | null;
 };
 
 function analyzeSet(set: AssessmentSet): PublishCandidate {
@@ -27,6 +34,12 @@ function analyzeSet(set: AssessmentSet): PublishCandidate {
   if (!set.title?.trim()) issues.push("Missing title");
   if (!set.category?.trim()) issues.push("No category assigned");
 
+  const updatedAt = set.updated_at ? new Date(set.updated_at) : null;
+  const daysSinceUpdate = updatedAt
+    ? Math.floor((Date.now() - updatedAt.getTime()) / (1000 * 60 * 60 * 24))
+    : null;
+  const isStale = daysSinceUpdate != null && daysSinceUpdate >= STALE_DRAFT_DAYS;
+
   return {
     set,
     activeQuestions: active,
@@ -34,6 +47,8 @@ function analyzeSet(set: AssessmentSet): PublishCandidate {
     totalQuestions: qs.length,
     readyToPublish: issues.length === 0,
     issues,
+    isStale,
+    daysSinceUpdate,
   };
 }
 
@@ -77,7 +92,8 @@ export default function PublishQueuePage() {
   );
 
   const readyCount = candidates.filter((c) => c.readyToPublish).length;
-  const blockedCount = candidates.length - readyCount;
+  const blockedCount = candidates.filter((c) => !c.readyToPublish && !c.isStale).length;
+  const staleCount = candidates.filter((c) => c.isStale).length;
 
   return (
     <div className="space-y-5">
@@ -95,7 +111,7 @@ export default function PublishQueuePage() {
 
       {/* Stats row */}
       {!loading && candidates.length > 0 && (
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div className="rounded-xl border border-border bg-card px-4 py-3">
             <p className="text-xl font-extrabold tabular-nums text-foreground">{candidates.length}</p>
             <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">In queue</p>
@@ -107,6 +123,10 @@ export default function PublishQueuePage() {
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
             <p className="text-xl font-extrabold tabular-nums text-amber-700">{blockedCount}</p>
             <p className="text-[10px] font-bold text-amber-700/70 uppercase tracking-widest mt-0.5">Blocked</p>
+          </div>
+          <div className={staleCount > 0 ? "rounded-xl border border-red-200 bg-red-50 px-4 py-3" : "rounded-xl border border-border bg-card px-4 py-3"}>
+            <p className={`text-xl font-extrabold tabular-nums ${staleCount > 0 ? "text-red-700" : "text-muted-foreground"}`}>{staleCount}</p>
+            <p className={`text-[10px] font-bold uppercase tracking-widest mt-0.5 ${staleCount > 0 ? "text-red-700/70" : "text-muted-foreground"}`}>Stale (&gt;{STALE_DRAFT_DAYS}d)</p>
           </div>
         </div>
       )}
@@ -184,6 +204,12 @@ export default function PublishQueuePage() {
                       </span>
                     )}
                     <StateTag state="DRAFT" size="xs" showIcon={false} />
+                    {c.isStale && (
+                      <span className="inline-flex items-center gap-1 rounded-lg bg-red-100 px-2 py-0.5 text-[10px] font-black text-red-800 uppercase tracking-wide">
+                        <AlertTriangle className="h-3 w-3" />
+                        Stale · {c.daysSinceUpdate}d
+                      </span>
+                    )}
                   </div>
 
                   {/* Meta row */}

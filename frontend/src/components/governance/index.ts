@@ -15,3 +15,10 @@ export {
   STATE_VOCABULARY,
 } from "./StateTag";
 export type { PlatformState } from "./StateTag";
+
+export {
+  QuestionLineage,
+  SetLineage,
+  AssignmentLineage,
+  ImpactWarning,
+} from "./LineageInfo";

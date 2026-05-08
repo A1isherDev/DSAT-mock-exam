@@ -6,7 +6,7 @@ import { useAssessmentSetsList } from "@/features/assessments/hooks";
 import { getRole, getSubject } from "@/lib/permissions";
 import { Plus, Search, RefreshCw, SendHorizonal } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { StateTag } from "@/components/governance";
+import { StateTag, SetLineage } from "@/components/governance";
 
 const SUBJECT_COLORS: Record<string, string> = {
   math: "bg-purple-100 text-purple-800",
@@ -204,15 +204,16 @@ export default function BuilderSetsPage() {
                       )}
                       <StateTag state={s.is_active ? "PUBLISHED" : "DRAFT"} size="xs" />
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      {s.category || "No category"} ·{" "}
-                      {questionCount} question{questionCount === 1 ? "" : "s"}
-                      {questionCount > 0 && activeQs < questionCount ? (
-                        <span className="text-amber-600 font-semibold">
-                          {" "}({activeQs} active)
-                        </span>
-                      ) : null}
-                    </p>
+                    {s.category && (
+                      <p className="text-xs text-muted-foreground mb-0.5">{s.category}</p>
+                    )}
+                    <SetLineage
+                      setId={s.id}
+                      isPublished={s.is_active}
+                      questionCount={questionCount}
+                      activeQuestionCount={activeQs}
+                      updatedAt={s.updated_at}
+                    />
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     {isPublishReady && (

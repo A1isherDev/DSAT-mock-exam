@@ -47,6 +47,7 @@ export async function listAllQuestions(
         setTitle: set.title,
         subject: set.subject,
         category: set.category ?? "",
+        setIsPublished: Boolean(set.is_active),
       });
     }
   }

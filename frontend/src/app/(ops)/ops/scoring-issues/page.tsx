@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import api from "@/lib/api";
 import { AlertOctagon, RefreshCw, CheckCircle2, Clock, RotateCcw } from "lucide-react";
+import { StateTag } from "@/components/governance";
 
 type GradingMetrics = {
   pending_scoring: number;
@@ -100,12 +101,14 @@ export default function ScoringIssuesPage() {
             label="Pending scoring"
             icon={<Clock className="h-5 w-5" />}
             color={metrics.pending_scoring > 50 ? "amber" : "normal"}
+            stateTag={metrics.pending_scoring > 0 ? <StateTag state="SCORING" size="xs" /> : undefined}
           />
           <MetricCard
             value={metrics.failed_scoring}
             label="Failed (need attention)"
             icon={<AlertOctagon className="h-5 w-5" />}
             color={metrics.failed_scoring > 0 ? "red" : "green"}
+            stateTag={metrics.failed_scoring > 0 ? <StateTag state="FAILED" size="xs" /> : <StateTag state="SCORED" size="xs" />}
           />
           <MetricCard
             value={
@@ -116,6 +119,7 @@ export default function ScoringIssuesPage() {
             label="Avg scoring latency"
             icon={<CheckCircle2 className="h-5 w-5" />}
             color="normal"
+            stateTag={undefined}
           />
         </div>
       ) : null}
@@ -172,11 +176,13 @@ function MetricCard({
   label,
   icon,
   color,
+  stateTag,
 }: {
   value: number | string;
   label: string;
   icon: React.ReactNode;
   color: "normal" | "amber" | "red" | "green";
+  stateTag?: React.ReactNode;
 }) {
   const colorClasses = {
     normal: "text-foreground",
@@ -191,7 +197,10 @@ function MetricCard({
       <p className={`text-2xl font-extrabold tabular-nums ${colorClasses[color]}`}>
         {typeof value === "number" ? value.toLocaleString() : value}
       </p>
-      <p className="text-xs font-semibold text-muted-foreground mt-1">{label}</p>
+      <div className="flex items-center gap-2 mt-1">
+        <p className="text-xs font-semibold text-muted-foreground">{label}</p>
+        {stateTag}
+      </div>
     </div>
   );
 }

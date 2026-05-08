@@ -13,11 +13,11 @@ import {
   Pencil,
   Trash2,
   ClipboardCheck,
-  Filter,
   AlertTriangle,
   School,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { AssignmentLineage, StateTag } from "@/components/governance";
 
 type ClassroomWithRole = Classroom & { my_role?: string; subject?: string };
 
@@ -192,6 +192,21 @@ export default function OpsAssignmentsPage() {
         )}
       </div>
 
+      {/* Snapshot governance note */}
+      <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 flex items-start gap-3">
+        <div className="rounded-xl bg-blue-100 p-1.5 shrink-0">
+          <ClipboardCheck className="h-4 w-4 text-blue-700" />
+        </div>
+        <div>
+          <p className="text-sm font-bold text-blue-900">Assignments are pinned to snapshots</p>
+          <p className="text-sm text-blue-800 mt-0.5">
+            Each assignment references a specific published assessment set. Changing the set in the
+            questions console does not affect existing assignments — students always see the version
+            that was live when the assignment was created.
+          </p>
+        </div>
+      </div>
+
       {/* Error */}
       {error && (
         <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
@@ -337,26 +352,46 @@ export default function OpsAssignmentsPage() {
           <div className="divide-y divide-border">
             {filtered.map((a) => {
               const overdue = isOverdue(a.due_at);
+              const hw = (a as any).assessment_homework as {
+                homework_id: number;
+                set?: { id: number; subject: string; title: string; description: string; category: string } | null;
+              } | null | undefined;
+              const pinnedSet = hw?.set ?? null;
+
               return (
                 <div
                   key={`${a.classroomId}-${a.id}`}
                   className="px-5 py-4 flex flex-wrap items-center justify-between gap-3"
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2 mb-0.5">
+                    {/* Title + urgency badges */}
+                    <div className="flex flex-wrap items-center gap-2 mb-1">
                       <p className="font-extrabold text-foreground truncate">
                         {a.title ?? "Untitled assignment"}
                       </p>
                       {overdue && (
-                        <span className="inline-flex items-center gap-1 rounded-lg bg-amber-100 px-2 py-0.5 text-[10px] font-black text-amber-800 uppercase tracking-wide">
-                          <AlertTriangle className="h-3 w-3" />
-                          Overdue
-                        </span>
+                        <StateTag state="FAILED" size="xs" labelOverride="Overdue" showIcon />
                       )}
                     </div>
-                    <p className="text-sm text-muted-foreground inline-flex items-center gap-1.5">
-                      <Calendar className="h-3.5 w-3.5 shrink-0" />
+
+                    {/* Pinned snapshot — the most important lineage signal */}
+                    <AssignmentLineage
+                      setTitle={pinnedSet?.title}
+                      setId={pinnedSet?.id}
+                      subject={pinnedSet?.subject ?? a.subject}
+                      setIsPublished={pinnedSet != null ? true : undefined}
+                      className="mb-1.5"
+                    />
+
+                    {/* Due date */}
+                    <p className="text-xs text-muted-foreground inline-flex items-center gap-1.5">
+                      <Calendar className="h-3 w-3 shrink-0" />
                       {formatDue(a.due_at)}
+                      {a.submissions_count != null && (
+                        <span className="ml-2 font-semibold text-foreground">
+                          · {a.submissions_count} submission{a.submissions_count === 1 ? "" : "s"}
+                        </span>
+                      )}
                     </p>
                   </div>
 

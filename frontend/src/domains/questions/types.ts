@@ -26,6 +26,11 @@ export type QuestionWithContext = AssessmentQuestion & {
   setTitle: string;
   subject: Subject;
   category: string;
+  /**
+   * Whether the parent set is currently published (is_active === true).
+   * When true, this question is IN_USE — edits create a new revision.
+   */
+  setIsPublished: boolean;
 };
 
 /**

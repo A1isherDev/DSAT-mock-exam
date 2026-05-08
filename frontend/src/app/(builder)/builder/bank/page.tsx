@@ -6,7 +6,7 @@ import { listAllQuestions, applyClientFilters, computeQuestionBankStats } from "
 import type { QuestionWithContext, QuestionBankFilters } from "@/domains/questions/types";
 import { Search, Plus, Filter, ChevronRight, BookOpen, Edit2 } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { StateTag } from "@/components/governance";
+import { StateTag, QuestionLineage } from "@/components/governance";
 
 const QUESTION_TYPE_LABELS: Record<string, string> = {
   multiple_choice: "MC",
@@ -280,7 +280,7 @@ export default function QuestionBankPage() {
                     Type
                   </th>
                   <th className="text-left px-4 py-3 text-[10px] font-bold text-muted-foreground uppercase tracking-widest whitespace-nowrap hidden md:table-cell">
-                    Assessment set
+                    Set · Lineage
                   </th>
                   <th className="text-left px-4 py-3 text-[10px] font-bold text-muted-foreground uppercase tracking-widest whitespace-nowrap hidden sm:table-cell">
                     Points
@@ -348,17 +348,15 @@ function QuestionRow({ question: q }: { question: QuestionWithContext }) {
         </span>
       </td>
 
-      {/* Set name */}
-      <td className="px-4 py-3 hidden md:table-cell max-w-[180px]">
-        <Link
-          href={`/builder/sets/${q.setId}`}
-          className="text-sm font-semibold text-foreground hover:text-primary hover:underline truncate block"
-          title={q.setTitle}
-        >
-          {q.setTitle}
-        </Link>
+      {/* Set · Lineage */}
+      <td className="px-4 py-3 hidden md:table-cell max-w-[200px]">
+        <QuestionLineage
+          setId={q.setId}
+          setTitle={q.setTitle}
+          setIsPublished={q.setIsPublished}
+        />
         {q.category ? (
-          <p className="text-xs text-muted-foreground truncate">{q.category}</p>
+          <p className="text-[10px] text-muted-foreground truncate mt-0.5">{q.category}</p>
         ) : null}
       </td>
 
@@ -369,7 +367,11 @@ function QuestionRow({ question: q }: { question: QuestionWithContext }) {
 
       {/* Status */}
       <td className="px-4 py-3 whitespace-nowrap">
-        <StateTag state={q.is_active ? "ACTIVE" : "ARCHIVED"} size="xs" />
+        {q.is_active && q.setIsPublished ? (
+          <StateTag state="IN_USE" size="xs" />
+        ) : (
+          <StateTag state={q.is_active ? "ACTIVE" : "ARCHIVED"} size="xs" />
+        )}
       </td>
 
       {/* Actions */}
