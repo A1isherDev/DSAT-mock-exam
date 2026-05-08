@@ -1848,11 +1848,13 @@ export default function AdminPage() {
 
                 <div className="flex flex-1 overflow-hidden">
                     <aside className="w-56 bg-white/85 backdrop-blur-xl border-r border-slate-200/90 flex flex-col py-4 gap-1 px-2 shrink-0">
+                        {/* § 3.1 — active tab: font-bold + colour; inactive: font-medium + muted
+                            text-weight signal supplements the border indicator for faster scanning */}
                         {navItems.map(item => (
                             <button
                                 key={item.key}
                                 onClick={() => setActiveTab(item.key)}
-                                className={`w-full text-left flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === item.key ? 'bg-indigo-50 text-indigo-700 border border-indigo-100 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}
+                                className={`w-full text-left flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm transition-all ${activeTab === item.key ? 'font-bold bg-indigo-50 text-indigo-700 border border-indigo-100 shadow-sm' : 'font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-700'}`}
                             >
                                 {item.icon} {item.label}
                             </button>
@@ -1890,10 +1892,18 @@ export default function AdminPage() {
                                             Create assessment sets, add questions, and assign them to classrooms — same workflow style as pastpapers / mocks (single admin console).
                                         </p>
                                         {!assessmentsAuthoringAllowed ? (
+                                            // § 3.4 — authoring banner: add direct link to questions console
                                             <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
                                                 <span className="font-bold">Authoring disabled on this subdomain.</span>{" "}
-                                                Assessment authoring endpoints are blocked on <span className="font-mono">admin.*</span>.
-                                                Use the <span className="font-mono">questions.*</span> console for create/edit.
+                                                Assessment authoring endpoints are blocked on <span className="font-mono">admin.*</span>.{" "}
+                                                <a
+                                                    href={process.env.NEXT_PUBLIC_QUESTIONS_CONSOLE_URL ?? "https://questions.mastersat.uz/builder/sets"}
+                                                    className="font-bold underline hover:text-amber-700"
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                >
+                                                    Go to questions console →
+                                                </a>
                                             </div>
                                         ) : null}
                                     </div>

@@ -64,7 +64,8 @@ export default function TeacherHomeworkPage() {
     <div className="max-w-6xl mx-auto px-8 py-12">
       <div className="mb-8">
         <p className="text-[10px] font-bold text-primary uppercase tracking-widest mb-2">Homework</p>
-        <h1 className="text-3xl font-extrabold text-foreground tracking-tight">Homework management</h1>
+        {/* § 4.2 — heading scale aligned to page-level content hierarchy */}
+        <h1 className="text-xl font-bold text-foreground tracking-tight">Homework management</h1>
         <p className="text-muted-foreground mt-2">
           Create, edit, and track homework.{" "}
           <Link href="/teacher/homework/grading" className="font-semibold text-primary underline">

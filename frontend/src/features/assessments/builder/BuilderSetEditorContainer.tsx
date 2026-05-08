@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import { useAssessmentSetDetail, useAssessmentSetsList, useDeleteAssessmentQuestion, useUpsertAssessmentQuestion, useUpsertAssessmentSet } from "@/features/assessments/hooks";
 import { assessmentsAdminApi as assessmentAuthoringApi } from "@/features/assessmentsAdmin/api";
 import { AssessmentCategorySelect } from "@/features/assessments/components/AssessmentCategorySelect";
@@ -15,6 +16,7 @@ import { useBuilderStore, useBuilderViewSet } from "@/features/assessments/build
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { ChevronLeft } from "lucide-react";
 
 const INPUT =
   "ui-input w-full rounded-xl border border-border bg-surface-2/80 px-3 py-2 text-sm shadow-sm";
@@ -34,14 +36,36 @@ function SortRow({
 }) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: q.id });
   const style = { transform: CSS.Transform.toString(transform), transition };
+
+  // § 1.6 — inline delete confirmation (local state, no modal)
+  const [confirming, setConfirming] = useState(false);
+  const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const startConfirm = () => {
+    setConfirming(true);
+    confirmTimer.current = setTimeout(() => setConfirming(false), 5000);
+  };
+  const cancelConfirm = () => {
+    if (confirmTimer.current) clearTimeout(confirmTimer.current);
+    setConfirming(false);
+  };
+  const commitDelete = () => {
+    if (confirmTimer.current) clearTimeout(confirmTimer.current);
+    setConfirming(false);
+    onDelete();
+  };
+  useEffect(() => () => { if (confirmTimer.current) clearTimeout(confirmTimer.current); }, []);
+
   return (
+    // § 1.5 — min-h-[64px] for visual rhythm across short/long questions
     <div
       ref={setNodeRef}
       style={style}
-      className={`rounded-2xl border border-border p-3 shadow-sm ${active ? "bg-surface-2" : "bg-card"}`}
+      className={`min-h-[64px] rounded-2xl border border-border p-3 shadow-sm ${active ? "bg-surface-2" : "bg-card"}`}
     >
       <div className="flex items-start justify-between gap-2">
-        <button type="button" onClick={onSelect} className="min-w-0 text-left">
+        {/* § 1.5 — title tooltip shows full prompt on hover */}
+        <button type="button" onClick={onSelect} className="min-w-0 text-left" title={q.prompt}>
           <p className="text-sm font-extrabold text-foreground">
             #{q.id} · order {q.order} · {q.question_type} · {q.points}pt
           </p>
@@ -55,13 +79,35 @@ function SortRow({
           >
             Duplicate
           </button>
-          <button
-            type="button"
-            onClick={onDelete}
-            className="rounded-lg border border-border bg-card px-2 py-1 text-xs font-extrabold hover:bg-surface-2"
-          >
-            Delete
-          </button>
+
+          {/* § 1.6 — inline two-step delete: first click arms confirm, second commits */}
+          {confirming ? (
+            <span className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={commitDelete}
+                className="rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-xs font-extrabold text-red-700 hover:bg-red-100"
+              >
+                Confirm delete
+              </button>
+              <button
+                type="button"
+                onClick={cancelConfirm}
+                className="rounded-lg border border-border bg-card px-2 py-1 text-xs font-extrabold hover:bg-surface-2"
+              >
+                Cancel
+              </button>
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={startConfirm}
+              className="rounded-lg border border-red-200 bg-card px-2 py-1 text-xs font-extrabold text-red-600 hover:bg-red-50"
+            >
+              Delete
+            </button>
+          )}
+
           <button
             type="button"
             {...attributes}
@@ -127,6 +173,18 @@ export default function BuilderSetEditorContainer() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [redo, undo]);
+
+  // § 1.3 — warn before leaving with unsaved changes
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (!dirty) return;
+      e.preventDefault();
+      // Modern browsers display their own message; returnValue keeps legacy support.
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [dirty]);
 
   const setRow = (detail.data as any) || null;
 
@@ -345,7 +403,20 @@ export default function BuilderSetEditorContainer() {
   const canPublish = validation.length === 0;
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[1fr_420px]">
+    <>
+      {/* § 4.3 — back-navigation breadcrumb */}
+      <div className="mb-3">
+        <Link
+          href="/builder/sets"
+          className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground"
+        >
+          <ChevronLeft className="h-4 w-4" />
+          All sets
+        </Link>
+      </div>
+
+      {/* § 1.1 — responsive grid: two-column from md, wider right panel at xl */}
+      <div className="grid gap-4 md:grid-cols-[1fr_380px] xl:grid-cols-[1fr_440px]">
       <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -356,6 +427,13 @@ export default function BuilderSetEditorContainer() {
             <p className="mt-1 text-sm text-muted-foreground">
               {view.subject} · {view.category || "—"} · {questions.length} questions · version {(view as any).updated_at || "—"}
             </p>
+            {/* § 1.3 — visible dirty indicator */}
+            {dirty ? (
+              <span className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-700">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden />
+                Unsaved changes
+              </span>
+            ) : null}
           </div>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
             <button
@@ -390,15 +468,25 @@ export default function BuilderSetEditorContainer() {
           <div className="mt-4 rounded-2xl border border-red-500/20 bg-red-500/5 p-4">
             <p className="text-sm font-extrabold text-foreground">Outdated version</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              This set changed on the server while you had local edits. Refresh to avoid overwriting.
+              This set was updated elsewhere while you had local edits. Reload to get the latest version.
             </p>
-            <button
-              type="button"
-              onClick={() => void refetch()}
-              className="mt-3 rounded-xl border border-border bg-card px-4 py-2 text-sm font-extrabold hover:bg-surface-2"
-            >
-              Refresh
-            </button>
+            {/* § 1.4 — reload page button for non-actionable conflict state */}
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="rounded-xl border border-border bg-card px-4 py-2 text-sm font-extrabold hover:bg-surface-2"
+              >
+                Reload page
+              </button>
+              <button
+                type="button"
+                onClick={() => void refetch()}
+                className="rounded-xl border border-border bg-card px-4 py-2 text-sm font-bold text-muted-foreground hover:bg-surface-2"
+              >
+                Refetch only
+              </button>
+            </div>
           </div>
         ) : null}
 
@@ -448,9 +536,24 @@ export default function BuilderSetEditorContainer() {
           ) : (
             <p className="mt-3 text-sm font-semibold text-muted-foreground">All checks passed.</p>
           )}
-          <button type="button" disabled={!canPublish} className="mt-3 rounded-xl border border-border bg-card px-4 py-2 text-sm font-extrabold disabled:opacity-50">
-            Publish (backend)
+          {/* § 1.2 — button is intentionally disabled; publish/finalize is managed server-side.
+              Do NOT wire an onClick here. When snapshot/version architecture ships this button
+              will trigger SetVersion creation — its semantics will differ from any partial wiring today. */}
+          <button
+            type="button"
+            disabled
+            title="Use the sets list to manage publish status. Full finalization workflow coming soon."
+            className="mt-3 cursor-not-allowed rounded-xl border border-border bg-card px-4 py-2 text-sm font-extrabold opacity-50"
+          >
+            Save &amp; Finalize
           </button>
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            Publish status is managed from the{" "}
+            <Link href="/builder/sets" className="font-semibold text-primary hover:underline">
+              sets list
+            </Link>
+            .
+          </p>
         </div>
       </div>
 
@@ -520,6 +623,6 @@ export default function BuilderSetEditorContainer() {
         </div>
       </div>
     </div>
+    </>
   );
 }
-

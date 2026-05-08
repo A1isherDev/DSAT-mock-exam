@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AssessmentChoice, AssessmentQuestionType } from "@/features/assessments/types";
 
 export type AssessmentQuestionEditorDraft = {
@@ -55,7 +55,16 @@ export function AssessmentQuestionEditorFields({
   disabled,
   fieldLabelClass = "text-[11px] font-bold text-slate-500 uppercase tracking-widest",
 }: Props) {
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  // § 1.7 — persist advanced JSON panel preference across question switches
+  // Namespaced key avoids collisions with other localStorage consumers.
+  const ADV_KEY = "mastersat:builder:advanced_json_open";
+  const [showAdvanced, setShowAdvanced] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    try { return window.localStorage.getItem(ADV_KEY) === "true"; } catch { return false; }
+  });
+  useEffect(() => {
+    try { window.localStorage.setItem(ADV_KEY, String(showAdvanced)); } catch { /* ignore quota/private-mode */ }
+  }, [showAdvanced]);
   const choices = useMemo(() => parseChoices(draft.choicesText), [draft.choicesText]);
 
   const setChoices = useCallback(

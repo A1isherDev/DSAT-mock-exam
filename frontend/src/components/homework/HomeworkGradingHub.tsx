@@ -95,9 +95,17 @@ export default function HomeworkGradingHub({
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 md:px-8">
+      {/* § 4.4 — top breadcrumb; same destination as bottom link but visible without scrolling */}
+      <div className="mb-4">
+        <Link href={homeworkManagementHref} className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground">
+          ← {homeworkManagementLabel}
+        </Link>
+      </div>
+
       <div className="mb-8">
         <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-primary">Grading</p>
-        <h1 className="text-3xl font-extrabold tracking-tight text-foreground">Grade homework</h1>
+        {/* § 4.2 — heading scale aligned to page-level content hierarchy */}
+        <h1 className="text-xl font-bold tracking-tight text-foreground">Grade homework</h1>
         <p className="mt-2 text-muted-foreground">
           Open an assignment to see who turned work in, review uploads and pastpaper results, and enter grades.
         </p>
