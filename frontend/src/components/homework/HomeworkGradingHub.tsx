@@ -16,7 +16,7 @@ type Row = {
 };
 
 type Props = {
-  /** Base URL for this flow, e.g. `/classes/grade-homework` or `/teacher/homework/grading` */
+  /** Base URL for this flow, e.g. `/teacher/homework/grading` */
   basePath: string;
   /** Where to send users to create homework (empty state / help) */
   homeworkManagementHref: string;

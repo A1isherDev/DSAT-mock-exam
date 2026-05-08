@@ -6,9 +6,8 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
 
 const nav = [
-  { href: "/practice-tests", label: "Pastpaper tests" },
-  { href: "/mock-exam", label: "Timed mock" },
-  { href: "/midterm", label: "Midterm" },
+  { href: "/builder/sets", label: "Assessment sets" },
+  { href: "/builder/sets/new", label: "New set" },
 ];
 
 export default function BuilderLayout({ children }: { children: React.ReactNode }) {
@@ -20,9 +19,9 @@ export default function BuilderLayout({ children }: { children: React.ReactNode 
         <div className="mx-auto w-full max-w-7xl px-3 py-4 md:px-6">
           <div className="mb-4 rounded-2xl border border-border bg-card p-4 shadow-sm">
             <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-ds-gold">Questions console</p>
-            <p className="mt-1 text-xl font-extrabold tracking-tight">Tests</p>
+            <p className="mt-1 text-xl font-extrabold tracking-tight">Assessment builder</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Pastpapers, mock tests, and midterm. Backend permissions are authoritative.
+              Create and edit assessment sets and questions. Backend permissions are authoritative.
             </p>
           </div>
 
@@ -30,10 +29,7 @@ export default function BuilderLayout({ children }: { children: React.ReactNode 
             <aside className="rounded-2xl border border-border bg-card p-3 shadow-sm">
               <nav className="flex flex-col gap-1">
                 {nav.map((n) => {
-                  const active =
-                    n.href === "/practice-tests"
-                      ? pathname === "/practice-tests" || pathname.startsWith("/practice-test/")
-                      : pathname === n.href || pathname.startsWith(n.href + "/");
+                  const active = pathname === n.href || pathname.startsWith(n.href + "/");
                   return (
                     <Link
                       key={n.href}
