@@ -6,80 +6,78 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
 import {
   LayoutDashboard,
-  Library,
-  LayoutGrid,
-  Tag,
-  SendHorizonal,
-  Archive,
+  ClipboardList,
+  Users,
+  School,
+  AlertOctagon,
+  ScrollText,
 } from "lucide-react";
 
 /**
- * Questions console navigation.
- * Each entry maps to a top-level section of the authoring workflow.
+ * Operational console navigation.
  *
- * Active-state rules:
- *   - Dashboard: exact match only (avoid marking active on all /builder/* routes)
- *   - All others: prefix match (covers nested sub-pages)
- *   - Assessments (/builder/sets): covers /sets, /sets/new, /sets/[id] —
- *     "New set" is no longer a separate nav item; it lives inside Assessments.
+ * This layout serves admin.mastersat.uz — the operational side of the platform.
+ * It is STRICTLY separated from the questions console (questions.mastersat.uz).
+ *
+ * Responsibility boundary:
+ *   Operations console (this layout):
+ *     - Assignments (create, monitor, close)
+ *     - User management (roles, activation, suspension)
+ *     - Classroom management
+ *     - Scoring failure recovery
+ *     - Audit logs
+ *
+ *   Questions console ((builder) layout):
+ *     - Question authoring
+ *     - Assessment set management
+ *     - Content publishing
  */
 const NAV = [
   {
-    href: "/builder",
+    href: "/ops",
     label: "Dashboard",
     icon: LayoutDashboard,
     exact: true,
   },
   {
-    href: "/builder/bank",
-    label: "Question Bank",
-    icon: Library,
+    href: "/ops/assignments",
+    label: "Assignments",
+    icon: ClipboardList,
     exact: false,
   },
   {
-    href: "/builder/sets",
-    label: "Assessments",
-    icon: LayoutGrid,
+    href: "/ops/classrooms",
+    label: "Classrooms",
+    icon: School,
     exact: false,
   },
   {
-    href: "/builder/categories",
-    label: "Categories",
-    icon: Tag,
+    href: "/ops/users",
+    label: "Users",
+    icon: Users,
     exact: false,
   },
   {
-    href: "/builder/publish-queue",
-    label: "Publish Queue",
-    icon: SendHorizonal,
+    href: "/ops/scoring-issues",
+    label: "Scoring issues",
+    icon: AlertOctagon,
     exact: false,
   },
   {
-    href: "/builder/archived",
-    label: "Archived",
-    icon: Archive,
+    href: "/ops/audit",
+    label: "Audit log",
+    icon: ScrollText,
     exact: false,
   },
 ] as const;
-
-// § 4.5 — detect console from hostname; prefer runtime signal over cookie
-// Cookie is a useful fallback but can be stale or absent in dev.
-function useConsoleLabel(): string | null {
-  if (typeof window === "undefined") return null;
-  const host = window.location.hostname.toLowerCase();
-  if (host.startsWith("questions.")) return "Questions console";
-  if (host.startsWith("admin.")) return "Admin console";
-  return null;
-}
 
 function isNavActive(pathname: string, href: string, exact: boolean): boolean {
   if (exact) return pathname === href;
   return pathname === href || pathname.startsWith(href + "/");
 }
 
-export default function BuilderLayout({ children }: { children: React.ReactNode }) {
+export default function OpsLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const consoleLabel = useConsoleLabel();
 
   return (
     <AuthGuard adminOnly>
@@ -89,24 +87,31 @@ export default function BuilderLayout({ children }: { children: React.ReactNode 
           <div className="mb-4 rounded-2xl border border-border bg-card p-4 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-ds-gold">
-                Questions console
+                Admin console
               </p>
-              {/* § 4.5 — subdomain identity pill: amber on questions, slate on admin */}
-              {consoleLabel ? (
-                <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-amber-700">
-                  {consoleLabel}
-                </span>
-              ) : null}
+              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-slate-700">
+                Operations
+              </span>
             </div>
-            <p className="mt-1 text-xl font-extrabold tracking-tight">Content authoring</p>
+            <p className="mt-1 text-xl font-extrabold tracking-tight">Platform operations</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Question bank · assessments · categories · publishing. Backend permissions are
-              authoritative.
+              Assignments · classrooms · users · scoring · audit. Content authoring is in the{" "}
+              <a
+                href={
+                  process.env.NEXT_PUBLIC_QUESTIONS_CONSOLE_URL ??
+                  "https://questions.mastersat.uz/builder"
+                }
+                className="font-semibold text-primary hover:underline"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Questions console →
+              </a>
             </p>
           </div>
 
           <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
-            {/* Sidebar nav — sticky on large screens so it stays visible while scrolling content */}
+            {/* Sidebar */}
             <aside className="rounded-2xl border border-border bg-card p-3 shadow-sm lg:self-start lg:sticky lg:top-4">
               <nav className="flex flex-col gap-0.5">
                 {NAV.map((item) => {
@@ -128,9 +133,19 @@ export default function BuilderLayout({ children }: { children: React.ReactNode 
                   );
                 })}
               </nav>
+
+              {/* Legacy admin link — during transition period */}
+              <div className="mt-3 border-t border-border pt-3">
+                <Link
+                  href="/admin"
+                  className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-muted-foreground hover:bg-surface-2 hover:text-foreground transition-colors"
+                >
+                  ← Legacy admin panel
+                </Link>
+              </div>
             </aside>
 
-            {/* Main content area */}
+            {/* Main content */}
             <main className="min-w-0">{children}</main>
           </div>
         </div>
