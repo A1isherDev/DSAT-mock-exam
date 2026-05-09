@@ -57,6 +57,7 @@ from .models import (
 )
 from .serializers import (
     MockExamSerializer,
+    PastpaperPackStudentSerializer,
     PortalMockExamStudentSerializer,
     PracticeTestSerializer,
     TestAttemptSerializer,
@@ -217,7 +218,9 @@ class MockExamViewSet(viewsets.ReadOnlyModelViewSet):
                 mock_exam__is_active=True,
                 mock_exam__is_published=True,
                 assigned_users=user,
-            ).select_related("mock_exam")
+            )
+            .select_related("mock_exam")
+            .prefetch_related("mock_exam__tests")
         )
         return Response(PortalMockExamStudentSerializer(qs, many=True).data)
 
@@ -243,6 +246,45 @@ class MockExamViewSet(viewsets.ReadOnlyModelViewSet):
         return (
             base.filter(id__in=allowed_mock_ids)
             .prefetch_related(tests_prefetch)
+            .distinct()
+        )
+
+
+class PastpaperPackStudentListView(generics.ListAPIView):
+    """
+    Student-facing pastpaper pack hub: returns all packs that have at least one
+    section with questions, ordered newest-first.  AllowAny — browsing the catalog
+    does not require authentication; starting an attempt still requires auth.
+    """
+
+    permission_classes = [AllowAny]
+    serializer_class = PastpaperPackStudentSerializer
+
+    def get_queryset(self):
+        return (
+            PastpaperPack.objects.filter(
+                sections__mock_exam__isnull=True,
+                sections__modules__questions__isnull=False,
+            )
+            .prefetch_related("sections__modules")
+            .distinct()
+            .order_by("-practice_date", "-created_at")
+        )
+
+
+class PastpaperPackStudentDetailView(generics.RetrieveAPIView):
+    """Single pack detail — same serializer as the list view."""
+
+    permission_classes = [AllowAny]
+    serializer_class = PastpaperPackStudentSerializer
+
+    def get_queryset(self):
+        return (
+            PastpaperPack.objects.filter(
+                sections__mock_exam__isnull=True,
+                sections__modules__questions__isnull=False,
+            )
+            .prefetch_related("sections__modules")
             .distinct()
         )
 
@@ -438,6 +480,10 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                 "practice_test__mock_exam",
                 "practice_test__pastpaper_pack",
             )
+            .prefetch_related(
+                "practice_test__modules",
+                "current_module__questions",
+            )
         )
 
     def create(self, request, *args, **kwargs):
@@ -632,7 +678,12 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                 metric_incr_role("slo_exam_engine_start_ok_total", actor=getattr(request, "user", None))
                 metric_incr("slo_exam_engine_start_latency_ms_sum", int((monotonic() - t0) * 1000))
                 metric_incr("slo_exam_engine_start_latency_ms_count")
-                return Response(self.get_serializer(TestAttempt.objects.get(pk=attempt.pk)).data)
+                refreshed = (
+                    TestAttempt.objects.select_related("practice_test", "current_module")
+                    .prefetch_related("practice_test__modules", "current_module__questions")
+                    .get(pk=attempt.pk)
+                )
+                return Response(self.get_serializer(refreshed).data)
             except TransitionConflict:
                 return _transition_conflict_response(self, attempt_pk=attempt.pk, detail="Exam attempt state conflict; refresh from the snapshot.")
             except Exception as exc:
@@ -980,7 +1031,10 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
     serializer_class = AdminMockExamSerializer
 
     def get_queryset(self):
-        base = MockExam.objects.all().prefetch_related("tests__modules")
+        base = MockExam.objects.all().prefetch_related(
+            "tests__modules",
+            "tests__modules__questions",
+        )
         if not can_manage_questions(self.request.user):
             return base.none()
         return base

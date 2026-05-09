@@ -8,6 +8,8 @@ from .views import (
     AssignmentViewSet,
     SubmissionAdminViewSet,
     ClassCommentListCreateView,
+    OpsStatsView,
+    OpsAttentionView,
 )
 
 
@@ -26,6 +28,8 @@ submissions_router.register(r"", SubmissionAdminViewSet, basename="class-submiss
 
 urlpatterns = [
     path("join/", JoinClassView.as_view(), name="class-join"),
+    path("ops/stats/", OpsStatsView.as_view(), name="class-ops-stats"),
+    path("ops/attention/", OpsAttentionView.as_view(), name="class-ops-attention"),
     path("<int:classroom_pk>/comments/", ClassCommentListCreateView.as_view(), name="class-comments"),
     path("submissions/", include(submissions_router.urls)),
     path("<int:classroom_pk>/posts/", include(posts_router.urls)),

@@ -38,6 +38,113 @@ class AssessmentSet(models.Model):
         return f"{self.subject}:{self.title}"
 
 
+class AssessmentSetVersion(models.Model):
+    """
+    Immutable snapshot of an AssessmentSet at a specific point in time.
+
+    GOVERNANCE INVARIANTS:
+      INV-S01  Records are append-only. save() raises if called on an existing PK.
+      INV-S02  Records cannot be deleted. delete() raises unconditionally.
+      INV-S03  (assessment_set, snapshot_checksum) unique constraint prevents
+               duplicate versions for identical content.
+      INV-S04  snapshot_json is self-sufficient: zero dependency on live
+               AssessmentQuestion rows after snapshot creation.
+      INV-S05  All FKs pointing here use on_delete=PROTECT — no cascading
+               deletion can silently remove historical academic records.
+
+    ROLLBACK SAFETY:
+      The nullable set_version FKs on HomeworkAssignment and AssessmentAttempt
+      default to NULL so pre-snapshot workers and old deploys continue working
+      with the live-lookup fallback path. No impossible rollback state.
+
+    SNAPSHOT SCHEMA VERSION:
+      Check snapshot_json["schema_version"] before parsing. Currently 1.
+      Bump SNAPSHOT_SCHEMA_VERSION in snapshot_builder.py on breaking changes.
+    """
+
+    assessment_set = models.ForeignKey(
+        AssessmentSet,
+        on_delete=models.PROTECT,   # Cannot delete a set that has published versions
+        related_name="versions",
+    )
+    version_number = models.PositiveIntegerField(db_index=True)
+
+    # The immutable content payload — self-sufficient for rendering and grading.
+    snapshot_json = models.JSONField()
+
+    # SHA-256 of canonical JSON — used for integrity verification and idempotency.
+    snapshot_checksum = models.CharField(max_length=64, db_index=True)
+
+    # Denormalised question count for fast display without parsing snapshot_json.
+    question_count = models.PositiveIntegerField(default=0)
+
+    # ── Lineage chain ─────────────────────────────────────────────────────────
+    # Self-referential FK to the immediately preceding version.
+    # NULL for the first version of a set (no predecessor).
+    # Enables: supersession graph, "what changed between v3 and v4?",
+    # "which versions succeeded this one?", ancestry walks.
+    #
+    # GOVERNANCE: this FK uses PROTECT — deleting a version that is
+    # referenced as a predecessor is not allowed (the chain is permanent).
+    previous_version = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="successor_versions",
+        help_text="The immediately preceding published version (null = first version).",
+    )
+
+    # Audit trail
+    published_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="published_assessment_versions",
+        null=True,    # null = system-generated backfill, not a human publish action
+        blank=True,
+    )
+    published_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        db_table = "assessment_set_versions"
+        ordering = ["-published_at", "-version_number"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["assessment_set", "version_number"],
+                name="uniq_set_version_number",
+            ),
+            models.UniqueConstraint(
+                fields=["assessment_set", "snapshot_checksum"],
+                name="uniq_set_version_checksum",
+            ),
+        ]
+        # No extra Meta.indexes needed:
+        # - (assessment_set, version_number) is covered by uniq_set_version_number constraint
+        # - (assessment_set, snapshot_checksum) is covered by uniq_set_version_checksum constraint
+        # - published_at index is on the field (db_index=True)
+
+    # ── Immutability guards ───────────────────────────────────────────────────
+
+    def save(self, *args, **kwargs) -> None:  # type: ignore[override]
+        """IMMUTABILITY GUARD: reject any mutation of an existing version row."""
+        if self.pk is not None:
+            raise ValueError(
+                "AssessmentSetVersion records are immutable. "
+                "Do not modify published versions — create a new version instead."
+            )
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):  # type: ignore[override]
+        """IMMUTABILITY GUARD: permanent academic records cannot be deleted."""
+        raise ValueError(
+            "AssessmentSetVersion records are permanent academic records "
+            "and cannot be deleted."
+        )
+
+    def __str__(self) -> str:
+        return f"SetVersion(set={self.assessment_set_id} v{self.version_number})"
+
+
 class AssessmentQuestion(models.Model):
     TYPE_MULTIPLE_CHOICE = "multiple_choice"
     TYPE_SHORT_TEXT = "short_text"
@@ -84,6 +191,14 @@ class HomeworkAssignment(models.Model):
     Teacher assigns an AssessmentSet as homework.
 
     Integrates with existing class homework feed via a linked `classes.Assignment` row.
+
+    VERSION PINNING (Phase 1 — nullable rollout):
+      set_version is NULL for assignments created before snapshot architecture.
+      New assignments (post-publish endpoint) will have set_version populated.
+      Grading and bundle delivery check set_version first; if NULL they fall
+      back to the live question lookup path (backward compatibility).
+
+      Phase 2: backfill existing assignments; make non-nullable.
     """
 
     classroom = models.ForeignKey(
@@ -95,6 +210,16 @@ class HomeworkAssignment(models.Model):
         AssessmentSet,
         on_delete=models.PROTECT,
         related_name="homework_assignments",
+    )
+    # Phase 1: nullable — old assignments have no version pin yet.
+    # Phase 2 (post-backfill): add non-null constraint.
+    set_version = models.ForeignKey(
+        AssessmentSetVersion,
+        on_delete=models.PROTECT,   # Cannot delete a version with live assignments
+        related_name="homework_assignments",
+        null=True,
+        blank=True,
+        db_index=True,
     )
     assignment = models.OneToOneField(
         "classes.Assignment",
@@ -224,6 +349,17 @@ class AssessmentAttempt(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="assessment_attempts",
+    )
+    # Phase 1: nullable — old attempts have no version pin yet.
+    # Grading and review read from this when present; fall back to live lookup
+    # when NULL. Phase 2 (post-backfill): add non-null constraint.
+    set_version = models.ForeignKey(
+        AssessmentSetVersion,
+        on_delete=models.PROTECT,   # Cannot delete a version with historical attempts
+        related_name="attempts",
+        null=True,
+        blank=True,
+        db_index=True,
     )
     status = models.CharField(max_length=24, choices=STATUS_CHOICES, default=STATUS_IN_PROGRESS, db_index=True)
     started_at = models.DateTimeField(default=timezone.now, db_index=True)
@@ -366,3 +502,130 @@ class AssessmentResult(models.Model):
     class Meta:
         db_table = "assessment_results"
         ordering = ["-graded_at", "-id"]
+
+
+class GovernanceEvent(models.Model):
+    """
+    Immutable, append-only audit event store for all governance actions.
+
+    GOVERNANCE INVARIANTS:
+      INV-GE01  Records are append-only. save() raises if called on an existing PK.
+      INV-GE02  Records cannot be deleted — permanent audit trail.
+      INV-GE03  All significant state transitions MUST emit a GovernanceEvent.
+                Silent state changes are an audit violation.
+      INV-GE04  actor_email is denormalized at write-time for audit stability
+                — the email remains correct even if the user account is later
+                modified or deleted.
+
+    ENTITY REFERENCE (polymorphic — entity_type + entity_id):
+      entity_type: Django model class name ("AssessmentSet", "AssessmentSetVersion",
+                   "HomeworkAssignment", "AssessmentAttempt").
+      entity_id:   Primary key of the entity.
+
+    QUERYING:
+      - Operator timeline for a set:
+            GovernanceEvent.objects.filter(entity_type="AssessmentSet", entity_id=42)
+      - All publish events:
+            GovernanceEvent.objects.filter(event_type=GovernanceEvent.EVENT_PUBLISH)
+      - Fallback usage (sunset monitoring):
+            GovernanceEvent.objects.filter(event_type=GovernanceEvent.EVENT_FALLBACK_PATH_USED)
+    """
+
+    # ── Event taxonomy ─────────────────────────────────────────────────────────
+
+    # Content lifecycle
+    EVENT_PUBLISH = "publish"
+    EVENT_PUBLISH_IDEMPOTENT = "publish_idempotent"      # Re-publish with identical content
+    EVENT_PUBLISH_VALIDATION_FAILED = "publish_validation_failed"
+    EVENT_SUPERSEDE = "supersede"                        # New version supersedes old
+
+    # Assignment lifecycle
+    EVENT_ASSIGNMENT_PIN = "assignment_pin"              # Version pinned to HomeworkAssignment
+
+    # Attempt lifecycle
+    EVENT_ATTEMPT_SNAPSHOT_PIN = "attempt_snapshot_pin" # Version pinned to AssessmentAttempt
+
+    # Scoring
+    EVENT_SCORING_START = "scoring_start"
+    EVENT_SCORING_COMPLETE = "scoring_complete"
+    EVENT_SCORING_RETRY = "scoring_retry"
+    EVENT_SCORING_FAILURE = "scoring_failure"
+    EVENT_SCORING_OVERRIDE = "scoring_override"
+
+    # Integrity
+    EVENT_INTEGRITY_FAILURE = "integrity_failure"
+    EVENT_INTEGRITY_REPAIR = "integrity_repair"
+
+    # Fallback telemetry — critical for sunset monitoring
+    EVENT_FALLBACK_PATH_USED = "fallback_path_used"
+
+    EVENT_CHOICES = [
+        (EVENT_PUBLISH, "Published"),
+        (EVENT_PUBLISH_IDEMPOTENT, "Publish (idempotent — identical content)"),
+        (EVENT_PUBLISH_VALIDATION_FAILED, "Publish validation failed"),
+        (EVENT_SUPERSEDE, "Superseded by new version"),
+        (EVENT_ASSIGNMENT_PIN, "Assignment version pinned"),
+        (EVENT_ATTEMPT_SNAPSHOT_PIN, "Attempt snapshot pinned"),
+        (EVENT_SCORING_START, "Scoring started"),
+        (EVENT_SCORING_COMPLETE, "Scoring completed"),
+        (EVENT_SCORING_RETRY, "Scoring retried"),
+        (EVENT_SCORING_FAILURE, "Scoring failed"),
+        (EVENT_SCORING_OVERRIDE, "Scoring overridden"),
+        (EVENT_INTEGRITY_FAILURE, "Integrity failure detected"),
+        (EVENT_INTEGRITY_REPAIR, "Integrity repair performed"),
+        (EVENT_FALLBACK_PATH_USED, "Live-read fallback path used (pre-snapshot attempt)"),
+    ]
+
+    # ── Core fields ────────────────────────────────────────────────────────────
+
+    event_type = models.CharField(max_length=64, choices=EVENT_CHOICES, db_index=True)
+
+    # Polymorphic entity reference
+    entity_type = models.CharField(max_length=64, db_index=True)
+    entity_id = models.BigIntegerField(db_index=True)
+
+    # Actor attribution (nullable = system/Celery action)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="governance_events",
+    )
+    # Denormalized email — stable audit record independent of user lifecycle
+    actor_email = models.CharField(max_length=254, blank=True, default="", db_index=True)
+
+    # Arbitrary structured payload for operator debugging
+    payload = models.JSONField(default=dict, blank=True)
+
+    # Request trace ID linking related events across tables and log lines
+    correlation_id = models.CharField(max_length=128, blank=True, default="", db_index=True)
+
+    occurred_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        db_table = "governance_events"
+        ordering = ["-occurred_at", "-id"]
+        indexes = [
+            models.Index(fields=["entity_type", "entity_id", "occurred_at"], name="gov_ev_entity_timeline_idx"),
+            models.Index(fields=["event_type", "occurred_at"], name="gov_ev_type_timeline_idx"),
+            models.Index(fields=["actor_email", "occurred_at"], name="gov_ev_actor_timeline_idx"),
+        ]
+
+    # ── Immutability guards ────────────────────────────────────────────────────
+
+    def save(self, *args, **kwargs) -> None:  # type: ignore[override]
+        if self.pk is not None:
+            raise ValueError(
+                "GovernanceEvent records are immutable. "
+                "They are a permanent audit trail and cannot be modified."
+            )
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):  # type: ignore[override]
+        raise ValueError(
+            "GovernanceEvent records are permanent audit records and cannot be deleted."
+        )
+
+    def __str__(self) -> str:
+        return f"GovernanceEvent({self.event_type} {self.entity_type}#{self.entity_id} @{self.occurred_at})"

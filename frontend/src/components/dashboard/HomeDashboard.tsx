@@ -13,6 +13,7 @@ import { GoalScoreModal, initialSectionsFromTarget } from "./GoalScoreModal";
 import { LearningRoadmap, type RoadmapStep } from "./LearningRoadmap";
 import { cn } from "@/lib/cn";
 import { platformSubjectIsMath, platformSubjectIsReadingWriting } from "@/lib/permissions";
+import { StudentTaskPrioritySection } from "./StudentTaskPrioritySection";
 
 type Attempt = {
   id: number;
@@ -332,6 +333,9 @@ export function HomeDashboard() {
           </Link>
         </div>
       </header>
+
+      {/* Task-first: show pending assignments before everything else */}
+      <StudentTaskPrioritySection dashboardLoaded={!loading} />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 lg:gap-5">
         {/* Target goal — dedicated row for quick score setup */}

@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
-import type { AssessmentChoice, AssessmentQuestionType } from "@/features/assessments/types";
+import { useEffect, useMemo, useState } from "react";
+import type { AssessmentQuestionType } from "@/features/assessments/types";
+import { ChoiceEditor, defaultMcChoices, parseAndNormalizeChoices } from "@/features/assessments/components/ChoiceEditor";
 
 export type AssessmentQuestionEditorDraft = {
   prompt: string;
@@ -22,24 +23,6 @@ function parseJson<T>(s: string, fallback: T): T {
   }
 }
 
-function defaultMcChoices(): AssessmentChoice[] {
-  return ["A", "B", "C", "D"].map((id) => ({ id, text: "" }));
-}
-
-function parseChoices(text: string): AssessmentChoice[] {
-  const raw = parseJson<unknown>(text, []);
-  if (!Array.isArray(raw) || raw.length === 0) return defaultMcChoices();
-  const out: AssessmentChoice[] = [];
-  for (const row of raw) {
-    if (row && typeof row === "object" && "id" in row) {
-      const id = String((row as { id: unknown }).id || "").trim() || String.fromCharCode(65 + out.length);
-      const t = String((row as { text?: unknown }).text ?? "");
-      out.push({ id, text: t });
-    }
-  }
-  return out.length ? out : defaultMcChoices();
-}
-
 type Props = {
   draft: AssessmentQuestionEditorDraft;
   onPatch: (p: Partial<AssessmentQuestionEditorDraft>) => void;
@@ -55,14 +38,20 @@ export function AssessmentQuestionEditorFields({
   disabled,
   fieldLabelClass = "text-[11px] font-bold text-slate-500 uppercase tracking-widest",
 }: Props) {
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const choices = useMemo(() => parseChoices(draft.choicesText), [draft.choicesText]);
-
-  const setChoices = useCallback(
-    (next: AssessmentChoice[]) => {
-      onPatch({ choicesText: JSON.stringify(next, null, 2) });
-    },
-    [onPatch],
+  // § 1.7 — persist advanced JSON panel preference across question switches
+  // Namespaced key avoids collisions with other localStorage consumers.
+  const ADV_KEY = "mastersat:builder:advanced_json_open";
+  const [showAdvanced, setShowAdvanced] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    try { return window.localStorage.getItem(ADV_KEY) === "true"; } catch { return false; }
+  });
+  useEffect(() => {
+    try { window.localStorage.setItem(ADV_KEY, String(showAdvanced)); } catch { /* ignore quota/private-mode */ }
+  }, [showAdvanced]);
+  // MC choices — parsed and normalised for ChoiceEditor
+  const choices = useMemo(
+    () => parseAndNormalizeChoices(draft.choicesText),
+    [draft.choicesText],
   );
 
   const gradingObj = useMemo(() => parseJson<Record<string, unknown>>(draft.gradingConfigText, {}), [draft.gradingConfigText]);
@@ -80,11 +69,12 @@ export function AssessmentQuestionEditorFields({
     onPatch({ gradingConfigText: JSON.stringify(next, null, 2) });
   };
 
+  // Resolve correctMcId: prefer the stored value if it still matches a choice
   const correctMcId = useMemo(() => {
     const ca = parseJson<unknown>(draft.correctAnswerText, null);
-    if (ca == null || ca === "") return "";
+    if (ca == null || ca === "") return choices[0]?.id ?? "A";
     const s = String(ca);
-    return choices.some((c) => c.id === s) ? s : "";
+    return choices.some((c) => c.id === s) ? s : (choices[0]?.id ?? "A");
   }, [draft.correctAnswerText, choices]);
 
   return (
@@ -173,75 +163,18 @@ export function AssessmentQuestionEditorFields({
       </div>
 
       {draft.question_type === "multiple_choice" ? (
-        <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3 space-y-2">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className={fieldLabelClass}>Answer choices</span>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-bold text-slate-700 disabled:opacity-50"
-                disabled={disabled || choices.length >= 8}
-                onClick={() => {
-                  const nextLetter = String.fromCharCode(65 + choices.length);
-                  setChoices([...choices, { id: nextLetter, text: "" }]);
-                }}
-              >
-                Add choice
-              </button>
-              <button
-                type="button"
-                className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-bold text-slate-700 disabled:opacity-50"
-                disabled={disabled || choices.length <= 2}
-                onClick={() => setChoices(choices.slice(0, -1))}
-              >
-                Remove last
-              </button>
-            </div>
-          </div>
-          <div className="grid gap-2">
-            {choices.map((c, idx) => (
-              <div key={`${c.id}-${idx}`} className="flex flex-wrap items-start gap-2 md:flex-nowrap">
-                <input
-                  className={`${inputClassName} w-14 shrink-0 font-mono text-xs`}
-                  disabled={disabled}
-                  value={c.id}
-                  title="Choice id (A, B, …)"
-                  onChange={(e) => {
-                    const id = e.target.value.trim() || String.fromCharCode(65 + idx);
-                    const next = choices.map((row, i) => (i === idx ? { ...row, id } : row));
-                    setChoices(next);
-                  }}
-                />
-                <input
-                  className={`${inputClassName} flex-1 min-w-0`}
-                  disabled={disabled}
-                  placeholder={`Choice ${c.id} text`}
-                  value={c.text}
-                  onChange={(e) => {
-                    const next = choices.map((row, i) => (i === idx ? { ...row, text: e.target.value } : row));
-                    setChoices(next);
-                  }}
-                />
-              </div>
-            ))}
-          </div>
-          <div className="flex flex-col gap-1 pt-1">
-            <span className={fieldLabelClass}>Correct choice</span>
-            <select
-              className={inputClassName}
-              disabled={disabled}
-              value={correctMcId}
-              onChange={(e) => onPatch({ correctAnswerText: JSON.stringify(e.target.value) })}
-            >
-              <option value="">— Select —</option>
-              {choices.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.id}
-                  {c.text ? ` — ${c.text.slice(0, 80)}${c.text.length > 80 ? "…" : ""}` : ""}
-                </option>
-              ))}
-            </select>
-          </div>
+        <div className="rounded-xl border border-border bg-surface-2/30 p-3">
+          <ChoiceEditor
+            choices={choices}
+            correctId={correctMcId}
+            onChange={(nextChoices, nextCorrectId) => {
+              onPatch({
+                choicesText: JSON.stringify(nextChoices, null, 2),
+                correctAnswerText: JSON.stringify(nextCorrectId),
+              });
+            }}
+            disabled={disabled}
+          />
         </div>
       ) : null}
 

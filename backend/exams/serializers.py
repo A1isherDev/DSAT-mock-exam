@@ -132,7 +132,9 @@ class PortalMockExamStudentSerializer(serializers.ModelSerializer):
     section_test_ids = serializers.SerializerMethodField()
 
     def get_section_test_ids(self, obj):
-        return list(obj.mock_exam.tests.values_list("id", flat=True))
+        # Use .all() so Django's prefetch cache is hit when mock_exam__tests is prefetched.
+        # .values_list() bypasses the cache and always issues a new query.
+        return [t.id for t in obj.mock_exam.tests.all()]
 
     class Meta:
         model = PortalMockExam
@@ -143,6 +145,41 @@ class PastpaperPackBriefSerializer(serializers.ModelSerializer):
     class Meta:
         model = PastpaperPack
         fields = ["id", "title", "practice_date", "label", "form_type"]
+
+
+class PastpaperPackStudentSerializer(serializers.ModelSerializer):
+    """
+    Student-facing pastpaper pack: pack metadata + shallow section list.
+    ``sections`` uses ModuleListSerializer-style brevity (no questions payload) so the
+    hub page can render section cards without blowing up response size.
+    """
+
+    sections = serializers.SerializerMethodField()
+
+    def get_sections(self, obj):
+        # obj.sections is the reverse FK manager from PracticeTest.pastpaper_pack.
+        # Only surface sections that have at least one question so students can actually start them.
+        qs = (
+            obj.sections.filter(mock_exam__isnull=True, modules__questions__isnull=False)
+            .prefetch_related("modules")
+            .distinct()
+        )
+        return [
+            {
+                "id": pt.id,
+                "title": pt.title,
+                "subject": pt.subject,
+                "label": pt.label,
+                "form_type": pt.form_type,
+                "practice_date": pt.practice_date,
+                "module_count": pt.modules.count(),
+            }
+            for pt in qs
+        ]
+
+    class Meta:
+        model = PastpaperPack
+        fields = ["id", "title", "practice_date", "label", "form_type", "sections"]
 
 
 class AttemptPracticeTestDetailsSerializer(serializers.Serializer):
@@ -825,16 +862,19 @@ class AdminMockExamSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["is_published", "published_at", "publish_ready", "publish_block_reason"]
 
-    def get_publish_ready(self, obj):
-        from .publish_service import mock_exam_publish_ready
+    def _publish_check(self, obj):
+        cache_attr = "_publish_ready_cache"
+        if not hasattr(obj, cache_attr):
+            from .publish_service import mock_exam_publish_ready
+            setattr(obj, cache_attr, mock_exam_publish_ready(obj))
+        return getattr(obj, cache_attr)
 
-        ok, _ = mock_exam_publish_ready(obj)
+    def get_publish_ready(self, obj):
+        ok, _ = self._publish_check(obj)
         return ok
 
     def get_publish_block_reason(self, obj):
-        from .publish_service import mock_exam_publish_ready
-
-        ok, msg = mock_exam_publish_ready(obj)
+        ok, msg = self._publish_check(obj)
         return "" if ok else msg
 
     def validate(self, attrs):

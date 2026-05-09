@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 from django.db import IntegrityError, transaction
-from django.db.models import Max, Avg, Count
+from django.db.models import Max, Avg, Count, Q as models_Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
+from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from drf_spectacular.utils import extend_schema
+from drf_spectacular.types import OpenApiTypes
 from django.http import HttpResponse
 
 import secrets
@@ -31,6 +33,7 @@ from classes.security import classroom_authz_for_user
 
 from .models import (
     AssessmentSet,
+    AssessmentSetVersion,
     AssessmentQuestion,
     HomeworkAssignment,
     AssessmentAttempt,
@@ -56,6 +59,8 @@ from .redis_health import get_redis_health_snapshot
 from .serializers import (
     AssessmentSetSerializer,
     AssessmentSetAdminWriteSerializer,
+    AssessmentSetVersionSerializer,
+    AdminPublishResponseSerializer,
     AssessmentQuestionAdminWriteSerializer,
     AssignHomeworkSerializer,
     HomeworkAssignmentSerializer,
@@ -105,7 +110,14 @@ class AdminAssessmentSetListCreateView(APIView):
 
         if category:
             qs = qs.filter(category__iexact=category)
-        qs = qs.order_by("-created_at", "-id")[:500]
+        qs = qs.order_by("-created_at", "-id")
+
+        paginator = LimitOffsetPagination()
+        paginator.default_limit = 50
+        paginator.max_limit = 200
+        page = paginator.paginate_queryset(qs, request)
+        if page is not None:
+            return paginator.get_paginated_response(AssessmentSetSerializer(page, many=True).data)
         return Response(AssessmentSetSerializer(qs, many=True).data)
 
     def post(self, request):
@@ -429,6 +441,14 @@ class AssignAssessmentHomeworkView(APIView):
                     instructions=instructions,
                     due_at=due_at,
                 )
+                # Resolve the latest published version to pin on this assignment.
+                # NULL = set has never been published (legacy / pre-snapshot path).
+                pinned_version = (
+                    AssessmentSetVersion.objects.filter(assessment_set=aset)
+                    .order_by("-version_number")
+                    .first()
+                )
+
                 try:
                     with transaction.atomic():
                         hw = HomeworkAssignment.objects.create(
@@ -436,6 +456,7 @@ class AssignAssessmentHomeworkView(APIView):
                             assessment_set=aset,
                             assignment=assignment,
                             assigned_by=request.user,
+                            set_version=pinned_version,
                         )
                 except IntegrityError:
                     assessments_metric_incr("homework_duplicate_prevented")
@@ -453,7 +474,7 @@ class AssignAssessmentHomeworkView(APIView):
                             context={"actor_id": request.user.pk, "classroom_id": classroom.pk, "set_id": aset.pk},
                         )
                         raise
-        from .models import AssessmentHomeworkAuditEvent
+        from .models import AssessmentHomeworkAuditEvent, GovernanceEvent
 
         AssessmentHomeworkAuditEvent.objects.create(
             classroom=classroom,
@@ -462,6 +483,25 @@ class AssignAssessmentHomeworkView(APIView):
             actor=request.user,
             event_type=AssessmentHomeworkAuditEvent.EVENT_ASSIGNED,
             payload={"host": request.get_host(), "title": title},
+        )
+
+        # Governance event: track which version (if any) was pinned to this assignment.
+        from .domain.governance_events import emit_governance_event
+        emit_governance_event(
+            event_type=GovernanceEvent.EVENT_ASSIGNMENT_PIN,
+            actor=request.user,
+            entity_type="HomeworkAssignment",
+            entity_id=hw.pk,
+            payload={
+                "set_id": aset.pk,
+                "classroom_id": classroom.pk,
+                "pinned_version_id": hw.set_version_id,
+                "pinned_version_number": (
+                    hw.set_version.version_number if hw.set_version_id else None
+                ),
+                "snapshot_pinned": hw.set_version_id is not None,
+            },
+            correlation_id=request.META.get("HTTP_X_REQUEST_ID", ""),
         )
 
         from .homework_abuse import evaluate_abuse_after_assignment
@@ -508,9 +548,9 @@ class StartAttemptView(APIView):
         ser.is_valid(raise_exception=True)
         assignment_id = int(ser.validated_data["assignment_id"])
 
-        hw = HomeworkAssignment.objects.select_related("assignment", "classroom", "assessment_set").filter(
-            assignment_id=assignment_id
-        ).first()
+        hw = HomeworkAssignment.objects.select_related(
+            "assignment", "classroom", "assessment_set", "set_version"
+        ).filter(assignment_id=assignment_id).first()
         if not hw:
             return Response({"detail": "Assessment homework not found."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -526,25 +566,44 @@ class StartAttemptView(APIView):
             .first()
         )
         if not att:
+            # Determine question IDs and version source:
+            # - If hw has a pinned set_version, build the question list from the
+            #   immutable snapshot — stable content regardless of live edits.
+            # - Otherwise fall back to live DB query (pre-snapshot assignment).
+            if hw.set_version_id:
+                from .domain.snapshot_builder import questions_from_snapshot
+                raw_qs = questions_from_snapshot(hw.set_version.snapshot_json)
+                qids = [q["id"] for q in sorted(raw_qs, key=lambda q: (q.get("order", 0), q["id"]))]
+            else:
+                qids = list(
+                    AssessmentQuestion.objects.filter(
+                        assessment_set=hw.assessment_set,
+                        is_active=True,
+                    )
+                    .order_by("order", "id")
+                    .values_list("id", flat=True)
+                )
+
+            secrets.SystemRandom().shuffle(qids)
             att = AssessmentAttempt.objects.create(
                 homework=hw,
                 student=request.user,
                 last_activity_at=timezone.now(),
                 grading_status=AssessmentAttempt.GRADING_PENDING,
+                question_order=qids,
+                # Pin the snapshot version from the homework onto the attempt so
+                # grading always uses the frozen content that was delivered.
+                set_version=hw.set_version,
             )
-            # Shuffle question order once, per attempt.
-            qids = list(
-                AssessmentQuestion.objects.filter(
-                    assessment_set=hw.assessment_set,
-                    is_active=True,
-                )
-                .order_by("order", "id")
-                .values_list("id", flat=True)
+            _audit_attempt(
+                att,
+                actor=request.user,
+                event_type=AssessmentAttemptAuditEvent.EVENT_STARTED,
+                payload={
+                    "question_count": len(qids),
+                    "snapshot_pinned": hw.set_version_id is not None,
+                },
             )
-            secrets.SystemRandom().shuffle(qids)
-            att.question_order = qids
-            att.save(update_fields=["question_order"])
-            _audit_attempt(att, actor=request.user, event_type=AssessmentAttemptAuditEvent.EVENT_STARTED, payload={"question_count": len(qids)})
         else:
             if not att.last_activity_at:
                 att.last_activity_at = timezone.now()
@@ -572,9 +631,9 @@ class AttemptBundleView(APIView):
         },
     )
     def get(self, request, attempt_id: int):
-        att = AssessmentAttempt.objects.select_related("homework__classroom", "homework__assessment_set").filter(
-            pk=attempt_id, student=request.user
-        ).first()
+        att = AssessmentAttempt.objects.select_related(
+            "homework__classroom", "homework__assessment_set", "set_version"
+        ).filter(pk=attempt_id, student=request.user).first()
         if not att:
             return Response({"detail": "Attempt not found."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -583,11 +642,63 @@ class AttemptBundleView(APIView):
             return Response({"detail": "Only students can view this attempt."}, status=status.HTTP_403_FORBIDDEN)
 
         aset = hw.assessment_set
+        order_ids = [int(x) for x in (att.question_order or []) if isinstance(x, (int, str)) and str(x).isdigit()]
+
+        # ── Snapshot path ─────────────────────────────────────────────────────
+        # When the attempt was created from a pinned snapshot, serve questions
+        # directly from snapshot_json — zero live question lookups. This
+        # guarantees students always see the exact content that was locked at
+        # publish time, even if the live set has been edited since.
+        if att.set_version_id:
+            from .domain.snapshot_builder import questions_from_snapshot
+
+            raw_qs = questions_from_snapshot(att.set_version.snapshot_json)
+            # Build a sanitized list (no correct_answer, no grading_config).
+            raw_by_id = {q["id"]: q for q in raw_qs}
+            sanitized = [
+                {
+                    "id": q["id"],
+                    "order": q.get("order", 0),
+                    "prompt": q.get("prompt", ""),
+                    "question_type": q["question_type"],
+                    "choices": q.get("choices") or [],
+                    "points": q.get("points", 1),
+                    # correct_answer and grading_config intentionally omitted
+                }
+                for q in (
+                    [raw_by_id[qid] for qid in order_ids if qid in raw_by_id]
+                    if order_ids else sorted(raw_qs, key=lambda q: (q.get("order", 0), q["id"]))
+                )
+            ]
+            att = AssessmentAttempt.objects.filter(pk=att.pk).prefetch_related("answers").first()
+            return Response(
+                {
+                    "attempt": AttemptSerializer(att).data,
+                    "set": AssessmentSetSerializer(aset).data,
+                    "questions": sanitized,
+                    "snapshot_version": att.set_version_id,
+                    # Outer classes.Assignment PK — used by student UI to navigate
+                    # to /assessments/result/{assignment_id} after submit.
+                    "assignment_id": hw.assignment_id,
+                }
+            )
+
+        # ── Live path (pre-snapshot attempts) ─────────────────────────────────
+        # Emit fallback telemetry — primary signal for sunset monitoring.
+        try:
+            from .domain.governance_events import emit_fallback_path_used
+            emit_fallback_path_used(
+                attempt_id=att.pk,
+                set_id=aset.pk,
+                context="bundle",
+            )
+        except Exception:
+            pass  # never block delivery
+
         base_questions = list(
             AssessmentQuestion.objects.filter(assessment_set=aset, is_active=True).order_by("order", "id")
         )
         q_by_id = {q.id: q for q in base_questions}
-        order_ids = [int(x) for x in (att.question_order or []) if isinstance(x, (int, str)) and str(x).isdigit()]
         questions = [q_by_id[qid] for qid in order_ids if qid in q_by_id] if order_ids else base_questions
 
         att = AssessmentAttempt.objects.filter(pk=att.pk).prefetch_related("answers").first()
@@ -596,6 +707,7 @@ class AttemptBundleView(APIView):
                 "attempt": AttemptSerializer(att).data,
                 "set": AssessmentSetSerializer(aset).data,
                 "questions": AssessmentQuestionSerializer(questions, many=True).data,
+                "assignment_id": hw.assignment_id,
             }
         )
 
@@ -990,10 +1102,38 @@ class AdminBuilderTelemetryView(APIView):
         return Response({"ok": True}, status=status.HTTP_200_OK)
 
 
+def _build_hw_meta(hw) -> dict:
+    """
+    Build the `meta` block returned to students alongside their attempt/result.
+
+    Includes human-readable assignment context (title, set name, due date,
+    question count) so the frontend can display meaningful context without
+    making extra API calls.  Never includes correct_answer or grading_config.
+    """
+    aset = hw.assessment_set
+    assignment = hw.assignment
+    active_q_count = aset.questions.filter(is_active=True).count() if aset else 0
+    return {
+        "assignment_title": assignment.title if assignment else None,
+        "set_title": aset.title if aset else None,
+        "set_category": aset.category if aset else None,
+        "due_at": assignment.due_at.isoformat() if assignment and assignment.due_at else None,
+        "question_count": active_q_count,
+        "classroom_name": hw.classroom.name if hw.classroom else None,
+    }
+
+
 class MyAssessmentResultForAssignmentView(APIView):
     """
     Convenience endpoint for the homework page: given a class assignment id, return the
     student's latest attempt/result for that assessment homework.
+
+    Response shape:
+        attempt  — AssessmentAttempt data (or null if not yet started)
+        result   — AssessmentResult data (or null if not yet graded)
+        meta     — Human-readable context: assignment title, set name, due date, question count.
+                   Always present. Frontend should use `meta` rather than `attempt.homework_id`
+                   to display labels so students see real titles not internal IDs.
     """
 
     permission_classes = [IsAuthenticatedAndNotFrozen]
@@ -1008,9 +1148,9 @@ class MyAssessmentResultForAssignmentView(APIView):
         },
     )
     def get(self, request, assignment_id: int):
-        hw = HomeworkAssignment.objects.select_related("assessment_set", "assignment", "classroom").filter(
-            assignment_id=assignment_id
-        ).first()
+        hw = HomeworkAssignment.objects.select_related(
+            "assessment_set", "assignment", "classroom"
+        ).filter(assignment_id=assignment_id).first()
         if not hw:
             return Response({"detail": "Assessment homework not found."}, status=status.HTTP_404_NOT_FOUND)
         if not hw.classroom.memberships.filter(user=request.user, role=ClassroomMembership.ROLE_STUDENT).exists():
@@ -1021,7 +1161,326 @@ class MyAssessmentResultForAssignmentView(APIView):
             .first()
         )
         if not att:
-            return Response({"attempt": None, "result": None})
+            return Response({
+                "attempt": None,
+                "result": None,
+                "meta": _build_hw_meta(hw),
+            })
         res = AssessmentResult.objects.filter(attempt=att).first()
-        return Response({"attempt": AttemptSerializer(att).data, "result": ResultSerializer(res).data if res else None})
+        return Response({
+            "attempt": AttemptSerializer(att).data,
+            "result": ResultSerializer(res).data if res else None,
+            "meta": _build_hw_meta(hw),
+        })
+
+
+class AdminPublishAssessmentSetView(APIView):
+    """
+    POST /assessments/admin/sets/{pk}/publish/
+
+    Transition an AssessmentSet from DRAFT → PUBLISHED state by building an
+    immutable AssessmentSetVersion snapshot.
+
+    GOVERNANCE:
+      - Enforces all publish preconditions (INV-001 through INV-003 from PublishService).
+      - Idempotent: re-publishing identical content returns existing version (HTTP 200).
+      - Creating a new version returns HTTP 201.
+      - Concurrency-safe via select_for_update() inside publish_assessment_set().
+
+    FRONTEND INTEGRATION:
+      Currently the publish page calls PATCH is_active=true (legacy toggle).
+      Sprint 5: swap publishSet() in builder/sets/[id]/publish/page.tsx to call this endpoint.
+    """
+
+    permission_classes = [IsAuthenticatedAndNotFrozen, CanAuthorAssessmentContent]
+
+    @extend_schema(
+        tags=["assessments"],
+        summary="Publish assessment set (create immutable snapshot)",
+        responses={
+            200: AdminPublishResponseSerializer,
+            201: AdminPublishResponseSerializer,
+            400: ApiAssessmentDetailSerializer,
+            404: ApiAssessmentDetailSerializer,
+        },
+    )
+    def post(self, request, pk: int):
+        from .domain.publish_service import publish_assessment_set, PublishValidationError
+
+        # Determine whether a version already exists before publishing so we can
+        # return the correct HTTP status (200 = idempotent / 201 = new version).
+        existing_count = AssessmentSetVersion.objects.filter(assessment_set_id=pk).count()
+
+        try:
+            version = publish_assessment_set(set_id=pk, actor=request.user)
+        except AssessmentSet.DoesNotExist:
+            return Response({"detail": f"AssessmentSet #{pk} not found."}, status=status.HTTP_404_NOT_FOUND)
+        except PublishValidationError as exc:
+            return Response({"detail": str(exc), "code": exc.code}, status=status.HTTP_400_BAD_REQUEST)
+
+        new_count = AssessmentSetVersion.objects.filter(assessment_set_id=pk).count()
+        created = new_count > existing_count
+
+        data = {
+            "version": AssessmentSetVersionSerializer(version).data,
+            "created": created,
+        }
+        return Response(data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+
+class AdminValidatePublishView(APIView):
+    """
+    GET /assessments/admin/sets/{pk}/validate-publish/
+
+    Dry-run publish validation — returns the full validation report without
+    creating a version or changing any state.
+
+    Used by the builder pre-publish checklist page to surface blocking and
+    warning findings before the user commits to publishing.
+
+    Response shape:
+        {
+            "is_publishable": bool,
+            "blocking_count": int,
+            "warning_count": int,
+            "findings": [
+                {"severity": "blocking"|"warning", "code": str, "message": str,
+                 "question_id": int|null, "context": dict},
+                ...
+            ]
+        }
+    """
+
+    permission_classes = [IsAuthenticatedAndNotFrozen, CanViewTests]
+
+    @extend_schema(
+        tags=["assessments"],
+        summary="Dry-run publish validation (no state change)",
+        responses={200: None, 404: ApiAssessmentDetailSerializer},
+    )
+    def get(self, request, pk: int):
+        from .domain.publish_validator import validate_for_publish
+
+        aset = get_object_or_404(AssessmentSet, pk=pk)
+        active_questions = list(
+            AssessmentQuestion.objects.filter(
+                assessment_set=aset, is_active=True
+            ).order_by("order", "id")
+        )
+        report = validate_for_publish(aset, active_questions)
+        return Response(report.to_dict())
+
+
+class AdminAssessmentSetVersionListView(APIView):
+    """
+    GET /assessments/admin/sets/{pk}/versions/
+
+    List all published versions for an AssessmentSet, newest first.
+    Used by the builder version history panel.
+    """
+
+    permission_classes = [IsAuthenticatedAndNotFrozen, CanViewTests]
+
+    @extend_schema(
+        tags=["assessments"],
+        summary="List published versions for a set",
+        responses={200: AssessmentSetVersionSerializer(many=True)},
+    )
+    def get(self, request, pk: int):
+        aset = get_object_or_404(AssessmentSet, pk=pk)
+        versions = AssessmentSetVersion.objects.filter(assessment_set=aset).select_related(
+            "published_by"
+        ).order_by("-version_number")
+        return Response(AssessmentSetVersionSerializer(versions, many=True).data)
+
+
+class AdminGovernanceEventListView(APIView):
+    """
+    GET /assessments/admin/governance-events/
+
+    Queryable audit log for operators. Supports filtering by entity_type,
+    event_type, actor_email, set_id (payload filter), and date range.
+    Returns newest-first with cursor-style limit/offset pagination.
+
+    Operators use this instead of Django admin for routine audit review.
+    Never exposes payload fields that contain correct_answer data.
+
+    Query params:
+        event_type     — filter by event type (e.g. "publish", "fallback_path_used")
+        entity_type    — filter by entity type (e.g. "AssessmentSetVersion")
+        actor_email    — filter by actor
+        since          — ISO datetime, show events after this timestamp
+        until          — ISO datetime, show events before this timestamp
+        limit          — default 50, max 200
+        offset         — default 0
+    """
+
+    permission_classes = [IsAuthenticatedAndNotFrozen, CanViewTests]
+
+    @extend_schema(
+        tags=["assessments"],
+        summary="Query governance audit log",
+        responses={200: OpenApiTypes.OBJECT},
+    )
+    def get(self, request):
+        from assessments.models import GovernanceEvent
+
+        qs = GovernanceEvent.objects.select_related("actor").order_by("-occurred_at")
+
+        event_type = request.query_params.get("event_type", "").strip()
+        entity_type = request.query_params.get("entity_type", "").strip()
+        actor_email = request.query_params.get("actor_email", "").strip()
+        since = request.query_params.get("since", "").strip()
+        until = request.query_params.get("until", "").strip()
+
+        if event_type:
+            qs = qs.filter(event_type=event_type)
+        if entity_type:
+            qs = qs.filter(entity_type=entity_type)
+        if actor_email:
+            qs = qs.filter(actor_email__icontains=actor_email)
+        if since:
+            from django.utils.dateparse import parse_datetime
+            dt = parse_datetime(since)
+            if dt:
+                qs = qs.filter(occurred_at__gte=dt)
+        if until:
+            from django.utils.dateparse import parse_datetime
+            dt = parse_datetime(until)
+            if dt:
+                qs = qs.filter(occurred_at__lte=dt)
+
+        try:
+            limit = min(int(request.query_params.get("limit", 50)), 200)
+            offset = max(int(request.query_params.get("offset", 0)), 0)
+        except (ValueError, TypeError):
+            limit, offset = 50, 0
+
+        total = qs.count()
+        page = qs[offset : offset + limit]
+
+        results = [
+            {
+                "id": ev.pk,
+                "event_type": ev.event_type,
+                "entity_type": ev.entity_type,
+                "entity_id": ev.entity_id,
+                "actor_email": ev.actor_email or None,
+                "occurred_at": ev.occurred_at.isoformat(),
+                "correlation_id": ev.correlation_id or None,
+                # Summarise payload without exposing correct_answer
+                "payload_summary": _summarise_governance_payload(ev.payload),
+            }
+            for ev in page
+        ]
+
+        return Response({
+            "count": total,
+            "limit": limit,
+            "offset": offset,
+            "results": results,
+        })
+
+
+def _summarise_governance_payload(payload: dict) -> dict:
+    """
+    Return a safe subset of a governance event payload for the ops audit UI.
+    Strips any key that looks like it could contain grading internals.
+    """
+    safe_keys = {
+        "set_id", "set_title", "version_number", "question_count",
+        "checksum", "previous_version_id", "warning_count", "blocking_count",
+        "first_code", "reason", "source", "snapshot_pinned",
+        "superseded_by_version_id", "superseded_by_version_number",
+        "pinned_version_id", "pinned_version_number", "description",
+    }
+    return {k: v for k, v in (payload or {}).items() if k in safe_keys}
+
+
+class AdminFailedAttemptsListView(APIView):
+    """
+    GET /assessments/admin/attempts/failed/
+
+    List AssessmentAttempt rows that are in a failed/stuck state, newest first.
+
+    An attempt is considered "stuck" if:
+      - grading_status is "failed" (all automatic retries exhausted), OR
+      - status is "submitted" AND submitted_at is more than 30 minutes ago
+        (grading job appears to have been lost)
+
+    Returns enough context for the operator to triage and retry without
+    needing to open Django admin.
+
+    Query params:
+        limit  — default 50, max 200
+        offset — default 0
+    """
+
+    permission_classes = [IsAuthenticatedAndNotFrozen, CanViewTests]
+
+    @extend_schema(
+        tags=["assessments"],
+        summary="List failed/stuck scoring attempts",
+        responses={200: OpenApiTypes.OBJECT},
+    )
+    def get(self, request):
+        from django.utils import timezone
+        from datetime import timedelta
+        from assessments.models import AssessmentAttempt
+
+        stuck_threshold = timezone.now() - timedelta(minutes=30)
+
+        qs = (
+            AssessmentAttempt.objects.filter(
+                models_Q(grading_status="failed")
+                | models_Q(status="submitted", submitted_at__lt=stuck_threshold)
+            )
+            .select_related("student", "homework__assessment_set", "homework__assignment")
+            .order_by("-submitted_at", "-id")
+        )
+
+        try:
+            limit = min(int(request.query_params.get("limit", 50)), 200)
+            offset = max(int(request.query_params.get("offset", 0)), 0)
+        except (ValueError, TypeError):
+            limit, offset = 50, 0
+
+        total = qs.count()
+        page = qs[offset : offset + limit]
+
+        results = [
+            {
+                "id": att.pk,
+                "student_email": att.student.email if att.student else None,
+                "student_name": (
+                    f"{att.student.first_name} {att.student.last_name}".strip()
+                    if att.student else None
+                ),
+                "status": att.status,
+                "grading_status": att.grading_status,
+                "grading_attempts": att.grading_attempts,
+                "submitted_at": att.submitted_at.isoformat() if att.submitted_at else None,
+                "set_title": (
+                    att.homework.assessment_set.title
+                    if att.homework and att.homework.assessment_set else None
+                ),
+                "assignment_title": (
+                    att.homework.assignment.title
+                    if att.homework and att.homework.assignment else None
+                ),
+                "stuck_reason": (
+                    "grading_failed"
+                    if att.grading_status == "failed"
+                    else "submitted_not_graded"
+                ),
+            }
+            for att in page
+        ]
+
+        return Response({
+            "count": total,
+            "limit": limit,
+            "offset": offset,
+            "results": results,
+        })
 

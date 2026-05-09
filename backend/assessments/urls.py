@@ -3,6 +3,9 @@ from django.urls import path
 from .views import (
     AdminAssessmentSetListCreateView,
     AdminAssessmentSetDetailView,
+    AdminPublishAssessmentSetView,
+    AdminValidatePublishView,
+    AdminAssessmentSetVersionListView,
     AdminAssessmentQuestionCreateView,
     AdminAssessmentQuestionDetailView,
     AssignAssessmentHomeworkView,
@@ -19,6 +22,8 @@ from .views import (
     AdminAttemptStatusView,
     AdminRequeueAttemptView,
     AdminForceGradeAttemptView,
+    AdminGovernanceEventListView,
+    AdminFailedAttemptsListView,
 )
 
 
@@ -26,6 +31,9 @@ urlpatterns = [
     # Admin authoring
     path("admin/sets/", AdminAssessmentSetListCreateView.as_view(), name="assessment-admin-sets"),
     path("admin/sets/<int:pk>/", AdminAssessmentSetDetailView.as_view(), name="assessment-admin-set-detail"),
+    path("admin/sets/<int:pk>/publish/", AdminPublishAssessmentSetView.as_view(), name="assessment-admin-set-publish"),
+    path("admin/sets/<int:pk>/validate-publish/", AdminValidatePublishView.as_view(), name="assessment-admin-set-validate-publish"),
+    path("admin/sets/<int:pk>/versions/", AdminAssessmentSetVersionListView.as_view(), name="assessment-admin-set-versions"),
     path("admin/sets/<int:set_pk>/questions/", AdminAssessmentQuestionCreateView.as_view(), name="assessment-admin-question-create"),
     path("admin/questions/<int:pk>/", AdminAssessmentQuestionDetailView.as_view(), name="assessment-admin-question-detail"),
     # Admin grading controls / metrics
@@ -48,6 +56,9 @@ urlpatterns = [
     path("admin/attempts/<int:attempt_id>/", AdminAttemptStatusView.as_view(), name="assessment-admin-attempt-status"),
     path("admin/attempts/<int:attempt_id>/requeue/", AdminRequeueAttemptView.as_view(), name="assessment-admin-attempt-requeue"),
     path("admin/attempts/<int:attempt_id>/force-grade/", AdminForceGradeAttemptView.as_view(), name="assessment-admin-attempt-force-grade"),
+    path("admin/attempts/failed/", AdminFailedAttemptsListView.as_view(), name="assessment-admin-attempts-failed"),
+    # Ops audit log
+    path("admin/governance-events/", AdminGovernanceEventListView.as_view(), name="assessment-admin-governance-events"),
     # Teacher assign
     path("homework/assign/", AssignAssessmentHomeworkView.as_view(), name="assessment-homework-assign"),
     # Student attempt flow

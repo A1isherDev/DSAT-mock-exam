@@ -9,6 +9,7 @@ import { useMe } from "@/hooks/useMe";
 import { useTheme } from "next-themes";
 import {
   LayoutDashboard,
+  BookOpen,
   BookOpenCheck,
   ClipboardList,
   FileWarning,
@@ -37,7 +38,8 @@ const SIDEBAR_COLLAPSED_KEY = "mastersat.sidebarCollapsed";
 
 const nav = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/practice-tests", label: "Pastpaper tests", icon: BookOpenCheck },
+  { href: "/pastpapers", label: "Past papers", icon: BookOpen },
+  { href: "/practice-tests", label: "Practice tests", icon: BookOpenCheck },
   { href: "/mock-exam", label: "Timed mock", icon: ClipboardList },
   { href: "/midterm", label: "Midterm", icon: FileWarning },
   { href: "/classes", label: "Classes", icon: Users },
@@ -46,6 +48,7 @@ const nav = [
 ];
 
 const quickLinks = [
+  { href: "/pastpapers", label: "Past papers" },
   { href: "/practice-tests", label: "Practice" },
   { href: "/mock-exam", label: "Mock" },
   { href: "/classes", label: "Classes" },
@@ -54,13 +57,12 @@ const quickLinks = [
 function pageTitle(pathname: string): string {
   if (pathname === "/") return "Dashboard";
   if (pathname === "/security" || pathname.startsWith("/security/")) return "Security";
-  const item = nav.find((n) =>
-    n.href === "/"
-      ? false
-      : n.href === "/practice-tests"
-        ? pathname === "/practice-tests" || pathname.startsWith("/practice-test/")
-        : pathname.startsWith(n.href),
-  );
+  const item = nav.find((n) => {
+    if (n.href === "/") return false;
+    if (n.href === "/pastpapers") return pathname === "/pastpapers" || pathname.startsWith("/pastpapers/");
+    if (n.href === "/practice-tests") return pathname === "/practice-tests" || pathname.startsWith("/practice-test/");
+    return pathname.startsWith(n.href);
+  });
   return item?.label ?? "MasterSAT";
 }
 
@@ -276,9 +278,11 @@ export default function StudentShell({ children }: { children: React.ReactNode }
                 const active =
                   href === "/"
                     ? pathname === "/"
-                    : href === "/practice-tests"
-                      ? pathname === "/practice-tests" || pathname.startsWith("/practice-test/")
-                      : pathname.startsWith(href);
+                    : href === "/pastpapers"
+                      ? pathname === "/pastpapers" || pathname.startsWith("/pastpapers/")
+                      : href === "/practice-tests"
+                        ? pathname === "/practice-tests" || pathname.startsWith("/practice-test/")
+                        : pathname.startsWith(href);
                 return (
                   <Link
                     key={href}

@@ -162,12 +162,14 @@ class SubdomainAPIGuardMiddleware:
             # Assessments authoring CRUD endpoints live here (create/edit/delete sets/questions).
             if path.startswith("/api/assessments/admin/"):
                 return self.get_response(request)
-            # Assignment is enforced on admin.* only (`homework/assign` blocked above).
-            # Still allow bulk assign if desired from questions (harmless), but not required.
-            if path.startswith("/api/exams/bulk_assign"):
-                return self.get_response(request)
-            if path.startswith("/api/exams/assignments/"):
-                return self.get_response(request)
+            # Assignment dispatch is admin-subdomain only.  Explicitly block so the
+            # catch-all return below does not accidentally permit these paths.
+            if path.startswith("/api/exams/bulk_assign") or path.startswith("/api/exams/assignments/"):
+                exams_metric_incr("forbidden_admin_route_total")
+                return JsonResponse(
+                    {"detail": "Assignment dispatch is available on admin subdomain only."},
+                    status=403,
+                )
             # Users are intentionally not available here.
             if path.startswith("/api/users/"):
                 exams_metric_incr("forbidden_admin_route_total")

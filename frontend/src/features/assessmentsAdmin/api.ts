@@ -7,14 +7,45 @@ import type {
   Subject,
 } from "@/features/assessments/types";
 
+export type PaginatedSets = {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: AssessmentSet[];
+};
+
+// ─── Publish validation types ─────────────────────────────────────────────────
+
+export type ValidationSeverity = "blocking" | "warning";
+
+export type ValidationFinding = {
+  severity: ValidationSeverity;
+  code: string;
+  message: string;
+  question_id?: number;
+  context?: Record<string, unknown>;
+};
+
+export type PublishValidationReport = {
+  is_publishable: boolean;
+  blocking_count: number;
+  warning_count: number;
+  findings: ValidationFinding[];
+};
+
 /**
  * Staff assessments surface: authoring + homework assignment.
  */
 export const assessmentsAdminApi = {
   // Authoring CRUD
-  listSets: async (params?: { subject?: Subject; category?: string }): Promise<AssessmentSet[]> => {
+  listSets: async (params?: { subject?: Subject; category?: string; limit?: number; offset?: number }): Promise<PaginatedSets> => {
     const data = await assessmentsAdminClient.adminListSets(params);
-    return Array.isArray(data) ? (data as AssessmentSet[]) : [];
+    if (data && typeof data === "object" && Array.isArray((data as any).results)) {
+      return data as PaginatedSets;
+    }
+    // Fallback for legacy flat-array response
+    const arr = Array.isArray(data) ? (data as AssessmentSet[]) : [];
+    return { count: arr.length, next: null, previous: null, results: arr };
   },
   getSet: async (id: number): Promise<AssessmentSet> => {
     return (await assessmentsAdminClient.adminGetSet(id)) as AssessmentSet;
@@ -43,6 +74,17 @@ export const assessmentsAdminApi = {
   deleteQuestion: async (id: number) => {
     await assessmentsAdminClient.adminDeleteQuestion(id);
   },
+  /**
+   * Dry-run publish validation.
+   * Calls GET /assessments/admin/sets/{id}/validate-publish/ and returns the
+   * full PublishValidationReport (blocking + warning findings).
+   * Does NOT create a version or emit governance events.
+   */
+  validatePublish: async (id: number): Promise<PublishValidationReport> => {
+    const r = await api.get(`/assessments/admin/sets/${id}/validate-publish/`);
+    return r.data as PublishValidationReport;
+  },
+
   telemetry: async (key: string) => {
     await api.post("/assessments/admin/builder/telemetry/", { key });
   },

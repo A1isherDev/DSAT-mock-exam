@@ -48,6 +48,26 @@ import {
 export type { MockExamPublic, NormalizedExamList, PracticeTestPublic } from "@/lib/examsPublicContract";
 export { InvalidApiPayloadError, emptyNormalizedExamList } from "@/lib/examsPublicContract";
 export type { Assignment, AdminPastpaperPack, BulkAssignmentDispatch, Classroom, NormalizedList, UserMe } from "@/lib/criticalApiContract";
+
+// ── Pastpaper Pack student types ─────────────────────────────────────────────
+export type PastpaperPackSection = {
+    id: number;
+    title: string;
+    subject: string;
+    label: string;
+    form_type: string;
+    practice_date: string | null;
+    module_count: number;
+};
+
+export type PastpaperPackPublic = {
+    id: number;
+    title: string;
+    practice_date: string | null;
+    label: string;
+    form_type: string;
+    sections: PastpaperPackSection[];
+};
 export { emptyNormalizedList } from "@/lib/criticalApiContract";
 
 /** Tighter budget for bootstrap identity probes (UX: fail faster to login/error path). */
@@ -581,7 +601,19 @@ export const examsPublicApi = {
             : `/exams/attempts/${attemptId}/review/`;
         const res = await api.get(url);
         return parseTestAttemptApiPayload(res.data, `GET ${url}`);
-    }
+    },
+    /** Pastpaper pack student hub: all packs with at least one section that has questions. */
+    getPastpaperPacks: async (): Promise<PastpaperPackPublic[]> => {
+        const res = await api.get("/exams/pastpaper-packs/");
+        const raw = res.data;
+        const arr = Array.isArray(raw) ? raw : Array.isArray(raw?.results) ? raw.results : [];
+        return arr as PastpaperPackPublic[];
+    },
+    /** Single pastpaper pack (includes sections). */
+    getPastpaperPack: async (id: number): Promise<PastpaperPackPublic> => {
+        const res = await api.get(`/exams/pastpaper-packs/${id}/`);
+        return res.data as PastpaperPackPublic;
+    },
 };
 
 export const classesApi = {
@@ -919,7 +951,7 @@ export const vocabularyApi = {
 };
 
 export const assessmentsAdminApi = {
-    adminListSets: async (params?: { subject?: "math" | "english"; category?: string }) => {
+    adminListSets: async (params?: { subject?: "math" | "english"; category?: string; limit?: number; offset?: number }) => {
         const r = await api.get("/assessments/admin/sets/", { params });
         return r.data;
     },

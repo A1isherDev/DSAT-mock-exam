@@ -3,7 +3,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { examsStudentApi } from "@/features/examsStudent/api";
 import AuthGuard from '@/components/AuthGuard';
-import { CheckCircle2, XCircle, ArrowLeft, BarChart3, Eye, EyeOff, X, ChevronRight, BookOpen, AlertCircle } from 'lucide-react';
+import { CheckCircle2, XCircle, ArrowLeft, BarChart3, Eye, EyeOff, X, ChevronRight, BookOpen, AlertCircle, Lock } from 'lucide-react';
 import SafeHtml from '@/components/SafeHtml';
 
 const examsPublicApi = examsStudentApi;
@@ -323,6 +323,43 @@ export default function ReviewPage() {
                 )}
 
                 <main className="max-w-6xl mx-auto px-8 py-10">
+                    {/* Historical snapshot provenance banner */}
+                    <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-3 shadow-sm">
+                        <div className="flex items-center gap-2.5">
+                            <Lock className="h-4 w-4 text-slate-500 shrink-0" />
+                            <div>
+                                <p className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">
+                                    Historical snapshot
+                                </p>
+                                <p className="text-[11px] text-slate-500 mt-0.5">
+                                    Your answers and grading are permanently preserved.
+                                    This record cannot be altered.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500">
+                            {review.submitted_at && (
+                                <span className="font-semibold">
+                                    Submitted:{" "}
+                                    {new Date(review.submitted_at).toLocaleDateString("en-US", {
+                                        year: "numeric",
+                                        month: "long",
+                                        day: "numeric",
+                                    })}
+                                </span>
+                            )}
+                            {review.attempt_id && (
+                                <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">
+                                    #{review.attempt_id}
+                                </span>
+                            )}
+                            <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600 uppercase tracking-wide">
+                                <Lock className="h-2.5 w-2.5" />
+                                Immutable
+                            </span>
+                        </div>
+                    </div>
+
                     {/* Hero Summary */}
                     <div className="bg-white rounded-3xl p-10 border border-slate-200 mb-10 overflow-hidden relative shadow-sm">
                         <div className="absolute top-0 right-0 p-8 opacity-5 scale-[2] rotate-12 pointer-events-none text-slate-900">
@@ -331,7 +368,9 @@ export default function ReviewPage() {
 
                         <div className="relative z-10 flex flex-col items-center w-full text-center">
                             <div className="mb-6">
-                                <span className="text-[10px] font-bold text-blue-600 uppercase tracking-[0.2em] mb-3 block">Examination Completed</span>
+                                <span className="text-[10px] font-bold text-blue-600 uppercase tracking-[0.2em] mb-3 block">
+                                    Examination Completed · Historical Record
+                                </span>
                                 <h2 className="text-4xl font-black tracking-tight text-slate-900 mb-2">Congratulations! 🎉</h2>
                                 <p className="text-slate-500 font-medium">You have successfully completed the test.</p>
                             </div>

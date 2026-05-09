@@ -44,6 +44,63 @@ type Props = {
   onSuccess: () => void | Promise<void>;
 };
 
+// ─── Due-date preset helpers ──────────────────────────────────────────────────
+
+function toLocalDatetimeValue(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function nextWeekdayDate(targetDay: number /* 0=Sun … 6=Sat */, hour = 23, minute = 59): string {
+  const now = new Date();
+  const d = new Date(now);
+  const today = now.getDay();
+  let daysAhead = targetDay - today;
+  if (daysAhead <= 0) daysAhead += 7;
+  d.setDate(now.getDate() + daysAhead);
+  d.setHours(hour, minute, 0, 0);
+  return toLocalDatetimeValue(d);
+}
+
+function dueDatePresets(): { label: string; value: string }[] {
+  const now = new Date();
+
+  // Tonight 11:59 PM
+  const tonight = new Date(now);
+  tonight.setHours(23, 59, 0, 0);
+
+  // Tomorrow 11:59 PM
+  const tomorrow = new Date(now);
+  tomorrow.setDate(now.getDate() + 1);
+  tomorrow.setHours(23, 59, 0, 0);
+
+  // Next Sunday 11:59 PM
+  const nextSundayVal = nextWeekdayDate(0, 23, 59);
+  // Next Saturday 11:59 PM
+  const nextSaturdayVal = nextWeekdayDate(6, 23, 59);
+
+  // 7 days from now 11:59 PM
+  const inSevenDays = new Date(now);
+  inSevenDays.setDate(now.getDate() + 7);
+  inSevenDays.setHours(23, 59, 0, 0);
+
+  const presets = [
+    { label: "Tonight", value: toLocalDatetimeValue(tonight) },
+    { label: "Tomorrow", value: toLocalDatetimeValue(tomorrow) },
+    { label: "This Sun", value: nextSundayVal },
+    { label: "This Sat", value: nextSaturdayVal },
+    { label: "+7 days", value: toLocalDatetimeValue(inSevenDays) },
+  ];
+
+  // Deduplicate if tonight == tomorrow (shouldn't happen but guard it)
+  const seen = new Set<string>();
+  return presets.filter((p) => {
+    if (seen.has(p.value)) return false;
+    seen.add(p.value);
+    return true;
+  });
+}
+
 function cardReactKey(c: CardPastpaperPack | CardSingle): string {
   if (c.kind === "single") return `single-${c.test.id}`;
   return `pack-${c.packKey}`;
@@ -80,6 +137,7 @@ export default function CreateAssignmentModal({
   const [dueLocal, setDueLocal] = useState("");
   const [asgFiles, setAsgFiles] = useState<File[]>([]);
   /** Edit mode: replace all teacher attachments before applying new uploads. */
+  const [showInstructions, setShowInstructions] = useState(false);
   const [replaceAttachments, setReplaceAttachments] = useState(false);
   const [editAsgFiles, setEditAsgFiles] = useState<File[]>([]);
   const [practiceScope, setPracticeScope] = useState<PracticeScope>("BOTH");
@@ -105,6 +163,7 @@ export default function CreateAssignmentModal({
     setPastSel({ mode: "none" });
     setDueLocal("");
     setAsgFiles([]);
+    setShowInstructions(false);
     setReplaceAttachments(false);
     setEditAsgFiles([]);
     setPracticeScope("BOTH");
@@ -145,11 +204,13 @@ export default function CreateAssignmentModal({
       resetForm();
       return;
     }
+    const instrValue = String(editingAssignment.instructions ?? "");
     setNewAsg({
       title: String(editingAssignment.title ?? ""),
-      instructions: String(editingAssignment.instructions ?? ""),
+      instructions: instrValue,
       external_url: String(editingAssignment.external_url ?? ""),
     });
+    if (instrValue.trim()) setShowInstructions(true);
     const due = editingAssignment.due_at;
     if (due && typeof due === "string") {
       const d = new Date(due);
@@ -269,12 +330,27 @@ export default function CreateAssignmentModal({
     }
   };
 
+  const dueDatePresetsData = dueDatePresets();
+  const isEditing = editingAssignment != null;
+
   const cardBase =
     "text-left rounded-xl border px-4 py-3 transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900";
   const cardUnsel =
     "border-slate-200/90 bg-white/80 hover:border-indigo-200/60 hover:bg-slate-50/90 dark:border-slate-600 dark:bg-slate-900/40 dark:hover:border-indigo-500/30";
   const cardSel =
     "border-indigo-400 bg-indigo-50/90 ring-2 ring-indigo-500/25 shadow-sm dark:border-indigo-500 dark:bg-indigo-950/40 dark:ring-indigo-400/20";
+
+  /** Called when teacher clicks a pastpaper card — auto-fills title if empty. */
+  const handleCardSelect = (c: CardPastpaperPack | CardSingle) => {
+    setPastSel(selectFromCard(c));
+    if (!newAsg.title.trim()) {
+      const heading =
+        c.kind === "pastpaper_pack"
+          ? (c.pack?.title && String(c.pack.title).trim()) || sharedPastpaperPackTitle(c.tests)
+          : singleDisplayTitle(c.test);
+      if (heading) setNewAsg((prev) => ({ ...prev, title: heading }));
+    }
+  };
 
   return (
     <ClassroomModal
@@ -307,18 +383,56 @@ export default function CreateAssignmentModal({
           />
         </ClassroomField>
 
-        <ClassroomField label="Instructions" htmlFor="asg-inst">
-          <textarea
-            id="asg-inst"
-            value={newAsg.instructions}
-            onChange={(e) => setNewAsg((p) => ({ ...p, instructions: e.target.value }))}
-            placeholder="Short directions for students"
-            rows={4}
-            className={crInputClass}
-          />
-        </ClassroomField>
+        {/* Instructions — collapsed by default to keep the form short */}
+        {showInstructions ? (
+          <ClassroomField label="Instructions" htmlFor="asg-inst">
+            <textarea
+              id="asg-inst"
+              autoFocus
+              value={newAsg.instructions}
+              onChange={(e) => setNewAsg((p) => ({ ...p, instructions: e.target.value }))}
+              placeholder="Short directions for students (optional)"
+              rows={3}
+              className={crInputClass}
+            />
+          </ClassroomField>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowInstructions(true)}
+            className="text-xs font-bold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 transition-colors"
+          >
+            + Add instructions
+          </button>
+        )}
 
         <ClassroomField label="Due date & time" htmlFor="asg-due" hint="Leave empty for no deadline.">
+          {/* Quick presets — one-tap for the most common deadlines */}
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {dueDatePresetsData.map((p) => (
+              <button
+                key={p.label}
+                type="button"
+                onClick={() => setDueLocal(p.value)}
+                className={`rounded-lg border px-2.5 py-1 text-xs font-bold transition-colors ${
+                  dueLocal === p.value
+                    ? "border-indigo-400 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300"
+                    : "border-slate-200 bg-white text-slate-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+            {dueLocal && (
+              <button
+                type="button"
+                onClick={() => setDueLocal("")}
+                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-400 hover:text-red-600 transition-colors dark:border-slate-600 dark:bg-slate-800"
+              >
+                Clear
+              </button>
+            )}
+          </div>
           <input
             id="asg-due"
             type="datetime-local"
@@ -369,7 +483,7 @@ export default function CreateAssignmentModal({
                   <button
                     key={cardReactKey(c)}
                     type="button"
-                    onClick={() => setPastSel(selectFromCard(c))}
+                    onClick={() => handleCardSelect(c)}
                     className={`${cardBase} ${selected ? cardSel : cardUnsel}`}
                   >
                     <p className="text-[10px] font-bold uppercase tracking-wider text-primary">
