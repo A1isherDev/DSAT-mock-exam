@@ -1664,3 +1664,118 @@ class ClassCommentListCreateView(APIView):
             )
         return Response(ClassCommentSerializer(c, context={"request": request}).data, status=status.HTTP_201_CREATED)
 
+
+class OpsStatsView(APIView):
+    """
+    GET /classes/ops/stats/
+    Aggregate statistics for the ops dashboard — replaces N individual
+    listAssignments() calls with a single annotated query.
+
+    Returns:
+      total_classrooms    int   all classrooms visible to the actor
+      managed_classrooms  int   classrooms where actor has ADMIN role
+      total_assignments   int   across all managed classrooms
+      active_assignments  int   assignments without completed_at set
+    """
+
+    permission_classes = [IsAuthenticatedAndNotFrozen]
+
+    def get(self, request):
+        if not is_global_scope_staff(request.user):
+            # Fall back to only classrooms the user admins
+            managed_ids = ClassroomMembership.objects.filter(
+                user=request.user, role="ADMIN"
+            ).values_list("classroom_id", flat=True)
+            total_classrooms = Classroom.objects.filter(
+                memberships__user=request.user
+            ).distinct().count()
+        else:
+            managed_ids = ClassroomMembership.objects.filter(
+                user=request.user, role="ADMIN"
+            ).values_list("classroom_id", flat=True)
+            total_classrooms = Classroom.objects.count()
+
+        managed_count = len(managed_ids)
+
+        qs = Assignment.objects.filter(classroom_id__in=managed_ids)
+        total_assignments = qs.count()
+        # "active" = has a future or no due date (no completed_at field exists on Assignment)
+        active_assignments = qs.filter(
+            Q(due_at__isnull=True) | Q(due_at__gte=timezone.now())
+        ).count()
+
+        return Response(
+            {
+                "total_classrooms": total_classrooms,
+                "managed_classrooms": managed_count,
+                "total_assignments": total_assignments,
+                "active_assignments": active_assignments,
+            }
+        )
+
+
+class OpsAttentionView(APIView):
+    """
+    GET /classes/ops/attention/
+    Returns actionable signals for the ops dashboard:
+      - overdue_assignments: top-5 assignments past due_at, with classroom name + days overdue
+      - overdue_count: total count of overdue assignments visible to this actor
+      - scoring_failures: count of AssessmentAttempts in GRADING_FAILED state
+    """
+
+    permission_classes = [IsAuthenticatedAndNotFrozen]
+
+    def get(self, request):
+        now = timezone.now()
+
+        if is_global_scope_staff(request.user):
+            all_classroom_ids = Classroom.objects.values_list("id", flat=True)
+        else:
+            all_classroom_ids = ClassroomMembership.objects.filter(
+                user=request.user, role="ADMIN"
+            ).values_list("classroom_id", flat=True)
+
+        # Overdue = has a due_at in the past
+        overdue_qs = (
+            Assignment.objects.filter(
+                classroom_id__in=all_classroom_ids,
+                due_at__lt=now,
+            )
+            .select_related("classroom")
+            .order_by("due_at")  # oldest first
+        )
+        overdue_count = overdue_qs.count()
+        top_overdue = overdue_qs[:5]
+
+        overdue_items = []
+        for a in top_overdue:
+            delta = now - a.due_at
+            overdue_items.append(
+                {
+                    "id": a.id,
+                    "title": a.title,
+                    "classroom_name": a.classroom.name,
+                    "classroom_id": a.classroom_id,
+                    "due_at": a.due_at.isoformat(),
+                    "days_overdue": delta.days,
+                }
+            )
+
+        # Scoring failures — cross-app import, safe to do here (assessments is a stable dep)
+        scoring_failures = 0
+        try:
+            from assessments.models import AssessmentAttempt
+            scoring_failures = AssessmentAttempt.objects.filter(
+                grading_status=AssessmentAttempt.GRADING_FAILED
+            ).count()
+        except Exception:
+            pass
+
+        return Response(
+            {
+                "overdue_assignments": overdue_items,
+                "overdue_count": overdue_count,
+                "scoring_failures": scoring_failures,
+            }
+        )
+

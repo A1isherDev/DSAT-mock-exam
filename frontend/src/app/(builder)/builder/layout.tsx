@@ -11,17 +11,16 @@ import {
   Tag,
   SendHorizonal,
   Archive,
+  FileText,
+  BookMarked,
 } from "lucide-react";
 
 /**
  * Questions console navigation.
- * Each entry maps to a top-level section of the authoring workflow.
  *
  * Active-state rules:
- *   - Dashboard: exact match only (avoid marking active on all /builder/* routes)
+ *   - Dashboard: exact match only
  *   - All others: prefix match (covers nested sub-pages)
- *   - Assessments (/builder/sets): covers /sets, /sets/new, /sets/[id] —
- *     "New set" is no longer a separate nav item; it lives inside Assessments.
  */
 const NAV = [
   {
@@ -49,6 +48,18 @@ const NAV = [
     exact: false,
   },
   {
+    href: "/builder/pastpapers",
+    label: "Pastpapers",
+    icon: FileText,
+    exact: false,
+  },
+  {
+    href: "/builder/vocabulary",
+    label: "Vocabulary",
+    icon: BookMarked,
+    exact: false,
+  },
+  {
     href: "/builder/publish-queue",
     label: "Publish Queue",
     icon: SendHorizonal,
@@ -62,16 +73,6 @@ const NAV = [
   },
 ] as const;
 
-// § 4.5 — detect console from hostname; prefer runtime signal over cookie
-// Cookie is a useful fallback but can be stale or absent in dev.
-function useConsoleLabel(): string | null {
-  if (typeof window === "undefined") return null;
-  const host = window.location.hostname.toLowerCase();
-  if (host.startsWith("questions.")) return "Questions console";
-  if (host.startsWith("admin.")) return "Admin console";
-  return null;
-}
-
 function isNavActive(pathname: string, href: string, exact: boolean): boolean {
   if (exact) return pathname === href;
   return pathname === href || pathname.startsWith(href + "/");
@@ -79,35 +80,22 @@ function isNavActive(pathname: string, href: string, exact: boolean): boolean {
 
 export default function BuilderLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const consoleLabel = useConsoleLabel();
 
   return (
     <AuthGuard adminOnly>
       <div className="app-bg min-h-screen text-foreground">
         <div className="mx-auto w-full max-w-7xl px-3 py-4 md:px-6">
-          {/* Console identity header */}
-          <div className="mb-4 rounded-2xl border border-border bg-card p-4 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-ds-gold">
-                Questions console
-              </p>
-              {/* § 4.5 — subdomain identity pill: amber on questions, slate on admin */}
-              {consoleLabel ? (
-                <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-amber-700">
-                  {consoleLabel}
-                </span>
-              ) : null}
-            </div>
-            <p className="mt-1 text-xl font-extrabold tracking-tight">Content authoring</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Question bank · assessments · categories · publishing. Backend permissions are
-              authoritative.
-            </p>
-          </div>
-
           <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
-            {/* Sidebar nav — sticky on large screens so it stays visible while scrolling content */}
+            {/* Sidebar nav — sticky on large screens */}
             <aside className="rounded-2xl border border-border bg-card p-3 shadow-sm lg:self-start lg:sticky lg:top-4">
+              {/* Console identity — compact, no description paragraph */}
+              <div className="mb-3 border-b border-border px-2 pb-3">
+                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-ds-gold">
+                  Questions console
+                </p>
+                <p className="mt-0.5 text-sm font-extrabold text-foreground">MasterSAT</p>
+              </div>
+
               <nav className="flex flex-col gap-0.5">
                 {NAV.map((item) => {
                   const active = isNavActive(pathname, item.href, item.exact);

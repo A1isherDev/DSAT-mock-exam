@@ -9,34 +9,37 @@
  *   deliberate, one-way transition from DRAFT → PUBLISHED.
  *
  * WHAT THIS PAGE DOES:
- *   1. Pre-publish validation checklist — all checks must pass before publish
- *      is enabled. Each failing check blocks the action with a clear reason.
+ *   1. Pre-publish validation checklist — calls GET /validate-publish/ to run the
+ *      full server-side validation pipeline (title, category, MC structure, correct
+ *      answers, duplicate orders, points, etc.). All blocking checks must pass
+ *      before the publish button is enabled.
  *   2. Publish impact summary — what this set contains and what changes.
- *   3. Immutability acknowledgement — user must explicitly confirm they
- *      understand the content will be locked.
- *   4. Publish action — single, final, serious-looking button.
+ *   3. Immutability acknowledgement — user must explicitly confirm they understand
+ *      the content will be locked.
+ *   4. Publish action — calls POST /publish/ to create an immutable
+ *      AssessmentSetVersion snapshot.
  *
- * GOVERNANCE INVARIANTS ENFORCED:
- *   - INV-001: A set with zero questions cannot be published.
- *   - INV-002: A set with no active questions cannot be published.
- *   - INV-003: A set without a title cannot be published.
- *   - INV-004: A set without a category cannot be published.
- *   - INV-005: Publishing is the point of no return for content — user is
- *              explicitly notified and must confirm.
+ * VALIDATION ARCHITECTURE:
+ *   Server-side via AdminValidatePublishView (dry-run, no side effects).
+ *   The same validator runs inside the publish transaction — what passes here
+ *   will pass at publish time. On API failure the page degrades gracefully:
+ *   the publish button stays disabled and an error is shown with a Retry option.
  *
- * PRE-SNAPSHOT IMPLEMENTATION NOTE:
- *   In this release, "publish" sets `is_active: true` on the backend.
- *   The full snapshot/versioning API (Sprint 5) will replace this with a
- *   dedicated `/publish/` endpoint that creates an immutable AssessmentSetVersion.
- *   The UX and governance flow here is designed for that model — the backend
- *   integration point is isolated to the `publishSet()` function below.
+ * GOVERNANCE INVARIANTS ENFORCED (mirroring backend):
+ *   - INV-001: A set with zero active questions cannot be published.
+ *   - INV-002: A set without a title cannot be published.
+ *   - INV-003: A set without a category cannot be published.
+ *   - INV-004: Any blocking validation finding prevents publish.
+ *   - INV-005: Publishing is the point of no return — user must acknowledge
+ *              immutability before the action is available.
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { assessmentsAdminApi } from "@/features/assessmentsAdmin/api";
 import type { AssessmentSet } from "@/features/assessments/types";
+import type { PublishValidationReport, ValidationFinding } from "@/features/assessmentsAdmin/api";
 import { StateTag, VersionChip } from "@/components/governance";
 import {
   CheckCircle2,
@@ -49,89 +52,158 @@ import {
   Info,
   ListChecks,
   Loader2,
+  RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
-
-// ─── Validation ───────────────────────────────────────────────────────────────
-
-type ValidationCheck = {
-  id: string;
-  label: string;
-  description: string;
-  passed: boolean;
-  blocker: boolean; // true = blocks publish; false = advisory warning
-};
-
-function runValidation(set: AssessmentSet): ValidationCheck[] {
-  const questions = set.questions ?? [];
-  const activeQuestions = questions.filter((q) => q.is_active);
-
-  return [
-    {
-      id: "has_questions",
-      label: "Has at least one question",
-      description:
-        questions.length === 0
-          ? "Add questions before publishing."
-          : `${questions.length} question${questions.length === 1 ? "" : "s"} found.`,
-      passed: questions.length > 0,
-      blocker: true,
-    },
-    {
-      id: "has_active_questions",
-      label: "All included questions are active",
-      description:
-        activeQuestions.length === 0
-          ? "No active questions. At least one question must be active."
-          : activeQuestions.length < questions.length
-          ? `${questions.length - activeQuestions.length} question${
-              questions.length - activeQuestions.length === 1 ? " is" : "s are"
-            } inactive and will NOT be included in the published snapshot.`
-          : `All ${activeQuestions.length} question${activeQuestions.length === 1 ? "" : "s"} are active.`,
-      passed: activeQuestions.length > 0,
-      blocker: true,
-    },
-    {
-      id: "has_title",
-      label: "Set has a title",
-      description: set.title?.trim()
-        ? `Title: "${set.title.trim()}"`
-        : "A title is required before publishing.",
-      passed: Boolean(set.title?.trim()),
-      blocker: true,
-    },
-    {
-      id: "has_category",
-      label: "Set has a category",
-      description: set.category?.trim()
-        ? `Category: "${set.category.trim()}"`
-        : "A category is required so this set can be found in the question bank taxonomy.",
-      passed: Boolean(set.category?.trim()),
-      blocker: true,
-    },
-    {
-      id: "has_description",
-      label: "Set has a description (recommended)",
-      description: set.description?.trim()
-        ? "Description present."
-        : "A description helps teachers understand the purpose of this set. Not required to publish.",
-      passed: Boolean(set.description?.trim()),
-      blocker: false, // advisory only
-    },
-  ];
-}
 
 // ─── Publish action ───────────────────────────────────────────────────────────
 
 /**
  * publishSet — the single integration point for the publish action.
  *
- * PRE-SNAPSHOT (current): sets is_active: true.
- * POST-SNAPSHOT (Sprint 5): will call POST /assessments/admin/sets/{id}/publish/
- * returning an AssessmentSetVersion. Update ONLY this function.
+ * Calls POST /assessments/admin/sets/{id}/publish/ which:
+ *   1. Validates preconditions inside the atomic transaction
+ *   2. Builds an immutable AssessmentSetVersion snapshot
+ *   3. Returns HTTP 201 (new version) or 200 (identical content, idempotent)
+ *
+ * Throws on 400 (validation failure) or other non-2xx errors.
  */
 async function publishSet(setId: number): Promise<void> {
-  await assessmentsAdminApi.updateSet(setId, { is_active: true });
+  const { default: api } = await import("@/lib/api");
+  const res = await api.post(`/assessments/admin/sets/${setId}/publish/`);
+  if (res.status !== 200 && res.status !== 201) {
+    const detail = res.data?.detail ?? "Publish failed.";
+    throw new Error(detail);
+  }
+}
+
+// ─── UI helpers ───────────────────────────────────────────────────────────────
+
+type CheckRow = {
+  id: string;
+  label: string;
+  detail: string;
+  passed: boolean;
+  blocker: boolean;
+  questionId?: number;
+};
+
+/**
+ * Convert a server PublishValidationReport into display rows.
+ *
+ * The server only returns *findings* (things that failed). We synthesise
+ * "passed" rows for the most user-visible checks so the checklist always
+ * shows a complete picture rather than just a list of failures.
+ */
+function buildCheckRows(
+  set: AssessmentSet,
+  report: PublishValidationReport,
+): CheckRow[] {
+  const findingsByCode = new Map<string, ValidationFinding>();
+  for (const f of report.findings) {
+    findingsByCode.set(f.code, f);
+  }
+
+  const blockingFindings = report.findings.filter((f) => f.severity === "blocking");
+  const warningFindings = report.findings.filter((f) => f.severity === "warning");
+
+  const rows: CheckRow[] = [];
+
+  // ── Named checks — always shown, pass/fail based on server finding ──────────
+
+  const titleFinding = findingsByCode.get("missing_title");
+  rows.push({
+    id: "has_title",
+    label: "Set has a title",
+    detail: titleFinding
+      ? titleFinding.message
+      : `Title: "${set.title?.trim()}"`,
+    passed: !titleFinding,
+    blocker: true,
+  });
+
+  const categoryFinding = findingsByCode.get("missing_category");
+  rows.push({
+    id: "has_category",
+    label: "Set has a category",
+    detail: categoryFinding
+      ? categoryFinding.message
+      : `Category: "${set.category?.trim()}"`,
+    passed: !categoryFinding,
+    blocker: true,
+  });
+
+  const noQsFinding = findingsByCode.get("no_active_questions");
+  const activeCount = (set.questions ?? []).filter((q) => q.is_active).length;
+  const totalCount = (set.questions ?? []).length;
+  rows.push({
+    id: "has_active_questions",
+    label: "Has at least one active question",
+    detail: noQsFinding
+      ? noQsFinding.message
+      : activeCount < totalCount
+      ? `${activeCount} active of ${totalCount} total — ${totalCount - activeCount} inactive question${totalCount - activeCount === 1 ? "" : "s"} will NOT be in the snapshot.`
+      : `${activeCount} active question${activeCount === 1 ? "" : "s"} — all will be snapshotted.`,
+    passed: !noQsFinding,
+    blocker: true,
+  });
+
+  // ── Question-structure blocking findings — shown as individual rows ─────────
+
+  const handledCodes = new Set(["missing_title", "missing_category", "no_active_questions"]);
+
+  for (const f of blockingFindings) {
+    if (handledCodes.has(f.code)) continue;
+    rows.push({
+      id: `blocking_${f.code}_${f.question_id ?? ""}`,
+      label: f.question_id
+        ? `Question #${f.question_id}: structural issue`
+        : "Content issue",
+      detail: f.message,
+      passed: false,
+      blocker: true,
+      questionId: f.question_id,
+    });
+  }
+
+  // ── Warning findings (advisory, not blocking) ────────────────────────────────
+
+  for (const f of warningFindings) {
+    rows.push({
+      id: `warning_${f.code}_${f.question_id ?? ""}`,
+      label: f.question_id
+        ? `Question #${f.question_id}: advisory`
+        : "Recommendation",
+      detail: f.message,
+      passed: false,
+      blocker: false,
+      questionId: f.question_id,
+    });
+  }
+
+  // ── Snapshot structure check ─────────────────────────────────────────────────
+
+  const snapFinding = findingsByCode.get("snapshot_structure_invalid");
+  if (snapFinding) {
+    rows.push({
+      id: "snapshot_structure",
+      label: "Snapshot structure valid",
+      detail: snapFinding.message,
+      passed: false,
+      blocker: true,
+    });
+  } else if (blockingFindings.length === 0) {
+    // Only show this reassurance row when everything passes
+    rows.push({
+      id: "snapshot_ready",
+      label: "Ready to snapshot",
+      detail: `${activeCount} question${activeCount === 1 ? "" : "s"} will be locked into an immutable version.`,
+      passed: true,
+      blocker: false,
+    });
+  }
+
+  return rows;
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -145,11 +217,18 @@ export default function PublishPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Validation state
+  const [validating, setValidating] = useState(false);
+  const [validationReport, setValidationReport] = useState<PublishValidationReport | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
+
+  // Publish state
   const [acknowledged, setAcknowledged] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
   const [published, setPublished] = useState(false);
 
+  // ── Load set ───────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!setId || isNaN(setId)) {
       setLoadError("Invalid set ID.");
@@ -167,14 +246,61 @@ export default function PublishPage() {
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [setId]);
 
-  const checks = set ? runValidation(set) : [];
-  const blockers = checks.filter((c) => c.blocker && !c.passed);
-  const advisories = checks.filter((c) => !c.blocker && !c.passed);
-  const canPublish = !loading && !loadError && blockers.length === 0 && acknowledged && !publishing;
+  // ── Validate (server-side, non-destructive) ────────────────────────────────
+  const runValidation = useCallback(async () => {
+    if (!setId || isNaN(setId)) return;
+    setValidating(true);
+    setValidationError(null);
+    try {
+      const report = await assessmentsAdminApi.validatePublish(setId);
+      setValidationReport(report);
+    } catch {
+      setValidationError(
+        "Validation check failed — could not reach the server. Fix connection issues and retry.",
+      );
+      setValidationReport(null);
+    } finally {
+      setValidating(false);
+    }
+  }, [setId]);
 
+  // Auto-trigger validation once the set is loaded (and it's not already published)
+  useEffect(() => {
+    if (set && !set.is_active) {
+      runValidation();
+    }
+  }, [set, runValidation]);
+
+  // Reset acknowledged if the user re-runs validation (content may have changed)
+  const handleRevalidate = () => {
+    setAcknowledged(false);
+    setPublishError(null);
+    runValidation();
+  };
+
+  // ── Derived display state ──────────────────────────────────────────────────
+  const checkRows: CheckRow[] =
+    set && validationReport ? buildCheckRows(set, validationReport) : [];
+
+  const blockerRows = checkRows.filter((c) => c.blocker && !c.passed);
+  const advisoryRows = checkRows.filter((c) => !c.blocker && !c.passed);
+  const isPublishable = validationReport?.is_publishable ?? false;
+
+  const canPublish =
+    !loading &&
+    !loadError &&
+    !validating &&
+    !validationError &&
+    isPublishable &&
+    acknowledged &&
+    !publishing;
+
+  // ── Publish handler ────────────────────────────────────────────────────────
   async function handlePublish() {
     if (!canPublish || !set) return;
     setPublishing(true);
@@ -182,19 +308,18 @@ export default function PublishPage() {
     try {
       await publishSet(setId);
       setPublished(true);
-      // Redirect back to set editor after short delay
       setTimeout(() => router.push(`/builder/sets/${setId}`), 2000);
     } catch (e: unknown) {
       const msg =
-        (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-        "Publish failed. Please try again.";
+        (e as { response?: { data?: { detail?: string } } })?.response?.data
+          ?.detail ?? "Publish failed. Please try again.";
       setPublishError(msg);
     } finally {
       setPublishing(false);
     }
   }
 
-  // ── Post-publish success screen ──
+  // ── Post-publish success screen ────────────────────────────────────────────
   if (published) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[50vh] gap-6 text-center px-4">
@@ -204,8 +329,9 @@ export default function PublishPage() {
         <div>
           <h1 className="text-2xl font-extrabold text-foreground">Published</h1>
           <p className="mt-2 text-muted-foreground max-w-sm">
-            <strong className="text-foreground">{set?.title}</strong> is now live. It is immutable —
-            any future changes require creating a new revision.
+            <strong className="text-foreground">{set?.title}</strong> is now
+            live. It is immutable — any future changes require creating a new
+            revision.
           </p>
         </div>
         <StateTag state="PUBLISHED" size="md" />
@@ -230,13 +356,15 @@ export default function PublishPage() {
         <p className="text-[10px] font-bold text-primary uppercase tracking-widest mb-1.5">
           Questions console
         </p>
-        <h1 className="text-2xl font-extrabold text-foreground tracking-tight">Publish assessment</h1>
+        <h1 className="text-2xl font-extrabold text-foreground tracking-tight">
+          Publish assessment
+        </h1>
         <p className="mt-1.5 text-sm text-muted-foreground">
           Review all checks before publishing. This action is permanent.
         </p>
       </div>
 
-      {/* Loading */}
+      {/* Loading set */}
       {loading && (
         <div className="flex justify-center py-16">
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
@@ -258,8 +386,9 @@ export default function PublishPage() {
             <div>
               <p className="font-bold text-emerald-900">Already published</p>
               <p className="mt-0.5 text-sm text-emerald-800">
-                This assessment set is already live. To make changes, edit the set and a new
-                revision will be tracked. Historical assignments are unaffected.
+                This assessment set is already live. To make changes, edit the
+                set and a new revision will be tracked. Historical assignments
+                are unaffected.
               </p>
             </div>
           </div>
@@ -277,10 +406,16 @@ export default function PublishPage() {
             <div className="flex items-start justify-between gap-3 flex-wrap">
               <div className="min-w-0">
                 <p className="font-extrabold text-foreground text-lg leading-tight">
-                  {set.title || <span className="text-muted-foreground italic">Untitled</span>}
+                  {set.title || (
+                    <span className="text-muted-foreground italic">
+                      Untitled
+                    </span>
+                  )}
                 </p>
                 {set.category && (
-                  <p className="text-sm text-muted-foreground mt-0.5">{set.category}</p>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    {set.category}
+                  </p>
                 )}
               </div>
               <StateTag state="DRAFT" size="sm" />
@@ -305,7 +440,10 @@ export default function PublishPage() {
               </div>
               <div className="rounded-xl bg-surface-2 px-3 py-2">
                 <p className="text-lg font-extrabold tabular-nums text-foreground">
-                  {(set.questions ?? []).reduce((s, q) => s + (q.points ?? 0), 0)}
+                  {(set.questions ?? []).reduce(
+                    (s, q) => s + (q.points ?? 0),
+                    0,
+                  )}
                 </p>
                 <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">
                   Pts
@@ -316,97 +454,163 @@ export default function PublishPage() {
 
           {/* Validation checklist */}
           <div className="rounded-2xl border border-border bg-card overflow-hidden">
+            {/* Header row */}
             <div className="border-b border-border px-5 py-3 flex items-center gap-2">
               <ListChecks className="h-4 w-4 text-muted-foreground" />
-              <p className="font-bold text-foreground text-sm">Pre-publish checklist</p>
-              {blockers.length === 0 ? (
+              <p className="font-bold text-foreground text-sm">
+                Pre-publish checklist
+              </p>
+
+              {validating && (
+                <span className="ml-auto inline-flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Validating…
+                </span>
+              )}
+
+              {!validating && validationReport && blockerRows.length === 0 && (
                 <span className="ml-auto inline-flex items-center gap-1 text-xs font-bold text-emerald-700">
                   <CheckCircle2 className="h-3.5 w-3.5" />
                   All checks passed
                 </span>
-              ) : (
+              )}
+
+              {!validating && validationReport && blockerRows.length > 0 && (
                 <span className="ml-auto inline-flex items-center gap-1 text-xs font-bold text-red-700">
                   <XCircle className="h-3.5 w-3.5" />
-                  {blockers.length} check{blockers.length === 1 ? "" : "s"} failing
+                  {blockerRows.length} check
+                  {blockerRows.length === 1 ? "" : "s"} failing
                 </span>
+              )}
+
+              {!validating && !validationError && validationReport && (
+                <button
+                  type="button"
+                  onClick={handleRevalidate}
+                  className="ml-2 inline-flex items-center gap-1 text-xs font-bold text-muted-foreground hover:text-foreground transition-colors"
+                  title="Re-run validation"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                  Re-check
+                </button>
               )}
             </div>
 
-            <div className="divide-y divide-border">
-              {checks.map((check) => (
-                <div
-                  key={check.id}
-                  className={cn(
-                    "flex items-start gap-3 px-5 py-3.5",
-                    !check.passed && check.blocker && "bg-red-50/60",
-                    !check.passed && !check.blocker && "bg-amber-50/60",
-                  )}
-                >
-                  {check.passed ? (
-                    <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
-                  ) : check.blocker ? (
-                    <XCircle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
-                  ) : (
-                    <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
-                  )}
-                  <div className="min-w-0">
-                    <p
-                      className={cn(
-                        "text-sm font-bold",
-                        check.passed
-                          ? "text-foreground"
-                          : check.blocker
-                          ? "text-red-800"
-                          : "text-amber-800",
-                      )}
-                    >
-                      {check.label}
-                    </p>
-                    <p
-                      className={cn(
-                        "text-xs mt-0.5",
-                        check.passed
-                          ? "text-muted-foreground"
-                          : check.blocker
-                          ? "text-red-700"
-                          : "text-amber-700",
-                      )}
-                    >
-                      {check.description}
-                    </p>
-                  </div>
-                  {!check.passed && check.blocker && (
-                    <Link
-                      href={`/builder/sets/${setId}`}
-                      className="ml-auto shrink-0 text-xs font-bold text-red-700 hover:underline whitespace-nowrap"
-                    >
-                      Fix in editor →
-                    </Link>
-                  )}
+            {/* Validation error state */}
+            {validationError && !validating && (
+              <div className="px-5 py-5 flex items-start gap-3">
+                <XCircle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-red-800">
+                    Validation unavailable
+                  </p>
+                  <p className="text-xs text-red-700 mt-0.5">
+                    {validationError}
+                  </p>
                 </div>
-              ))}
-            </div>
+                <button
+                  type="button"
+                  onClick={handleRevalidate}
+                  className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100 transition-colors"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                  Retry
+                </button>
+              </div>
+            )}
+
+            {/* Validation loading skeleton */}
+            {validating && checkRows.length === 0 && (
+              <div className="divide-y divide-border">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="flex items-center gap-3 px-5 py-3.5">
+                    <div className="h-4 w-4 rounded-full bg-muted animate-pulse shrink-0" />
+                    <div className="flex-1 space-y-1.5">
+                      <div className="h-3 w-40 rounded bg-muted animate-pulse" />
+                      <div className="h-2.5 w-64 rounded bg-muted animate-pulse" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Check rows */}
+            {!validating && checkRows.length > 0 && (
+              <div className="divide-y divide-border">
+                {checkRows.map((check) => (
+                  <div
+                    key={check.id}
+                    className={cn(
+                      "flex items-start gap-3 px-5 py-3.5",
+                      !check.passed && check.blocker && "bg-red-50/60",
+                      !check.passed && !check.blocker && "bg-amber-50/60",
+                    )}
+                  >
+                    {check.passed ? (
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+                    ) : check.blocker ? (
+                      <XCircle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p
+                        className={cn(
+                          "text-sm font-bold",
+                          check.passed
+                            ? "text-foreground"
+                            : check.blocker
+                            ? "text-red-800"
+                            : "text-amber-800",
+                        )}
+                      >
+                        {check.label}
+                      </p>
+                      <p
+                        className={cn(
+                          "text-xs mt-0.5",
+                          check.passed
+                            ? "text-muted-foreground"
+                            : check.blocker
+                            ? "text-red-700"
+                            : "text-amber-700",
+                        )}
+                      >
+                        {check.detail}
+                      </p>
+                    </div>
+                    {!check.passed && check.blocker && (
+                      <Link
+                        href={`/builder/sets/${setId}`}
+                        className="ml-auto shrink-0 text-xs font-bold text-red-700 hover:underline whitespace-nowrap"
+                      >
+                        Fix in editor →
+                      </Link>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* Advisory warnings */}
-          {advisories.length > 0 && (
+          {/* Advisory warnings summary (if any) */}
+          {!validating && advisoryRows.length > 0 && (
             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 flex items-start gap-3">
               <Info className="h-4 w-4 text-amber-700 shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm font-bold text-amber-900">Optional improvements</p>
-                <ul className="mt-1 space-y-1">
-                  {advisories.map((a) => (
-                    <li key={a.id} className="text-sm text-amber-800">
-                      · {a.label}: {a.description}
-                    </li>
-                  ))}
-                </ul>
+                <p className="text-sm font-bold text-amber-900">
+                  Optional improvements ({advisoryRows.length})
+                </p>
+                <p className="text-xs text-amber-700 mt-0.5">
+                  These won't block publish but are worth addressing for
+                  quality.
+                </p>
               </div>
             </div>
           )}
 
-          {/* Immutability warning */}
-          {blockers.length === 0 && (
+          {/* Immutability acknowledgement — only shown when all blocking checks pass */}
+          {!validating && isPublishable && (
             <div className="rounded-2xl border-2 border-amber-300 bg-amber-50 p-5 space-y-4">
               <div className="flex items-start gap-3">
                 <ShieldAlert className="h-5 w-5 text-amber-700 shrink-0 mt-0.5" />
@@ -416,21 +620,32 @@ export default function PublishPage() {
                   </p>
                   <p className="mt-1 text-sm text-amber-800">
                     Once published, this assessment set is{" "}
-                    <strong>immutable</strong>. The content will be locked to preserve the
-                    integrity of any assignments based on it:
+                    <strong>immutable</strong>. The content will be locked to
+                    preserve the integrity of any assignments based on it:
                   </p>
                   <ul className="mt-2 space-y-1 text-sm text-amber-800">
                     <li className="flex items-start gap-1.5">
-                      <Lock className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-700" aria-hidden />
-                      Questions cannot be edited — editing creates a new revision.
+                      <Lock
+                        className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-700"
+                        aria-hidden
+                      />
+                      Questions cannot be edited — editing creates a new
+                      revision.
                     </li>
                     <li className="flex items-start gap-1.5">
-                      <Lock className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-700" aria-hidden />
-                      Students who take assignments based on this set will always see this
-                      exact version, even if you publish a newer one later.
+                      <Lock
+                        className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-700"
+                        aria-hidden
+                      />
+                      Students who take assignments based on this set will
+                      always see this exact version, even if you publish a
+                      newer one later.
                     </li>
                     <li className="flex items-start gap-1.5">
-                      <Lock className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-700" aria-hidden />
+                      <Lock
+                        className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-700"
+                        aria-hidden
+                      />
                       Grading results are tied to this snapshot permanently.
                     </li>
                   </ul>
@@ -446,7 +661,8 @@ export default function PublishPage() {
                   className="h-4 w-4 rounded border-amber-400 accent-amber-600"
                 />
                 <span className="text-sm font-bold text-amber-900 group-hover:text-amber-950 select-none">
-                  I understand this action is irreversible and the content will be locked.
+                  I understand this action is irreversible and the content will
+                  be locked.
                 </span>
               </label>
             </div>

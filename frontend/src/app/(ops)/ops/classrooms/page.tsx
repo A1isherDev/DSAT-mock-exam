@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { classesApi } from "@/lib/api";
 import type { Classroom } from "@/lib/criticalApiContract";
-import { Search, School, Plus, RefreshCw, Users, BookOpen, ArrowRight } from "lucide-react";
+import { Search, School, Plus, RefreshCw, Users, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/cn";
 
 type ClassroomWithRole = Classroom & { my_role?: string; subject?: string; student_count?: number };
@@ -210,20 +210,11 @@ export default function OpsClassroomsPage() {
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
-                    {c.my_role === "ADMIN" && (
-                      <Link
-                        href={`/ops/assignments?classroomId=${c.id}`}
-                        className="inline-flex items-center gap-1 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors"
-                      >
-                        <BookOpen className="h-3 w-3" />
-                        Assignments
-                      </Link>
-                    )}
                     <Link
-                      href={`/classes/${c.id}`}
+                      href={`/ops/classrooms/${c.id}`}
                       className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors"
                     >
-                      View
+                      Manage
                       <ArrowRight className="h-3 w-3" />
                     </Link>
                   </div>

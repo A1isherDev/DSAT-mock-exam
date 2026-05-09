@@ -57,6 +57,7 @@ from .models import (
 )
 from .serializers import (
     MockExamSerializer,
+    PastpaperPackStudentSerializer,
     PortalMockExamStudentSerializer,
     PracticeTestSerializer,
     TestAttemptSerializer,
@@ -245,6 +246,45 @@ class MockExamViewSet(viewsets.ReadOnlyModelViewSet):
         return (
             base.filter(id__in=allowed_mock_ids)
             .prefetch_related(tests_prefetch)
+            .distinct()
+        )
+
+
+class PastpaperPackStudentListView(generics.ListAPIView):
+    """
+    Student-facing pastpaper pack hub: returns all packs that have at least one
+    section with questions, ordered newest-first.  AllowAny — browsing the catalog
+    does not require authentication; starting an attempt still requires auth.
+    """
+
+    permission_classes = [AllowAny]
+    serializer_class = PastpaperPackStudentSerializer
+
+    def get_queryset(self):
+        return (
+            PastpaperPack.objects.filter(
+                sections__mock_exam__isnull=True,
+                sections__modules__questions__isnull=False,
+            )
+            .prefetch_related("sections__modules")
+            .distinct()
+            .order_by("-practice_date", "-created_at")
+        )
+
+
+class PastpaperPackStudentDetailView(generics.RetrieveAPIView):
+    """Single pack detail — same serializer as the list view."""
+
+    permission_classes = [AllowAny]
+    serializer_class = PastpaperPackStudentSerializer
+
+    def get_queryset(self):
+        return (
+            PastpaperPack.objects.filter(
+                sections__mock_exam__isnull=True,
+                sections__modules__questions__isnull=False,
+            )
+            .prefetch_related("sections__modules")
             .distinct()
         )
 

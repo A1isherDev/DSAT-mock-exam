@@ -14,6 +14,25 @@ export type PaginatedSets = {
   results: AssessmentSet[];
 };
 
+// ─── Publish validation types ─────────────────────────────────────────────────
+
+export type ValidationSeverity = "blocking" | "warning";
+
+export type ValidationFinding = {
+  severity: ValidationSeverity;
+  code: string;
+  message: string;
+  question_id?: number;
+  context?: Record<string, unknown>;
+};
+
+export type PublishValidationReport = {
+  is_publishable: boolean;
+  blocking_count: number;
+  warning_count: number;
+  findings: ValidationFinding[];
+};
+
 /**
  * Staff assessments surface: authoring + homework assignment.
  */
@@ -55,6 +74,17 @@ export const assessmentsAdminApi = {
   deleteQuestion: async (id: number) => {
     await assessmentsAdminClient.adminDeleteQuestion(id);
   },
+  /**
+   * Dry-run publish validation.
+   * Calls GET /assessments/admin/sets/{id}/validate-publish/ and returns the
+   * full PublishValidationReport (blocking + warning findings).
+   * Does NOT create a version or emit governance events.
+   */
+  validatePublish: async (id: number): Promise<PublishValidationReport> => {
+    const r = await api.get(`/assessments/admin/sets/${id}/validate-publish/`);
+    return r.data as PublishValidationReport;
+  },
+
   telemetry: async (key: string) => {
     await api.post("/assessments/admin/builder/telemetry/", { key });
   },

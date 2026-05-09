@@ -60,6 +60,8 @@ export default function OpsAssignmentsPage() {
 
   const [search, setSearch] = useState("");
   const [showOverdueOnly, setShowOverdueOnly] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [deleteErrors, setDeleteErrors] = useState<Record<number, string>>({});
 
   // Load classrooms on mount
   const loadClassrooms = useCallback(async () => {
@@ -140,14 +142,16 @@ export default function OpsAssignmentsPage() {
     [assignments],
   );
 
-  const handleDelete = async (a: AssignmentRow) => {
-    if (!confirm(`Delete assignment "${a.title}"?\n\nThis cannot be undone.`)) return;
+  const handleDeleteConfirmed = async (a: AssignmentRow) => {
+    setDeleteErrors((prev) => { const n = { ...prev }; delete n[a.id]; return n; });
     try {
       await classesApi.deleteAssignment(a.classroomId, a.id);
+      setConfirmDeleteId(null);
       if (selectedClassroomId) await loadAssignments(selectedClassroomId);
     } catch (e: unknown) {
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      alert(typeof detail === "string" ? detail : "Could not delete assignment.");
+      setDeleteErrors((prev) => ({ ...prev, [a.id]: typeof detail === "string" ? detail : "Could not delete assignment." }));
+      setConfirmDeleteId(null);
     }
   };
 
@@ -361,8 +365,9 @@ export default function OpsAssignmentsPage() {
               return (
                 <div
                   key={`${a.classroomId}-${a.id}`}
-                  className="px-5 py-4 flex flex-wrap items-center justify-between gap-3"
+                  className="px-5 py-4 space-y-2"
                 >
+                  <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     {/* Title + urgency badges */}
                     <div className="flex flex-wrap items-center gap-2 mb-1">
@@ -407,14 +412,37 @@ export default function OpsAssignmentsPage() {
                       <Pencil className="h-3.5 w-3.5" />
                       Edit
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(a)}
-                      className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-50 transition-colors"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                      Delete
-                    </button>
+                    {confirmDeleteId === a.id ? (
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteConfirmed(a)}
+                          className="inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-3 py-2 text-xs font-bold text-white hover:bg-red-700 transition-colors"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Yes, delete
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteId(null)}
+                          className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDeleteErrors((prev) => { const n = { ...prev }; delete n[a.id]; return n; });
+                          setConfirmDeleteId(a.id);
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-50 transition-colors"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Delete
+                      </button>
+                    )}
                     <Link
                       href={`/classes/${a.classroomId}/assignments/${a.id}`}
                       className="inline-flex items-center gap-1 rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors"
@@ -422,6 +450,19 @@ export default function OpsAssignmentsPage() {
                       View
                     </Link>
                   </div>
+                  </div>
+                  {/* Inline delete confirmation message */}
+                  {confirmDeleteId === a.id && (
+                    <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 text-red-600 shrink-0" />
+                      <p className="text-sm font-semibold text-red-800">
+                        Delete <span className="font-extrabold">"{a.title}"</span>? This cannot be undone.
+                      </p>
+                    </div>
+                  )}
+                  {deleteErrors[a.id] && (
+                    <p className="text-sm font-semibold text-red-700">{deleteErrors[a.id]}</p>
+                  )}
                 </div>
               );
             })}

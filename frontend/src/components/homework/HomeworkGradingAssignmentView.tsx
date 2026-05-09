@@ -6,7 +6,7 @@ import { classesApi } from "@/lib/api";
 import { crInputClass } from "@/components/classroom";
 import HomeworkFilePreviewTile from "@/components/classroom/HomeworkFilePreviewTile";
 import { fileNameFromUrl } from "@/lib/homeworkFileDisplay";
-import { ArrowLeft, ClipboardCheck, Loader2, RotateCcw, Trophy, User } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CheckCircle2, ClipboardCheck, Loader2, RotateCcw, Trophy, User } from "lucide-react";
 import { useAuthCriticalGate } from "@/hooks/useAuthCriticalGate";
 
 type Member = {
@@ -231,6 +231,35 @@ export default function HomeworkGradingAssignmentView({
         <p className="mt-2 text-muted-foreground">
           <span className="font-semibold text-foreground/90">{className}</span>
         </p>
+
+        {/* Teacher attention summary — only shown after load */}
+        {!loading && !error && (turnedIn.length > 0 || notTurnedIn.length > 0) && (() => {
+          const unreviewed = turnedIn.filter(({ sub }) => sub?.status === "SUBMITTED").length;
+          const noneIn = turnedIn.length === 0 && notTurnedIn.length > 0;
+          const allDone = unreviewed === 0 && turnedIn.length > 0 && notTurnedIn.length === 0;
+          if (allDone) return (
+            <div className="mt-4 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5">
+              <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+              <p className="text-sm font-semibold text-emerald-800">All submitted and reviewed. Nothing outstanding.</p>
+            </div>
+          );
+          if (noneIn) return (
+            <div className="mt-4 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5">
+              <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+              <p className="text-sm font-semibold text-amber-800">No submissions yet. Consider sending a reminder.</p>
+            </div>
+          );
+          if (unreviewed > 0) return (
+            <div className="mt-4 flex items-center gap-2 rounded-xl border border-primary/20 bg-primary/5 px-4 py-2.5">
+              <ClipboardCheck className="h-4 w-4 text-primary shrink-0" />
+              <p className="text-sm font-semibold text-foreground">
+                {unreviewed} submission{unreviewed === 1 ? "" : "s"} waiting for your review
+                {notTurnedIn.length > 0 ? ` · ${notTurnedIn.length} not yet submitted` : ""}
+              </p>
+            </div>
+          );
+          return null;
+        })()}
       </div>
 
       {error ? (

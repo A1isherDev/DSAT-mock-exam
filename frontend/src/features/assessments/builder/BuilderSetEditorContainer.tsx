@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useAssessmentSetDetail, useAssessmentSetsList, useDeleteAssessmentQuestion, useUpsertAssessmentQuestion, useUpsertAssessmentSet } from "@/features/assessments/hooks";
 import { assessmentsAdminApi as assessmentAuthoringApi } from "@/features/assessmentsAdmin/api";
@@ -16,11 +16,149 @@ import { useBuilderStore, useBuilderViewSet } from "@/features/assessments/build
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { ChevronLeft, Lock, Rocket } from "lucide-react";
+import { ChevronLeft, Eye, Lock, Rocket } from "lucide-react";
+import { cn } from "@/lib/cn";
 import { StateTag } from "@/components/governance";
 
 const INPUT =
   "ui-input w-full rounded-xl border border-border bg-surface-2/80 px-3 py-2 text-sm shadow-sm";
+
+const TYPE_SHORT: Record<string, string> = {
+  multiple_choice: "MC",
+  numeric: "Num",
+  short_text: "Text",
+  boolean: "T/F",
+};
+
+// ─── SAT student preview ──────────────────────────────────────────────────────
+
+function SATQuestionPreview({
+  prompt,
+  question_type,
+  choicesText,
+  correctAnswerText,
+}: {
+  prompt: string;
+  question_type: string;
+  choicesText: string;
+  correctAnswerText: string;
+}) {
+  const choices = useMemo(() => {
+    try {
+      const parsed = JSON.parse(choicesText) as Array<{ id: string; text: string }>;
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }, [choicesText]);
+
+  const correctId = useMemo(() => {
+    try {
+      return JSON.parse(correctAnswerText) as string | null;
+    } catch {
+      return null;
+    }
+  }, [correctAnswerText]);
+
+  if (!prompt.trim()) {
+    return (
+      <div className="flex items-center justify-center rounded-2xl border border-dashed border-border bg-surface-2/30 py-10 text-sm text-muted-foreground">
+        Enter a prompt to see the preview
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-border bg-card">
+      <div className="flex items-center gap-2 border-b border-border bg-primary/5 px-4 py-2.5">
+        <Eye className="h-3.5 w-3.5 shrink-0 text-primary/70" />
+        <span className="text-[10px] font-bold uppercase tracking-widest text-primary/80">
+          Student preview
+        </span>
+      </div>
+      <div className="space-y-4 p-5">
+        <p className="text-sm font-medium leading-relaxed text-foreground whitespace-pre-wrap">
+          {prompt}
+        </p>
+
+        {question_type === "multiple_choice" && choices.length > 0 && (
+          <div className="space-y-2">
+            {choices.map((c, i) => {
+              const letter = String.fromCharCode(65 + i);
+              const isCorrect = c.id === correctId;
+              return (
+                <div
+                  key={c.id ?? i}
+                  className={cn(
+                    "flex items-start gap-3 rounded-xl border px-3 py-2.5",
+                    isCorrect
+                      ? "border-emerald-300 bg-emerald-50 text-emerald-900"
+                      : "border-border bg-surface-2/40 text-foreground",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold",
+                      isCorrect
+                        ? "bg-emerald-500 text-white"
+                        : "border border-border bg-background text-muted-foreground",
+                    )}
+                  >
+                    {letter}
+                  </span>
+                  <span className="pt-0.5 text-sm leading-relaxed">
+                    {c.text || <em className="opacity-40">empty</em>}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {question_type === "numeric" && (
+          <div className="rounded-xl border border-border bg-surface-2/40 px-3 py-2.5 text-sm text-muted-foreground">
+            Student enters a number
+          </div>
+        )}
+
+        {question_type === "short_text" && (
+          <div className="rounded-xl border border-border bg-surface-2/40 px-3 py-2.5 text-sm text-muted-foreground">
+            Student types a short answer
+          </div>
+        )}
+
+        {question_type === "boolean" && (
+          <div className="flex gap-2">
+            {[
+              { label: "True", val: "true" },
+              { label: "False", val: "false" },
+            ].map(({ label, val }) => {
+              let parsed: unknown = null;
+              try { parsed = JSON.parse(correctAnswerText); } catch { /* ignore */ }
+              const isCorrect =
+                parsed === val ||
+                (parsed === true && val === "true") ||
+                (parsed === false && val === "false");
+              return (
+                <div
+                  key={val}
+                  className={cn(
+                    "flex-1 rounded-xl border px-3 py-2 text-center text-sm font-semibold",
+                    isCorrect
+                      ? "border-emerald-300 bg-emerald-50 text-emerald-900"
+                      : "border-border bg-surface-2/40 text-foreground",
+                  )}
+                >
+                  {label}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function SortRow({
   q,
@@ -65,12 +203,14 @@ function SortRow({
       className={`min-h-[64px] rounded-2xl border border-border p-3 shadow-sm ${active ? "bg-surface-2" : "bg-card"}`}
     >
       <div className="flex items-start justify-between gap-2">
-        {/* § 1.5 — title tooltip shows full prompt on hover */}
+        {/* Prompt is the primary label; metadata is secondary */}
         <button type="button" onClick={onSelect} className="min-w-0 text-left" title={q.prompt}>
-          <p className="text-sm font-extrabold text-foreground">
-            #{q.id} · order {q.order} · {q.question_type} · {q.points}pt
+          <p className="line-clamp-2 text-sm font-semibold leading-snug text-foreground">
+            {q.prompt.trim() || <em className="text-muted-foreground/50">No prompt</em>}
           </p>
-          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{q.prompt}</p>
+          <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+            {TYPE_SHORT[q.question_type] ?? q.question_type} · {q.points}pt · #{q.id}
+          </p>
         </button>
         <div className="flex shrink-0 items-center gap-2">
           <button
@@ -126,6 +266,7 @@ function SortRow({
 
 export default function BuilderSetEditorContainer() {
   const { id } = useParams();
+  const searchParams = useSearchParams();
   const setId = Number(id);
   const toast = useToast();
 
@@ -238,6 +379,20 @@ export default function BuilderSetEditorContainer() {
     selectQuestion(null);
     void assessmentAuthoringApi.telemetry("invalid_selection_recovered_total");
   }, [questions, selectQuestion, selectedQuestionId]);
+
+  // Auto-select from ?questionId= URL param (e.g. navigation from Question Bank → Edit)
+  const autoSelectFired = useRef(false);
+  useEffect(() => {
+    if (autoSelectFired.current) return;
+    if (questions.length === 0) return;
+    const paramId = searchParams.get("questionId");
+    if (!paramId) return;
+    const qId = Number(paramId);
+    if (!Number.isFinite(qId) || qId <= 0) return;
+    if (!questions.some((q) => q.id === qId)) return;
+    autoSelectFired.current = true;
+    selectQuestion(qId);
+  }, [questions, searchParams, selectQuestion]);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
@@ -621,6 +776,16 @@ export default function BuilderSetEditorContainer() {
           >
             {upsertQuestion.isPending ? "Saving…" : "Save question"}
           </button>
+        </div>
+
+        {/* Live SAT preview */}
+        <div className="mt-5">
+          <SATQuestionPreview
+            prompt={editing.prompt}
+            question_type={editing.question_type}
+            choicesText={editing.choicesText}
+            correctAnswerText={editing.correctAnswerText}
+          />
         </div>
 
         <div className="mt-6 border-t border-border pt-5">

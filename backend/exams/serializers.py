@@ -147,6 +147,41 @@ class PastpaperPackBriefSerializer(serializers.ModelSerializer):
         fields = ["id", "title", "practice_date", "label", "form_type"]
 
 
+class PastpaperPackStudentSerializer(serializers.ModelSerializer):
+    """
+    Student-facing pastpaper pack: pack metadata + shallow section list.
+    ``sections`` uses ModuleListSerializer-style brevity (no questions payload) so the
+    hub page can render section cards without blowing up response size.
+    """
+
+    sections = serializers.SerializerMethodField()
+
+    def get_sections(self, obj):
+        # obj.sections is the reverse FK manager from PracticeTest.pastpaper_pack.
+        # Only surface sections that have at least one question so students can actually start them.
+        qs = (
+            obj.sections.filter(mock_exam__isnull=True, modules__questions__isnull=False)
+            .prefetch_related("modules")
+            .distinct()
+        )
+        return [
+            {
+                "id": pt.id,
+                "title": pt.title,
+                "subject": pt.subject,
+                "label": pt.label,
+                "form_type": pt.form_type,
+                "practice_date": pt.practice_date,
+                "module_count": pt.modules.count(),
+            }
+            for pt in qs
+        ]
+
+    class Meta:
+        model = PastpaperPack
+        fields = ["id", "title", "practice_date", "label", "form_type", "sections"]
+
+
 class AttemptPracticeTestDetailsSerializer(serializers.Serializer):
     """
     Embedded snapshot on ``TestAttempt`` via ``practice_test_details`` (SerializerMethodField).

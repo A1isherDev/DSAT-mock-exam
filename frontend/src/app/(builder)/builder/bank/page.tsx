@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { listAllQuestions, applyClientFilters, computeQuestionBankStats } from "@/domains/questions/api";
 import type { QuestionWithContext, QuestionBankFilters } from "@/domains/questions/types";
-import { Search, Plus, Filter, ChevronRight, BookOpen, Edit2 } from "lucide-react";
+import { Search, Plus, Filter, BookOpen, PenLine } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { StateTag, QuestionLineage } from "@/components/governance";
 
@@ -239,16 +239,14 @@ export default function QuestionBankPage() {
         </div>
       )}
 
-      {/* Table */}
+      {/* Question list */}
       <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-        <div className="border-b border-border px-5 py-4 flex items-center justify-between gap-2">
+        <div className="flex items-center justify-between gap-2 border-b border-border px-5 py-4">
           <p className="font-bold text-foreground">
             {loading ? "Loading…" : `${filtered.length} question${filtered.length === 1 ? "" : "s"}`}
           </p>
           {!loading && filtered.length !== allQuestions.length && (
-            <p className="text-xs text-muted-foreground">
-              {allQuestions.length} total
-            </p>
+            <p className="text-xs text-muted-foreground">{allQuestions.length} total</p>
           )}
         </div>
 
@@ -258,9 +256,9 @@ export default function QuestionBankPage() {
           </div>
         ) : filtered.length === 0 ? (
           <div className="p-8 text-center text-muted-foreground">
-            <BookOpen className="h-8 w-8 mx-auto mb-3 opacity-30" />
+            <BookOpen className="mx-auto mb-3 h-8 w-8 opacity-30" />
             <p className="font-semibold">No questions match your filters.</p>
-            <p className="text-sm mt-1">
+            <p className="mt-1 text-sm">
               Try broadening the filters, or{" "}
               <Link href="/builder/sets" className="font-bold text-primary hover:underline">
                 create questions inside an assessment set
@@ -269,36 +267,10 @@ export default function QuestionBankPage() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="text-left px-5 py-3 text-[10px] font-bold text-muted-foreground uppercase tracking-widest whitespace-nowrap">
-                    Question
-                  </th>
-                  <th className="text-left px-4 py-3 text-[10px] font-bold text-muted-foreground uppercase tracking-widest whitespace-nowrap">
-                    Type
-                  </th>
-                  <th className="text-left px-4 py-3 text-[10px] font-bold text-muted-foreground uppercase tracking-widest whitespace-nowrap hidden md:table-cell">
-                    Set · Lineage
-                  </th>
-                  <th className="text-left px-4 py-3 text-[10px] font-bold text-muted-foreground uppercase tracking-widest whitespace-nowrap hidden sm:table-cell">
-                    Points
-                  </th>
-                  <th className="text-left px-4 py-3 text-[10px] font-bold text-muted-foreground uppercase tracking-widest whitespace-nowrap">
-                    Status
-                  </th>
-                  <th className="px-4 py-3 text-right text-[10px] font-bold text-muted-foreground uppercase tracking-widest whitespace-nowrap">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {filtered.map((q) => (
-                  <QuestionRow key={`${q.setId}-${q.id}`} question={q} />
-                ))}
-              </tbody>
-            </table>
+          <div className="divide-y divide-border">
+            {filtered.map((q) => (
+              <QuestionCard key={`${q.setId}-${q.id}`} question={q} />
+            ))}
           </div>
         )}
       </div>
@@ -312,81 +284,61 @@ export default function QuestionBankPage() {
   );
 }
 
-function QuestionRow({ question: q }: { question: QuestionWithContext }) {
+function QuestionCard({ question: q }: { question: QuestionWithContext }) {
   const typeLabel = QUESTION_TYPE_LABELS[q.question_type] ?? q.question_type;
   const typeColor =
     QUESTION_TYPE_COLORS[q.question_type] ?? "bg-slate-100 text-slate-700";
 
-  // Truncate prompt for display; preserve leading whitespace
-  const promptDisplay =
-    q.prompt.length > 100
-      ? q.prompt.replace(/\s+/g, " ").trim().slice(0, 100) + "…"
-      : q.prompt.replace(/\s+/g, " ").trim() || "(no prompt)";
-
   return (
-    <tr className="hover:bg-surface-2/50 transition-colors">
-      {/* Prompt */}
-      <td className="px-5 py-3 max-w-xs">
-        <p className="font-medium text-foreground leading-snug line-clamp-2" title={q.prompt}>
-          {promptDisplay}
-        </p>
-        {/* On mobile show the set name inline */}
-        <p className="text-xs text-muted-foreground mt-0.5 md:hidden">
-          {q.setTitle}
-        </p>
-      </td>
-
-      {/* Type badge */}
-      <td className="px-4 py-3 whitespace-nowrap">
-        <span
-          className={cn(
-            "inline-flex items-center rounded-lg px-2 py-0.5 text-[10px] font-black uppercase tracking-wide",
-            typeColor,
-          )}
+    <div className="group flex items-start gap-4 px-5 py-4 hover:bg-surface-2/40 transition-colors">
+      {/* Left: prompt + meta */}
+      <div className="min-w-0 flex-1">
+        <p
+          className="line-clamp-2 text-sm font-semibold leading-snug text-foreground"
+          title={q.prompt}
         >
-          {typeLabel}
-        </span>
-      </td>
+          {q.prompt.trim() || <em className="text-muted-foreground/50">No prompt</em>}
+        </p>
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span
+            className={cn(
+              "inline-flex items-center rounded-lg px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide",
+              typeColor,
+            )}
+          >
+            {typeLabel}
+          </span>
+          <QuestionLineage
+            setId={q.setId}
+            setTitle={q.setTitle}
+            setIsPublished={q.setIsPublished}
+          />
+          {q.category && (
+            <span className="text-[10px] text-muted-foreground">{q.category}</span>
+          )}
+          <span className="text-[10px] text-muted-foreground tabular-nums">
+            {q.points}pt
+          </span>
+        </div>
+      </div>
 
-      {/* Set · Lineage */}
-      <td className="px-4 py-3 hidden md:table-cell max-w-[200px]">
-        <QuestionLineage
-          setId={q.setId}
-          setTitle={q.setTitle}
-          setIsPublished={q.setIsPublished}
-        />
-        {q.category ? (
-          <p className="text-[10px] text-muted-foreground truncate mt-0.5">{q.category}</p>
-        ) : null}
-      </td>
-
-      {/* Points */}
-      <td className="px-4 py-3 whitespace-nowrap text-sm font-semibold tabular-nums text-foreground hidden sm:table-cell">
-        {q.points}
-      </td>
-
-      {/* Status */}
-      <td className="px-4 py-3 whitespace-nowrap">
+      {/* Right: status + edit */}
+      <div className="flex shrink-0 items-center gap-2">
         {q.is_active && q.setIsPublished ? (
           <StateTag state="IN_USE" size="xs" />
         ) : (
           <StateTag state={q.is_active ? "ACTIVE" : "ARCHIVED"} size="xs" />
         )}
-      </td>
-
-      {/* Actions */}
-      <td className="px-4 py-3 text-right whitespace-nowrap">
         <Link
-          href={`/builder/sets/${q.setId}`}
+          href={`/builder/sets/${q.setId}?questionId=${q.id}`}
           className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors"
-          title={`Edit question in set "${q.setTitle}"`}
+          title={`Edit in set "${q.setTitle}"`}
         >
-          <Edit2 className="h-3 w-3" />
+          <PenLine className="h-3 w-3" />
           Edit
-          <ChevronRight className="h-3 w-3 text-muted-foreground" />
         </Link>
-      </td>
-    </tr>
+      </div>
+    </div>
   );
 }
 

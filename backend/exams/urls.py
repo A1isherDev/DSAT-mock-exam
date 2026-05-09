@@ -10,6 +10,8 @@ from .views import (
     BulkAssignmentHistoryDetailView,
     BulkAssignmentHistoryRerunView,
     MockExamViewSet,
+    PastpaperPackStudentListView,
+    PastpaperPackStudentDetailView,
     PracticeTestViewSet,
     TestAttemptViewSet,
     ExamsMetricsView,
@@ -70,6 +72,10 @@ urlpatterns = [
 
     # Admin Pastpaper packs: /exams/admin/pastpaper-packs/
     path('admin/pastpaper-packs/', include(admin_pastpaper_pack_router.urls)),
+
+    # Student pastpaper pack hub: /exams/pastpaper-packs/ and /exams/pastpaper-packs/<pk>/
+    path("pastpaper-packs/", PastpaperPackStudentListView.as_view(), name="pastpaper-pack-list"),
+    path("pastpaper-packs/<int:pk>/", PastpaperPackStudentDetailView.as_view(), name="pastpaper-pack-detail"),
 
     # Student / Common routes
     # Bulk library assignment (must not be registered via DefaultRouter empty prefix — conflicts).

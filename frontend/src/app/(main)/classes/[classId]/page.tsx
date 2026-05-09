@@ -53,6 +53,7 @@ import {
   type ClassroomTabItem,
 } from "@/components/classroom";
 import {
+  AlertTriangle,
   ClipboardCheck,
   ClipboardList,
   GraduationCap,
@@ -85,6 +86,8 @@ export default function ClassDetailPage() {
   const [assignments, setAssignments] = useState<any[]>([]);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editingAssignment, setEditingAssignment] = useState<any | null>(null);
+  const [confirmDeleteAssignmentId, setConfirmDeleteAssignmentId] = useState<number | null>(null);
+  const [assignmentDeleteErrors, setAssignmentDeleteErrors] = useState<Record<number, string>>({});
 
   const [people, setPeople] = useState<any[]>([]);
   const [codeBusy, setCodeBusy] = useState(false);
@@ -466,11 +469,10 @@ export default function ClassDetailPage() {
                         ) : null}
                       </Link>
                       {isClassAdmin ? (
-                        <div className="flex shrink-0 flex-row gap-2 border-t border-slate-200/70 pt-3 sm:flex-col sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0 dark:border-slate-700/70">
+                        <div className="flex shrink-0 flex-col gap-2 border-t border-slate-200/70 pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0 dark:border-slate-700/70">
                           <ClassroomButton
                             variant="secondary"
                             size="sm"
-                            className="flex-1 sm:flex-none"
                             onClick={() => {
                               setEditingAssignment(a);
                               setCreateModalOpen(true);
@@ -479,26 +481,63 @@ export default function ClassDetailPage() {
                             <Pencil className="h-3.5 w-3.5" />
                             Edit
                           </ClassroomButton>
-                          <ClassroomButton
-                            variant="danger"
-                            size="sm"
-                            className="flex-1 sm:flex-none"
-                            onClick={async () => {
-                              if (!confirm(`Delete homework “${a.title}”? Submissions will be removed.`)) return;
-                              try {
-                                await classesApi.deleteAssignment(id, a.id);
-                                const ws = await classesApi.getStudentWorkspace(id);
-                                setWorkspace(ws && typeof ws === "object" ? ws : null);
-                                setAssignments(Array.isArray(ws?.your_assignments) ? ws.your_assignments : []);
-                              } catch (e: unknown) {
-                                const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-                                alert(typeof msg === "string" ? msg : "Could not delete assignment.");
-                              }
-                            }}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                            Delete
-                          </ClassroomButton>
+                          {confirmDeleteAssignmentId === a.id ? (
+                            <>
+                              <div className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 flex items-start gap-1.5">
+                                <AlertTriangle className="h-3.5 w-3.5 text-red-600 shrink-0 mt-0.5" />
+                                <p className="text-xs font-semibold text-red-800 leading-tight">
+                                  Delete "{a.title}"? Submissions will be removed.
+                                </p>
+                              </div>
+                              <div className="flex gap-1.5">
+                                <ClassroomButton
+                                  variant="danger"
+                                  size="sm"
+                                  className="flex-1"
+                                  onClick={async () => {
+                                    setAssignmentDeleteErrors((prev) => { const n = { ...prev }; delete n[a.id]; return n; });
+                                    try {
+                                      await classesApi.deleteAssignment(id, a.id);
+                                      setConfirmDeleteAssignmentId(null);
+                                      const ws = await classesApi.getStudentWorkspace(id);
+                                      setWorkspace(ws && typeof ws === "object" ? ws : null);
+                                      setAssignments(Array.isArray(ws?.your_assignments) ? ws.your_assignments : []);
+                                    } catch (e: unknown) {
+                                      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+                                      setAssignmentDeleteErrors((prev) => ({ ...prev, [a.id]: typeof msg === "string" ? msg : "Could not delete." }));
+                                      setConfirmDeleteAssignmentId(null);
+                                    }
+                                  }}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                  Confirm
+                                </ClassroomButton>
+                                <ClassroomButton
+                                  variant="secondary"
+                                  size="sm"
+                                  className="flex-1"
+                                  onClick={() => setConfirmDeleteAssignmentId(null)}
+                                >
+                                  Cancel
+                                </ClassroomButton>
+                              </div>
+                            </>
+                          ) : (
+                            <ClassroomButton
+                              variant="danger"
+                              size="sm"
+                              onClick={() => {
+                                setAssignmentDeleteErrors((prev) => { const n = { ...prev }; delete n[a.id]; return n; });
+                                setConfirmDeleteAssignmentId(a.id);
+                              }}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              Delete
+                            </ClassroomButton>
+                          )}
+                          {assignmentDeleteErrors[a.id] && (
+                            <p className="text-xs font-semibold text-red-700">{assignmentDeleteErrors[a.id]}</p>
+                          )}
                         </div>
                       ) : null}
                     </div>

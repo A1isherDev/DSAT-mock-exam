@@ -79,13 +79,13 @@ export default function ArchivedContentPage() {
       {/* Architecture note about full lifecycle */}
       <div className="rounded-2xl border border-border bg-card p-5">
         <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2">
-          Lifecycle status
+          What counts as archived
         </p>
         <p className="text-sm text-muted-foreground leading-relaxed">
-          Full question lifecycle states (DRAFT → ACTIVE → DEPRECATED → ARCHIVED) and per-question
-          archival with usage-lock checks are part of the snapshot architecture deployment (Sprint 5).
-          Currently, this page shows all <strong className="text-foreground">inactive</strong>{" "}
-          assessment sets, which map to the ARCHIVED state in the target model.
+          An assessment set is archived when its <strong className="text-foreground">is_active</strong>{" "}
+          flag is set to inactive. Archived sets are excluded from the question bank and cannot be
+          assigned to new classrooms, but remain fully accessible for review and are preserved
+          permanently if any student attempt references them.
         </p>
       </div>
 
