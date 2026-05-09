@@ -291,7 +291,6 @@ export function ImmutableIndicator({ className }: { className?: string }) {
   return (
     <Lock
       className={cn("h-3 w-3 text-muted-foreground shrink-0", className)}
-      title="This content is immutable and cannot be edited"
       aria-label="Immutable"
     />
   );

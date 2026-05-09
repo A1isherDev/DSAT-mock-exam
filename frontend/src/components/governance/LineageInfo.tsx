@@ -194,7 +194,7 @@ export function AssignmentLineage({
 
   return (
     <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
-      <Lock className="h-3 w-3 text-muted-foreground shrink-0" title="Pinned to snapshot" />
+      <Lock className="h-3 w-3 text-muted-foreground shrink-0" aria-label="Pinned to snapshot" />
       {setId ? (
         <Link
           href={`/builder/sets/${setId}`}

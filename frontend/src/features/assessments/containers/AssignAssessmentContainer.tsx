@@ -244,9 +244,9 @@ export default function AssignAssessmentContainer() {
                 <div className="mt-3 grid gap-2">
                   {(selectedSet.questions || [])
                     .slice()
-                    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+                    .sort((a: { order?: number }, b: { order?: number }) => (a.order ?? 0) - (b.order ?? 0))
                     .slice(0, 6)
-                    .map((q) => (
+                    .map((q: { id: number; question_type: string; points: number; prompt: string }) => (
                       <div key={q.id} className="rounded-xl border border-border bg-card p-3">
                         <p className="text-sm font-extrabold text-foreground">
                           {q.question_type} · {q.points}pt

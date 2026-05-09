@@ -174,7 +174,7 @@ export default function BuilderSetsPage() {
           <div className="divide-y divide-border">
             {filtered.map((s) => {
               const questionCount = (s.questions ?? []).length;
-              const activeQs = (s.questions ?? []).filter((q) => q.is_active).length;
+              const activeQs = (s.questions ?? []).filter((q: { is_active?: boolean }) => q.is_active).length;
               const isDraft = !s.is_active;
               const isPublishReady =
                 isDraft &&

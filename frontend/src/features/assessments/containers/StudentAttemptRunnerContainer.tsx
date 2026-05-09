@@ -88,7 +88,7 @@ async function backoffDelayMs(attempt: number) {
 }
 
 function syncFpFromAttempt(attempt: unknown): string {
-  return fingerprintAnswersFromAttempt(attempt);
+  return fingerprintAnswersFromAttempt(attempt as Parameters<typeof fingerprintAnswersFromAttempt>[0]);
 }
 
 // ─── Save indicator ───────────────────────────────────────────────────────────
@@ -1088,7 +1088,7 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
           </p>
           <div className="mt-5 pointer-events-none select-none opacity-75">
             <AnswerInput
-              type={String(current?.question_type || "")}
+              type={String(current?.question_type || "") as import("@/features/assessments/types").AssessmentQuestionType}
               choices={parseChoices(current?.choices)}
               value={_passiveAnswer}
               onChange={() => {/* read-only */}}
@@ -1313,7 +1313,7 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
         </p>
         <div className="mt-5">
           <AnswerInput
-            type={String(current?.question_type || "")}
+            type={String(current?.question_type || "") as import("@/features/assessments/types").AssessmentQuestionType}
             choices={parseChoices(current?.choices)}
             value={answerValue}
             onChange={(next) => {
