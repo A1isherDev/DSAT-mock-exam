@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   BookOpen,
   BookOpenCheck,
+  ClipboardCheck,
   ClipboardList,
   FileWarning,
   Users,
@@ -36,33 +37,59 @@ import { cn } from "@/lib/cn";
 
 const SIDEBAR_COLLAPSED_KEY = "mastersat.sidebarCollapsed";
 
-const nav = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/pastpapers", label: "Past papers", icon: BookOpen },
-  { href: "/practice-tests", label: "Practice tests", icon: BookOpenCheck },
-  { href: "/mock-exam", label: "Timed mock", icon: ClipboardList },
-  { href: "/midterm", label: "Midterm", icon: FileWarning },
-  { href: "/classes", label: "Classes", icon: Users },
-  { href: "/profile", label: "Profile", icon: UserCircle },
-  { href: "/security", label: "Security", icon: Shield },
+// ─── Nav sections — Learning (pedagogical) vs Simulation (SAT-mode) ───────────
+
+type NavItem = { href: string; label: string; icon: React.ElementType };
+type NavSection = { section: string; items: NavItem[] };
+
+const navSections: NavSection[] = [
+  {
+    section: "Learning",
+    items: [
+      { href: "/", label: "Dashboard", icon: LayoutDashboard },
+      { href: "/assessments", label: "Assessments", icon: ClipboardCheck },
+      { href: "/midterm", label: "Midterm", icon: FileWarning },
+      { href: "/classes", label: "Classes", icon: Users },
+    ],
+  },
+  {
+    section: "Simulation",
+    items: [
+      { href: "/pastpapers", label: "Past papers", icon: BookOpen },
+      { href: "/practice-tests", label: "Practice tests", icon: BookOpenCheck },
+      { href: "/mock-exam", label: "Timed mock", icon: ClipboardList },
+    ],
+  },
+  {
+    section: "Account",
+    items: [
+      { href: "/profile", label: "Profile", icon: UserCircle },
+      { href: "/security", label: "Security", icon: Shield },
+    ],
+  },
 ];
 
+/** Flat list derived from sections — used for pageTitle / command palette. */
+const nav: NavItem[] = navSections.flatMap((s) => s.items);
+
 const quickLinks = [
+  { href: "/assessments", label: "Assessments" },
   { href: "/pastpapers", label: "Past papers" },
-  { href: "/practice-tests", label: "Practice" },
   { href: "/mock-exam", label: "Mock" },
   { href: "/classes", label: "Classes" },
 ];
 
+function isNavItemActive(href: string, pathname: string): boolean {
+  if (href === "/") return pathname === "/";
+  if (href === "/pastpapers") return pathname === "/pastpapers" || pathname.startsWith("/pastpapers/");
+  if (href === "/practice-tests") return pathname === "/practice-tests" || pathname.startsWith("/practice-test/");
+  return pathname.startsWith(href);
+}
+
 function pageTitle(pathname: string): string {
   if (pathname === "/") return "Dashboard";
   if (pathname === "/security" || pathname.startsWith("/security/")) return "Security";
-  const item = nav.find((n) => {
-    if (n.href === "/") return false;
-    if (n.href === "/pastpapers") return pathname === "/pastpapers" || pathname.startsWith("/pastpapers/");
-    if (n.href === "/practice-tests") return pathname === "/practice-tests" || pathname.startsWith("/practice-test/");
-    return pathname.startsWith(n.href);
-  });
+  const item = nav.find((n) => n.href !== "/" && isNavItemActive(n.href, pathname));
   return item?.label ?? "MasterSAT";
 }
 
@@ -142,10 +169,12 @@ export default function StudentShell({ children }: { children: React.ReactNode }
     });
   };
 
-  const filteredNav = useMemo(() => {
+  const filteredNavSections = useMemo((): NavSection[] => {
     const q = navQuery.trim().toLowerCase();
-    if (!q) return nav;
-    return nav.filter((n) => n.label.toLowerCase().includes(q));
+    if (!q) return navSections;
+    return navSections
+      .map((s) => ({ ...s, items: s.items.filter((n) => n.label.toLowerCase().includes(q)) }))
+      .filter((s) => s.items.length > 0);
   }, [navQuery]);
 
   const title = pageTitle(pathname);
@@ -261,49 +290,52 @@ export default function StudentShell({ children }: { children: React.ReactNode }
             </div>
           </div>
 
-          <div className={cn("px-4 pt-3 md:px-5", sidebarCollapsed && "md:hidden")}>
-            <p className="ds-section-title py-2 text-[10px]">Navigate</p>
-          </div>
           <nav
             className={cn(
-              "flex min-h-0 flex-1 flex-col gap-1 overflow-hidden px-3 pb-4 md:px-4",
+              "flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-3 pb-4 pt-2 md:px-4",
               sidebarCollapsed && "md:items-center md:px-2",
             )}
             aria-label="Main"
           >
-            {filteredNav.length === 0 ? (
-              <p className="px-2 py-6 text-center text-sm text-muted-foreground">No sections match “{navQuery}”.</p>
+            {filteredNavSections.length === 0 ? (
+              <p className="px-2 py-6 text-center text-sm text-muted-foreground">No sections match &ldquo;{navQuery}&rdquo;.</p>
             ) : (
-              filteredNav.map(({ href, label, icon: Icon }) => {
-                const active =
-                  href === "/"
-                    ? pathname === "/"
-                    : href === "/pastpapers"
-                      ? pathname === "/pastpapers" || pathname.startsWith("/pastpapers/")
-                      : href === "/practice-tests"
-                        ? pathname === "/practice-tests" || pathname.startsWith("/practice-test/")
-                        : pathname.startsWith(href);
-                return (
-                  <Link
-                    key={href}
-                    href={href}
-                    className={cn(navLinkClass(active), "w-full")}
-                    onClick={() => setMobileOpen(false)}
-                  >
-                    <span
-                      className={cn(
-                        "flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors",
-                        active
-                          ? "text-primary"
-                          : "text-label-foreground group-hover:text-foreground",
-                      )}
-                    >
-                      <Icon className="h-[18px] w-[18px]" strokeWidth={2} />
-                    </span>
-                    <span className={cn("leading-snug", sidebarCollapsed && "md:sr-only")}>{label}</span>
-                  </Link>
-                );
-              })
+              filteredNavSections.map(({ section, items }) => (
+                <div key={section} className="mb-3 last:mb-0">
+                  {/* Section label — hidden when sidebar is collapsed */}
+                  <p className={cn(
+                    "mb-1 px-3 text-[9px] font-bold uppercase tracking-widest text-muted-foreground/50",
+                    sidebarCollapsed && "md:hidden",
+                  )}>
+                    {section}
+                  </p>
+                  <div className="flex flex-col gap-0.5">
+                    {items.map(({ href, label, icon: Icon }) => {
+                      const active = isNavItemActive(href, pathname);
+                      return (
+                        <Link
+                          key={href}
+                          href={href}
+                          className={cn(navLinkClass(active), "w-full")}
+                          onClick={() => setMobileOpen(false)}
+                        >
+                          <span
+                            className={cn(
+                              "flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors",
+                              active
+                                ? "text-primary"
+                                : "text-label-foreground group-hover:text-foreground",
+                            )}
+                          >
+                            <Icon className="h-[18px] w-[18px]" strokeWidth={2} />
+                          </span>
+                          <span className={cn("leading-snug", sidebarCollapsed && "md:sr-only")}>{label}</span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))
             )}
           </nav>
 

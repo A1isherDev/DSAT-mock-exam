@@ -1,7 +1,19 @@
 "use client";
 
-import { CalendarX, CheckCircle2, Clock, School } from "lucide-react";
+/**
+ * ClassroomOverviewPanel — classroom detail overview tab.
+ *
+ * Shows classroom metadata, assignment lifecycle signals, and student summary.
+ * Uses the shared `assignmentLifecycle` utility for consistent state derivation.
+ */
+
+import { AlertTriangle, CalendarX, CheckCircle2, Clock, School, Timer } from "lucide-react";
 import { OpsSignalCard } from "@/components/ops/ui";
+import {
+  summarizeAssignmentLifecycle,
+  deriveAssignmentLifecycleState,
+  formatAssignmentDue,
+} from "@/lib/assignmentLifecycle";
 
 // ─── Types (shared with the page) ─────────────────────────────────────────────
 
@@ -25,6 +37,7 @@ export type AssignmentSummary = {
   mock_exam?: number | null;
   pastpaper_pack?: number | null;
   module?: number | null;
+  submissions_count?: number | null;
 };
 
 export type PersonSummary = {
@@ -55,7 +68,7 @@ export function contentTypeLabel(a: AssignmentSummary): string {
   if (a.pastpaper_pack) return "Pastpaper";
   if (a.practice_test) return "Practice test";
   if (a.module) return "Module";
-  return "Custom";
+  return "Assessment";
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -69,11 +82,15 @@ export function ClassroomOverviewPanel({
   assignments: AssignmentSummary[];
   students: PersonSummary[];
 }) {
-  const now = new Date();
-  const overdueList = assignments.filter(
-    (a) => a.due_at && new Date(a.due_at) < now,
-  );
+  const summary = summarizeAssignmentLifecycle(assignments);
   const studentList = students.filter((s) => s.role === "STUDENT");
+
+  const overdueAssignments = assignments.filter(
+    (a) => deriveAssignmentLifecycleState(a) === "OVERDUE",
+  );
+  const dueSoonAssignments = assignments.filter(
+    (a) => deriveAssignmentLifecycleState(a) === "DUE_SOON",
+  );
 
   const subjectLabel =
     classroom.subject === "MATH"
@@ -114,56 +131,103 @@ export function ClassroomOverviewPanel({
         </div>
       </div>
 
-      {/* Signal strip */}
+      {/* Lifecycle signal strip */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <OpsSignalCard value={assignments.length} label="Assignments" />
-        <OpsSignalCard value={overdueList.length} label="Overdue" warning />
+        <OpsSignalCard value={summary.total}      label="Assignments" />
+        <OpsSignalCard value={summary.overdue}    label="Overdue"   warning={summary.overdue > 0}  warningVariant="red" />
+        <OpsSignalCard value={summary.dueSoon}    label="Due soon"  warning={summary.dueSoon > 0}  warningVariant="orange" />
         <OpsSignalCard value={studentList.length} label="Students" />
-        <OpsSignalCard
-          value={classroom.members_count ?? students.length}
-          label="Members"
-        />
       </div>
 
-      {/* Overdue list or all-clear */}
-      {overdueList.length > 0 ? (
-        <div className="overflow-hidden rounded-2xl border border-amber-200 bg-card">
-          <div className="flex items-center gap-2 border-b border-amber-100 px-4 py-3">
-            <CalendarX className="h-4 w-4 text-amber-600 shrink-0" />
-            <p className="text-[10px] font-bold uppercase tracking-widest text-amber-700">
-              Overdue assignments
+      {/* Attention items */}
+      {overdueAssignments.length > 0 && (
+        <div className="overflow-hidden rounded-2xl border border-red-200 bg-card">
+          <div className="flex items-center gap-2 border-b border-red-100 bg-red-50 px-4 py-3">
+            <CalendarX className="h-4 w-4 text-red-600 shrink-0" />
+            <p className="text-[10px] font-bold uppercase tracking-widest text-red-700">
+              Overdue — {overdueAssignments.length} assignment{overdueAssignments.length !== 1 ? "s" : ""}
             </p>
           </div>
           <div className="divide-y divide-border">
-            {overdueList.map((a) => {
-              const days = Math.floor(
-                (now.getTime() - new Date(a.due_at!).getTime()) / 86_400_000,
-              );
-              return (
-                <div key={a.id} className="flex items-center gap-3 px-4 py-3">
-                  <Clock className="h-4 w-4 text-amber-500 shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-foreground truncate">
-                      {a.title}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Due {formatDate(a.due_at)} · {contentTypeLabel(a)}
-                    </p>
-                  </div>
-                  <span className="shrink-0 text-xs font-bold text-amber-600 tabular-nums">
-                    +{days}d
-                  </span>
+            {overdueAssignments.map((a) => (
+              <div key={a.id} className="flex items-center gap-3 px-4 py-3">
+                <Clock className="h-4 w-4 text-red-400 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-foreground truncate">{a.title}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Due {formatDate(a.due_at)} · {contentTypeLabel(a)}
+                    {(a.submissions_count ?? 0) > 0 && (
+                      <span className="ml-1.5 text-foreground font-semibold">
+                        · {a.submissions_count} submitted
+                      </span>
+                    )}
+                  </p>
                 </div>
-              );
-            })}
+                <span className="shrink-0 text-xs font-black text-red-700 tabular-nums">
+                  {formatAssignmentDue(a.due_at)}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
-      ) : assignments.length > 0 ? (
+      )}
+
+      {dueSoonAssignments.length > 0 && (
+        <div className="overflow-hidden rounded-2xl border border-orange-200 bg-card">
+          <div className="flex items-center gap-2 border-b border-orange-100 bg-orange-50 px-4 py-3">
+            <Timer className="h-4 w-4 text-orange-600 shrink-0" />
+            <p className="text-[10px] font-bold uppercase tracking-widest text-orange-700">
+              Due soon — {dueSoonAssignments.length} assignment{dueSoonAssignments.length !== 1 ? "s" : ""}
+            </p>
+          </div>
+          <div className="divide-y divide-border">
+            {dueSoonAssignments.map((a) => (
+              <div key={a.id} className="flex items-center gap-3 px-4 py-3">
+                <Timer className="h-4 w-4 text-orange-400 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-foreground truncate">{a.title}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {contentTypeLabel(a)}
+                    {(a.submissions_count ?? 0) > 0 && (
+                      <span className="ml-1.5 text-foreground font-semibold">
+                        · {a.submissions_count} submitted
+                      </span>
+                    )}
+                  </p>
+                </div>
+                <span className="shrink-0 text-xs font-black text-orange-700 tabular-nums">
+                  {formatAssignmentDue(a.due_at)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* All clear */}
+      {summary.needsAttention === 0 && summary.total > 0 && (
         <div className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
           <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
-          <p className="text-sm font-semibold text-emerald-800">No overdue assignments.</p>
+          <p className="text-sm font-semibold text-emerald-800">
+            No overdue or due-soon assignments.
+          </p>
         </div>
-      ) : null}
+      )}
+
+      {/* Active count hint */}
+      {summary.active > 0 && (
+        <div className="flex items-center gap-2 rounded-2xl border border-border bg-card px-4 py-3">
+          <AlertTriangle className="h-4 w-4 text-muted-foreground/40 shrink-0" />
+          <p className="text-sm text-muted-foreground">
+            <span className="font-bold text-foreground">{summary.active}</span> active assignment{summary.active !== 1 ? "s" : ""} open
+            {summary.completed > 0 && (
+              <span className="ml-1">
+                · <span className="font-bold text-foreground">{summary.completed}</span> completed
+              </span>
+            )}
+          </p>
+        </div>
+      )}
     </div>
   );
 }

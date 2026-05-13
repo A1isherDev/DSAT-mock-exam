@@ -55,41 +55,50 @@ export function OpsSignalCard({
   label,
   accent = false,
   warning = false,
+  warningVariant = "amber",
 }: {
   value: number | string;
   label: string;
   accent?: boolean;
+  /** Highlight this card when value > 0 */
   warning?: boolean;
+  /** Color variant for warning state: "amber" (overdue) or "orange" (due-soon) */
+  warningVariant?: "amber" | "orange" | "red";
 }) {
+  const isActive = warning && Number(value) > 0;
+
+  const borderBg = isActive
+    ? warningVariant === "red"
+      ? "border-red-200 bg-red-50"
+      : warningVariant === "orange"
+        ? "border-orange-200 bg-orange-50"
+        : "border-amber-200 bg-amber-50"
+    : "border-border bg-card";
+
+  const valueColor = isActive
+    ? warningVariant === "red"
+      ? "text-red-700"
+      : warningVariant === "orange"
+        ? "text-orange-700"
+        : "text-amber-700"
+    : accent
+      ? "text-primary"
+      : "text-foreground";
+
+  const labelColor = isActive
+    ? warningVariant === "red"
+      ? "text-red-700"
+      : warningVariant === "orange"
+        ? "text-orange-700"
+        : "text-amber-700"
+    : "text-muted-foreground";
+
   return (
-    <div
-      className={cn(
-        "rounded-2xl border p-4",
-        warning && Number(value) > 0
-          ? "border-amber-200 bg-amber-50"
-          : "border-border bg-card",
-      )}
-    >
-      <p
-        className={cn(
-          "text-2xl font-extrabold tabular-nums",
-          warning && Number(value) > 0
-            ? "text-amber-700"
-            : accent
-              ? "text-primary"
-              : "text-foreground",
-        )}
-      >
+    <div className={cn("rounded-2xl border p-4", borderBg)}>
+      <p className={cn("text-2xl font-extrabold tabular-nums", valueColor)}>
         {typeof value === "number" ? value.toLocaleString() : value}
       </p>
-      <p
-        className={cn(
-          "mt-1 text-xs font-semibold",
-          warning && Number(value) > 0 ? "text-amber-700" : "text-muted-foreground",
-        )}
-      >
-        {label}
-      </p>
+      <p className={cn("mt-1 text-xs font-semibold", labelColor)}>{label}</p>
     </div>
   );
 }

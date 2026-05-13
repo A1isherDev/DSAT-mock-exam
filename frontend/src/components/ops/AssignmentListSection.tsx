@@ -1,11 +1,25 @@
 "use client";
 
+/**
+ * AssignmentListSection — assignment list inside the classroom detail page.
+ *
+ * Shows assignments for a single classroom with lifecycle state chips.
+ * Sorted by urgency (OVERDUE → DUE_SOON → ACTIVE → COMPLETED → NO_DEADLINE).
+ */
+
 import { useState } from "react";
 import { classesApi } from "@/lib/api";
 import { BookOpen, Loader2, PenLine, Plus, Trash2 } from "lucide-react";
-import { OpsEmptyState, OpsStatusBadge } from "@/components/ops/ui";
+import { OpsEmptyState } from "@/components/ops/ui";
 import type { AssignmentSummary } from "@/components/ops/ClassroomOverviewPanel";
 import { contentTypeLabel, formatDate } from "@/components/ops/ClassroomOverviewPanel";
+import {
+  deriveAssignmentLifecycleState,
+  LIFECYCLE_DISPLAY,
+  formatAssignmentDue,
+  sortByLifecyclePriority,
+} from "@/lib/assignmentLifecycle";
+import { cn } from "@/lib/cn";
 
 function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -21,9 +35,20 @@ function formatDateTime(iso: string | null | undefined): string {
   }
 }
 
-function isOverdue(due_at: string | null | undefined): boolean {
-  if (!due_at) return false;
-  return new Date(due_at) < new Date();
+function AssignmentStateChip({ assignment }: { assignment: AssignmentSummary }) {
+  const state = deriveAssignmentLifecycleState(assignment);
+  const spec = LIFECYCLE_DISPLAY[state];
+  return (
+    <span
+      title={spec.description}
+      className={cn(
+        "inline-flex items-center rounded-lg px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide",
+        spec.badgeClasses,
+      )}
+    >
+      {spec.label}
+    </span>
+  );
 }
 
 export function AssignmentListSection({
@@ -40,6 +65,8 @@ export function AssignmentListSection({
   onDeleteAssignment: (id: number) => void;
 }) {
   const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  const sorted = sortByLifecyclePriority(assignments);
 
   const handleDelete = async (a: AssignmentSummary) => {
     if (!confirm(`Delete "${a.title}"? This cannot be undone.`)) return;
@@ -89,13 +116,19 @@ export function AssignmentListSection({
 
       <div className="overflow-hidden rounded-2xl border border-border bg-card">
         <div className="divide-y divide-border">
-          {assignments.map((a) => {
-            const overdue = isOverdue(a.due_at);
+          {sorted.map((a) => {
+            const state = deriveAssignmentLifecycleState(a);
             const isDeleting = deletingId === a.id;
+            const dueRelative = formatAssignmentDue(a.due_at);
+
             return (
               <div
                 key={a.id}
-                className="flex items-center gap-3 px-4 py-3.5 hover:bg-surface-2/40 transition-colors"
+                className={cn(
+                  "flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-surface-2/40",
+                  state === "OVERDUE" && "bg-red-50/30",
+                  state === "DUE_SOON" && "bg-orange-50/20",
+                )}
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -103,13 +136,22 @@ export function AssignmentListSection({
                     <span className="text-[10px] font-semibold text-muted-foreground rounded-lg bg-surface-2 px-1.5 py-0.5">
                       {contentTypeLabel(a)}
                     </span>
-                    {overdue && (
-                      <OpsStatusBadge label="Overdue" variant="overdue" />
-                    )}
+                    <AssignmentStateChip assignment={a} />
                   </div>
                   <p className="mt-0.5 text-xs text-muted-foreground">
                     Created {formatDate(a.created_at)}
-                    {a.due_at && ` · Due ${formatDateTime(a.due_at)}`}
+                    {a.due_at && (
+                      <span
+                        className={cn(
+                          "ml-1.5",
+                          state === "OVERDUE" && "font-bold text-red-700",
+                          state === "DUE_SOON" && "font-bold text-orange-700",
+                        )}
+                      >
+                        · Due {formatDateTime(a.due_at)}{" "}
+                        <span className="font-black tabular-nums">({dueRelative})</span>
+                      </span>
+                    )}
                   </p>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">

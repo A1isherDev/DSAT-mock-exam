@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   ClipboardList,
   Clock,
+  GraduationCap,
   School,
   Users,
   Zap,
@@ -154,16 +155,22 @@ function SkeletonBanner() {
 
 const QUICK_LINKS = [
   {
+    href: "/ops/classrooms",
+    icon: School,
+    title: "Classrooms",
+    cta: "View",
+  },
+  {
     href: "/ops/assignments",
     icon: ClipboardList,
     title: "Assignments",
     cta: "Manage",
   },
   {
-    href: "/ops/classrooms",
-    icon: School,
-    title: "Classrooms",
-    cta: "View",
+    href: "/ops/midterms",
+    icon: GraduationCap,
+    title: "Midterms",
+    cta: "Manage",
   },
   {
     href: "/ops/users",
@@ -280,7 +287,7 @@ export default function OpsDashboardPage() {
         <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-3">
           Quick access
         </p>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
           {QUICK_LINKS.map((link) => (
             <Link
               key={link.href}

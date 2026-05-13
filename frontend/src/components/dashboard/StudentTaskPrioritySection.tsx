@@ -7,18 +7,17 @@
  * Renders ABOVE all other dashboard cards, ensuring the most time-sensitive
  * work is always the first thing a student sees on login.
  *
- * Priority order (governance-aligned):
+ * Priority order (governance-aligned via assignmentLifecycle utility):
  *   1. Overdue assignments (red urgency)
- *   2. Due soon (within 48h, amber urgency)
+ *   2. Due soon (within 48h, orange urgency)
  *   3. Active assignments (normal)
- *   4. Continue incomplete attempt (if no assignments)
- *   5. Nothing to do — empty state
+ *   4. Nothing pending — renders null
  *
  * Design principle: if a student has work due, they see it instantly.
  * This component does NOT render at all if there's nothing pending.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { classesApi } from "@/lib/api";
 import type { Classroom, Assignment, NormalizedList } from "@/lib/criticalApiContract";
@@ -27,9 +26,15 @@ import {
   Clock,
   ClipboardList,
   ArrowRight,
-  CheckCircle2,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
+import {
+  deriveAssignmentLifecycleState,
+  formatAssignmentDue,
+  LIFECYCLE_DISPLAY,
+  sortByLifecyclePriority,
+  type AssignmentLifecycleState,
+} from "@/lib/assignmentLifecycle";
 
 type ClassroomWithRole = Classroom & { my_role?: string };
 
@@ -37,58 +42,21 @@ type PendingAssignment = {
   assignment: Assignment;
   classroomId: number;
   classroomName: string;
-  urgency: "overdue" | "due_soon" | "active";
-  hoursUntilDue: number | null;
+  state: AssignmentLifecycleState;
 };
 
-function classifyUrgency(dueAt?: string | null): {
-  urgency: PendingAssignment["urgency"];
-  hoursUntilDue: number | null;
-} {
-  if (!dueAt) return { urgency: "active", hoursUntilDue: null };
-  const msUntil = new Date(dueAt).getTime() - Date.now();
-  const hours = msUntil / (1000 * 60 * 60);
-  if (hours < 0) return { urgency: "overdue", hoursUntilDue: hours };
-  if (hours <= 48) return { urgency: "due_soon", hoursUntilDue: hours };
-  return { urgency: "active", hoursUntilDue: hours };
-}
+// Card-level colour scheme per lifecycle state
+const CARD_STYLES: Partial<Record<AssignmentLifecycleState, { border: string; bg: string }>> = {
+  OVERDUE:    { border: "border-red-200",    bg: "bg-red-50" },
+  DUE_SOON:   { border: "border-orange-200", bg: "bg-orange-50" },
+  ACTIVE:     { border: "border-border",     bg: "bg-card" },
+  NO_DEADLINE:{ border: "border-border",     bg: "bg-card" },
+};
 
-function formatRelativeDue(dueAt?: string | null, hoursUntilDue?: number | null): string {
-  if (!dueAt) return "No deadline";
-  if (hoursUntilDue == null) return "";
-  if (hoursUntilDue < 0) {
-    const h = Math.abs(hoursUntilDue);
-    if (h < 24) return `Overdue ${Math.round(h)}h ago`;
-    return `Overdue ${Math.round(h / 24)}d ago`;
-  }
-  if (hoursUntilDue < 1) return `Due in ${Math.round(hoursUntilDue * 60)} minutes`;
-  if (hoursUntilDue < 24) return `Due in ${Math.round(hoursUntilDue)} hours`;
-  return `Due in ${Math.round(hoursUntilDue / 24)} days`;
-}
-
-const URGENCY_STYLES = {
-  overdue: {
-    border: "border-red-200",
-    bg: "bg-red-50",
-    icon: "text-red-600",
-    badge: "bg-red-100 text-red-800",
-    badgeLabel: "Overdue",
-  },
-  due_soon: {
-    border: "border-amber-200",
-    bg: "bg-amber-50",
-    icon: "text-amber-600",
-    badge: "bg-amber-100 text-amber-800",
-    badgeLabel: "Due soon",
-  },
-  active: {
-    border: "border-border",
-    bg: "bg-card",
-    icon: "text-muted-foreground",
-    badge: "bg-surface-2 text-muted-foreground",
-    badgeLabel: "Active",
-  },
-} as const;
+const RELATIVE_COLOR: Partial<Record<AssignmentLifecycleState, string>> = {
+  OVERDUE:  "text-red-700",
+  DUE_SOON: "text-orange-700",
+};
 
 type Props = {
   /** Whether the parent dashboard has already loaded its own data. */
@@ -122,7 +90,7 @@ export function StudentTaskPrioritySection({ dashboardLoaded }: Props) {
                 classroom.id,
               );
               for (const a of list.items) {
-                // Only show truly pending assignments (not completed)
+                // Filter out already-completed attempts
                 const status = (a as Assignment & { workflow_status?: string }).workflow_status;
                 const isCompleted =
                   status === "completed" ||
@@ -130,13 +98,15 @@ export function StudentTaskPrioritySection({ dashboardLoaded }: Props) {
                   status === "graded";
                 if (isCompleted) continue;
 
-                const { urgency, hoursUntilDue } = classifyUrgency(a.due_at);
+                const state = deriveAssignmentLifecycleState(a);
+                // Don't surface completed or open-indefinite in this "needs attention" widget
+                if (state === "COMPLETED") continue;
+
                 results.push({
                   assignment: a,
                   classroomId: classroom.id,
                   classroomName: classroom.name ?? `Class #${classroom.id}`,
-                  urgency,
-                  hoursUntilDue,
+                  state,
                 });
               }
             } catch {
@@ -146,16 +116,12 @@ export function StudentTaskPrioritySection({ dashboardLoaded }: Props) {
         );
 
         if (!cancelled) {
-          // Sort: overdue → due_soon → active, then by due date
-          results.sort((a, b) => {
-            const order = { overdue: 0, due_soon: 1, active: 2 };
-            const od = order[a.urgency] - order[b.urgency];
-            if (od !== 0) return od;
-            const da = a.assignment.due_at ? new Date(a.assignment.due_at).getTime() : Infinity;
-            const db = b.assignment.due_at ? new Date(b.assignment.due_at).getTime() : Infinity;
-            return da - db;
-          });
-          setPending(results);
+          // Sort by urgency: OVERDUE → DUE_SOON → ACTIVE → NO_DEADLINE
+          const sorted = sortByLifecyclePriority(
+            results.map((r) => ({ ...r.assignment, _pending: r })),
+          ).map((x) => x._pending as PendingAssignment);
+
+          setPending(sorted);
           setLoaded(true);
         }
       } catch {
@@ -177,8 +143,8 @@ export function StudentTaskPrioritySection({ dashboardLoaded }: Props) {
   // Nothing pending → don't take up space in the layout
   if (loaded && pending.length === 0) return null;
 
-  const overdueCount = pending.filter((p) => p.urgency === "overdue").length;
-  const dueSoonCount = pending.filter((p) => p.urgency === "due_soon").length;
+  const overdueCount  = pending.filter((p) => p.state === "OVERDUE").length;
+  const dueSoonCount  = pending.filter((p) => p.state === "DUE_SOON").length;
 
   return (
     <section className="mb-6" aria-label="Pending assignments">
@@ -196,17 +162,17 @@ export function StudentTaskPrioritySection({ dashboardLoaded }: Props) {
             </span>
           )}
           {dueSoonCount > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black text-amber-800">
+            <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-black text-orange-800">
               <Clock className="h-2.5 w-2.5" />
               {dueSoonCount} due soon
             </span>
           )}
         </div>
         <Link
-          href="/classes"
+          href="/assessments"
           className="text-xs font-bold text-primary hover:underline"
         >
-          All classes →
+          All assessments &rarr;
         </Link>
       </div>
 
@@ -223,16 +189,19 @@ export function StudentTaskPrioritySection({ dashboardLoaded }: Props) {
       {!loading && (
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {pending.slice(0, 6).map((p) => {
-            const style = URGENCY_STYLES[p.urgency];
-            const relDue = formatRelativeDue(p.assignment.due_at, p.hoursUntilDue);
+            const cardStyle = CARD_STYLES[p.state] ?? CARD_STYLES.ACTIVE!;
+            const display   = LIFECYCLE_DISPLAY[p.state];
+            const relDue    = formatAssignmentDue(p.assignment.due_at);
+            const relColor  = RELATIVE_COLOR[p.state] ?? "text-muted-foreground";
+
             return (
               <Link
                 key={`${p.classroomId}-${p.assignment.id}`}
                 href={`/classes/${p.classroomId}/assignments/${p.assignment.id}`}
                 className={cn(
                   "group flex flex-col gap-2 rounded-2xl border p-4 transition-colors hover:border-primary/30 hover:bg-primary/5",
-                  style.border,
-                  style.bg,
+                  cardStyle.border,
+                  cardStyle.bg,
                 )}
               >
                 <div className="flex items-start justify-between gap-2">
@@ -245,23 +214,14 @@ export function StudentTaskPrioritySection({ dashboardLoaded }: Props) {
                   <span
                     className={cn(
                       "inline-flex items-center rounded-lg px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide shrink-0",
-                      style.badge,
+                      display.badgeClasses,
                     )}
                   >
-                    {style.badgeLabel}
+                    {display.label}
                   </span>
                 </div>
                 <div className="flex items-center justify-between gap-2">
-                  <p
-                    className={cn(
-                      "text-xs font-bold",
-                      p.urgency === "overdue"
-                        ? "text-red-700"
-                        : p.urgency === "due_soon"
-                          ? "text-amber-700"
-                          : "text-muted-foreground",
-                    )}
-                  >
+                  <p className={cn("text-xs font-bold", relColor)}>
                     {relDue}
                   </p>
                   <ArrowRight className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary transition-colors" />
@@ -273,7 +233,7 @@ export function StudentTaskPrioritySection({ dashboardLoaded }: Props) {
           {/* Show more hint if more than 6 */}
           {pending.length > 6 && (
             <Link
-              href="/classes"
+              href="/assessments"
               className="flex items-center justify-center gap-2 rounded-2xl border border-dashed border-border bg-card p-4 text-sm font-bold text-muted-foreground hover:bg-surface-2 hover:text-foreground transition-colors"
             >
               <span>+{pending.length - 6} more</span>

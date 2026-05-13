@@ -57,9 +57,9 @@ export default function LoginPage() {
             void invalidateMe(queryClient);
             const host = (typeof window !== "undefined" ? window.location.hostname.toLowerCase() : "");
             if (host.startsWith("admin.")) {
-                router.push("/admin");
+                router.push("/ops");
             } else if (host.startsWith("questions.")) {
-                router.push("/admin");
+                router.push("/builder");
             } else {
                 // main domain: student/teacher portal
                 router.push("/");

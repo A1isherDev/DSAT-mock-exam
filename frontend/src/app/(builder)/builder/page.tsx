@@ -8,6 +8,7 @@ import {
   ArrowRight,
   BookMarked,
   CheckCircle2,
+  ClipboardCheck,
   FileText,
   LayoutGrid,
   Library,
@@ -32,43 +33,19 @@ type QueueSignal = {
 
 // ─── Quick links ──────────────────────────────────────────────────────────────
 
-const QUICK_LINKS = [
-  {
-    href: "/builder/bank",
-    icon: Library,
-    title: "Question Bank",
-    cta: "Browse",
-  },
-  {
-    href: "/builder/sets",
-    icon: LayoutGrid,
-    title: "Assessments",
-    cta: "Manage",
-  },
-  {
-    href: "/builder/pastpapers",
-    icon: FileText,
-    title: "Pastpapers",
-    cta: "Manage",
-  },
-  {
-    href: "/builder/vocabulary",
-    icon: BookMarked,
-    title: "Vocabulary",
-    cta: "Manage",
-  },
-  {
-    href: "/builder/categories",
-    icon: Tag,
-    title: "Categories",
-    cta: "Edit",
-  },
-  {
-    href: "/builder/archived",
-    icon: Archive,
-    title: "Archived",
-    cta: "Review",
-  },
+type QuickLink = { href: string; icon: React.ElementType; title: string; cta: string; section?: string };
+
+const QUICK_LINKS: QuickLink[] = [
+  // Learning system
+  { href: "/builder/bank",       icon: Library,       title: "Question Bank", cta: "Browse",  section: "Learning" },
+  { href: "/builder/sets",       icon: LayoutGrid,    title: "Assessments",   cta: "Manage",  section: "Learning" },
+  { href: "/builder/vocabulary", icon: BookMarked,    title: "Vocabulary",    cta: "Manage",  section: "Learning" },
+  { href: "/builder/categories", icon: Tag,           title: "Categories",    cta: "Edit",    section: "Learning" },
+  // Simulation system
+  { href: "/builder/pastpapers", icon: FileText,       title: "Past papers",   cta: "Manage", section: "Simulation" },
+  { href: "/builder/mock-exams", icon: ClipboardCheck, title: "Mock exams",    cta: "Manage", section: "Simulation" },
+  // Ops
+  { href: "/builder/archived",   icon: Archive,       title: "Archived",      cta: "Review" },
 ];
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -171,13 +148,36 @@ export default function BuilderDashboardPage() {
         <ArrowRight className="h-4 w-4 text-primary shrink-0" />
       </Link>
 
-      {/* Quick navigation */}
-      <div>
-        <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-3">
-          Quick access
-        </p>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {QUICK_LINKS.map((link) => (
+      {/* Quick navigation — grouped by domain */}
+      <div className="space-y-4">
+        {(["Learning", "Simulation"] as const).map((section) => {
+          const links = QUICK_LINKS.filter((l) => l.section === section);
+          return (
+            <div key={section}>
+              <p className="text-[9px] font-black uppercase tracking-[0.15em] text-muted-foreground/60 mb-2 px-0.5">
+                {section}
+              </p>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {links.map((link) => (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    className="group flex flex-col gap-2 rounded-2xl border border-border bg-card p-4 hover:border-primary/30 hover:bg-primary/5 transition-colors"
+                  >
+                    <link.icon className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
+                    <div>
+                      <p className="text-sm font-extrabold text-foreground">{link.title}</p>
+                      <p className="text-xs text-primary font-semibold mt-0.5">{link.cta} →</p>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+        {/* Ops utilities */}
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {QUICK_LINKS.filter((l) => !l.section).map((link) => (
             <Link
               key={link.href}
               href={link.href}

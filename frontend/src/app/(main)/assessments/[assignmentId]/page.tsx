@@ -1,13 +1,13 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useMemo } from "react";
+import Link from "next/link";
 import AuthGuard from "@/components/AuthGuard";
 import { normalizeApiError } from "@/lib/apiError";
 import { useMyAssessmentResult, useStartAttempt } from "@/features/assessments/hooks";
 import {
+  ArrowLeft,
   BookOpen,
-  Calendar,
   CheckCircle2,
   ChevronRight,
   Clock,
@@ -15,9 +15,14 @@ import {
   Loader2,
   PlayCircle,
   RefreshCw,
+  School,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useState } from "react";
+import {
+  deriveAssignmentLifecycleState,
+  formatAssignmentDue,
+} from "@/lib/assignmentLifecycle";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -54,18 +59,6 @@ function formatDueDate(iso: string | null | undefined): string {
   }
 }
 
-function isDueSoon(iso: string | null | undefined): boolean {
-  if (!iso) return false;
-  const due = new Date(iso).getTime();
-  const now = Date.now();
-  return due > now && due - now < 24 * 60 * 60 * 1000; // < 24h
-}
-
-function isPastDue(iso: string | null | undefined): boolean {
-  if (!iso) return false;
-  return new Date(iso).getTime() < Date.now();
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function AssessmentStartPage() {
@@ -91,8 +84,14 @@ export default function AssessmentStartPage() {
   const canViewResult = hasResult || isGraded || isSubmitted;
 
   const dueDateStr = formatDueDate(meta?.due_at);
-  const overdue = isPastDue(meta?.due_at);
-  const dueSoon = isDueSoon(meta?.due_at);
+  // Derive lifecycle state using shared utility (treat any attempt as 1 submission for COMPLETED detection)
+  const lifecycleState = deriveAssignmentLifecycleState({
+    due_at: meta?.due_at,
+    submissions_count: (isGraded || isSubmitted || hasResult) ? 1 : 0,
+  });
+  const overdue = lifecycleState === "OVERDUE";
+  const dueSoon = lifecycleState === "DUE_SOON";
+  const relDueLabel = formatAssignmentDue(meta?.due_at);
 
   const begin = async () => {
     setStartErr(null);
@@ -113,6 +112,15 @@ export default function AssessmentStartPage() {
   return (
     <AuthGuard>
       <div className="mx-auto w-full max-w-2xl space-y-4">
+        {/* ── Back navigation ─────────────────────────────────────────────── */}
+        <Link
+          href="/assessments"
+          className="inline-flex items-center gap-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Assessments
+        </Link>
+
         {/* ── Loading ─────────────────────────────────────────────────────── */}
         {isLoading && (
           <div className="rounded-2xl border border-border bg-card p-10 flex justify-center">
@@ -143,9 +151,17 @@ export default function AssessmentStartPage() {
           <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-sm">
             {/* Header */}
             <div className="border-b border-border px-6 py-5">
-              <p className="text-[10px] font-bold text-primary uppercase tracking-widest mb-1">
-                Assessment
-              </p>
+              <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                <p className="text-[10px] font-bold text-primary uppercase tracking-widest">
+                  Assessment
+                </p>
+                {meta?.classroom_name && (
+                  <span className="inline-flex items-center gap-1 rounded-lg bg-surface-2 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                    <School className="h-3 w-3" />
+                    {meta.classroom_name}
+                  </span>
+                )}
+              </div>
               <h1 className="text-xl font-extrabold text-foreground tracking-tight leading-snug">
                 {displayTitle}
               </h1>
@@ -202,14 +218,20 @@ export default function AssessmentStartPage() {
                         overdue
                           ? "text-red-600"
                           : dueSoon
-                          ? "text-amber-600"
+                          ? "text-orange-600"
                           : "text-foreground",
                       )}
                     >
                       {dueDateStr}
-                      {overdue && " · Overdue"}
-                      {!overdue && dueSoon && " · Due soon"}
                     </p>
+                    {relDueLabel && (
+                      <p className={cn(
+                        "text-[11px] font-bold tabular-nums",
+                        overdue ? "text-red-600" : dueSoon ? "text-orange-600" : "text-muted-foreground",
+                      )}>
+                        {relDueLabel}
+                      </p>
+                    )}
                   </div>
                 </div>
               )}

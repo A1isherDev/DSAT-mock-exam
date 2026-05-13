@@ -34,7 +34,9 @@ import {
   XCircle,
   RotateCcw,
   AlertCircle,
+  AlertTriangle,
   Lock,
+  Timer,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 
@@ -58,6 +60,8 @@ export type PlatformState =
   | "RETIRED"
   // Assignment/classroom states
   | "ACTIVE"
+  | "DUE_SOON"
+  | "OVERDUE"
   | "SCHEDULED"
   | "COMPLETED"
   | "CANCELLED"
@@ -160,6 +164,20 @@ export const STATE_VOCABULARY: Record<PlatformState, StateSpec> = {
     description: "Live and accepting student submissions.",
     icon: Zap,
     classes: "bg-emerald-100 text-emerald-800",
+    immutable: false,
+  },
+  DUE_SOON: {
+    label: "Due soon",
+    description: "Due within 48 hours. Ensure students are aware.",
+    icon: Timer,
+    classes: "bg-orange-100 text-orange-800",
+    immutable: false,
+  },
+  OVERDUE: {
+    label: "Overdue",
+    description: "Past deadline. Consider extending the due date or closing the assignment.",
+    icon: AlertTriangle,
+    classes: "bg-red-100 text-red-700",
     immutable: false,
   },
   SCHEDULED: {

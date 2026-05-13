@@ -1,8 +1,21 @@
 "use client";
 
+/**
+ * /teacher — Teacher operations dashboard
+ *
+ * Shows each managed classroom with live operational signals:
+ *   - Overdue assignments → intervention needed
+ *   - Due-soon assignments → heads-up
+ *   - Submission rate → engagement indicator
+ *
+ * Signals are derived client-side from assignment `due_at` / `submissions_count`.
+ * Assignments are loaded in parallel across all classrooms on mount.
+ */
+
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { teacherApi } from "@/features/teacher/api";
+import { classesApi } from "@/lib/api";
+import type { NormalizedList, Assignment } from "@/lib/criticalApiContract";
 import {
   AlertTriangle,
   BookOpen,
@@ -10,9 +23,19 @@ import {
   ChevronRight,
   ClipboardCheck,
   ClipboardList,
+  Loader2,
   Plus,
+  Timer,
   Users,
+  Zap,
 } from "lucide-react";
+import { cn } from "@/lib/cn";
+import {
+  type AssignmentLifecycleSummary,
+  summarizeAssignmentLifecycle,
+} from "@/lib/assignmentLifecycle";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type ClassGroup = {
   id: number;
@@ -24,14 +47,115 @@ type ClassGroup = {
   my_role?: string;
 };
 
+type ClassroomWithSignals = ClassGroup & {
+  signals: AssignmentLifecycleSummary | null;
+  loadingSignals: boolean;
+};
+
+// ─── Classroom signal card ────────────────────────────────────────────────────
+
+function ClassSignalBar({ signals }: { signals: AssignmentLifecycleSummary }) {
+  if (signals.total === 0) {
+    return (
+      <p className="text-[11px] text-muted-foreground font-semibold">No assignments yet</p>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {signals.overdue > 0 && (
+        <span className="inline-flex items-center gap-1 rounded-lg bg-red-100 px-2 py-0.5 text-[10px] font-black text-red-800">
+          <AlertTriangle className="h-2.5 w-2.5 shrink-0" />
+          {signals.overdue} overdue
+        </span>
+      )}
+      {signals.dueSoon > 0 && (
+        <span className="inline-flex items-center gap-1 rounded-lg bg-orange-100 px-2 py-0.5 text-[10px] font-black text-orange-800">
+          <Timer className="h-2.5 w-2.5 shrink-0" />
+          {signals.dueSoon} due soon
+        </span>
+      )}
+      {signals.active > 0 && signals.overdue === 0 && signals.dueSoon === 0 && (
+        <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-100 px-2 py-0.5 text-[10px] font-black text-emerald-800">
+          <Zap className="h-2.5 w-2.5 shrink-0" />
+          {signals.active} active
+        </span>
+      )}
+      {signals.needsAttention === 0 && signals.total > 0 && (
+        <span className="inline-flex items-center gap-1 rounded-lg bg-teal-100 px-2 py-0.5 text-[10px] font-semibold text-teal-800">
+          <CheckCircle2 className="h-2.5 w-2.5 shrink-0" />
+          All clear
+        </span>
+      )}
+      <span className="text-[10px] text-muted-foreground">
+        {signals.total} assignment{signals.total !== 1 ? "s" : ""}
+      </span>
+    </div>
+  );
+}
+
+// ─── Summary panel (across all classrooms) ───────────────────────────────────
+
+function AttentionSummary({
+  classrooms,
+}: {
+  classrooms: ClassroomWithSignals[];
+}) {
+  const loaded = classrooms.filter((c) => c.signals !== null);
+  if (loaded.length === 0) return null;
+
+  const totalOverdue = loaded.reduce((s, c) => s + (c.signals?.overdue ?? 0), 0);
+  const totalDueSoon = loaded.reduce((s, c) => s + (c.signals?.dueSoon ?? 0), 0);
+
+  if (totalOverdue === 0 && totalDueSoon === 0) {
+    return (
+      <div className="flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+        <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+        <p className="text-sm font-bold text-emerald-900">
+          All clear — no overdue or urgent assignments across your classes.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+      <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+      <div className="space-y-1">
+        <p className="text-sm font-bold text-amber-900">Attention needed across your classes</p>
+        <div className="flex flex-wrap gap-2">
+          {totalOverdue > 0 && (
+            <span className="text-xs font-bold text-red-800">
+              {totalOverdue} overdue assignment{totalOverdue !== 1 ? "s" : ""}
+            </span>
+          )}
+          {totalDueSoon > 0 && (
+            <span className="text-xs font-bold text-orange-800">
+              {totalDueSoon} due within 48h
+            </span>
+          )}
+        </div>
+        <Link
+          href="/ops/assignments"
+          className="text-xs font-bold text-primary hover:underline"
+        >
+          Manage assignments →
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
 export default function TeacherDashboardPage() {
-  const classesApi = teacherApi.classes;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [groups, setGroups] = useState<ClassGroup[]>([]);
+  const [classrooms, setClassrooms] = useState<ClassroomWithSignals[]>([]);
 
   useEffect(() => {
     let cancelled = false;
+
     (async () => {
       setLoading(true);
       setError(null);
@@ -39,14 +163,44 @@ export default function TeacherDashboardPage() {
         const all = await classesApi.list();
         const teacherGroups = (all.items as ClassGroup[]).filter((g) => g.my_role === "ADMIN");
         if (cancelled) return;
-        setGroups(teacherGroups);
+
+        // Seed state immediately so the page renders; signals load async
+        setClassrooms(
+          teacherGroups.map((g) => ({ ...g, signals: null, loadingSignals: true })),
+        );
+        setLoading(false);
+
+        // Parallel load assignments for all classrooms
+        await Promise.allSettled(
+          teacherGroups.map(async (g) => {
+            try {
+              const list: NormalizedList<Assignment> = await classesApi.listAssignments(g.id);
+              if (cancelled) return;
+              const signals = summarizeAssignmentLifecycle(list.items);
+              setClassrooms((prev) =>
+                prev.map((c) =>
+                  c.id === g.id ? { ...c, signals, loadingSignals: false } : c,
+                ),
+              );
+            } catch {
+              if (cancelled) return;
+              setClassrooms((prev) =>
+                prev.map((c) =>
+                  c.id === g.id ? { ...c, signals: null, loadingSignals: false } : c,
+                ),
+              );
+            }
+          }),
+        );
       } catch (e: unknown) {
         const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-        if (!cancelled) setError(typeof msg === "string" ? msg : "Could not load teacher dashboard.");
-      } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setError(typeof msg === "string" ? msg : "Could not load teacher dashboard.");
+          setLoading(false);
+        }
       }
     })();
+
     return () => { cancelled = true; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -59,7 +213,7 @@ export default function TeacherDashboardPage() {
         </p>
         <h1 className="text-xl font-bold text-foreground tracking-tight">Dashboard</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Your classes and quick actions.
+          Your classes and operational status at a glance.
         </p>
       </div>
 
@@ -70,13 +224,18 @@ export default function TeacherDashboardPage() {
         </div>
       )}
 
+      {/* Attention summary — shown once signals are loaded */}
+      {!loading && classrooms.length > 0 && (
+        <AttentionSummary classrooms={classrooms} />
+      )}
+
       {/* Quick actions */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
-          { href: "/teacher/homework", icon: ClipboardList, label: "Homework", sub: "Manage & assign" },
-          { href: "/teacher/homework/grading", icon: ClipboardCheck, label: "Grading", sub: "Review submissions" },
-          { href: "/teacher/students", icon: Users, label: "Students", sub: "View all students" },
-          { href: "/assessments/assign", icon: BookOpen, label: "Assessments", sub: "Assign to classes" },
+          { href: "/teacher/homework",         icon: ClipboardList,  label: "Homework",    sub: "Manage & assign" },
+          { href: "/teacher/homework/grading",  icon: ClipboardCheck, label: "Grading",     sub: "Review submissions" },
+          { href: "/teacher/students",          icon: Users,          label: "Students",    sub: "View all students" },
+          { href: "/assessments/assign",        icon: BookOpen,       label: "Assessments", sub: "Assign to classes" },
         ].map((a) => (
           <Link
             key={a.href}
@@ -108,13 +267,10 @@ export default function TeacherDashboardPage() {
         {loading ? (
           <div className="grid gap-3 sm:grid-cols-2">
             {[1, 2, 3, 4].map((i) => (
-              <div
-                key={i}
-                className="rounded-2xl border border-border bg-card p-5 animate-pulse h-24"
-              />
+              <div key={i} className="rounded-2xl border border-border bg-card p-5 animate-pulse h-28" />
             ))}
           </div>
-        ) : groups.length === 0 ? (
+        ) : classrooms.length === 0 ? (
           <div className="rounded-2xl border border-border bg-card p-10 text-center">
             <Users className="h-8 w-8 text-muted-foreground/30 mx-auto mb-3" />
             <p className="font-extrabold text-foreground">No classes yet</p>
@@ -124,61 +280,82 @@ export default function TeacherDashboardPage() {
           </div>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
-            {groups.map((g) => (
-              <Link
-                key={g.id}
-                href={`/classes/${g.id}`}
-                className="group rounded-2xl border border-border bg-card p-5 hover:border-primary/30 hover:bg-primary/5 transition-colors flex flex-col gap-2"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="font-extrabold text-foreground truncate">{g.name}</p>
-                    {g.subject && (
-                      <p className="text-xs text-muted-foreground mt-0.5">{g.subject}</p>
+            {classrooms.map((g) => {
+              const hasAttention =
+                (g.signals?.overdue ?? 0) > 0 || (g.signals?.dueSoon ?? 0) > 0;
+
+              return (
+                <Link
+                  key={g.id}
+                  href={`/ops/classrooms/${g.id}`}
+                  className={cn(
+                    "group rounded-2xl border bg-card p-5 hover:bg-primary/5 transition-colors flex flex-col gap-3",
+                    hasAttention
+                      ? "border-amber-200 hover:border-amber-300"
+                      : "border-border hover:border-primary/30",
+                  )}
+                >
+                  {/* Name + subject + arrow */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-extrabold text-foreground truncate">{g.name}</p>
+                      {g.subject && (
+                        <p className="text-xs text-muted-foreground mt-0.5">{g.subject}</p>
+                      )}
+                    </div>
+                    <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-primary shrink-0 mt-0.5 transition-colors" />
+                  </div>
+
+                  {/* Student count */}
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground">
+                      <Users className="h-3 w-3" />
+                      {g.members_count ?? 0}
+                      {g.max_students ? ` / ${g.max_students}` : ""} students
+                    </span>
+                    {g.lesson_schedule && (
+                      <span className="text-xs text-muted-foreground">{g.lesson_schedule}</span>
                     )}
                   </div>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-primary shrink-0 mt-0.5 transition-colors" />
-                </div>
 
-                <div className="flex flex-wrap items-center gap-3 mt-auto">
-                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground">
-                    <Users className="h-3 w-3" />
-                    {g.members_count ?? 0}
-                    {g.max_students ? ` / ${g.max_students}` : ""} students
-                  </span>
-                  {g.lesson_schedule && (
-                    <span className="text-xs text-muted-foreground">{g.lesson_schedule}</span>
-                  )}
-                </div>
-
-                {/* Health signal: full / has-room */}
-                {g.max_students != null && g.members_count != null && (
-                  <div className="h-1 w-full rounded-full bg-surface-2 overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-primary/40 transition-all"
-                      style={{
-                        width: `${Math.min(100, Math.round(((g.members_count ?? 0) / g.max_students) * 100))}%`,
-                      }}
-                    />
+                  {/* Operational signals */}
+                  <div className="mt-auto">
+                    {g.loadingSignals ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground/40" />
+                    ) : g.signals ? (
+                      <ClassSignalBar signals={g.signals} />
+                    ) : null}
                   </div>
-                )}
-              </Link>
-            ))}
+
+                  {/* Student fill bar */}
+                  {g.max_students != null && g.members_count != null && (
+                    <div className="h-1 w-full rounded-full bg-surface-2 overflow-hidden -mb-1">
+                      <div
+                        className="h-full rounded-full bg-primary/40 transition-all"
+                        style={{
+                          width: `${Math.min(100, Math.round(((g.members_count ?? 0) / g.max_students) * 100))}%`,
+                        }}
+                      />
+                    </div>
+                  )}
+                </Link>
+              );
+            })}
           </div>
         )}
       </div>
 
-      {/* Quick links footer */}
-      {!loading && groups.length > 0 && (
+      {/* Workflow guide — contextual, only shown when classes exist */}
+      {!loading && classrooms.length > 0 && (
         <div className="rounded-2xl border border-border bg-card p-5">
           <p className="text-xs font-extrabold text-muted-foreground uppercase tracking-widest mb-3">
             After each class
           </p>
           <div className="grid sm:grid-cols-3 gap-3 text-sm">
             {[
-              { step: "1", text: "Create homework assignment", href: "/teacher/homework", action: "Go" },
-              { step: "2", text: "Check submission progress", href: "/teacher/homework/grading", action: "Open" },
-              { step: "3", text: "Review and grade submissions", href: "/teacher/homework/grading", action: "Open" },
+              { step: "1", text: "Create homework assignment", href: "/teacher/homework", action: "Create" },
+              { step: "2", text: "Monitor submission progress", href: "/ops/assignments", action: "Check" },
+              { step: "3", text: "Grade and review submissions", href: "/teacher/homework/grading", action: "Grade" },
             ].map((item) => (
               <Link
                 key={item.step}
