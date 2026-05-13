@@ -736,7 +736,10 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
 
         q = self._question_for_validation(attrs, module=module)
         try:
-            q.full_clean()
+            # Skip unique/constraint checks: those depend on order+module assignment
+            # which is resolved in perform_create/perform_update, not in validation.
+            # We only want content validation (text, options, correct_answer format).
+            q.full_clean(validate_unique=False, validate_constraints=False)
         except DjangoValidationError as e:
             self._raise_question_validation_error(e)
         return attrs
