@@ -603,6 +603,15 @@ export default function BuilderSetEditorContainer() {
 
   useEffect(() => {
     if (!selected) return;
+    const rawChoices: Array<{ id?: unknown }> = (selected as any).choices ?? [];
+    const choiceIds = rawChoices.map((c) => String(c?.id ?? "").trim()).filter(Boolean);
+    const rawCorrect = (selected as any).correct_answer;
+    // Normalise: if correct_answer is null/undefined or doesn't match any choice,
+    // fall back to the first choice ID so the editor draft is always valid.
+    const resolvedCorrect =
+      rawCorrect != null && choiceIds.includes(String(rawCorrect))
+        ? rawCorrect
+        : (choiceIds[0] ?? null);
     setEditing({
       questionId: selected.id,
       prompt: String(selected.prompt || ""),
@@ -611,8 +620,8 @@ export default function BuilderSetEditorContainer() {
       points: Number(selected.points ?? 1),
       is_active: Boolean(selected.is_active ?? true),
       explanation: String((selected as any).explanation ?? ""),
-      choicesText: JSON.stringify((selected as any).choices ?? [], null, 2),
-      correctAnswerText: JSON.stringify((selected as any).correct_answer ?? null, null, 2),
+      choicesText: JSON.stringify(rawChoices, null, 2),
+      correctAnswerText: JSON.stringify(resolvedCorrect),
       gradingConfigText: JSON.stringify((selected as any).grading_config ?? {}, null, 2),
       stimulusContext: "",
     });
@@ -640,12 +649,17 @@ export default function BuilderSetEditorContainer() {
         return;
       }
       if (payload.question_type === "multiple_choice") {
-        const ids = new Set((payload.choices || []).map((c: { id?: unknown }) => String(c?.id ?? "").trim()).filter(Boolean));
+        const idList = (payload.choices || []).map((c: { id?: unknown }) => String(c?.id ?? "").trim()).filter(Boolean);
+        const ids = new Set(idList);
         const ca = payload.correct_answer;
         const cStr = typeof ca === "string" ? ca : ca != null ? String(ca) : "";
         if (!cStr || !ids.has(cStr)) {
-          toast.push({ tone: "error", message: "Select a correct answer that matches one of the choices." });
-          return;
+          // correct_answer is stale or null — auto-select the first available choice
+          if (idList.length === 0) {
+            toast.push({ tone: "error", message: "Add at least one answer choice before saving." });
+            return;
+          }
+          payload.correct_answer = idList[0];
         }
       }
       const res = await upsertQuestion.mutateAsync({ id: editing.questionId, payload });
