@@ -70,7 +70,7 @@ import { StateTag } from "@/components/governance";
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const INPUT =
-  "w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/30 transition-shadow";
+  "w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm shadow-sm focus:outline-none focus:border-primary/50 transition-colors";
 
 const LABEL = "text-[11px] font-bold text-muted-foreground uppercase tracking-widest";
 
@@ -1235,7 +1235,7 @@ export default function BuilderSetEditorContainer() {
               placeholder="Paste a passage excerpt to preview context above the question…"
               value={editing.stimulusContext}
               onChange={(e) => setEditing((prev) => ({ ...prev, stimulusContext: e.target.value }))}
-              className="w-full resize-none rounded-lg border border-border bg-background px-2.5 py-2 text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30"
+              className="w-full resize-none rounded-lg border border-border bg-background px-2.5 py-2 text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50"
             />
           </div>
 

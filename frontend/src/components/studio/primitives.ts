@@ -27,7 +27,7 @@ export const STUDIO_FIELD_LABEL =
  * Do not merge those without an explicit design decision.
  */
 export const STUDIO_INPUT =
-  "w-full rounded-xl border border-border bg-surface-2/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20";
+  "w-full rounded-xl border border-border bg-surface-2/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary/50 focus:outline-none";
 
 // ─── Section rhythm ───────────────────────────────────────────────────────────
 /**

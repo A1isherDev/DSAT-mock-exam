@@ -273,7 +273,6 @@ body {
 .input-modern:focus {
   border-color: var(--primary);
   outline: none;
-  box-shadow: 0 0 0 3px var(--ring);
 }
 
 /* Buttons — solid, no gradients */

@@ -3,6 +3,11 @@
 /**
  * FormulaToolbar — LaTeX snippet insertion toolbar for question authoring.
  *
+ * Layout:
+ *   1. Quick row — always-visible buttons for the 14 most-used symbols
+ *      (π, √, ×, ÷, ±, ≤, ≥, ≠, ∞, °, x², ½, ≈, Δ)
+ *   2. Category tabs + grid — full categorised library for less-common symbols
+ *
  * Design contract:
  *   • Never steals textarea/input focus. All buttons use `onPointerDown` +
  *     `e.preventDefault()` so the browser never fires a blur on the active
@@ -45,81 +50,42 @@ type FormulaGroup = {
   items: FormulaItem[];
 };
 
-// ─── Formula catalog ──────────────────────────────────────────────────────────
+// ─── Quick-access row ─────────────────────────────────────────────────────────
 //
-// Cursor position verification (all confirmed character-by-character):
-//
-//   \frac{}{}         → 9 chars; cursor=6  → inside first {}
-//   \sqrt{}           → 7 chars; cursor=6  → inside {}
-//   \sqrt[n]{}        → 10 chars; cursor=9 → inside {}
-//   ^{}               → 3 chars; cursor=2  → inside {}
-//   _{}               → 3 chars; cursor=2  → inside {}
-//   \left(\right)     → 13 chars; cursor=6 → between ( and \right)
-//   \left|\right|     → 13 chars; cursor=6 → between | and \right|
-//   \leq·             → 5 chars; cursor=5  → after space (ready to type next)
-//   \times·           → 7 chars; cursor=7  → after space
-//   ^{\circ}          → 9 chars; cursor=9  → after } (postfix, done)
-//   \triangle·        → 10 chars; cursor=10 → after space
-//   \overline{}       → 11 chars; cursor=10 → inside {}
-//   \vec{}            → 6 chars; cursor=5  → inside {}
-//   \lim_{}           → 7 chars; cursor=6  → inside {}
-//   \sum_{}^{}        → 10 chars; cursor=6 → inside first {}
-//   \mathbb{R}        → 10 chars; cursor=10 → after } (complete symbol)
+// The 14 most-used symbols shown permanently so authors don't need to
+// hunt through tabs. Mirrors the flat-button style of the old Django admin.
+
+const QUICK: FormulaItem[] = [
+  { id: "q-pi",     display: "\\(\\pi\\)",        insert: "\\pi",       cursor: 3,  title: "Pi  \\pi" },
+  { id: "q-sqrt",   display: "\\(\\sqrt{x}\\)",   insert: "\\sqrt{}",   cursor: 6,  title: "Square root  \\sqrt{}" },
+  { id: "q-sup2",   display: "\\(x^{2}\\)",       insert: "^{2}",       cursor: 4,  title: "Squared  ^{2}" },
+  { id: "q-sup3",   display: "\\(x^{3}\\)",       insert: "^{3}",       cursor: 4,  title: "Cubed  ^{3}" },
+  { id: "q-frac",   display: "\\(\\frac{a}{b}\\)",insert: "\\frac{}{}",  cursor: 6,  title: "Fraction  \\frac{}{}" },
+  { id: "q-times",  display: "\\(\\times\\)",     insert: "\\times ",   cursor: 7,  title: "Multiplication  \\times" },
+  { id: "q-div",    display: "\\(\\div\\)",       insert: "\\div ",     cursor: 5,  title: "Division  \\div" },
+  { id: "q-pm",     display: "\\(\\pm\\)",        insert: "\\pm ",      cursor: 4,  title: "Plus-minus  \\pm" },
+  { id: "q-leq",    display: "\\(\\leq\\)",       insert: "\\leq ",     cursor: 5,  title: "Less than or equal  \\leq" },
+  { id: "q-geq",    display: "\\(\\geq\\)",       insert: "\\geq ",     cursor: 5,  title: "Greater than or equal  \\geq" },
+  { id: "q-neq",    display: "\\(\\neq\\)",       insert: "\\neq ",     cursor: 5,  title: "Not equal  \\neq" },
+  { id: "q-approx", display: "\\(\\approx\\)",    insert: "\\approx ",  cursor: 8,  title: "Approximately  \\approx" },
+  { id: "q-infty",  display: "\\(\\infty\\)",     insert: "\\infty",    cursor: 6,  title: "Infinity  \\infty" },
+  { id: "q-degree", display: "\\(^{\\circ}\\)",   insert: "^{\\circ}",  cursor: 9,  title: "Degree  ^{\\circ}" },
+];
+
+// ─── Full formula catalog ─────────────────────────────────────────────────────
 
 const GROUPS: FormulaGroup[] = [
   {
     id: "structure",
     label: "Structure",
     items: [
-      {
-        id: "frac",
-        display: "\\(\\frac{a}{b}\\)",
-        insert: "\\frac{}{}",
-        cursor: 6,
-        title: "Fraction  \\frac{}{}",
-      },
-      {
-        id: "sqrt",
-        display: "\\(\\sqrt{x}\\)",
-        insert: "\\sqrt{}",
-        cursor: 6,
-        title: "Square root  \\sqrt{}",
-      },
-      {
-        id: "nthroot",
-        display: "\\(\\sqrt[n]{x}\\)",
-        insert: "\\sqrt[n]{}",
-        cursor: 9,
-        title: "Nth root  \\sqrt[n]{}",
-      },
-      {
-        id: "sup",
-        display: "\\(x^{2}\\)",
-        insert: "^{}",
-        cursor: 2,
-        title: "Superscript  ^{}",
-      },
-      {
-        id: "sub",
-        display: "\\(x_{n}\\)",
-        insert: "_{}",
-        cursor: 2,
-        title: "Subscript  _{}",
-      },
-      {
-        id: "parens",
-        display: "\\(\\left(x\\right)\\)",
-        insert: "\\left(\\right)",
-        cursor: 6,
-        title: "Parentheses  \\left(\\right)",
-      },
-      {
-        id: "abs",
-        display: "\\(\\left|x\\right|\\)",
-        insert: "\\left|\\right|",
-        cursor: 6,
-        title: "Absolute value  \\left|\\right|",
-      },
+      { id: "frac",    display: "\\(\\frac{a}{b}\\)",     insert: "\\frac{}{}",     cursor: 6,  title: "Fraction  \\frac{}{}" },
+      { id: "sqrt",    display: "\\(\\sqrt{x}\\)",        insert: "\\sqrt{}",       cursor: 6,  title: "Square root  \\sqrt{}" },
+      { id: "nthroot", display: "\\(\\sqrt[n]{x}\\)",     insert: "\\sqrt[n]{}",    cursor: 9,  title: "Nth root  \\sqrt[n]{}" },
+      { id: "sup",     display: "\\(x^{2}\\)",            insert: "^{}",            cursor: 2,  title: "Superscript  ^{}" },
+      { id: "sub",     display: "\\(x_{n}\\)",            insert: "_{}",            cursor: 2,  title: "Subscript  _{}" },
+      { id: "parens",  display: "\\(\\left(x\\right)\\)", insert: "\\left(\\right)",cursor: 6,  title: "Parentheses  \\left(\\right)" },
+      { id: "abs",     display: "\\(\\left|x\\right|\\)", insert: "\\left|\\right|",cursor: 6,  title: "Absolute value  \\left|\\right|" },
     ],
   },
   {
@@ -159,47 +125,29 @@ const GROUPS: FormulaGroup[] = [
     id: "geometry",
     label: "Geometry",
     items: [
-      {
-        id: "degree",
-        display: "\\(90^{\\circ}\\)",
-        insert: "^{\\circ}",
-        cursor: 9,
-        title: "Degree (postfix)  ^{\\circ}",
-      },
-      { id: "triangle", display: "\\(\\triangle ABC\\)", insert: "\\triangle ", cursor: 10, title: "Triangle  \\triangle" },
-      { id: "angle",    display: "\\(\\angle A\\)",      insert: "\\angle ",    cursor: 7,  title: "Angle  \\angle" },
-      { id: "sim",      display: "\\(\\sim\\)",          insert: "\\sim ",      cursor: 5,  title: "Similar  \\sim" },
-      { id: "cong",     display: "\\(\\cong\\)",         insert: "\\cong ",     cursor: 6,  title: "Congruent  \\cong" },
-      { id: "parallel", display: "\\(\\parallel\\)",     insert: "\\parallel ", cursor: 10, title: "Parallel  \\parallel" },
-      { id: "perp",     display: "\\(\\perp\\)",         insert: "\\perp ",     cursor: 6,  title: "Perpendicular  \\perp" },
-      {
-        id: "overline",
-        display: "\\(\\overline{AB}\\)",
-        insert: "\\overline{}",
-        cursor: 10,
-        title: "Overline  \\overline{}",
-      },
-      {
-        id: "vec",
-        display: "\\(\\vec{v}\\)",
-        insert: "\\vec{}",
-        cursor: 5,
-        title: "Vector arrow  \\vec{}",
-      },
+      { id: "degree",   display: "\\(90^{\\circ}\\)",      insert: "^{\\circ}",   cursor: 9,  title: "Degree (postfix)  ^{\\circ}" },
+      { id: "triangle", display: "\\(\\triangle ABC\\)",   insert: "\\triangle ", cursor: 10, title: "Triangle  \\triangle" },
+      { id: "angle",    display: "\\(\\angle A\\)",        insert: "\\angle ",    cursor: 7,  title: "Angle  \\angle" },
+      { id: "sim",      display: "\\(\\sim\\)",            insert: "\\sim ",      cursor: 5,  title: "Similar  \\sim" },
+      { id: "cong",     display: "\\(\\cong\\)",           insert: "\\cong ",     cursor: 6,  title: "Congruent  \\cong" },
+      { id: "parallel", display: "\\(\\parallel\\)",       insert: "\\parallel ", cursor: 10, title: "Parallel  \\parallel" },
+      { id: "perp",     display: "\\(\\perp\\)",           insert: "\\perp ",     cursor: 6,  title: "Perpendicular  \\perp" },
+      { id: "overline", display: "\\(\\overline{AB}\\)",   insert: "\\overline{}", cursor: 10, title: "Overline  \\overline{}" },
+      { id: "vec",      display: "\\(\\vec{v}\\)",         insert: "\\vec{}",     cursor: 5,  title: "Vector arrow  \\vec{}" },
     ],
   },
   {
     id: "functions",
     label: "Functions",
     items: [
-      { id: "sin",  display: "\\(\\sin\\)",         insert: "\\sin",      cursor: 4,  title: "Sine  \\sin" },
-      { id: "cos",  display: "\\(\\cos\\)",         insert: "\\cos",      cursor: 4,  title: "Cosine  \\cos" },
-      { id: "tan",  display: "\\(\\tan\\)",         insert: "\\tan",      cursor: 4,  title: "Tangent  \\tan" },
-      { id: "log",  display: "\\(\\log\\)",         insert: "\\log",      cursor: 4,  title: "Logarithm  \\log" },
-      { id: "ln",   display: "\\(\\ln\\)",          insert: "\\ln",       cursor: 3,  title: "Natural log  \\ln" },
-      { id: "lim",  display: "\\(\\lim_{}\\)",      insert: "\\lim_{}",   cursor: 6,  title: "Limit  \\lim_{}" },
-      { id: "sum",  display: "\\(\\sum_{}^{}\\)",   insert: "\\sum_{}^{}",cursor: 6,  title: "Summation  \\sum_{}^{}" },
-      { id: "int",  display: "\\(\\int_{}^{}\\)",   insert: "\\int_{}^{}",cursor: 6,  title: "Integral  \\int_{}^{}" },
+      { id: "sin",  display: "\\(\\sin\\)",          insert: "\\sin",       cursor: 4,  title: "Sine  \\sin" },
+      { id: "cos",  display: "\\(\\cos\\)",          insert: "\\cos",       cursor: 4,  title: "Cosine  \\cos" },
+      { id: "tan",  display: "\\(\\tan\\)",          insert: "\\tan",       cursor: 4,  title: "Tangent  \\tan" },
+      { id: "log",  display: "\\(\\log\\)",          insert: "\\log",       cursor: 4,  title: "Logarithm  \\log" },
+      { id: "ln",   display: "\\(\\ln\\)",           insert: "\\ln",        cursor: 3,  title: "Natural log  \\ln" },
+      { id: "lim",  display: "\\(\\lim_{}\\)",       insert: "\\lim_{}",    cursor: 6,  title: "Limit  \\lim_{}" },
+      { id: "sum",  display: "\\(\\sum_{}^{}\\)",    insert: "\\sum_{}^{}", cursor: 6,  title: "Summation  \\sum_{}^{}" },
+      { id: "int",  display: "\\(\\int_{}^{}\\)",    insert: "\\int_{}^{}", cursor: 6,  title: "Integral  \\int_{}^{}" },
     ],
   },
   {
@@ -219,6 +167,19 @@ const GROUPS: FormulaGroup[] = [
   },
 ];
 
+// ─── Shared button style helpers ──────────────────────────────────────────────
+
+/** Prevent focus-steal on all formula buttons. */
+function noFocusSteal(e: React.PointerEvent) {
+  if (e.pointerType !== "touch") e.preventDefault();
+}
+
+const QUICK_BTN =
+  "inline-flex h-8 min-w-[2.2rem] items-center justify-center rounded-lg border border-border/70 bg-card px-1.5 text-sm font-medium transition-colors hover:border-primary/50 hover:bg-primary/8 active:scale-95 active:bg-primary/12";
+
+const GRID_BTN =
+  "inline-flex h-8 min-w-[2.5rem] items-center justify-center rounded-lg border border-border/60 bg-card px-1.5 text-sm transition-colors hover:border-primary/40 hover:bg-primary/5 active:scale-95 active:bg-primary/10";
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export type FormulaToolbarProps = {
@@ -231,20 +192,39 @@ export function FormulaToolbar({ onInsert }: FormulaToolbarProps) {
   const group = GROUPS.find((g) => g.id === activeGroupId) ?? GROUPS[0];
 
   return (
-    <div className="select-none bg-surface-2/40 px-3 py-2 space-y-1.5">
-      {/* Group tab strip */}
+    <div className="select-none bg-surface-2/40 px-3 py-2 space-y-2">
+
+      {/* ── Quick-access row ───────────────────────────────────────────────── */}
+      <div className="flex items-center gap-1 flex-wrap">
+        <span className="mr-1 shrink-0 text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60">
+          Quick
+        </span>
+        {QUICK.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            title={item.title}
+            aria-label={item.title}
+            onPointerDown={noFocusSteal}
+            onClick={() => onInsert(item.insert, item.cursor)}
+            className={QUICK_BTN}
+          >
+            <MathText text={item.display} className="pointer-events-none leading-none" />
+          </button>
+        ))}
+      </div>
+
+      {/* ── Divider ────────────────────────────────────────────────────────── */}
+      <div className="border-t border-border/40" />
+
+      {/* ── Category tab strip ─────────────────────────────────────────────── */}
       <div className="flex gap-0.5 overflow-x-auto scrollbar-none">
         {GROUPS.map((g) => (
           <button
             key={g.id}
             type="button"
             aria-pressed={g.id === activeGroupId}
-            // Prevent focus steal on desktop pointer devices.
-            // Touch events do not fire pointerdown with pointerType "mouse",
-            // so mobile tap still works correctly.
-            onPointerDown={(e) => {
-              if (e.pointerType !== "touch") e.preventDefault();
-            }}
+            onPointerDown={noFocusSteal}
             onClick={() => setActiveGroupId(g.id)}
             className={[
               "shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold tracking-wide transition-colors",
@@ -258,7 +238,7 @@ export function FormulaToolbar({ onInsert }: FormulaToolbarProps) {
         ))}
       </div>
 
-      {/* Formula button grid */}
+      {/* ── Formula button grid ─────────────────────────────────────────────── */}
       <div className="flex flex-wrap gap-1">
         {group.items.map((item) => (
           <button
@@ -266,17 +246,10 @@ export function FormulaToolbar({ onInsert }: FormulaToolbarProps) {
             type="button"
             title={item.title}
             aria-label={item.title}
-            onPointerDown={(e) => {
-              if (e.pointerType !== "touch") e.preventDefault();
-            }}
+            onPointerDown={noFocusSteal}
             onClick={() => onInsert(item.insert, item.cursor)}
-            className="inline-flex h-8 min-w-[2.5rem] items-center justify-center rounded-lg border border-border/60 bg-card px-1.5 text-sm transition-colors hover:border-primary/40 hover:bg-primary/5 active:scale-95 active:bg-primary/10"
+            className={GRID_BTN}
           >
-            {/*
-              MathText renders as <span> by default — valid inside <button>.
-              `pointer-events-none` prevents the inner span from intercepting
-              the button's click event.
-            */}
             <MathText text={item.display} className="pointer-events-none leading-none" />
           </button>
         ))}

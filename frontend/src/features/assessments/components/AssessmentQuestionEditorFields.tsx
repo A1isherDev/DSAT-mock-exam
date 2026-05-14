@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AssessmentQuestionType } from "@/features/assessments/types";
 import { ChoiceEditor, defaultMcChoices, parseAndNormalizeChoices } from "@/features/assessments/components/ChoiceEditor";
+import { FormulaToolbar } from "@/components/FormulaToolbar";
 
 export type AssessmentQuestionEditorDraft = {
   prompt: string;
@@ -75,8 +76,53 @@ export function AssessmentQuestionEditorFields({
     return choices.some((c) => c.id === s) ? s : (choices[0]?.id ?? "A");
   }, [draft.correctAnswerText, choices]);
 
+  // ── Formula insertion ──────────────────────────────────────────────────────
+  // Tracks the textarea/input that most recently had focus so the toolbar
+  // inserts at the right cursor position without stealing blur.
+  const activeFieldRef = useRef<{
+    el: HTMLTextAreaElement | HTMLInputElement;
+    setVal: (v: string) => void;
+  } | null>(null);
+
+  const handleFormulaInsert = useCallback(
+    (snippet: string, cursorOffset: number) => {
+      const active = activeFieldRef.current;
+      if (!active) return;
+      const { el, setVal } = active;
+      const start = el.selectionStart ?? el.value.length;
+      const end = el.selectionEnd ?? el.value.length;
+      const newVal = el.value.slice(0, start) + snippet + el.value.slice(end);
+      setVal(newVal);
+      requestAnimationFrame(() => {
+        el.focus();
+        el.setSelectionRange(start + cursorOffset, start + cursorOffset);
+      });
+    },
+    [],
+  );
+
+  // Helper to create onFocus handler for a textarea/input
+  const trackFocus = useCallback(
+    (setVal: (v: string) => void) =>
+      (e: React.FocusEvent<HTMLTextAreaElement | HTMLInputElement>) => {
+        activeFieldRef.current = { el: e.currentTarget, setVal };
+      },
+    [],
+  );
+
   return (
     <div className="space-y-5">
+
+      {/* ── Formula toolbar ───────────────────────────────────────────────── */}
+      <div className="rounded-xl border border-border overflow-hidden">
+        <div className="bg-surface-2/60 px-3 pt-2 pb-0">
+          <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60 mb-1.5">
+            Formula insert — click a symbol, then type in a field below
+          </p>
+        </div>
+        <FormulaToolbar onInsert={handleFormulaInsert} />
+      </div>
+
       {/* Question type + meta row */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <div className="col-span-2 flex flex-col gap-1.5">
@@ -150,6 +196,7 @@ export function AssessmentQuestionEditorFields({
           placeholder="Enter the question text here. Supports plain text and LaTeX math (e.g. \( x^2 + 1 = 0 \))."
           value={draft.prompt}
           onChange={(e) => onPatch({ prompt: e.target.value })}
+          onFocus={trackFocus((v) => onPatch({ prompt: v }))}
         />
       </div>
 
@@ -234,8 +281,6 @@ export function AssessmentQuestionEditorFields({
       {draft.question_type === "short_text" && (
         <div className="flex flex-col gap-1.5">
           <span className={fieldLabelClass}>Expected answer (exact match)</span>
-          {/* textarea instead of input: expected answers can include LaTeX,
-              multi-word phrases, or chemical formulas that exceed one line. */}
           <textarea
             className={`${inputClassName} min-h-[72px] leading-relaxed`}
             disabled={disabled}
@@ -247,6 +292,7 @@ export function AssessmentQuestionEditorFields({
               return ca == null ? "" : JSON.stringify(ca);
             })()}
             onChange={(e) => onPatch({ correctAnswerText: JSON.stringify(e.target.value) })}
+            onFocus={trackFocus((v) => onPatch({ correctAnswerText: JSON.stringify(v) }))}
           />
         </div>
       )}
@@ -260,6 +306,7 @@ export function AssessmentQuestionEditorFields({
           placeholder="Explain why the correct answer is right. Shown to students after grading."
           value={draft.explanation}
           onChange={(e) => onPatch({ explanation: e.target.value })}
+          onFocus={trackFocus((v) => onPatch({ explanation: v }))}
         />
       </div>
 
