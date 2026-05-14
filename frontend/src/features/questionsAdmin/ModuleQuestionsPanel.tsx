@@ -209,7 +209,7 @@ function QuestionEditor({
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
-      {/* Sticky header + formula toolbar */}
+      {/* Sticky header */}
       <div className="sticky top-0 z-10 shrink-0 border-b border-border bg-card">
         <div className="flex items-center justify-between gap-3 px-5 py-3">
           <div className="min-w-0">
@@ -238,9 +238,6 @@ function QuestionEditor({
             </button>
           </div>
         </div>
-        <div className="border-t border-border/40">
-          <FormulaToolbar onInsert={handleFormulaInsert} />
-        </div>
       </div>
 
       {/* Error banners */}
@@ -253,6 +250,16 @@ function QuestionEditor({
 
       {/* Form body */}
       <div className="flex-1 space-y-5 p-5">
+
+        {/* Formula toolbar — prominent card, same style as assessment builder */}
+        <div className="rounded-xl border border-border overflow-hidden">
+          <div className="bg-surface-2/60 px-3 pt-2 pb-0">
+            <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60 mb-1.5">
+              Formula insert — click a symbol, then type in a field below
+            </p>
+          </div>
+          <FormulaToolbar onInsert={handleFormulaInsert} />
+        </div>
 
         {/* Type row */}
         <div className="grid grid-cols-2 gap-4">
