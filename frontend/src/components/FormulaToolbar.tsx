@@ -61,23 +61,23 @@ type FormulaGroup = {
 // hunt through tabs. Mirrors the flat-button style of the old Django admin.
 
 const QUICK: FormulaItem[] = [
-  { id: "q-bold",   display: "", textLabel: "B",      insert: "****",       cursor: 2,  title: "Bold  **text**" },
-  { id: "q-italic", display: "", textLabel: "I",      insert: "**",         cursor: 1,  title: "Italic  *text*" },
-  { id: "q-wrap",   display: "", textLabel: "\\(…\\)", insert: "\\(  \\)",   cursor: 3,  title: "Wrap in inline math delimiters  \\( … \\)" },
-  { id: "q-pi",     display: "\\(\\pi\\)",        insert: "\\pi",       cursor: 3,  title: "Pi  \\pi" },
-  { id: "q-sqrt",   display: "\\(\\sqrt{x}\\)",   insert: "\\sqrt{}",   cursor: 6,  title: "Square root  \\sqrt{}" },
-  { id: "q-sup2",   display: "\\(x^{2}\\)",       insert: "^{2}",       cursor: 4,  title: "Squared  ^{2}" },
-  { id: "q-sup3",   display: "\\(x^{3}\\)",       insert: "^{3}",       cursor: 4,  title: "Cubed  ^{3}" },
-  { id: "q-frac",   display: "\\(\\frac{a}{b}\\)",insert: "\\frac{}{}",  cursor: 6,  title: "Fraction  \\frac{}{}" },
-  { id: "q-times",  display: "\\(\\times\\)",     insert: "\\times ",   cursor: 7,  title: "Multiplication  \\times" },
-  { id: "q-div",    display: "\\(\\div\\)",       insert: "\\div ",     cursor: 5,  title: "Division  \\div" },
-  { id: "q-pm",     display: "\\(\\pm\\)",        insert: "\\pm ",      cursor: 4,  title: "Plus-minus  \\pm" },
-  { id: "q-leq",    display: "\\(\\leq\\)",       insert: "\\leq ",     cursor: 5,  title: "Less than or equal  \\leq" },
-  { id: "q-geq",    display: "\\(\\geq\\)",       insert: "\\geq ",     cursor: 5,  title: "Greater than or equal  \\geq" },
-  { id: "q-neq",    display: "\\(\\neq\\)",       insert: "\\neq ",     cursor: 5,  title: "Not equal  \\neq" },
-  { id: "q-approx", display: "\\(\\approx\\)",    insert: "\\approx ",  cursor: 8,  title: "Approximately  \\approx" },
-  { id: "q-infty",  display: "\\(\\infty\\)",     insert: "\\infty",    cursor: 6,  title: "Infinity  \\infty" },
-  { id: "q-degree", display: "\\(^{\\circ}\\)",   insert: "^{\\circ}",  cursor: 9,  title: "Degree  ^{\\circ}" },
+  { id: "q-bold",   display: "", textLabel: "B",     insert: "****",       cursor: 2,  title: "Bold  **text**" },
+  { id: "q-italic", display: "", textLabel: "I",     insert: "**",         cursor: 1,  title: "Italic  *text*" },
+  { id: "q-wrap",   display: "", textLabel: "\\(…\\)", insert: "\\(  \\)", cursor: 3,  title: "Wrap in inline math delimiters  \\( … \\)" },
+  { id: "q-pi",     display: "", textLabel: "π",     insert: "\\pi",       cursor: 3,  title: "Pi  \\pi" },
+  { id: "q-sqrt",   display: "", textLabel: "√x",    insert: "\\sqrt{}",   cursor: 6,  title: "Square root  \\sqrt{}" },
+  { id: "q-sup2",   display: "", textLabel: "x²",    insert: "^{2}",       cursor: 4,  title: "Squared  ^{2}" },
+  { id: "q-sup3",   display: "", textLabel: "x³",    insert: "^{3}",       cursor: 4,  title: "Cubed  ^{3}" },
+  { id: "q-frac",   display: "", textLabel: "a/b",   insert: "\\frac{}{}",  cursor: 6, title: "Fraction  \\frac{}{}" },
+  { id: "q-times",  display: "", textLabel: "×",     insert: "\\times ",   cursor: 7,  title: "Multiplication  \\times" },
+  { id: "q-div",    display: "", textLabel: "÷",     insert: "\\div ",     cursor: 5,  title: "Division  \\div" },
+  { id: "q-pm",     display: "", textLabel: "±",     insert: "\\pm ",      cursor: 4,  title: "Plus-minus  \\pm" },
+  { id: "q-leq",    display: "", textLabel: "≤",     insert: "\\leq ",     cursor: 5,  title: "Less than or equal  \\leq" },
+  { id: "q-geq",    display: "", textLabel: "≥",     insert: "\\geq ",     cursor: 5,  title: "Greater than or equal  \\geq" },
+  { id: "q-neq",    display: "", textLabel: "≠",     insert: "\\neq ",     cursor: 5,  title: "Not equal  \\neq" },
+  { id: "q-approx", display: "", textLabel: "≈",     insert: "\\approx ",  cursor: 8,  title: "Approximately  \\approx" },
+  { id: "q-infty",  display: "", textLabel: "∞",     insert: "\\infty",    cursor: 6,  title: "Infinity  \\infty" },
+  { id: "q-degree", display: "", textLabel: "°",     insert: "^{\\circ}",  cursor: 9,  title: "Degree  ^{\\circ}" },
 ];
 
 // ─── Full formula catalog ─────────────────────────────────────────────────────
@@ -220,10 +220,11 @@ export function FormulaToolbar({ onInsert }: FormulaToolbarProps) {
             {item.textLabel
               ? <span
                   className={[
-                    "pointer-events-none text-xs leading-none",
-                    item.id === "q-bold"   ? "font-black font-sans"   :
-                    item.id === "q-italic" ? "font-semibold italic font-sans" :
-                    "font-mono",
+                    "pointer-events-none leading-none",
+                    item.id === "q-bold"   ? "text-sm font-black font-sans"        :
+                    item.id === "q-italic" ? "text-sm font-semibold italic font-sans" :
+                    item.id === "q-wrap"   ? "text-[10px] font-mono"               :
+                    "text-sm",
                   ].join(" ")}
                 >{item.textLabel}</span>
               : <MathText text={item.display} className="pointer-events-none leading-none" />}
