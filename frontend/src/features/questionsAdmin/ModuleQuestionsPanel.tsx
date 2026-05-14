@@ -358,23 +358,31 @@ function QuestionEditor({
             <p className={FIELD_LABEL}>Answer choices</p>
             {(["a", "b", "c", "d"] as const).map((letter) => {
               const key = `option_${letter}` as keyof QuestionDraft;
+              const val = draft[key] as string;
               return (
-                <div key={letter} className="flex items-start gap-3">
-                  <div className="mt-2 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border bg-card text-xs font-extrabold text-foreground">
-                    {letter.toUpperCase()}
+                <div key={letter} className="space-y-1">
+                  <div className="flex items-start gap-3">
+                    <div className="mt-2 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border bg-card text-xs font-extrabold text-foreground">
+                      {letter.toUpperCase()}
+                    </div>
+                    <input
+                      className={`${INPUT} flex-1`}
+                      placeholder={`Option ${letter.toUpperCase()}`}
+                      value={val}
+                      onChange={(e) => patch({ [key]: e.target.value } as Partial<QuestionDraft>)}
+                      onFocus={(e) => {
+                        activeFieldRef.current = {
+                          el: e.currentTarget,
+                          setVal: (v) => patch({ [key]: v } as Partial<QuestionDraft>),
+                        };
+                      }}
+                    />
                   </div>
-                  <input
-                    className={`${INPUT} flex-1`}
-                    placeholder={`Option ${letter.toUpperCase()}`}
-                    value={draft[key] as string}
-                    onChange={(e) => patch({ [key]: e.target.value } as Partial<QuestionDraft>)}
-                    onFocus={(e) => {
-                      activeFieldRef.current = {
-                        el: e.currentTarget,
-                        setVal: (v) => patch({ [key]: v } as Partial<QuestionDraft>),
-                      };
-                    }}
-                  />
+                  {val.trim() && (
+                    <div className="ml-9 rounded-lg border border-border/50 bg-card px-2.5 py-1.5">
+                      <MathText text={val} className="text-xs leading-relaxed text-foreground" />
+                    </div>
+                  )}
                 </div>
               );
             })}

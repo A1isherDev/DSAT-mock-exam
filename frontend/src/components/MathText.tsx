@@ -313,8 +313,18 @@ export function MathText({ text, className, block = false }: MathTextProps) {
   // If mobile latency is a concern, the lever is question complexity (fewer
   // LaTeX expressions per stem), not MathText's rendering architecture.
   useEffect(() => {
-    if (ref.current) {
+    if (!ref.current) return;
+
+    if (typeof window !== "undefined" && typeof (window as unknown as Record<string, unknown>).renderMathInElement === "function") {
+      // KaTeX already loaded — render immediately.
       renderMath({ root: ref.current });
+    } else {
+      // KaTeX CDN hasn't finished loading yet (strategy="afterInteractive" race).
+      // Wait for the katex:ready event dispatched by layout.tsx onLoad, then render.
+      const el = ref.current;
+      const onReady = () => { renderMath({ root: el }); };
+      window.addEventListener("katex:ready", onReady, { once: true });
+      return () => { window.removeEventListener("katex:ready", onReady); };
     }
   }, [text]);
 

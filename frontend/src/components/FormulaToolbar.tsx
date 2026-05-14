@@ -30,8 +30,13 @@ import { MathText } from "@/components/MathText";
 
 type FormulaItem = {
   id: string;
-  /** LaTeX wrapped in \(...\) — rendered by MathText inside the button. */
+  /**
+   * LaTeX wrapped in \(...\) — rendered by MathText inside the button.
+   * If `textLabel` is set, this field is ignored and textLabel is shown instead.
+   */
   display: string;
+  /** Optional plain-text label shown instead of rendered LaTeX (e.g. for delimiter buttons). */
+  textLabel?: string;
   /** Raw text inserted into the textarea at the cursor position. */
   insert: string;
   /**
@@ -56,6 +61,7 @@ type FormulaGroup = {
 // hunt through tabs. Mirrors the flat-button style of the old Django admin.
 
 const QUICK: FormulaItem[] = [
+  { id: "q-wrap",   display: "", textLabel: "\\(…\\)", insert: "\\(  \\)",   cursor: 3,  title: "Wrap in inline math delimiters  \\( … \\)" },
   { id: "q-pi",     display: "\\(\\pi\\)",        insert: "\\pi",       cursor: 3,  title: "Pi  \\pi" },
   { id: "q-sqrt",   display: "\\(\\sqrt{x}\\)",   insert: "\\sqrt{}",   cursor: 6,  title: "Square root  \\sqrt{}" },
   { id: "q-sup2",   display: "\\(x^{2}\\)",       insert: "^{2}",       cursor: 4,  title: "Squared  ^{2}" },
@@ -209,7 +215,9 @@ export function FormulaToolbar({ onInsert }: FormulaToolbarProps) {
             onClick={() => onInsert(item.insert, item.cursor)}
             className={QUICK_BTN}
           >
-            <MathText text={item.display} className="pointer-events-none leading-none" />
+            {item.textLabel
+              ? <span className="pointer-events-none font-mono text-xs leading-none">{item.textLabel}</span>
+              : <MathText text={item.display} className="pointer-events-none leading-none" />}
           </button>
         ))}
       </div>
