@@ -569,6 +569,7 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
     correct_answer = serializers.CharField(source='correct_answers', required=True)
     module_id = serializers.IntegerField(read_only=True)
     practice_test_id = serializers.IntegerField(source="module.practice_test_id", read_only=True)
+    question_text = serializers.CharField(required=False, allow_blank=True, default="")
     option_a = serializers.CharField(required=False, allow_blank=True)
     option_b = serializers.CharField(required=False, allow_blank=True)
     option_c = serializers.CharField(required=False, allow_blank=True)
