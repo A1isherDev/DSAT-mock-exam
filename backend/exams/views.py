@@ -1297,6 +1297,8 @@ def _merge_admin_question_create_defaults(request, kwargs) -> dict:
 
     if absent("question_type"):
         data["question_type"] = "MATH" if pt.subject == "MATH" else "READING"
+    if absent("correct_answer") and absent("correct_answers"):
+        data["correct_answer"] = "a"
     if absent("score"):
         data["score"] = 10
 
