@@ -252,16 +252,16 @@ class MockExamViewSet(viewsets.ReadOnlyModelViewSet):
 
 class PastpaperPackStudentListView(generics.ListAPIView):
     """
-    Student-facing pastpaper pack hub: returns all packs that have at least one
-    section with questions, ordered newest-first.  AllowAny — browsing the catalog
-    does not require authentication; starting an attempt still requires auth.
+    Student-facing pastpaper pack hub: returns packs that have at least one
+    section with questions.  Students see only packs that have at least one
+    section explicitly assigned to them; teachers/admins/super_admins see all.
     """
 
     permission_classes = [AllowAny]
     serializer_class = PastpaperPackStudentSerializer
 
     def get_queryset(self):
-        return (
+        base = (
             PastpaperPack.objects.filter(
                 sections__mock_exam__isnull=True,
                 sections__modules__questions__isnull=False,
@@ -270,6 +270,14 @@ class PastpaperPackStudentListView(generics.ListAPIView):
             .distinct()
             .order_by("-practice_date", "-created_at")
         )
+        user = self.request.user
+        if not user.is_authenticated:
+            return base.none()
+        if normalized_role(user) == acc_const.ROLE_STUDENT:
+            # Only packs where at least one section (PracticeTest) is assigned to this student.
+            return base.filter(sections__assigned_users=user).distinct()
+        # Teachers, admins, super_admins: full catalog.
+        return base
 
 
 class PastpaperPackStudentDetailView(generics.RetrieveAPIView):
@@ -279,7 +287,7 @@ class PastpaperPackStudentDetailView(generics.RetrieveAPIView):
     serializer_class = PastpaperPackStudentSerializer
 
     def get_queryset(self):
-        return (
+        base = (
             PastpaperPack.objects.filter(
                 sections__mock_exam__isnull=True,
                 sections__modules__questions__isnull=False,
@@ -287,6 +295,12 @@ class PastpaperPackStudentDetailView(generics.RetrieveAPIView):
             .prefetch_related("sections__modules")
             .distinct()
         )
+        user = self.request.user
+        if not user.is_authenticated:
+            return base.none()
+        if normalized_role(user) == acc_const.ROLE_STUDENT:
+            return base.filter(sections__assigned_users=user).distinct()
+        return base
 
 
 class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
@@ -319,9 +333,11 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
         if can_browse_standalone_practice_library(user):
             return filter_practice_tests_for_user(user, base).distinct()
         if not user.is_authenticated:
-            return filter_practice_tests_for_user(user, base).distinct()
+            # Unauthenticated: show nothing (assignment required)
+            return base.none()
         if normalized_role(user) == acc_const.ROLE_STUDENT:
-            return filter_practice_tests_for_user(user, base).distinct()
+            # Students see only tests explicitly assigned to them by a teacher/admin.
+            return base.filter(assigned_users=user).distinct()
         return base.filter(assigned_users=user).distinct()
 
     @action(detail=False, methods=["post"], permission_classes=[IsAuthenticated, BulkAssignAccess])
