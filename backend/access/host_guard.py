@@ -118,6 +118,8 @@ class SubdomainAPIGuardMiddleware:
                 return self.get_response(request)
             if path.startswith("/api/access/"):
                 return self.get_response(request)
+            if path.startswith("/api/classes/"):
+                return self.get_response(request)
             if path.startswith("/api/exams/bulk_assign"):
                 return self.get_response(request)
             if path.startswith("/api/exams/bulk_assign/"):
