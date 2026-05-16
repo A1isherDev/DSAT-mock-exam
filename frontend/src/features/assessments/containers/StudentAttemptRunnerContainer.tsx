@@ -1084,6 +1084,15 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
           <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-3">
             Question {currentIdx + 1} of {_passiveTotal}
           </p>
+          {Boolean(current?.question_prompt) && (
+            <div className="mb-4 border-l-4 border-primary/40 pl-4 py-1 bg-surface-2/50 rounded-r-xl">
+              <MathText
+                text={String(current!.question_prompt)}
+                block
+                className="text-sm text-foreground leading-relaxed font-[Georgia,serif] italic"
+              />
+            </div>
+          )}
           <MathText
             text={String(current?.prompt || "").trim() || "—"}
             block
@@ -1311,6 +1320,15 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
         <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-3">
           Question {currentIdx + 1} of {totalCount}
         </p>
+        {Boolean(current?.question_prompt) && (
+          <div className="mb-4 border-l-4 border-primary/40 pl-4 py-1 bg-surface-2/50 rounded-r-xl">
+            <MathText
+              text={String(current!.question_prompt)}
+              block
+              className="text-sm text-foreground leading-relaxed font-[Georgia,serif] italic"
+            />
+          </div>
+        )}
         <MathText
           text={String(current?.prompt || "").trim() || "—"}
           block
