@@ -29,6 +29,7 @@ urlpatterns = [
     path('telegram/link/', TelegramLinkView.as_view(), name='telegram-link'),
     path('telegram/', TelegramAuthView.as_view(), name='telegram-auth'),
     path('admin/security/metrics/prometheus/', AdminSecurityPrometheusMetricsView.as_view(), name='admin-security-metrics'),
+    path('admin/list/', UserListView.as_view(), name='admin-user-list'),
     path('', UserListView.as_view(), name='user-list'),
     path('create/', UserCreateView.as_view(), name='user-create'),
     path('<int:pk>/update/', UserUpdateView.as_view(), name='user-update'),
