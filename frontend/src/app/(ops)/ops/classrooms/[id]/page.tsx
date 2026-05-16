@@ -96,13 +96,36 @@ function ClassroomOpsPageInner() {
       ]);
       setClassroom(classroomData as ClassroomSummary);
       setAssignments((assignmentsData.items ?? []) as AssignmentSummary[]);
-      const rawPeople: PersonSummary[] = Array.isArray(peopleData)
+      // The /people/ endpoint returns ClassroomMembership objects with a nested
+      // `user` field. Flatten them into PersonSummary shape for the UI.
+      const rawArr: unknown[] = Array.isArray(peopleData)
         ? peopleData
         : Array.isArray((peopleData as { results?: unknown[] })?.results)
-          ? (peopleData as { results: PersonSummary[] }).results
+          ? (peopleData as { results: unknown[] }).results
           : Array.isArray((peopleData as { members?: unknown[] })?.members)
-            ? (peopleData as { members: PersonSummary[] }).members
+            ? (peopleData as { members: unknown[] }).members
             : [];
+      const rawPeople: PersonSummary[] = rawArr.map((item) => {
+        const m = item as {
+          id: number;
+          role: string;
+          user?: { id?: number; email?: string; first_name?: string; last_name?: string };
+          email?: string;
+          first_name?: string;
+          last_name?: string;
+        };
+        // If the item has a nested `user` object, flatten it.
+        if (m.user && typeof m.user === "object") {
+          return {
+            id: m.user.id ?? m.id,
+            email: m.user.email ?? "",
+            first_name: m.user.first_name,
+            last_name: m.user.last_name,
+            role: m.role,
+          };
+        }
+        return m as unknown as PersonSummary;
+      });
       setPeople(rawPeople);
     } catch (e: unknown) {
       const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;

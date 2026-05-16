@@ -7,7 +7,7 @@ import type { PersonSummary } from "@/components/ops/ClassroomOverviewPanel";
 
 function displayName(p: PersonSummary): string {
   const full = [p.first_name, p.last_name].filter(Boolean).join(" ");
-  return full || p.email;
+  return full || p.email || "Unknown";
 }
 
 function PersonRow({ person }: { person: PersonSummary }) {
