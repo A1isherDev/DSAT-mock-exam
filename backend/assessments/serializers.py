@@ -28,11 +28,19 @@ class AssessmentQuestionSerializer(serializers.ModelSerializer):
             "is_active",
             "explanation",
             "question_image",
+            "option_a_image",
+            "option_b_image",
+            "option_c_image",
+            "option_d_image",
         ]
 
 
 class AssessmentQuestionAdminWriteSerializer(serializers.ModelSerializer):
     clear_question_image = serializers.BooleanField(write_only=True, required=False)
+    clear_option_a_image = serializers.BooleanField(write_only=True, required=False)
+    clear_option_b_image = serializers.BooleanField(write_only=True, required=False)
+    clear_option_c_image = serializers.BooleanField(write_only=True, required=False)
+    clear_option_d_image = serializers.BooleanField(write_only=True, required=False)
 
     class Meta:
         model = AssessmentQuestion
@@ -49,19 +57,40 @@ class AssessmentQuestionAdminWriteSerializer(serializers.ModelSerializer):
             "is_active",
             "explanation",
             "question_image",
+            "option_a_image",
+            "option_b_image",
+            "option_c_image",
+            "option_d_image",
             "clear_question_image",
+            "clear_option_a_image",
+            "clear_option_b_image",
+            "clear_option_c_image",
+            "clear_option_d_image",
         ]
 
+    def _clear_image_field(self, instance, field_name):
+        field = getattr(instance, field_name)
+        if field:
+            field.delete(save=False)
+        setattr(instance, field_name, None)
+
     def create(self, validated_data):
-        validated_data.pop("clear_question_image", None)
+        for key in ["clear_question_image", "clear_option_a_image", "clear_option_b_image",
+                    "clear_option_c_image", "clear_option_d_image"]:
+            validated_data.pop(key, None)
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
-        clear_question_image = validated_data.pop("clear_question_image", False)
-        if clear_question_image and "question_image" not in validated_data:
-            if instance.question_image:
-                instance.question_image.delete(save=False)
-            instance.question_image = None
+        image_fields = {
+            "question_image": validated_data.pop("clear_question_image", False),
+            "option_a_image": validated_data.pop("clear_option_a_image", False),
+            "option_b_image": validated_data.pop("clear_option_b_image", False),
+            "option_c_image": validated_data.pop("clear_option_c_image", False),
+            "option_d_image": validated_data.pop("clear_option_d_image", False),
+        }
+        for field_name, should_clear in image_fields.items():
+            if should_clear and field_name not in validated_data:
+                self._clear_image_field(instance, field_name)
         return super().update(instance, validated_data)
 
 

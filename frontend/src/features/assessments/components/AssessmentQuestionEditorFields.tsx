@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { AssessmentQuestionType } from "@/features/assessments/types";
+import type { AssessmentQuestion, AssessmentQuestionType } from "@/features/assessments/types";
 import { ChoiceEditor, defaultMcChoices, parseAndNormalizeChoices } from "@/features/assessments/components/ChoiceEditor";
 import { FormulaToolbar } from "@/components/FormulaToolbar";
 import { MathText } from "@/components/MathText";
 import { STUDIO_FIELD_LABEL, STUDIO_INPUT } from "@/components/studio/primitives";
+import { ImagePlus, X } from "lucide-react";
 
 export type AssessmentQuestionEditorDraft = {
   prompt: string;
@@ -19,30 +20,104 @@ export type AssessmentQuestionEditorDraft = {
   gradingConfigText: string;
 };
 
+export type AssessmentImageKey = "question" | "a" | "b" | "c" | "d";
+
+export type AssessmentImageState = {
+  files: Partial<Record<AssessmentImageKey, File>>;
+  clears: Partial<Record<AssessmentImageKey, boolean>>;
+};
+
 function parseJson<T>(s: string, fallback: T): T {
-  try {
-    return JSON.parse(s) as T;
-  } catch {
-    return fallback;
-  }
+  try { return JSON.parse(s) as T; } catch { return fallback; }
 }
 
-// Use the same INPUT token as the pastpaper editor for visual consistency.
-// The parent (BuilderSetEditorContainer) also defines a slightly different
-// INPUT with bg-background + shadow-sm — but we intentionally use STUDIO_INPUT
-// here so all field types (textarea, select, input) share one definition.
 const INPUT = STUDIO_INPUT;
 const LABEL = STUDIO_FIELD_LABEL;
+
+// ─── Inline image upload widget ───────────────────────────────────────────────
+
+function ImageUpload({
+  label,
+  existingUrl,
+  file,
+  cleared,
+  onSet,
+  onClear,
+  onCancel,
+  disabled,
+}: {
+  label: string;
+  existingUrl?: string | null;
+  file?: File;
+  cleared?: boolean;
+  onSet: (f: File) => void;
+  onClear: () => void;
+  onCancel: () => void;
+  disabled?: boolean;
+}) {
+  const showExisting = existingUrl && !cleared && !file;
+  const showPreview = !!file;
+
+  return (
+    <div className="space-y-1.5">
+      <p className={LABEL}>{label}</p>
+      <div className="flex flex-wrap items-center gap-2">
+        {showExisting && (
+          <>
+            <img src={existingUrl} alt={label} className="max-h-24 rounded-xl border border-border object-contain" />
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={onClear}
+              className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 transition-colors"
+            >
+              <X className="h-3 w-3" /> Remove
+            </button>
+          </>
+        )}
+        {showPreview && (
+          <>
+            <img src={URL.createObjectURL(file)} alt="Preview" className="max-h-24 rounded-xl border border-border object-contain" />
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={onCancel}
+              className="inline-flex items-center gap-1 rounded-lg border border-border bg-card px-2 py-1 text-xs font-semibold text-muted-foreground hover:bg-surface-2 transition-colors"
+            >
+              <X className="h-3 w-3" /> Cancel
+            </button>
+          </>
+        )}
+        <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-dashed border-border bg-surface-2/30 px-3 py-2 text-xs font-semibold text-muted-foreground hover:bg-surface-2/60 transition-colors">
+          <ImagePlus className="h-3.5 w-3.5" />
+          {file ? "Change" : existingUrl && !cleared ? "Replace" : "Upload image"}
+          <input
+            type="file"
+            accept="image/*"
+            className="sr-only"
+            disabled={disabled}
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) onSet(f); }}
+          />
+        </label>
+      </div>
+    </div>
+  );
+}
+
+// ─── Props ────────────────────────────────────────────────────────────────────
 
 type Props = {
   draft: AssessmentQuestionEditorDraft;
   onPatch: (p: Partial<AssessmentQuestionEditorDraft>) => void;
   disabled?: boolean;
+  /** Existing saved question — used to show current image URLs. */
+  savedQuestion?: AssessmentQuestion | null;
+  /** Image files/clears managed by the parent. */
+  imageState: AssessmentImageState;
+  onSetImage: (key: AssessmentImageKey, file: File | null, clear: boolean) => void;
   /**
    * If provided, the component assigns its formula-insert handler to this ref
-   * so the parent can render <FormulaToolbar> externally (e.g. in a sticky
-   * section above the scrollable form body).
-   * When omitted, a FormulaToolbar is rendered inline at the top of the form.
+   * so the parent can render <FormulaToolbar> externally (e.g. in a sticky bar).
    */
   insertHandlerRef?: React.MutableRefObject<((snippet: string, cursorOffset: number) => void) | null>;
 };
@@ -51,6 +126,9 @@ export function AssessmentQuestionEditorFields({
   draft,
   onPatch,
   disabled,
+  savedQuestion,
+  imageState,
+  onSetImage,
   insertHandlerRef,
 }: Props) {
   const ADV_KEY = "mastersat:builder:advanced_json_open";
@@ -62,10 +140,7 @@ export function AssessmentQuestionEditorFields({
     try { window.localStorage.setItem(ADV_KEY, String(showAdvanced)); } catch { /* ignore */ }
   }, [showAdvanced]);
 
-  const choices = useMemo(
-    () => parseAndNormalizeChoices(draft.choicesText),
-    [draft.choicesText],
-  );
+  const choices = useMemo(() => parseAndNormalizeChoices(draft.choicesText), [draft.choicesText]);
 
   const gradingObj = useMemo(
     () => parseJson<Record<string, unknown>>(draft.gradingConfigText, {}),
@@ -75,9 +150,7 @@ export function AssessmentQuestionEditorFields({
   const toleranceStr =
     typeof toleranceRaw === "number" && Number.isFinite(toleranceRaw)
       ? String(toleranceRaw)
-      : typeof toleranceRaw === "string"
-        ? toleranceRaw
-        : "";
+      : typeof toleranceRaw === "string" ? toleranceRaw : "";
 
   const setGradingPatch = (patch: Record<string, unknown>) => {
     const next = { ...gradingObj, ...patch };
@@ -126,6 +199,12 @@ export function AssessmentQuestionEditorFields({
     [],
   );
 
+  // ── Choice image keys ──────────────────────────────────────────────────────
+  const choiceImgKey = (id: string): AssessmentImageKey | null => {
+    const map: Record<string, AssessmentImageKey> = { A: "a", B: "b", C: "c", D: "d" };
+    return map[id] ?? null;
+  };
+
   return (
     <div className="space-y-5">
 
@@ -141,7 +220,7 @@ export function AssessmentQuestionEditorFields({
         </div>
       )}
 
-      {/* ── Question type + meta ── */}
+      {/* ── Question type + points ── */}
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className={LABEL}>Question type</label>
@@ -178,7 +257,6 @@ export function AssessmentQuestionEditorFields({
             <option value="boolean">True / False</option>
           </select>
         </div>
-
         <div>
           <label className={LABEL}>Points</label>
           <input
@@ -205,17 +283,27 @@ export function AssessmentQuestionEditorFields({
         />
         {draft.prompt.trim() && (
           <div className="mt-2 rounded-xl border border-border/60 bg-surface-2/50 px-3 py-2.5">
-            <p className="mb-1 text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60">
-              Preview
-            </p>
+            <p className="mb-1 text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60">Preview</p>
             <MathText text={draft.prompt} block className="text-sm leading-relaxed text-foreground" />
           </div>
         )}
       </div>
 
+      {/* ── Question image ── */}
+      <ImageUpload
+        label="Question image (optional)"
+        existingUrl={savedQuestion?.question_image}
+        file={imageState.files.question}
+        cleared={imageState.clears.question}
+        onSet={(f) => onSetImage("question", f, false)}
+        onClear={() => onSetImage("question", null, true)}
+        onCancel={() => onSetImage("question", null, false)}
+        disabled={disabled}
+      />
+
       {/* ── Multiple choice ── */}
       {draft.question_type === "multiple_choice" && (
-        <div className="rounded-2xl border border-border bg-surface-2/30 p-4 space-y-3">
+        <div className="rounded-2xl border border-border bg-surface-2/30 p-4 space-y-4">
           <label className={LABEL}>Answer choices</label>
           <ChoiceEditor
             choices={choices}
@@ -228,8 +316,20 @@ export function AssessmentQuestionEditorFields({
             }}
             disabled={disabled}
             inputClassName={INPUT}
-            onFocusTextarea={(el, setVal) => {
-              activeFieldRef.current = { el, setVal };
+            onFocusTextarea={(el, setVal) => { activeFieldRef.current = { el, setVal }; }}
+            // Per-choice image state
+            getChoiceImageProps={(choiceId) => {
+              const key = choiceImgKey(choiceId);
+              if (!key) return null;
+              const dbField = `option_${key}_image` as keyof AssessmentQuestion;
+              return {
+                existingUrl: savedQuestion?.[dbField] as string | null | undefined,
+                file: imageState.files[key],
+                cleared: imageState.clears[key],
+                onSet: (f: File) => onSetImage(key, f, false),
+                onClear: () => onSetImage(key, null, true),
+                onCancel: () => onSetImage(key, null, false),
+              };
             }}
           />
         </div>
@@ -253,12 +353,6 @@ export function AssessmentQuestionEditorFields({
                 else if (!Number.isNaN(Number(raw))) onPatch({ correctAnswerText: JSON.stringify(Number(raw)) });
                 else onPatch({ correctAnswerText: JSON.stringify(raw) });
               }}
-              onFocus={trackFocus((v) => {
-                const raw = v.trim();
-                if (raw === "") onPatch({ correctAnswerText: JSON.stringify(null) });
-                else if (!Number.isNaN(Number(raw))) onPatch({ correctAnswerText: JSON.stringify(Number(raw)) });
-                else onPatch({ correctAnswerText: JSON.stringify(raw) });
-              })}
             />
           </div>
           <div>
@@ -308,7 +402,7 @@ export function AssessmentQuestionEditorFields({
           <textarea
             className={`${INPUT} min-h-[80px] leading-relaxed`}
             disabled={disabled}
-            placeholder="Enter the exact expected answer. Supports LaTeX: \( x^2 \), **bold**, *italic*"
+            placeholder="Enter the exact expected answer."
             value={(() => {
               const ca = parseJson<unknown>(draft.correctAnswerText, "");
               if (typeof ca === "string") return ca;
@@ -335,14 +429,14 @@ export function AssessmentQuestionEditorFields({
         />
       </div>
 
-      {/* ── Advanced JSON (collapsed by default) ── */}
+      {/* ── Advanced JSON ── */}
       <div className="border-t border-border pt-3">
         <button
           type="button"
           className="text-xs font-bold text-primary/70 hover:text-primary hover:underline"
           onClick={() => setShowAdvanced((v) => !v)}
         >
-          {showAdvanced ? "▾ Hide" : "▸ Show"} advanced JSON (choices, correct answer, grading config)
+          {showAdvanced ? "▾ Hide" : "▸ Show"} advanced JSON
         </button>
         {showAdvanced && (
           <div className="mt-3 grid gap-3 sm:grid-cols-2">

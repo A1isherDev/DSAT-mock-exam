@@ -33,6 +33,10 @@ export type AssessmentQuestion = {
   is_active: boolean;
   explanation?: string;
   question_image?: string | null;
+  option_a_image?: string | null;
+  option_b_image?: string | null;
+  option_c_image?: string | null;
+  option_d_image?: string | null;
 };
 
 export type HomeworkAssignmentCreateRequest = {

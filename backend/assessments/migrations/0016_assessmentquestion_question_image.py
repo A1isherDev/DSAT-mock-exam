@@ -13,4 +13,24 @@ class Migration(migrations.Migration):
             name="question_image",
             field=models.ImageField(blank=True, null=True, upload_to="assessment_questions/"),
         ),
+        migrations.AddField(
+            model_name="assessmentquestion",
+            name="option_a_image",
+            field=models.ImageField(blank=True, null=True, upload_to="assessment_questions/"),
+        ),
+        migrations.AddField(
+            model_name="assessmentquestion",
+            name="option_b_image",
+            field=models.ImageField(blank=True, null=True, upload_to="assessment_questions/"),
+        ),
+        migrations.AddField(
+            model_name="assessmentquestion",
+            name="option_c_image",
+            field=models.ImageField(blank=True, null=True, upload_to="assessment_questions/"),
+        ),
+        migrations.AddField(
+            model_name="assessmentquestion",
+            name="option_d_image",
+            field=models.ImageField(blank=True, null=True, upload_to="assessment_questions/"),
+        ),
     ]

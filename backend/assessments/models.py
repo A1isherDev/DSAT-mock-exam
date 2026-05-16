@@ -177,6 +177,11 @@ class AssessmentQuestion(models.Model):
     is_active = models.BooleanField(default=True, db_index=True)
     # Optional image for the question stem
     question_image = models.ImageField(upload_to="assessment_questions/", blank=True, null=True)
+    # Optional images for answer choices (A–D, fixed like pastpaper)
+    option_a_image = models.ImageField(upload_to="assessment_questions/", blank=True, null=True)
+    option_b_image = models.ImageField(upload_to="assessment_questions/", blank=True, null=True)
+    option_c_image = models.ImageField(upload_to="assessment_questions/", blank=True, null=True)
+    option_d_image = models.ImageField(upload_to="assessment_questions/", blank=True, null=True)
     # Solution explanation shown to students after grading
     explanation = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)

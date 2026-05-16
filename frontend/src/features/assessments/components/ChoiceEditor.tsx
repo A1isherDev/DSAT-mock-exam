@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useRef } from "react";
-import { CheckCircle2, Circle, Plus, X } from "lucide-react";
+import { ImagePlus, Plus, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 import type { AssessmentChoice } from "@/features/assessments/types";
 import { MathText } from "@/components/MathText";
@@ -83,6 +83,15 @@ export function validateChoices(
 
 // ─── ChoiceRow ────────────────────────────────────────────────────────────────
 
+type ChoiceImageProps = {
+  existingUrl?: string | null;
+  file?: File;
+  cleared?: boolean;
+  onSet: (f: File) => void;
+  onClear: () => void;
+  onCancel: () => void;
+} | null;
+
 function ChoiceRow({
   choice,
   isCorrect,
@@ -96,6 +105,7 @@ function ChoiceRow({
   canRemove,
   onFocusTextarea,
   inputClassName,
+  imageProps,
 }: {
   choice: AssessmentChoice;
   isCorrect: boolean;
@@ -109,6 +119,7 @@ function ChoiceRow({
   canRemove: boolean;
   onFocusTextarea?: (el: HTMLInputElement, setVal: (v: string) => void) => void;
   inputClassName: string;
+  imageProps?: ChoiceImageProps;
 }) {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -184,6 +195,51 @@ function ChoiceRow({
       {hasDuplicateError && (
         <p className="ml-10 text-[10px] font-semibold text-amber-600">Duplicate option</p>
       )}
+
+      {/* Per-choice image upload */}
+      {imageProps !== undefined && (
+        <div className="ml-10 flex flex-wrap items-center gap-2">
+          {imageProps?.existingUrl && !imageProps.cleared && !imageProps.file && (
+            <>
+              <img src={imageProps.existingUrl} alt={`Option ${choice.id}`} className="max-h-16 rounded-lg border border-border object-contain" />
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={imageProps.onClear}
+                className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 transition-colors"
+              >
+                <X className="h-3 w-3" /> Remove
+              </button>
+            </>
+          )}
+          {imageProps?.file && (
+            <>
+              <img src={URL.createObjectURL(imageProps.file)} alt="Preview" className="max-h-16 rounded-lg border border-border object-contain" />
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={imageProps?.onCancel}
+                className="inline-flex items-center gap-1 rounded-lg border border-border bg-card px-2 py-1 text-xs font-semibold text-muted-foreground hover:bg-surface-2 transition-colors"
+              >
+                <X className="h-3 w-3" /> Cancel
+              </button>
+            </>
+          )}
+          {imageProps && (
+            <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-dashed border-border bg-surface-2/30 px-2 py-1 text-xs font-semibold text-muted-foreground hover:bg-surface-2/60 transition-colors">
+              <ImagePlus className="h-3 w-3" />
+              {imageProps.file ? "Change image" : imageProps.existingUrl && !imageProps.cleared ? "Replace image" : "Add image"}
+              <input
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                disabled={disabled}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) imageProps.onSet(f); }}
+              />
+            </label>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -197,6 +253,7 @@ export function ChoiceEditor({
   disabled,
   onFocusTextarea,
   inputClassName,
+  getChoiceImageProps,
 }: {
   choices: AssessmentChoice[];
   correctId: string;
@@ -204,6 +261,7 @@ export function ChoiceEditor({
   disabled?: boolean;
   onFocusTextarea?: (el: HTMLInputElement, setVal: (v: string) => void) => void;
   inputClassName: string;
+  getChoiceImageProps?: (choiceId: string) => ChoiceImageProps | null;
 }) {
   const rowRefs = useRef<Array<HTMLInputElement | null>>([]);
 
@@ -305,6 +363,7 @@ export function ChoiceEditor({
             canRemove={choices.length > 2}
             onFocusTextarea={onFocusTextarea}
             inputClassName={inputClassName}
+            imageProps={getChoiceImageProps ? getChoiceImageProps(c.id) : undefined}
           />
         ))}
       </div>
