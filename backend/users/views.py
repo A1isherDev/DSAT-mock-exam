@@ -170,7 +170,7 @@ def _apply_telegram_phone_from_claims(user, claims) -> Response | None:
 
 class ThrottledTokenObtainPairView(TokenObtainPairView):
     serializer_class = MyTokenObtainPairSerializer
-    throttle_scope = 'sustained'
+    throttle_classes = []
 
 
 def _revoked_key(jti: str) -> str:
