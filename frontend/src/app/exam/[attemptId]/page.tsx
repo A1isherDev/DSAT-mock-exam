@@ -461,7 +461,7 @@ function ExamPlayerInner() {
     assertCritRef.current = assertCriticalAuth;
 
     const [timeLeft, setTimeLeft] = useState<number>(0);
-    const timerInitializedRef = useRef(false);
+    const [timerReady, setTimerReady] = useState(false);
     const lastAnswersModuleIdRef = useRef<number | null>(null);
     const lastRenderedSecRef = useRef<number>(-1);
     const virtualModuleStartMsRef = useRef<number>(0);
@@ -1495,7 +1495,7 @@ function ExamPlayerInner() {
         lastRenderedSecRef.current = remaining;
         moduleTimerSubmitDoneRef.current = false;
         wasTimerPausedRef.current = false;
-        timerInitializedRef.current = true;
+        setTimerReady(true);
         setTimeLeft(remaining);
     }, [
         attempt?.current_module_details?.id,
@@ -1567,17 +1567,15 @@ function ExamPlayerInner() {
         handleSubmitModule,
     ]);
 
-    // Timer auto-submit effect
-    // Guard: timerInitializedRef prevents auto-submit on initial render when timeLeft
-    // is still at its default value (0). Without this, Module 1 gets auto-submitted
-    // in ~0.3s before the timer init effect has a chance to set the real remaining time.
+    // Timer auto-submit: only fires after timerReady (state, not ref) so React
+    // guarantees timeLeft and timerReady are from the same render snapshot.
     useEffect(() => {
         const isCompleted = !!attempt?.is_completed;
-        if (timeLeft <= 0 && timerInitializedRef.current && !moduleTimerSubmitDoneRef.current && !isPaused && !loading && !isCompleted && !transitioning) {
+        if (timeLeft <= 0 && timerReady && !moduleTimerSubmitDoneRef.current && !isPaused && !loading && !isCompleted && !transitioning) {
             moduleTimerSubmitDoneRef.current = true;
             void handleSubmitModule();
         }
-    }, [timeLeft, isPaused, loading, attempt?.is_completed, transitioning, handleSubmitModule]);
+    }, [timeLeft, timerReady, isPaused, loading, attempt?.is_completed, transitioning, handleSubmitModule]);
 
 
 
