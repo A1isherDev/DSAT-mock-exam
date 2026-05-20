@@ -15,17 +15,22 @@ Background:
 What this middleware does:
     On every response, it detects requests that arrived with multiple ``csrftoken``
     cookies (the smoking gun) and explicitly clears the per-subdomain variant by
-    emitting ``Set-Cookie: csrftoken=; Domain=<host>; Path=/; Max-Age=0``. After one
+    emitting ``Set-Cookie: csrftoken=; Path=/; Max-Age=0`` (no Domain). After one
     response per affected subdomain, the duplicate is gone and the issue is resolved
     without user action.
 
     It does the same for the JWT cookies (``lms_access``, ``lms_refresh``) for the
     same reason — the same DEBUG-period regression affected them.
+
+IMPORTANT: This middleware must NOT destroy fresh cookies that Django sets in the
+    same response (e.g. ``sessionid`` on login, ``csrftoken`` rotation). It skips any
+    cookie that already has the correct Domain=.mastersat.uz set by upstream middleware.
+    The bare-subdomain duplicate will be cleaned on the next request.
 """
 
 from __future__ import annotations
 
-from typing import Iterable
+from http.cookies import Morsel
 
 from django.conf import settings
 from django.http import HttpRequest, HttpResponse
@@ -60,8 +65,6 @@ class LegacyCookieCleanupMiddleware:
     def __call__(self, request: HttpRequest) -> HttpResponse:
         raw_cookie = request.META.get("HTTP_COOKIE", "") or ""
         # Cheap check: only act when the smoking gun (multiple csrftoken) is present.
-        # JWT-cookie duplicates are rarer but if csrftoken is duplicated, the others
-        # likely are too — we'll clean them all in one pass.
         had_duplicate_csrf = _count_csrftoken_in_raw_cookie_header(raw_cookie) > 1
 
         response: HttpResponse = self.get_response(request)
@@ -70,28 +73,26 @@ class LegacyCookieCleanupMiddleware:
             return response
 
         host = (request.get_host() or "").split(":")[0].lower()
-        if not host:
+        if not host or host not in _SUBDOMAINS_TO_CLEAN:
             return response
 
-        # Only act on our managed subdomains. Don't touch random hosts.
-        if host not in _SUBDOMAINS_TO_CLEAN:
-            return response
-
-        # Production cookies live at Domain=.mastersat.uz. The "legacy" duplicates are
-        # scoped to the bare subdomain (no Domain attribute). To delete those we emit a
-        # Set-Cookie with NO Domain and Max-Age=0.
-        #
-        # Critical: Python's SimpleCookie REUSES the existing Morsel when you re-assign
-        # a value, so any Domain attribute set earlier in the middleware chain (Django's
-        # CSRF middleware sets one with Domain=.mastersat.uz) survives. We delete the
-        # morsel entirely and start fresh so our deletion really has NO Domain attribute.
-        from http.cookies import Morsel
+        secure = not settings.DEBUG
+        cookie_domain = (getattr(settings, "SESSION_COOKIE_DOMAIN", "") or "").strip(".").lower()
 
         for name in _MANAGED_COOKIE_NAMES:
-            # Drop any inherited morsel (e.g. CsrfViewMiddleware's refreshed csrftoken).
-            # On THIS response only — the .mastersat.uz cookie already exists in the
-            # browser and stays valid via its long Max-Age; the next response will refresh
-            # it normally.
+            # Check if Django already set a fresh cookie with the correct domain
+            # in this response (e.g. sessionid on login, csrftoken rotation).
+            # If so, DO NOT touch it — destroying it breaks login and CSRF.
+            existing = response.cookies.get(name)
+            if existing is not None:
+                existing_domain = (existing.get("domain", "") or "").strip(".").lower()
+                if existing_domain == cookie_domain and existing.value:
+                    # Fresh cookie with correct domain — skip this one.
+                    # The bare-subdomain duplicate will be cleaned on the next request.
+                    continue
+
+            # Safe to overwrite: either no cookie was set, or it was set without
+            # the correct domain. Delete the bare-subdomain copy.
             if name in response.cookies:
                 del response.cookies[name]
             morsel = Morsel()
@@ -101,7 +102,7 @@ class LegacyCookieCleanupMiddleware:
             morsel["path"] = "/"
             # Deliberately omit Domain — the deletion targets the bare-subdomain copy.
             morsel["samesite"] = "Lax"
-            if not settings.DEBUG:
+            if secure:
                 morsel["secure"] = True
             if name != "csrftoken":
                 morsel["httponly"] = True
