@@ -867,6 +867,53 @@ class TestAttempt(TimestampedModel):
         m2 = self._module_by_order(2)
         if not m2:
             raise ValidationError("Module 2 is missing; cannot advance.")
+
+        # If Module 2 has zero questions (single-module pastpaper), skip directly to SCORING
+        # instead of leaving the student stuck on an empty module.
+        m2_question_count = m2.questions.count()
+        if m2_question_count == 0:
+            assert_primary_transition_allowed(self.STATE_MODULE_1_ACTIVE, self.STATE_SCORING)
+            ts = timezone.now()
+            v0 = int(self.version_number or 0)
+            new_v = v0 + 1
+            m1_sub = self.module_1_submitted_at or ts
+            # Mark M2 timestamps so scoring pipeline sees a complete attempt
+            m2_sub = ts
+            scoring_at = ts
+            if not self.completed_modules.filter(pk=m2.pk).exists():
+                self.completed_modules.add(m2)
+            n = conditional_attempt_update(
+                pk=int(self.pk),
+                expect_state=self.STATE_MODULE_1_ACTIVE,
+                expect_version=v0,
+                updates={
+                    "module_answers": self.module_answers,
+                    "flagged_questions": self.flagged_questions,
+                    "current_state": self.STATE_SCORING,
+                    "module_1_submitted_at": m1_sub,
+                    "module_2_submitted_at": m2_sub,
+                    "module_2_started_at": m2_sub,
+                    "scoring_started_at": scoring_at,
+                    "current_module_id": None,
+                    "current_module_start_time": None,
+                    "version_number": new_v,
+                    "updated_at": ts,
+                },
+            )
+            if n == 0:
+                self.refresh_from_db()
+                if self.current_state == self.STATE_SCORING:
+                    return False
+                raise TransitionConflict("submit_module_1 (empty m2 shortcut) concurrent state drift")
+            self.refresh_from_db()
+            self._assert_invariants()
+            self._attempt_engine_log(
+                "submit_module_1",
+                from_state=from_state,
+                detail="module_2_empty_skip_to_scoring",
+            )
+            return True
+
         assert_primary_transition_allowed(self.STATE_MODULE_1_ACTIVE, self.STATE_MODULE_2_ACTIVE)
         ts = timezone.now()
         v0 = int(self.version_number or 0)

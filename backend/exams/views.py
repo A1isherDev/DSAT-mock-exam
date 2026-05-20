@@ -641,7 +641,11 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                     # Authoritative start/resume: entering the runner should immediately be in MODULE_1_ACTIVE
                     # for new attempts, or return canonical current state for existing incomplete attempts.
                     ensure_full_mock_practice_test_modules(attempt.practice_test)
+                    pre_state = attempt.current_state
                     autoheal_attempt_for_runtime(attempt)
+                    attempt.refresh_from_db()
+                    if pre_state != TestAttempt.STATE_SCORING and attempt.current_state == TestAttempt.STATE_SCORING:
+                        _enqueue_scoring_when_in_scoring_state(attempt_id=attempt.pk, request=request)
                     attempt.start_attempt()
                 last_exc = None
                 break
@@ -700,6 +704,7 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         def _compute():
             try:
                 t0 = monotonic()
+                healed_to_scoring = False
                 with transaction.atomic():
                     locked = (
                         TestAttempt.objects.select_for_update()
@@ -708,8 +713,15 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                     )
                     _enforce_attempt_student(request, locked)
                     ensure_full_mock_practice_test_modules(locked.practice_test)
+                    pre_state = locked.current_state
                     autoheal_attempt_for_runtime(locked)
+                    locked.refresh_from_db()
+                    # Detect if autoheal promoted empty-M2 attempt to SCORING
+                    if pre_state != TestAttempt.STATE_SCORING and locked.current_state == TestAttempt.STATE_SCORING:
+                        healed_to_scoring = True
                     locked.start_attempt()
+                if healed_to_scoring:
+                    _enqueue_scoring_when_in_scoring_state(attempt_id=attempt0.pk, request=request)
                 attempt = (
                     TestAttempt.objects.select_related("practice_test", "current_module")
                     .prefetch_related("practice_test__modules", "current_module__questions")
@@ -751,11 +763,18 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         def _compute():
             try:
                 t0 = monotonic()
+                healed_to_scoring = False
                 with transaction.atomic():
                     locked = TestAttempt.objects.select_for_update().get(pk=attempt.pk)
                     _enforce_attempt_student(request, locked)
+                    pre_state = locked.current_state
                     autoheal_attempt_for_runtime(locked)
+                    locked.refresh_from_db()
+                    if pre_state != TestAttempt.STATE_SCORING and locked.current_state == TestAttempt.STATE_SCORING:
+                        healed_to_scoring = True
                     locked.start_attempt()
+                if healed_to_scoring:
+                    _enqueue_scoring_when_in_scoring_state(attempt_id=attempt.pk, request=request)
                 metric_incr("slo_exam_engine_start_ok_total")
                 metric_incr_role("slo_exam_engine_start_ok_total", actor=getattr(request, "user", None))
                 metric_incr("slo_exam_engine_start_latency_ms_sum", int((monotonic() - t0) * 1000))
@@ -881,7 +900,11 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
 
                     transitioned_to_scoring = False
                     if submitting_module_order == 1:
-                        attempt.submit_module_1(module_answers, flagged)
+                        m1_result = attempt.submit_module_1(module_answers, flagged)
+                        # submit_module_1 may skip directly to SCORING when Module 2 has 0 questions
+                        attempt.refresh_from_db()
+                        if m1_result and attempt.current_state == TestAttempt.STATE_SCORING:
+                            transitioned_to_scoring = True
                     elif submitting_module_order == 2:
                         transitioned_to_scoring = bool(attempt.submit_module_2(module_answers, flagged))
                     else:
@@ -889,7 +912,7 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                             f"Cannot submit: invalid current module order {submitting_module_order} (state={attempt.current_state})"
                         )
 
-                    # First successful M2→SCORING transition enqueues; duplicate submits noop (no duplicate jobs).
+                    # First successful transition to SCORING enqueues; duplicate submits noop (no duplicate jobs).
                     if transitioned_to_scoring:
                         _enqueue_scoring_when_in_scoring_state(attempt_id=attempt.pk, request=request)
 

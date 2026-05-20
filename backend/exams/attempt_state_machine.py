@@ -16,7 +16,7 @@ def _freeze_edges() -> dict[str, FrozenSet[str]]:
 
     return {
         TestAttempt.STATE_NOT_STARTED: frozenset({TestAttempt.STATE_MODULE_1_ACTIVE}),
-        TestAttempt.STATE_MODULE_1_ACTIVE: frozenset({TestAttempt.STATE_MODULE_2_ACTIVE}),
+        TestAttempt.STATE_MODULE_1_ACTIVE: frozenset({TestAttempt.STATE_MODULE_2_ACTIVE, TestAttempt.STATE_SCORING}),
         TestAttempt.STATE_MODULE_2_ACTIVE: frozenset({TestAttempt.STATE_SCORING}),
         TestAttempt.STATE_SCORING: frozenset({TestAttempt.STATE_COMPLETED}),
     }

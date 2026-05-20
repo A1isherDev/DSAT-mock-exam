@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Iterable
 
 from django.db import transaction
 from django.utils import timezone
+
+logger = logging.getLogger(__name__)
 
 from .models import MockExam, Module, PracticeTest, TestAttempt, ensure_full_mock_practice_test_modules
 
@@ -144,6 +147,27 @@ def autoheal_attempt_for_runtime(attempt: TestAttempt) -> list[IntegrityFinding]
                 attempt.current_module_start_time = attempt.module_2_started_at
             updates.update(
                 {"current_module", "current_module_start_time", "module_1_started_at", "module_2_started_at"}
+            )
+
+    # If MODULE_2_ACTIVE but Module 2 has zero questions (single-module pastpaper),
+    # promote directly to SCORING so the student isn't stuck on an empty module.
+    if attempt.current_state == TestAttempt.STATE_MODULE_2_ACTIVE:
+        m2 = attempt.practice_test.modules.filter(module_order=2).order_by("id").first()
+        if m2 and m2.questions.count() == 0:
+            attempt.current_state = TestAttempt.STATE_SCORING
+            attempt.current_module = None
+            attempt.current_module_start_time = None
+            attempt.module_2_submitted_at = attempt.module_2_submitted_at or now
+            attempt.scoring_started_at = attempt.scoring_started_at or now
+            if not attempt.completed_modules.filter(pk=m2.pk).exists():
+                attempt.completed_modules.add(m2)
+            updates.update({
+                "current_state", "current_module", "current_module_start_time",
+                "module_2_submitted_at", "scoring_started_at",
+            })
+            logger.info(
+                "autoheal_empty_m2_to_scoring attempt_id=%s",
+                attempt.pk,
             )
 
     # In scoring/completed, force current_module null.
