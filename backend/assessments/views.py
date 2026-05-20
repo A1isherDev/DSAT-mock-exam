@@ -1376,6 +1376,13 @@ class SubmitAttemptView(APIView):
         att.save(update_fields=submit_update_fields)
         _audit_attempt(att, actor=request.user, event_type=AssessmentAttemptAuditEvent.EVENT_SUBMITTED, payload={"total_time_seconds": att.total_time_seconds})
 
+        # Sync class Submission so the grading UI shows the student as "submitted"
+        try:
+            from classes.homework_auto_submit import sync_assessment_submission
+            sync_assessment_submission(att)
+        except Exception:
+            logger.exception("sync_assessment_submission failed attempt_id=%s", att.pk)
+
         if use_async:
             transaction.on_commit(lambda pk=att.pk: grade_attempt_task.delay(pk))
             att.refresh_from_db()

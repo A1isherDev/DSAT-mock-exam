@@ -118,6 +118,8 @@ export default function CreateAssignmentModal({
   onSuccess,
 }: Props) {
   const [assignmentType, setAssignmentType] = useState<AssignmentType>("pastpaper");
+  const [includePastpaper, setIncludePastpaper] = useState(false);
+  const [includeAssessment, setIncludeAssessment] = useState(false);
   const [newAsg, setNewAsg] = useState({ title: "", instructions: "", external_url: "" });
   const [pastSel, setPastSel] = useState<PastSelection>({ mode: "none" });
   const [selectedAssessmentId, setSelectedAssessmentId] = useState<number | null>(null);
@@ -143,6 +145,8 @@ export default function CreateAssignmentModal({
 
   const resetForm = () => {
     setAssignmentType("pastpaper");
+    setIncludePastpaper(false);
+    setIncludeAssessment(false);
     setNewAsg({ title: "", instructions: "", external_url: "" });
     setPastSel({ mode: "none" });
     setSelectedAssessmentId(null);
@@ -293,14 +297,16 @@ export default function CreateAssignmentModal({
       }
       if (newAsg.external_url.trim()) fd.append("external_url", newAsg.external_url.trim());
 
-      if (assignmentType === "pastpaper") {
+      // Pastpaper content
+      if (includePastpaper && pastSel.mode !== "none") {
         if (pastSel.mode === "pack_db") fd.append("pastpaper_pack", String(pastSel.packId));
         else if (pastSel.mode === "pack_legacy") fd.append("practice_test_ids", JSON.stringify(pastSel.testIds));
         else if (pastSel.mode === "single") fd.append("practice_test", String(pastSel.testId));
         fd.append("practice_scope", practiceScope);
       }
 
-      if (assignmentType === "assessment" && selectedAssessmentId) {
+      // Assessment content
+      if (includeAssessment && selectedAssessmentId) {
         fd.append("assessment_set_id", String(selectedAssessmentId));
       }
 
@@ -373,31 +379,42 @@ export default function CreateAssignmentModal({
         ) : null}
         {asgOptionsError ? <ClassroomAlert tone="warning">{asgOptionsError}</ClassroomAlert> : null}
 
-        {/* ─── Step 1: Assignment Type ─── */}
+        {/* ─── Step 1: Content Types (multi-select) ─── */}
         {!isEditing && (
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">Assignment type</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">Include content (select one or more)</p>
             <div className="grid grid-cols-3 gap-2">
               {([
-                { type: "pastpaper" as const, icon: BookOpen, label: "Pastpaper", desc: "Link a practice test" },
-                { type: "assessment" as const, icon: ClipboardList, label: "Assessment", desc: "Classroom quiz/test" },
-                { type: "file_only" as const, icon: FileText, label: "File / Link", desc: "Custom homework" },
-              ]).map(({ type, icon: Icon, label, desc }) => (
-                <button
-                  key={type}
-                  type="button"
-                  onClick={() => {
-                    setAssignmentType(type);
-                    if (type !== "pastpaper") setPastSel({ mode: "none" });
-                    if (type !== "assessment") setSelectedAssessmentId(null);
-                  }}
-                  className={`${cardBase} ${assignmentType === type ? cardSel : cardUnsel}`}
-                >
-                  <Icon className={`h-4 w-4 mb-1 ${assignmentType === type ? "text-indigo-600 dark:text-indigo-400" : "text-slate-400"}`} />
-                  <p className="text-sm font-bold text-slate-800 dark:text-slate-100">{label}</p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400">{desc}</p>
-                </button>
-              ))}
+                { key: "pastpaper" as const, icon: BookOpen, label: "Pastpaper", desc: "Link a practice test" },
+                { key: "assessment" as const, icon: ClipboardList, label: "Assessment", desc: "Classroom quiz/test" },
+                { key: "file_only" as const, icon: FileText, label: "File / Link", desc: "Custom homework" },
+              ]).map(({ key, icon: Icon, label, desc }) => {
+                const active = key === "pastpaper" ? includePastpaper : key === "assessment" ? includeAssessment : (!includePastpaper && !includeAssessment);
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => {
+                      if (key === "pastpaper") {
+                        setIncludePastpaper((v) => !v);
+                      } else if (key === "assessment") {
+                        setIncludeAssessment((v) => !v);
+                      } else {
+                        // file_only: deselect others
+                        setIncludePastpaper(false);
+                        setIncludeAssessment(false);
+                        setPastSel({ mode: "none" });
+                        setSelectedAssessmentId(null);
+                      }
+                    }}
+                    className={`${cardBase} ${active ? cardSel : cardUnsel}`}
+                  >
+                    <Icon className={`h-4 w-4 mb-1 ${active ? "text-indigo-600 dark:text-indigo-400" : "text-slate-400"}`} />
+                    <p className="text-sm font-bold text-slate-800 dark:text-slate-100">{label}</p>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400">{desc}</p>
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
@@ -467,7 +484,7 @@ export default function CreateAssignmentModal({
         </ClassroomField>
 
         {/* ─── Step 2: Content Selection ─── */}
-        {assignmentType === "pastpaper" && (
+        {(isEditing ? assignmentType === "pastpaper" : includePastpaper) && (
           <>
             <ClassroomField label="Pastpaper (full exam card)" hint="One card can combine R&W and Math.">
               <div className="grid max-h-[320px] grid-cols-1 gap-3 overflow-y-auto pr-1 sm:grid-cols-2">
@@ -537,7 +554,7 @@ export default function CreateAssignmentModal({
           </>
         )}
 
-        {assignmentType === "assessment" && (
+        {(isEditing ? assignmentType === "assessment" : includeAssessment) && (
           <ClassroomField label="Assessment set" hint="Select a quiz/test to assign to students.">
             {assignmentOptions.assessment_sets.length === 0 ? (
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-center dark:border-slate-700 dark:bg-slate-800/50">
@@ -579,7 +596,7 @@ export default function CreateAssignmentModal({
         )}
 
         {/* ─── External link ─── */}
-        {(assignmentType === "file_only" || assignmentType === "pastpaper") && (
+        {(isEditing ? (assignmentType === "file_only" || assignmentType === "pastpaper") : true) && (
           <ClassroomField label="External link (optional)" htmlFor="asg-url">
             <input
               id="asg-url"
@@ -650,9 +667,24 @@ export default function CreateAssignmentModal({
           ) : (
             <>
               <input id="asg-files" name="attachment_file" type="file" multiple
-                onChange={(e) => setAsgFiles((prev) => [...prev, ...Array.from(e.target.files || [])])}
+                onChange={(e) => {
+                  const incoming = Array.from(e.target.files || []);
+                  setAsgFiles((prev) => {
+                    const combined = [...prev, ...incoming];
+                    if (combined.length > 10) {
+                      setFormError("Maximum 10 files allowed.");
+                      return prev;
+                    }
+                    setFormError(null);
+                    return combined;
+                  });
+                  e.target.value = "";
+                }}
                 className="w-full text-sm text-slate-600 file:mr-3 file:rounded-xl file:border-0 file:bg-indigo-500/10 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-indigo-700 hover:file:bg-indigo-500/15 dark:text-slate-400 dark:file:bg-indigo-500/20 dark:file:text-indigo-200"
               />
+              {asgFiles.length > 0 && (
+                <p className="text-[10px] font-semibold text-slate-400 mt-1">{asgFiles.length}/10 files</p>
+              )}
               {asgFiles.length > 0 && (
                 <div className="mt-2 space-y-1">
                   {asgFiles.map((f, i) => (
@@ -681,7 +713,7 @@ export default function CreateAssignmentModal({
             variant="primary"
             className="flex-1"
             onClick={handleSubmit}
-            disabled={!newAsg.title.trim() || creatingAsg || (assignmentType === "assessment" && !selectedAssessmentId)}
+            disabled={!newAsg.title.trim() || creatingAsg || (includeAssessment && !selectedAssessmentId)}
           >
             {creatingAsg ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             {isEditing ? "Save changes" : "Create"}

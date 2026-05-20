@@ -2,6 +2,9 @@
 When a student finishes all practice-test sections required by class homework, upsert the
 submission as SUBMITTED with a linked TestAttempt — no separate file upload.
 
+Also handles assessment homework: when a student submits an AssessmentAttempt,
+upsert the class Submission so the grading UI shows it.
+
 Also used when loading ``my-submission`` so late joins / missed signals still sync.
 """
 
@@ -195,3 +198,106 @@ def sync_homework_after_test_attempt_saved(attempt: TestAttempt) -> None:
                 assignment.pk,
                 attempt.pk,
             )
+
+
+# ---------------------------------------------------------------------------
+# Assessment homework → class Submission sync
+# ---------------------------------------------------------------------------
+
+
+def sync_assessment_submission(assessment_attempt) -> bool:
+    """
+    When an AssessmentAttempt is submitted (or graded), create/update the
+    linked class Submission so the grading UI shows it.
+
+    ``assessment_attempt`` is an ``assessments.AssessmentAttempt`` instance.
+    The chain is: AssessmentAttempt → homework (HomeworkAssignment) → assignment (classes.Assignment).
+    """
+    from assessments.models import AssessmentAttempt  # avoid circular import
+
+    hw = getattr(assessment_attempt, "homework", None)
+    if hw is None:
+        return False
+
+    assignment = getattr(hw, "assignment", None)
+    if assignment is None:
+        return False
+
+    student = assessment_attempt.student
+    if student is None:
+        return False
+
+    # Only sync when attempt is submitted or graded
+    if assessment_attempt.status not in (
+        AssessmentAttempt.STATUS_SUBMITTED,
+        AssessmentAttempt.STATUS_GRADED,
+    ):
+        return False
+
+    try:
+        return _apply_assessment_sync(student, assignment, assessment_attempt)
+    except Exception:
+        logger.exception(
+            "sync_assessment_submission failed assignment_id=%s attempt_id=%s",
+            assignment.pk,
+            assessment_attempt.pk,
+        )
+        return False
+
+
+def _apply_assessment_sync(student, assignment: Assignment, assessment_attempt) -> bool:
+    """
+    Create or update the class Submission for an assessment homework.
+    Unlike practice-test sync, we don't link a TestAttempt — the
+    AssessmentAttempt is the source of truth (tracked separately).
+    """
+    from django.db import IntegrityError
+
+    with transaction.atomic():
+        row = (
+            Submission.objects.select_for_update()
+            .filter(assignment=assignment, student=student)
+            .first()
+        )
+        if row is None:
+            try:
+                row = Submission.objects.create(assignment=assignment, student=student)
+            except IntegrityError:
+                row = Submission.objects.select_for_update().get(
+                    assignment=assignment, student=student
+                )
+
+        s = Submission.objects.select_for_update().get(pk=row.pk)
+
+        # Don't overwrite a teacher review
+        if s.status == Submission.STATUS_REVIEWED:
+            return False
+
+        # Already submitted — nothing to do
+        if s.status == Submission.STATUS_SUBMITTED:
+            return False
+
+        if s.status not in (
+            Submission.STATUS_DRAFT,
+            Submission.STATUS_RETURNED,
+        ):
+            return False
+
+        s.revision += 1
+        rev = s.revision
+        prev_status = s.status
+        s.mark_submitted()
+        audit_submission_event(
+            s.pk,
+            None,
+            SubmissionAuditEvent.EVENT_STATUS_CHANGE,
+            {
+                "from": prev_status,
+                "to": s.status,
+                "source": "assessment_attempt_submitted",
+                "assessment_attempt_id": assessment_attempt.pk,
+            },
+            submission_revision=rev,
+        )
+        s.save()
+        return True

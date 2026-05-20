@@ -1777,6 +1777,26 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
                     assignment.pk,
                     request.user.pk,
                 )
+            # Also lazy-sync assessment homework
+            hw_link = getattr(assignment, "assessment_homework", None)
+            if hw_link is not None:
+                from assessments.models import AssessmentAttempt
+                from classes.homework_auto_submit import sync_assessment_submission
+
+                att = AssessmentAttempt.objects.filter(
+                    homework=hw_link,
+                    student=request.user,
+                    status__in=[AssessmentAttempt.STATUS_SUBMITTED, AssessmentAttempt.STATUS_GRADED],
+                ).order_by("-submitted_at").first()
+                if att:
+                    try:
+                        sync_assessment_submission(att)
+                    except Exception:
+                        logger.exception(
+                            "sync_assessment_submission_failed assignment_id=%s user_id=%s",
+                            assignment.pk,
+                            request.user.pk,
+                        )
         sub = (
             Submission.objects.filter(assignment=assignment, student=request.user)
             .select_related("attempt", "attempt__practice_test", "review", "review__teacher")
@@ -1811,6 +1831,26 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
                         "sync_practice_submission_failed assignment_id=%s student_id=%s",
                         assignment.pk,
                         uid,
+                    )
+
+        # Lazy-sync assessment homework submissions
+        hw_link = getattr(assignment, "assessment_homework", None)
+        if hw_link is not None:
+            from assessments.models import AssessmentAttempt
+            from classes.homework_auto_submit import sync_assessment_submission
+
+            submitted_attempts = AssessmentAttempt.objects.filter(
+                homework=hw_link,
+                status__in=[AssessmentAttempt.STATUS_SUBMITTED, AssessmentAttempt.STATUS_GRADED],
+            ).select_related("student")
+            for att in submitted_attempts:
+                try:
+                    sync_assessment_submission(att)
+                except Exception:
+                    logger.exception(
+                        "sync_assessment_submission_failed assignment_id=%s attempt_id=%s",
+                        assignment.pk,
+                        att.pk,
                     )
         qs = (
             Submission.objects.filter(assignment=assignment)
