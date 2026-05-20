@@ -592,6 +592,39 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         # only if there is no other canonical active (non-abandoned) attempt.
         # SQLite can raise "database table is locked" under thread races.
         # In production (Postgres) this path is not expected, but in tests we retry briefly.
+        #
+        # For non-mock practice tests: if the existing active attempt is on MODULE_2 but
+        # the student navigated away (stale attempt), abandon it so they can start fresh.
+        # Mock exams always resume (timed continuous flow).
+        is_mock = bool(getattr(test, "mock_exam_id", None))
+        if not is_mock:
+            with transaction.atomic():
+                stale = (
+                    TestAttempt.objects.select_for_update()
+                    .filter(
+                        student=request.user,
+                        practice_test=test,
+                        is_completed=False,
+                        current_state=TestAttempt.STATE_MODULE_2_ACTIVE,
+                    )
+                    .exclude(current_state=TestAttempt.STATE_ABANDONED)
+                )
+                for s in stale:
+                    s.current_state = TestAttempt.STATE_ABANDONED
+                    s.abandoned_checkpoint_state = TestAttempt.STATE_MODULE_2_ACTIVE
+                    s.current_module = None
+                    s.current_module_start_time = None
+                    s.version_number = int(s.version_number or 0) + 1
+                    s.save(update_fields=[
+                        "current_state", "abandoned_checkpoint_state",
+                        "current_module", "current_module_start_time",
+                        "version_number", "updated_at",
+                    ])
+                    logger.info(
+                        "auto_abandon_stale_m2 attempt_id=%s practice_test_id=%s student_id=%s",
+                        s.pk, test.pk, request.user.pk,
+                    )
+
         last_exc: Exception | None = None
         attempt = None
         for _ in range(4):

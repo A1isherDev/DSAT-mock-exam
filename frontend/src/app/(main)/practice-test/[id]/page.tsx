@@ -54,13 +54,14 @@ function PracticeTestDetailInner() {
     if (!assertCriticalAuth()) return;
     setStarting(true);
     try {
-      let attempt = attempts.find(
-        (a) => a.practice_test === testId && !a.is_expired && !a.is_completed,
-      );
-      if (!attempt) {
-        attempt = await examsPublicApi.startTest(testId);
-        setAttempts((prev) => [...prev, attempt]);
-      }
+      // Always call startTest — the backend creates a new attempt or returns the
+      // canonical active one. Don't short-circuit with stale frontend attempt data,
+      // which could resume a days-old MODULE_2_ACTIVE instead of starting fresh.
+      const attempt = await examsPublicApi.startTest(testId);
+      setAttempts((prev) => {
+        const exists = prev.some((a) => a.id === attempt.id);
+        return exists ? prev : [...prev, attempt];
+      });
       try {
         sessionStorage.setItem(
           `mastersat.attempt.bootstrap.${attempt.id}`,
