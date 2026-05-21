@@ -1359,7 +1359,7 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         if not classroom.memberships.filter(user=self.request.user).exists():
             return Assignment.objects.none()
         return Assignment.objects.filter(classroom=classroom).select_related(
-            "created_by", "mock_exam", "practice_test", "pastpaper_pack", "module"
+            "created_by", "mock_exam", "practice_test", "pastpaper_pack", "practice_test_pack", "module"
         ).prefetch_related("extra_attachments").annotate(submissions_count=Count("submissions"))
 
     def create(self, request, *args, **kwargs):
@@ -1371,6 +1371,7 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         assignment = serializer.save(classroom=classroom, created_by=request.user)
 
         # Handle file uploads (multiple files supported)
+        # Save extra attachments BEFORE the primary so temp files stay alive.
         files = list(request.FILES.getlist("attachment_file"))
         if not files:
             files = list(request.FILES.getlist("attachment_files"))
@@ -1379,10 +1380,10 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         for f in files:
             validate_submission_upload(f)
         if files:
-            assignment.attachment_file = files[0]
-            assignment.save(update_fields=["attachment_file", "updated_at"])
             for f in files[1:]:
                 AssignmentExtraAttachment.objects.create(assignment=assignment, file=f)
+            assignment.attachment_file = files[0]
+            assignment.save(update_fields=["attachment_file", "updated_at"])
 
         # Auto-assign pastpaper/practice test access to students
         try:
@@ -1430,10 +1431,10 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         for f in files:
             validate_submission_upload(f)
         if files:
-            assignment.attachment_file = files[0]
-            assignment.save(update_fields=["attachment_file", "updated_at"])
             for f in files[1:]:
                 AssignmentExtraAttachment.objects.create(assignment=assignment, file=f)
+            assignment.attachment_file = files[0]
+            assignment.save(update_fields=["attachment_file", "updated_at"])
         return Response(self.get_serializer(assignment).data)
 
     def partial_update(self, request, *args, **kwargs):
