@@ -992,22 +992,39 @@ export default function ModuleQuestionsPanel(props: {
       )}
 
       {/* Score calculator */}
-      {!isLoading && questions.length > 0 && (
-        <div className="mb-4 flex items-center gap-3 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10">
-            <span className="text-sm font-black text-primary">Σ</span>
+      {!isLoading && questions.length > 0 && (() => {
+        const remaining = progress.required !== null ? Math.max(0, progress.required - questions.length) : null;
+        return (
+          <div className="mb-4 flex items-center gap-3 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10">
+              <span className="text-sm font-black text-primary">Σ</span>
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-bold uppercase tracking-widest text-primary/70">Jami ball</p>
+              <p className="text-lg font-black tabular-nums text-primary leading-tight">
+                {totalScore}
+                <span className="ml-2 text-xs font-semibold text-muted-foreground">
+                  ({questions.length}{progress.required !== null ? `/${progress.required}` : ""} ta savol)
+                </span>
+              </p>
+            </div>
+            {remaining !== null && remaining > 0 && (
+              <div className="shrink-0 text-right">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-amber-600">Qoldi</p>
+                <p className="text-lg font-black tabular-nums text-amber-600 leading-tight">
+                  +{remaining}
+                  <span className="ml-1 text-[10px] font-semibold">savol</span>
+                </p>
+              </div>
+            )}
+            {remaining !== null && remaining === 0 && (
+              <div className="shrink-0 text-right">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600">✓ Tayyor</p>
+              </div>
+            )}
           </div>
-          <div className="min-w-0">
-            <p className="text-xs font-bold uppercase tracking-widest text-primary/70">Jami ball</p>
-            <p className="text-lg font-black tabular-nums text-primary leading-tight">
-              {totalScore}
-              <span className="ml-2 text-xs font-semibold text-muted-foreground">
-                ({questions.length} ta savol)
-              </span>
-            </p>
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* SAT module health panel */}
       {isSat && !isLoading && (
