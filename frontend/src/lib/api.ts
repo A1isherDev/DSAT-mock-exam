@@ -732,6 +732,17 @@ export const examsPublicApi = {
         const res = await api.get(`/exams/pastpaper-packs/${id}/`);
         return res.data as PastpaperPackPublic;
     },
+    /** Practice test pack student hub: published packs with questions. */
+    getPracticeTestPacksStudent: async () => {
+        const res = await api.get("/exams/practice-test-packs/");
+        const raw = res.data;
+        return Array.isArray(raw) ? raw : Array.isArray(raw?.results) ? raw.results : [];
+    },
+    /** Single practice test pack (includes sections). */
+    getPracticeTestPackStudent: async (id: number) => {
+        const res = await api.get(`/exams/practice-test-packs/${id}/`);
+        return res.data;
+    },
 };
 
 export const classesApi = {
@@ -1000,6 +1011,41 @@ export const examsAdminApi = {
     },
     addPastpaperPackSection: async (packId: number, subject: 'READING_WRITING' | 'MATH') => {
         const r = await api.post(`/exams/admin/pastpaper-packs/${packId}/add_section/`, { subject });
+        return r.data;
+    },
+
+    // Practice Test Packs (custom user-created, distinct from pastpapers)
+    getPracticeTestPacks: async () => {
+        const r = await api.get('/exams/admin/practice-test-packs/');
+        const raw = r.data;
+        const items = Array.isArray(raw) ? raw : Array.isArray(raw?.results) ? raw.results : [];
+        return { items, count: items.length };
+    },
+    createPracticeTestPack: async (data: object) => {
+        const r = await api.post('/exams/admin/practice-test-packs/', data);
+        return r.data;
+    },
+    getPracticeTestPack: async (id: number) => {
+        const r = await api.get(`/exams/admin/practice-test-packs/${id}/`);
+        return r.data;
+    },
+    updatePracticeTestPack: async (id: number, data: object) => {
+        const r = await api.patch(`/exams/admin/practice-test-packs/${id}/`, data);
+        return r.data;
+    },
+    deletePracticeTestPack: async (id: number) => {
+        await api.delete(`/exams/admin/practice-test-packs/${id}/`);
+    },
+    publishPracticeTestPack: async (id: number) => {
+        const r = await api.post(`/exams/admin/practice-test-packs/${id}/publish/`);
+        return r.data;
+    },
+    unpublishPracticeTestPack: async (id: number) => {
+        const r = await api.post(`/exams/admin/practice-test-packs/${id}/unpublish/`);
+        return r.data;
+    },
+    addPracticeTestPackSection: async (packId: number, subject: 'READING_WRITING' | 'MATH') => {
+        const r = await api.post(`/exams/admin/practice-test-packs/${packId}/add_section/`, { subject });
         return r.data;
     },
 

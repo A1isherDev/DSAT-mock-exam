@@ -51,6 +51,7 @@ from .models import (
     PastpaperPack,
     PortalMockExam,
     PracticeTest,
+    PracticeTestPack,
     Question,
     TestAttempt,
     ensure_full_mock_practice_test_modules,
@@ -59,11 +60,13 @@ from .serializers import (
     MockExamSerializer,
     PastpaperPackStudentSerializer,
     PortalMockExamStudentSerializer,
+    PracticeTestPackStudentSerializer,
     PracticeTestSerializer,
     TestAttemptSerializer,
     ModuleSerializer,
     AdminMockExamSerializer,
     AdminPastpaperPackSerializer,
+    AdminPracticeTestPackSerializer,
     AdminPracticeTestSerializer,
     AdminModuleSerializer,
     AdminQuestionSerializer,
@@ -308,6 +311,51 @@ class PastpaperPackStudentDetailView(generics.RetrieveAPIView):
         return base
 
 
+class PracticeTestPackStudentListView(generics.ListAPIView):
+    """Student-facing practice test pack list: published packs with questions."""
+
+    permission_classes = [AllowAny]
+    serializer_class = PracticeTestPackStudentSerializer
+
+    def get_queryset(self):
+        base = (
+            PracticeTestPack.objects.filter(
+                sections__modules__questions__isnull=False,
+            )
+            .prefetch_related("sections__modules")
+            .distinct()
+            .order_by("-created_at")
+        )
+        user = self.request.user
+        if not user.is_authenticated:
+            return base.none()
+        if normalized_role(user) == acc_const.ROLE_STUDENT:
+            return base.filter(is_published=True)
+        return base
+
+
+class PracticeTestPackStudentDetailView(generics.RetrieveAPIView):
+    """Single practice test pack detail."""
+
+    permission_classes = [AllowAny]
+    serializer_class = PracticeTestPackStudentSerializer
+
+    def get_queryset(self):
+        base = (
+            PracticeTestPack.objects.filter(
+                sections__modules__questions__isnull=False,
+            )
+            .prefetch_related("sections__modules")
+            .distinct()
+        )
+        user = self.request.user
+        if not user.is_authenticated:
+            return base.none()
+        if normalized_role(user) == acc_const.ROLE_STUDENT:
+            return base.filter(is_published=True)
+        return base
+
+
 class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
     """
     Pastpaper / skill practice only: standalone PracticeTest rows (no mock_exam).
@@ -530,62 +578,8 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # ── SAT section-order + break enforcement (MOCK_SAT and Pastpapers) ────
-        # R&W must be completed before Math. After R&W completes the student
-        # must wait SAT_BREAK_SECONDS before the Math section unlocks.
-        # Both MOCK_SAT exams and standalone PastpaperPacks are full SAT
-        # simulations and therefore inherit identical realism enforcement.
-        test_mock = getattr(test, "mock_exam", None)
-        test_pack = getattr(test, "pastpaper_pack", None)
-        is_sat_simulation = (
-            (test_mock is not None and test_mock.kind == MockExam.KIND_MOCK_SAT)
-            or test_pack is not None
-        )
-        if is_sat_simulation and test.subject == "MATH":
-            from .sat_rules import SAT_BREAK_SECONDS
-            from datetime import timedelta
-            # Locate the student's completed R&W attempt for the same exam context.
-            if test_mock is not None:
-                rw_filter: dict = {
-                    "practice_test__mock_exam": test_mock,
-                    "practice_test__subject": "READING_WRITING",
-                }
-            else:
-                rw_filter = {
-                    "practice_test__pastpaper_pack": test_pack,
-                    "practice_test__subject": "READING_WRITING",
-                }
-            rw_attempt = (
-                TestAttempt.objects.filter(
-                    student=user,
-                    is_completed=True,
-                    **rw_filter,
-                )
-                .order_by("-completed_at")
-                .first()
-            )
-            if rw_attempt is None:
-                return Response(
-                    {
-                        "code": "section_order_violation",
-                        "detail": "Complete the Reading & Writing section before starting Math.",
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            # Break timer starts when R&W module 2 was submitted (or at completion).
-            break_start = rw_attempt.module_2_submitted_at or rw_attempt.completed_at
-            if break_start is not None:
-                break_ends_at = break_start + timedelta(seconds=SAT_BREAK_SECONDS)
-                now = timezone.now()
-                if now < break_ends_at:
-                    return Response(
-                        {
-                            "code": "break_required",
-                            "detail": "break_required",
-                            "break_ends_at": break_ends_at.isoformat(),
-                        },
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
+        # NOTE: Section-order and 10-minute break enforcement removed.
+        # Students can now start any section (R&W or Math) in any order.
 
         # Get-or-create active attempt (concurrency-safe under DB constraint).
         # Business rule: abandoning is recoverable, so we reuse the latest abandoned attempt
@@ -1403,6 +1397,100 @@ class AdminPastpaperPackViewSet(viewsets.ModelViewSet):
         pack.is_published = False
         pack.save(update_fields=["is_published", "updated_at"])
         return Response(self.get_serializer(pack).data)
+
+
+class AdminPracticeTestPackViewSet(viewsets.ModelViewSet):
+    """CRUD for custom practice test packs (distinct from official pastpapers)."""
+
+    permission_classes = [IsAuthenticated, CanManageQuestions]
+    serializer_class = AdminPracticeTestPackSerializer
+
+    def get_queryset(self):
+        base = PracticeTestPack.objects.all().prefetch_related(
+            "sections__modules",
+            "sections__assigned_users",
+        )
+        if not can_manage_questions(self.request.user):
+            return base.none()
+        return base.order_by("-created_at")
+
+    def perform_create(self, serializer):
+        pack = serializer.save(created_by=self.request.user)
+        # Auto-create R&W and Math sections
+        for subject in ("READING_WRITING", "MATH"):
+            PracticeTest.objects.create(
+                mock_exam=None,
+                pastpaper_pack=None,
+                practice_test_pack=pack,
+                subject=subject,
+                title=f"{pack.title} - {'Reading & Writing' if subject == 'READING_WRITING' else 'Math'}",
+            )
+
+    @action(detail=True, methods=["post"])
+    def add_section(self, request, pk=None):
+        pack = self.get_object()
+        subject = request.data.get("subject")
+        if subject not in ("READING_WRITING", "MATH"):
+            return Response({"detail": "Invalid subject."}, status=status.HTTP_400_BAD_REQUEST)
+        if pack.sections.filter(subject=subject).exists():
+            return Response(
+                {"detail": "This pack already has that section."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        pt = PracticeTest.objects.create(
+            mock_exam=None,
+            pastpaper_pack=None,
+            practice_test_pack=pack,
+            subject=subject,
+            title=f"{pack.title} - {dict(PracticeTest.SUBJECT_CHOICES).get(subject, subject)}",
+        )
+        pt = (
+            PracticeTest.objects.filter(pk=pt.pk)
+            .prefetch_related("modules", "assigned_users")
+            .first()
+        )
+        return Response(AdminPracticeTestSerializer(pt).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"])
+    def publish(self, request, pk=None):
+        """Mark a practice test pack as published (visible to students)."""
+        pack = self.get_object()
+        # Basic validation: ensure at least one section has questions
+        sections = pack.sections.all()
+        if not sections.exists():
+            return Response(
+                {"detail": "Cannot publish: pack has no sections."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        sections_with_questions = [s for s in sections if s.has_questions_for_attempts()]
+        if not sections_with_questions:
+            return Response(
+                {"detail": "Cannot publish: no section has questions."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        pack.is_published = True
+        pack.published_at = timezone.now()
+        pack.save(update_fields=["is_published", "published_at", "updated_at"])
+        return Response(self.get_serializer(pack).data)
+
+    @action(detail=True, methods=["post"])
+    def unpublish(self, request, pk=None):
+        """Retract a practice test pack from student view."""
+        pack = self.get_object()
+        pack.is_published = False
+        pack.save(update_fields=["is_published", "updated_at"])
+        return Response(self.get_serializer(pack).data)
+
+    def destroy(self, request, *args, **kwargs):
+        pack = self.get_object()
+        # Don't allow deletion if any section has attempts
+        section_ids = pack.sections.values_list("id", flat=True)
+        if TestAttempt.objects.filter(practice_test_id__in=section_ids).exists():
+            return Response(
+                {"detail": "Cannot delete: students have attempts on this pack."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return super().destroy(request, *args, **kwargs)
 
 
 class AdminPracticeTestViewSet(viewsets.ModelViewSet):

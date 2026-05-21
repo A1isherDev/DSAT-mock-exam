@@ -6,7 +6,7 @@ from rest_framework import serializers
 from urllib.parse import urlparse
 from django.core.validators import URLValidator
 
-from exams.models import MockExam, PastpaperPack, PracticeTest
+from exams.models import MockExam, PastpaperPack, PracticeTest, PracticeTestPack
 
 from .submission_validation import validate_submission_grade
 
@@ -242,6 +242,9 @@ class AssignmentSerializer(serializers.ModelSerializer):
     pastpaper_pack = serializers.PrimaryKeyRelatedField(
         queryset=PastpaperPack.objects.all(), required=False, allow_null=True
     )
+    practice_test_pack = serializers.PrimaryKeyRelatedField(
+        queryset=PracticeTestPack.objects.all(), required=False, allow_null=True
+    )
     practice_test_ids = serializers.JSONField(required=False, allow_null=True)
     practice_scope = serializers.ChoiceField(
         choices=Assignment.PRACTICE_SCOPE_CHOICES,
@@ -262,6 +265,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "mock_exam",
             "practice_test",
             "pastpaper_pack",
+            "practice_test_pack",
             "practice_test_ids",
             "practice_scope",
             "practice_bundle_tests",

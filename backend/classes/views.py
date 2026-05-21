@@ -583,7 +583,22 @@ class ClassroomViewSet(ModelViewSet):
                 "question_count": aset.questions.filter(is_active=True).count(),
             })
 
-        return Response({"practice_tests": practice_tests, "assessment_sets": assessment_sets})
+        # Practice test packs (custom user-created)
+        from exams.models import PracticeTestPack
+        practice_test_packs = []
+        for ptp in PracticeTestPack.objects.filter(is_published=True).order_by("-created_at"):
+            practice_test_packs.append({
+                "id": ptp.id,
+                "title": ptp.title or "",
+                "description": ptp.description or "",
+                "section_count": ptp.sections.count(),
+            })
+
+        return Response({
+            "practice_tests": practice_tests,
+            "assessment_sets": assessment_sets,
+            "practice_test_packs": practice_test_packs,
+        })
 
     @action(detail=True, methods=["get"], permission_classes=[IsAuthenticatedAndNotFrozen], url_path="leaderboard")
     def leaderboard(self, request, pk=None):

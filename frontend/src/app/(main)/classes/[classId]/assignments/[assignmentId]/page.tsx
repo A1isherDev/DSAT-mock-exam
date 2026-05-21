@@ -767,71 +767,7 @@ export default function AssignmentDetailPage() {
                     </div>
                   </ClassroomField>
 
-                  <div className="mt-6 rounded-2xl border border-slate-200/95 bg-white/80 p-4 dark:border-slate-600 dark:bg-slate-950/40">
-                    <ClassroomField
-                      label="Link a test attempt (if your teacher asked)"
-                      htmlFor="attempt-select"
-                      hint={
-                        allowedPracticeTestIdSet
-                          ? "Only attempts for the practice sections in this assignment are listed. Finish the test, then refresh the list."
-                          : "Shows your recent attempts for any practice or mock section. Choose one if your teacher wants proof of completion."
-                      }
-                    >
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
-                        <input
-                          id="attempt-search"
-                          type="search"
-                          value={attemptSearch}
-                          onChange={(e) => setAttemptSearch(e.target.value)}
-                          placeholder="Search by #id, subject, or title…"
-                          autoComplete="off"
-                          className={`${crInputClass} sm:min-w-[200px] sm:flex-1`}
-                          aria-label="Filter test attempts"
-                          disabled={!canEditSubmission}
-                        />
-                        <ClassroomButton
-                          type="button"
-                          variant="secondary"
-                          size="md"
-                          className="shrink-0"
-                          disabled={attemptsLoading || !canEditSubmission}
-                          onClick={() => void refetchAttempts()}
-                        >
-                          <RefreshCw className={`h-4 w-4 ${attemptsLoading ? "animate-spin" : ""}`} />
-                          Refresh list
-                        </ClassroomButton>
-                      </div>
-                      <select
-                        id="attempt-select"
-                        className={`${crSelectClass} mt-2 min-h-[2.75rem]`}
-                        value={selectedAttemptId != null ? String(selectedAttemptId) : ""}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setSelectedAttemptId(v === "" ? null : Number(v));
-                        }}
-                        disabled={(attemptsLoading && myAttempts.length === 0) || !canEditSubmission}
-                      >
-                        <option value="">Don&apos;t link a test attempt</option>
-                        {displayAttempts.map((a) => (
-                          <option key={a.id} value={a.id}>
-                            {formatAttemptOption(a, bundleTests)}
-                          </option>
-                        ))}
-                      </select>
-                      {!attemptsLoading && allowedPracticeTestIdSet && displayAttempts.length === 0 ? (
-                        <p className="mt-2 text-xs font-medium text-amber-800 dark:text-amber-200">
-                          No attempts found for this assignment&apos;s tests yet. Open the practice or mock from the buttons
-                          above, complete it, then tap <strong>Refresh list</strong>.
-                        </p>
-                      ) : null}
-                      {!attemptsLoading && !allowedPracticeTestIdSet && myAttempts.length === 0 ? (
-                        <p className="mt-2 text-xs text-slate-600 dark:text-slate-400">
-                          No attempts on your account yet. When you start a practice or mock test, it will appear here after you
-                          refresh.
-                        </p>
-                      ) : null}
-                    </ClassroomField>
-                  </div>
+                  {/* Test attempt linking removed — auto-submit handles test completion automatically */}
 
                   <div className="mt-6 flex flex-col gap-3 rounded-xl border border-dashed border-slate-200/90 bg-white/60 px-4 py-3 dark:border-slate-600 dark:bg-slate-950/30">
                     <p className="text-xs text-slate-600 dark:text-slate-400">

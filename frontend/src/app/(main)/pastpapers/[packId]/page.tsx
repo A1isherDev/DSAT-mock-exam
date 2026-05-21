@@ -44,16 +44,6 @@ function totalMinutes(section: PastpaperPackSection): number {
   return section.module_count * 35;
 }
 
-// ─── sentinel error: server-enforced break ───────────────────────────────────
-
-class BreakRequiredError extends Error {
-  breakEndsAt: string;
-  constructor(breakEndsAt: string) {
-    super("break_required");
-    this.breakEndsAt = breakEndsAt;
-  }
-}
-
 // ─── section card ─────────────────────────────────────────────────────────────
 
 type AttemptRow = {
@@ -289,14 +279,6 @@ function PastpaperPackDetailInner() {
     return (isRWSubject(a.subject) ? 0 : 1) - (isRWSubject(b.subject) ? 0 : 1);
   });
 
-  // Derive locking state: Math is locked until R&W is completed.
-  const rwSection = sorted.find((s) => isRWSubject(s.subject));
-  const rwDone = !!attempts.find((a) => a.practice_test === rwSection?.id && a.is_completed);
-  // Find the last completed R&W attempt to compute break status.
-  const rwCompletedAttempt = attempts
-    .filter((a) => a.practice_test === rwSection?.id && a.is_completed)
-    .sort((a, b) => b.id - a.id)[0];
-
   const handleStart = async (sectionId: number) => {
     if (!assertCriticalAuth()) return;
     setStarting(sectionId);
@@ -305,20 +287,7 @@ function PastpaperPackDetailInner() {
         (a) => a.practice_test === sectionId && !a.is_completed && !a.is_expired,
       );
       if (!attempt) {
-        try {
-          attempt = (await examsStudentApi.startTest(sectionId)) as AttemptRow;
-        } catch (e: unknown) {
-          // Server-enforced break: backend rejects Math start until break has elapsed.
-          const resp = (e as { response?: { data?: { code?: string; break_ends_at?: string } } })?.response;
-          if (resp?.data?.code === "break_required" && resp.data.break_ends_at) {
-            throw new BreakRequiredError(resp.data.break_ends_at);
-          }
-          // Server-enforced section ordering.
-          if (resp?.data?.code === "section_order_violation") {
-            throw new Error("section_order_violation");
-          }
-          throw e;
-        }
+        attempt = (await examsStudentApi.startTest(sectionId)) as AttemptRow;
         setAttempts((prev) => [...prev, attempt!]);
       }
       try {
@@ -326,18 +295,6 @@ function PastpaperPackDetailInner() {
       } catch {}
       router.push(`/exam/${attempt.id}`);
     } catch (e) {
-      if (e instanceof BreakRequiredError) {
-        // Redirect to the pastpaper break page with the server timestamp.
-        router.push(
-          `/pastpapers/${packId}/break?rwAttempt=${rwCompletedAttempt?.id ?? ""}&breakEndsAt=${encodeURIComponent(e.breakEndsAt)}`,
-        );
-        return;
-      }
-      if (e instanceof Error && e.message === "section_order_violation") {
-        // Silently handled — the UI already locks Math until R&W is done.
-        setStarting(null);
-        return;
-      }
       console.error("[pastpaper] start section failed", e);
       setStarting(null);
     }
@@ -389,8 +346,7 @@ function PastpaperPackDetailInner() {
           {formatDate(pack.practice_date)}
         </p>
         <p className="mt-3 text-sm text-muted-foreground leading-relaxed">
-          Simulate authentic SAT conditions — complete Reading &amp; Writing first, then take a
-          10-minute break, then Mathematics. Pacing and sequencing are enforced automatically.
+          Practice SAT sections — start with either Reading &amp; Writing or Mathematics in any order.
         </p>
       </div>
 
@@ -408,34 +364,15 @@ function PastpaperPackDetailInner() {
         </div>
       ) : (
         <div className="grid gap-4">
-          {sorted.map((section) => {
-            const isMath = !isRWSubject(section.subject);
-            const locked = isMath && !rwDone;
-            return (
+          {sorted.map((section) => (
               <SectionCard
                 key={section.id}
                 section={section}
                 attempts={attempts}
                 onStart={handleStart}
                 starting={starting}
-                locked={locked}
-                lockReason={locked ? "Complete Reading & Writing first to unlock Mathematics." : undefined}
               />
-            );
-          })}
-        </div>
-      )}
-
-      {/* Break state notice */}
-      {rwDone && !attempts.find((a) => !isRWSubject(sorted.find((s) => s.id === a.practice_test)?.subject ?? "") && a.is_completed) && (
-        <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4">
-          <p className="text-xs font-bold uppercase tracking-widest text-amber-700 mb-1">
-            Reading &amp; Writing complete
-          </p>
-          <p className="text-sm text-amber-800">
-            Take a 10-minute break before starting Mathematics — the official SAT requires it.
-            The timer will start automatically when you click Start on the Mathematics section.
-          </p>
+          ))}
         </div>
       )}
     </div>

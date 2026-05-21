@@ -14,6 +14,7 @@ import {
   FileText,
   BookMarked,
   ClipboardCheck,
+  FlaskConical,
 } from "lucide-react";
 
 /**
@@ -47,8 +48,9 @@ const LEARNING_NAV: NavItem[] = [
 
 // Simulation system (SAT preparation)
 const SIMULATION_NAV: NavItem[] = [
-  { href: "/builder/pastpapers",  label: "Past papers", icon: FileText,        exact: false },
-  { href: "/builder/mock-exams",  label: "Mock exams",  icon: ClipboardCheck,  exact: false },
+  { href: "/builder/pastpapers",      label: "Past papers",    icon: FileText,        exact: false },
+  { href: "/builder/practice-tests",  label: "Practice tests", icon: FlaskConical,    exact: false },
+  { href: "/builder/mock-exams",      label: "Mock exams",     icon: ClipboardCheck,  exact: false },
 ];
 
 // Operations (publishing, archive)
@@ -74,10 +76,11 @@ export default function BuilderLayout({ children }: { children: React.ReactNode 
   const pathname = usePathname();
 
   // Editor pages get a full-screen layout — no sidebar competing for space.
-  // Covers: assessment set editor, pastpaper module editor, mock exam module editor.
+  // Covers: assessment set editor, pastpaper module editor, practice test module editor, mock exam module editor.
   const isEditorRoute =
     /^\/builder\/sets\/\d+/.test(pathname) ||
     /^\/builder\/pastpapers\/\d+\/\d+\/\d+/.test(pathname) ||
+    /^\/builder\/practice-tests\/\d+\/\d+\/\d+/.test(pathname) ||
     /^\/builder\/mock-exams\/\d+\/\d+\/\d+/.test(pathname);
 
   if (isEditorRoute) {

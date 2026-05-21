@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Question, PracticeTest, Module, TestAttempt, AuditLog, MockExam, PortalMockExam, PastpaperPack
+from .models import Question, PracticeTest, Module, TestAttempt, AuditLog, MockExam, PortalMockExam, PastpaperPack, PracticeTestPack
 
 class QuestionInline(admin.StackedInline):
     model = Question
@@ -95,6 +95,21 @@ class PastpaperPackAdmin(admin.ModelAdmin):
     list_filter = ("form_type",)
     search_fields = ("title",)
     inlines = [PastpaperSectionInline]
+
+
+class PracticeTestPackSectionInline(admin.TabularInline):
+    model = PracticeTest
+    fk_name = "practice_test_pack"
+    extra = 0
+    show_change_link = True
+
+
+@admin.register(PracticeTestPack)
+class PracticeTestPackAdmin(admin.ModelAdmin):
+    list_display = ("id", "title", "is_published", "created_by", "created_at")
+    list_filter = ("is_published",)
+    search_fields = ("title",)
+    inlines = [PracticeTestPackSectionInline]
 
 
 @admin.register(PortalMockExam)

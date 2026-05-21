@@ -82,7 +82,7 @@ const quickLinks = [
 function isNavItemActive(href: string, pathname: string): boolean {
   if (href === "/") return pathname === "/";
   if (href === "/pastpapers") return pathname === "/pastpapers" || pathname.startsWith("/pastpapers/");
-  if (href === "/practice-tests") return pathname === "/practice-tests" || pathname.startsWith("/practice-test/");
+  if (href === "/practice-tests") return pathname === "/practice-tests" || pathname.startsWith("/practice-tests/");
   return pathname.startsWith(href);
 }
 

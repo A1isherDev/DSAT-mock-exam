@@ -312,6 +312,45 @@ class PastpaperPack(TimestampedModel):
         return self.title or f"Pack {self.pk}"
 
 
+class PracticeTestPack(TimestampedModel):
+    """
+    Groups custom/user-created practice test sections (R&W + Math).
+    Distinct from PastpaperPack which holds official old SAT tests.
+    """
+
+    title = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Practice test pack title shown in admin and student lists.",
+    )
+    description = models.TextField(
+        blank=True,
+        default="",
+        help_text="Optional description for the practice test pack.",
+    )
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_practice_test_packs",
+    )
+    is_published = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="Only published packs are visible to students.",
+    )
+    published_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "practice_test_packs"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.title or f"PracticeTestPack {self.pk}"
+
+
 class PracticeTest(TimestampedModel):
     SUBJECT_CHOICES = [
         ('READING_WRITING', 'Reading & Writing'),
@@ -336,6 +375,14 @@ class PracticeTest(TimestampedModel):
         null=True,
         blank=True,
         help_text="When set (and mock_exam is NULL), this section belongs to a grouped pastpaper card.",
+    )
+    practice_test_pack = models.ForeignKey(
+        PracticeTestPack,
+        on_delete=models.CASCADE,
+        related_name="sections",
+        null=True,
+        blank=True,
+        help_text="When set, this section belongs to a custom practice test pack (not a pastpaper).",
     )
     subject = models.CharField(max_length=20, choices=SUBJECT_CHOICES, db_index=True)
     title = models.CharField(

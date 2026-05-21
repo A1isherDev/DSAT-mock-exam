@@ -42,13 +42,15 @@ SAT_MODULE_TIME_LIMIT_MINUTES: dict[str, int] = {
     "MATH": 35,
 }
 
-# ── Section order (R&W must be completed before Math) ───────────────────────
+# ── Section order (deprecated — students can now start any section) ─────────
+# Kept for reference only; enforcement removed from views.py.
 
 SAT_SECTION_ORDER: list[str] = ["READING_WRITING", "MATH"]
 
-# ── Break between sections (official Digital SAT: 10 minutes) ───────────────
+# ── Break between sections (deprecated — break enforcement removed) ─────────
+# Was: 600 seconds (10 minutes). No longer enforced.
 
-SAT_BREAK_SECONDS: int = 600
+SAT_BREAK_SECONDS: int = 0
 
 # ── Allowed question_type values per section subject ────────────────────────
 #

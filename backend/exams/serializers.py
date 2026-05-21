@@ -17,6 +17,7 @@ from .models import (
     PastpaperPack,
     PortalMockExam,
     PracticeTest,
+    PracticeTestPack,
     Question,
     TestAttempt,
 )
@@ -180,6 +181,32 @@ class PastpaperPackStudentSerializer(serializers.ModelSerializer):
     class Meta:
         model = PastpaperPack
         fields = ["id", "title", "practice_date", "label", "form_type", "sections"]
+
+
+class PracticeTestPackStudentSerializer(serializers.ModelSerializer):
+    """Student-facing practice test pack: pack metadata + shallow section list."""
+
+    sections = serializers.SerializerMethodField()
+
+    def get_sections(self, obj):
+        qs = (
+            obj.sections.filter(modules__questions__isnull=False)
+            .prefetch_related("modules")
+            .distinct()
+        )
+        return [
+            {
+                "id": pt.id,
+                "title": pt.title,
+                "subject": pt.subject,
+                "module_count": pt.modules.count(),
+            }
+            for pt in qs
+        ]
+
+    class Meta:
+        model = PracticeTestPack
+        fields = ["id", "title", "description", "is_published", "sections", "created_at"]
 
 
 class AttemptPracticeTestDetailsSerializer(serializers.Serializer):
@@ -895,6 +922,32 @@ class AdminPastpaperPackSerializer(serializers.ModelSerializer):
 
     def get_publish_ready(self, obj) -> bool:
         return len(self._get_violations(obj)) == 0
+
+
+class AdminPracticeTestPackSerializer(serializers.ModelSerializer):
+    sections = AdminPracticeTestSerializer(many=True, read_only=True)
+    section_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PracticeTestPack
+        fields = [
+            "id",
+            "title",
+            "description",
+            "is_published",
+            "published_at",
+            "created_by",
+            "sections",
+            "section_count",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "created_at", "updated_at", "published_at", "created_by",
+        ]
+
+    def get_section_count(self, obj) -> int:
+        return obj.sections.count() if hasattr(obj, "sections") else 0
 
 
 class AdminMockExamSerializer(serializers.ModelSerializer):

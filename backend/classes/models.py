@@ -11,7 +11,7 @@ from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.utils import timezone
 
-from exams.models import MockExam, PastpaperPack, PracticeTest, Module, TestAttempt
+from exams.models import MockExam, PastpaperPack, PracticeTest, PracticeTestPack, Module, TestAttempt
 
 
 def _generate_join_code(length: int = 7) -> str:
@@ -166,6 +166,13 @@ class Assignment(models.Model):
         blank=True,
         related_name="class_assignments",
     )
+    practice_test_pack = models.ForeignKey(
+        PracticeTestPack,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="class_assignments",
+    )
     practice_test_ids = models.JSONField(null=True, blank=True)
     module = models.ForeignKey(
         Module, on_delete=models.SET_NULL, null=True, blank=True, related_name="class_assignments"
@@ -206,6 +213,7 @@ def raw_target_practice_test_ids_from_fks(
     pastpaper_pack_id: int | None,
     practice_test_ids: list | None,
     practice_test_id: int | None,
+    practice_test_pack_id: int | None = None,
 ) -> list[int]:
     """
     Practice test row ids before practice_scope filtering (mock, pack, legacy bundle, or single).
@@ -221,6 +229,15 @@ def raw_target_practice_test_ids_from_fks(
         order = {"READING_WRITING": 0, "MATH": 1}
         rows = list(
             PracticeTest.objects.filter(pastpaper_pack_id=pastpaper_pack_id).values_list(
+                "id", "subject"
+            )
+        )
+        rows.sort(key=lambda r: (order.get(r[1], 9), r[0]))
+        return [r[0] for r in rows]
+    if practice_test_pack_id:
+        order = {"READING_WRITING": 0, "MATH": 1}
+        rows = list(
+            PracticeTest.objects.filter(practice_test_pack_id=practice_test_pack_id).values_list(
                 "id", "subject"
             )
         )
@@ -263,6 +280,7 @@ def assignment_target_practice_test_ids(assignment: Assignment) -> list[int]:
         assignment.pastpaper_pack_id,
         assignment.practice_test_ids,
         assignment.practice_test_id,
+        practice_test_pack_id=getattr(assignment, "practice_test_pack_id", None),
     )
     scope = assignment.practice_scope or Assignment.PRACTICE_SCOPE_BOTH
     return filter_practice_targets_by_scope(raw, scope)

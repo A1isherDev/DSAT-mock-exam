@@ -4,6 +4,7 @@ from .views import (
     AdminMockExamViewSet,
     AdminModuleViewSet,
     AdminPastpaperPackViewSet,
+    AdminPracticeTestPackViewSet,
     AdminPracticeTestViewSet,
     AdminQuestionViewSet,
     BulkAssignmentHistoryListView,
@@ -12,6 +13,8 @@ from .views import (
     MockExamViewSet,
     PastpaperPackStudentListView,
     PastpaperPackStudentDetailView,
+    PracticeTestPackStudentListView,
+    PracticeTestPackStudentDetailView,
     PracticeTestViewSet,
     TestAttemptViewSet,
     ExamsMetricsView,
@@ -34,6 +37,9 @@ admin_mock_exam_router.register(r'', AdminMockExamViewSet, basename='admin-mock-
 
 admin_pastpaper_pack_router = DefaultRouter()
 admin_pastpaper_pack_router.register(r'', AdminPastpaperPackViewSet, basename='admin-pastpaper-packs')
+
+admin_practice_test_pack_router = DefaultRouter()
+admin_practice_test_pack_router.register(r'', AdminPracticeTestPackViewSet, basename='admin-practice-test-packs')
 
 admin_test_router = DefaultRouter()
 admin_test_router.register(r'', AdminPracticeTestViewSet, basename='admin-tests')
@@ -73,9 +79,16 @@ urlpatterns = [
     # Admin Pastpaper packs: /exams/admin/pastpaper-packs/
     path('admin/pastpaper-packs/', include(admin_pastpaper_pack_router.urls)),
 
+    # Admin Practice test packs: /exams/admin/practice-test-packs/
+    path('admin/practice-test-packs/', include(admin_practice_test_pack_router.urls)),
+
     # Student pastpaper pack hub: /exams/pastpaper-packs/ and /exams/pastpaper-packs/<pk>/
     path("pastpaper-packs/", PastpaperPackStudentListView.as_view(), name="pastpaper-pack-list"),
     path("pastpaper-packs/<int:pk>/", PastpaperPackStudentDetailView.as_view(), name="pastpaper-pack-detail"),
+
+    # Student practice test pack hub: /exams/practice-test-packs/ and /exams/practice-test-packs/<pk>/
+    path("practice-test-packs/", PracticeTestPackStudentListView.as_view(), name="practice-test-pack-list"),
+    path("practice-test-packs/<int:pk>/", PracticeTestPackStudentDetailView.as_view(), name="practice-test-pack-detail"),
 
     # Student / Common routes
     # Bulk library assignment (must not be registered via DefaultRouter empty prefix — conflicts).

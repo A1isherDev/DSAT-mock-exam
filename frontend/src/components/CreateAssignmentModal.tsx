@@ -18,7 +18,7 @@ import {
   ClassroomModal,
   crInputClass,
 } from "@/components/classroom";
-import { BookOpen, ClipboardList, FileText, Loader2, Paperclip, Trash2, X } from "lucide-react";
+import { BookOpen, ClipboardList, FileText, FlaskConical, Loader2, Paperclip, Trash2, X } from "lucide-react";
 
 type PastpaperRow = Record<string, unknown> & {
   id: number;
@@ -43,7 +43,14 @@ type PastSelection =
 
 type PracticeScope = "BOTH" | "ENGLISH" | "MATH";
 
-type AssignmentType = "pastpaper" | "assessment" | "file_only";
+type PracticeTestPackOption = {
+  id: number;
+  title: string;
+  description: string;
+  section_count: number;
+};
+
+type AssignmentType = "pastpaper" | "practice_test" | "assessment" | "file_only";
 
 type Props = {
   open: boolean;
@@ -119,10 +126,12 @@ export default function CreateAssignmentModal({
 }: Props) {
   const [assignmentType, setAssignmentType] = useState<AssignmentType>("pastpaper");
   const [includePastpaper, setIncludePastpaper] = useState(false);
+  const [includePracticeTest, setIncludePracticeTest] = useState(false);
   const [includeAssessment, setIncludeAssessment] = useState(false);
   const [newAsg, setNewAsg] = useState({ title: "", instructions: "", external_url: "" });
   const [pastSel, setPastSel] = useState<PastSelection>({ mode: "none" });
   const [selectedAssessmentId, setSelectedAssessmentId] = useState<number | null>(null);
+  const [selectedPracticeTestPackId, setSelectedPracticeTestPackId] = useState<number | null>(null);
   const [dueLocal, setDueLocal] = useState("");
   const [asgFiles, setAsgFiles] = useState<File[]>([]);
   const [showInstructions, setShowInstructions] = useState(false);
@@ -132,7 +141,8 @@ export default function CreateAssignmentModal({
   const [assignmentOptions, setAssignmentOptions] = useState<{
     practice_tests: PastpaperRow[];
     assessment_sets: AssessmentSetOption[];
-  }>({ practice_tests: [], assessment_sets: [] });
+    practice_test_packs: PracticeTestPackOption[];
+  }>({ practice_tests: [], assessment_sets: [], practice_test_packs: [] });
   const [asgOptionsLoading, setAsgOptionsLoading] = useState(false);
   const [asgOptionsError, setAsgOptionsError] = useState<string | null>(null);
   const [creatingAsg, setCreatingAsg] = useState(false);
@@ -146,10 +156,12 @@ export default function CreateAssignmentModal({
   const resetForm = () => {
     setAssignmentType("pastpaper");
     setIncludePastpaper(false);
+    setIncludePracticeTest(false);
     setIncludeAssessment(false);
     setNewAsg({ title: "", instructions: "", external_url: "" });
     setPastSel({ mode: "none" });
     setSelectedAssessmentId(null);
+    setSelectedPracticeTestPackId(null);
     setDueLocal("");
     setAsgFiles([]);
     setShowInstructions(false);
@@ -171,12 +183,13 @@ export default function CreateAssignmentModal({
           setAssignmentOptions({
             practice_tests: Array.isArray(d.practice_tests) ? d.practice_tests : [],
             assessment_sets: Array.isArray(d.assessment_sets) ? d.assessment_sets : [],
+            practice_test_packs: Array.isArray(d.practice_test_packs) ? d.practice_test_packs : [],
           });
         }
       } catch (e: unknown) {
         const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
         if (!cancelled) {
-          setAssignmentOptions({ practice_tests: [], assessment_sets: [] });
+          setAssignmentOptions({ practice_tests: [], assessment_sets: [], practice_test_packs: [] });
           setAsgOptionsError(typeof msg === "string" ? msg : "Could not load test lists.");
         }
       } finally {
@@ -212,8 +225,13 @@ export default function CreateAssignmentModal({
       const set = (ah as { set?: { id?: number } }).set;
       setSelectedAssessmentId(set?.id ?? null);
     } else {
-      const pp = editingAssignment.pastpaper_pack;
-      if (pp != null) {
+      const ptp = editingAssignment.practice_test_pack;
+      if (ptp != null) {
+        setAssignmentType("practice_test");
+        const ptpId = typeof ptp === "object" && ptp != null && "id" in ptp ? Number((ptp as { id: number }).id) : Number(ptp);
+        if (Number.isFinite(ptpId)) setSelectedPracticeTestPackId(ptpId);
+      } else if (editingAssignment.pastpaper_pack != null) {
+        const pp = editingAssignment.pastpaper_pack;
         setAssignmentType("pastpaper");
         const packId = typeof pp === "object" && pp != null && "id" in pp ? Number((pp as { id: number }).id) : Number(pp);
         if (Number.isFinite(packId)) setPastSel({ mode: "pack_db", packId });
@@ -262,6 +280,7 @@ export default function CreateAssignmentModal({
           external_url: newAsg.external_url.trim() || "",
           due_at: null as string | null,
           pastpaper_pack: null,
+          practice_test_pack: null,
           practice_test: null,
           practice_test_ids: null,
         };
@@ -273,6 +292,8 @@ export default function CreateAssignmentModal({
           if (pastSel.mode === "pack_db") body.pastpaper_pack = pastSel.packId;
           else if (pastSel.mode === "pack_legacy") body.practice_test_ids = pastSel.testIds;
           else if (pastSel.mode === "single") body.practice_test = pastSel.testId;
+        } else if (assignmentType === "practice_test" && selectedPracticeTestPackId) {
+          body.practice_test_pack = selectedPracticeTestPackId;
         }
         body.practice_scope = practiceScope;
 
@@ -302,6 +323,12 @@ export default function CreateAssignmentModal({
         if (pastSel.mode === "pack_db") fd.append("pastpaper_pack", String(pastSel.packId));
         else if (pastSel.mode === "pack_legacy") fd.append("practice_test_ids", JSON.stringify(pastSel.testIds));
         else if (pastSel.mode === "single") fd.append("practice_test", String(pastSel.testId));
+        fd.append("practice_scope", practiceScope);
+      }
+
+      // Practice test pack content
+      if (includePracticeTest && selectedPracticeTestPackId) {
+        fd.append("practice_test_pack", String(selectedPracticeTestPackId));
         fd.append("practice_scope", practiceScope);
       }
 
@@ -383,13 +410,17 @@ export default function CreateAssignmentModal({
         {!isEditing && (
           <div>
             <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">Include content (select one or more)</p>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {([
-                { key: "pastpaper" as const, icon: BookOpen, label: "Pastpaper", desc: "Link a practice test" },
+                { key: "pastpaper" as const, icon: BookOpen, label: "Pastpaper", desc: "Official SAT test" },
+                { key: "practice_test" as const, icon: FlaskConical, label: "Practice Test", desc: "Custom practice" },
                 { key: "assessment" as const, icon: ClipboardList, label: "Assessment", desc: "Classroom quiz/test" },
                 { key: "file_only" as const, icon: FileText, label: "File / Link", desc: "Custom homework" },
               ]).map(({ key, icon: Icon, label, desc }) => {
-                const active = key === "pastpaper" ? includePastpaper : key === "assessment" ? includeAssessment : (!includePastpaper && !includeAssessment);
+                const active = key === "pastpaper" ? includePastpaper
+                  : key === "practice_test" ? includePracticeTest
+                  : key === "assessment" ? includeAssessment
+                  : (!includePastpaper && !includePracticeTest && !includeAssessment);
                 return (
                   <button
                     key={key}
@@ -397,14 +428,18 @@ export default function CreateAssignmentModal({
                     onClick={() => {
                       if (key === "pastpaper") {
                         setIncludePastpaper((v) => !v);
+                      } else if (key === "practice_test") {
+                        setIncludePracticeTest((v) => !v);
                       } else if (key === "assessment") {
                         setIncludeAssessment((v) => !v);
                       } else {
                         // file_only: deselect others
                         setIncludePastpaper(false);
+                        setIncludePracticeTest(false);
                         setIncludeAssessment(false);
                         setPastSel({ mode: "none" });
                         setSelectedAssessmentId(null);
+                        setSelectedPracticeTestPackId(null);
                       }
                     }}
                     className={`${cardBase} ${active ? cardSel : cardUnsel}`}
@@ -552,6 +587,44 @@ export default function CreateAssignmentModal({
               </ClassroomField>
             )}
           </>
+        )}
+
+        {/* ─── Practice Test Pack Selection ─── */}
+        {(isEditing ? assignmentType === "practice_test" : includePracticeTest) && (
+          <ClassroomField label="Practice test pack" hint="Select a custom practice test to assign.">
+            {assignmentOptions.practice_test_packs.length === 0 ? (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-center dark:border-slate-700 dark:bg-slate-800/50">
+                <FlaskConical className="mx-auto h-8 w-8 text-slate-300 dark:text-slate-600" />
+                <p className="mt-2 text-sm font-semibold text-slate-500 dark:text-slate-400">No practice test packs available</p>
+                <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">Create and publish one in the Builder console first.</p>
+              </div>
+            ) : (
+              <div className="grid max-h-[280px] grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
+                {assignmentOptions.practice_test_packs.map((ptp) => {
+                  const selected = selectedPracticeTestPackId === ptp.id;
+                  return (
+                    <button
+                      key={ptp.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedPracticeTestPackId(ptp.id);
+                        if (!newAsg.title.trim()) {
+                          setNewAsg((prev) => ({ ...prev, title: ptp.title }));
+                        }
+                      }}
+                      className={`${cardBase} ${selected ? cardSel : cardUnsel}`}
+                    >
+                      <p className="text-sm font-bold text-slate-800 dark:text-slate-100 line-clamp-2">{ptp.title || `Pack #${ptp.id}`}</p>
+                      {ptp.description && (
+                        <p className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400 line-clamp-2">{ptp.description}</p>
+                      )}
+                      <p className="mt-1 text-[10px] font-semibold text-slate-400">{ptp.section_count} section{ptp.section_count !== 1 ? "s" : ""}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </ClassroomField>
         )}
 
         {(isEditing ? assignmentType === "assessment" : includeAssessment) && (
