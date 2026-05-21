@@ -42,6 +42,7 @@ function studentRecentlyGradedHref(
   return `/classes/${classId}/assignments/${aid}`;
 }
 import CreateAssignmentModal from "@/components/CreateAssignmentModal";
+import ClassGradingPanel from "@/components/classroom/ClassGradingPanel";
 import {
   ClassroomAlert,
   ClassroomButton,
@@ -98,8 +99,9 @@ export default function ClassDetailPage() {
       { id: "classwork", label: "Classwork", icon: ClipboardList },
       { id: "people", label: "People", icon: Users },
       { id: "grades", label: "Grades", icon: GraduationCap },
+      ...(isClassAdmin ? [{ id: "grading" as const, label: "Grading", icon: ClipboardCheck }] : []),
     ],
-    [],
+    [isClassAdmin],
   );
 
   const refresh = async () => {
@@ -242,8 +244,9 @@ export default function ClassDetailPage() {
           actions={
             <div className="flex flex-wrap items-center gap-2">
               {isClassAdmin ? (
-                <Link
-                  href="/teacher/homework/grading"
+                <button
+                  type="button"
+                  onClick={() => setTab("grading")}
                   className={cn(
                     "inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-semibold text-foreground shadow-sm",
                     "hover:border-primary/35 hover:bg-surface-2",
@@ -252,7 +255,7 @@ export default function ClassDetailPage() {
                 >
                   <ClipboardCheck className="h-4 w-4" />
                   Grade homework
-                </Link>
+                </button>
               ) : null}
               <ClassroomButton variant="secondary" size="md" onClick={refresh} disabled={loading}>
                 <RefreshCcw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
@@ -616,6 +619,23 @@ export default function ClassDetailPage() {
 
           {tab === "grades" ? (
             <GradeBook assignments={assignments} classId={id} formatDue={formatDue} wfLabel={wfLabel} />
+          ) : null}
+
+          {tab === "grading" && isClassAdmin ? (
+            <ClassGradingPanel
+              classId={id}
+              assignments={assignments.map((a: any) => ({
+                id: Number(a.id),
+                title: String(a.title || "Untitled"),
+                due_at: a.due_at ?? null,
+                submissions_count: typeof a.submissions_count === "number" ? a.submissions_count : undefined,
+                workflow_state: a.workflow_state ?? null,
+              }))}
+              people={people.map((p: any) => ({
+                role: p.role || "STUDENT",
+                user: p.user || { id: p.id, email: p.email, first_name: p.first_name, last_name: p.last_name },
+              }))}
+            />
           ) : null}
         </div>
       )}

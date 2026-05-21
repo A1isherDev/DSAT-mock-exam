@@ -27,6 +27,7 @@ import {
   AlertTriangle,
   BookOpen,
   Check,
+  ChevronRight,
   Inbox,
   Loader2,
   MessageSquare,
@@ -42,84 +43,181 @@ type Tab = "overview" | "assignments" | "students" | "activity" | "interventions
 
 // ─── Submissions Panel ────────────────────────────────────────────────────────
 
-function SubmissionsPanel({ classroomId }: { classroomId: number }) {
-  const router = useRouter();
-  const [statusFilter, setStatusFilter] = useState<"all" | "submitted" | "graded">("all");
+type HomeworkSub = {
+  id: number;
+  student: { id: number; first_name?: string; last_name?: string; email?: string } | null;
+  student_id?: number;
+  status: string;
+  files?: { id: number; url: string; file_name?: string }[];
+  attempt?: { id?: number; score?: number | null; is_completed?: boolean; practice_test_name?: string } | null;
+  review?: { grade?: number | string | null; feedback?: string; graded_at?: string } | null;
+  created_at?: string;
+  updated_at?: string;
+};
 
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ["teacher-submission-queue", classroomId, statusFilter],
-    queryFn: () => assessmentsTeacherApi.submissionQueue({ classroom_id: classroomId, status: statusFilter }),
-    staleTime: 60_000,
-  });
+type AssignmentSubGroup = {
+  assignmentId: number;
+  assignmentTitle: string;
+  submissions: HomeworkSub[];
+};
 
-  const items = data?.items ?? [];
+function SubmissionsPanel({
+  classroomId,
+  assignments,
+}: {
+  classroomId: number;
+  assignments: AssignmentSummary[];
+}) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [groups, setGroups] = useState<AssignmentSubGroup[]>([]);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
 
-  const pendingGrading = items.filter((i) => i.status === "submitted").length;
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const result: AssignmentSubGroup[] = [];
+        for (const a of assignments) {
+          try {
+            const subs = await classesApi.listSubmissions(classroomId, a.id);
+            const arr: HomeworkSub[] = Array.isArray(subs) ? subs : [];
+            if (arr.length > 0) {
+              result.push({
+                assignmentId: a.id,
+                assignmentTitle: a.title || `Assignment #${a.id}`,
+                submissions: arr,
+              });
+            }
+          } catch {
+            // Skip failed assignments silently
+          }
+        }
+        if (!cancelled) setGroups(result);
+      } catch {
+        if (!cancelled) setError("Failed to load submissions.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [classroomId, assignments]);
 
-  if (isLoading) {
+  const totalSubs = groups.reduce((s, g) => s + g.submissions.length, 0);
+  const pendingCount = groups.reduce(
+    (s, g) => s + g.submissions.filter((sub) => sub.status === "SUBMITTED").length,
+    0,
+  );
+
+  if (loading) {
     return (
       <div className="flex justify-center py-12">
         <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
       </div>
     );
   }
-  if (isError) {
+  if (error) {
     return (
-      <p className="py-8 text-center text-sm text-muted-foreground">Failed to load submissions.</p>
+      <p className="py-8 text-center text-sm text-muted-foreground">{error}</p>
     );
   }
 
   return (
     <div className="space-y-4">
-      {/* Summary strip */}
+      {/* Summary */}
       <div className="flex items-center gap-3 flex-wrap">
-        <span className="text-sm font-bold text-foreground">{data?.count ?? 0} submissions</span>
-        {pendingGrading > 0 && (
+        <span className="text-sm font-bold text-foreground">{totalSubs} submissions</span>
+        {pendingCount > 0 && (
           <span className="inline-flex items-center gap-1.5 rounded-xl bg-amber-100 px-3 py-1 text-xs font-bold text-amber-700">
-            <Loader2 className="h-3 w-3" />
-            {pendingGrading} pending grading
+            {pendingCount} pending review
           </span>
         )}
-        {/* Status filter */}
-        <div className="ml-auto flex gap-1">
-          {(["all", "submitted", "graded"] as const).map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => setStatusFilter(s)}
-              className={cn(
-                "rounded-lg px-2.5 py-1 text-xs font-bold transition-colors capitalize",
-                statusFilter === s
-                  ? "bg-foreground text-background"
-                  : "border border-border text-muted-foreground hover:bg-surface-2",
-              )}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
       </div>
 
-      {items.length === 0 ? (
+      {groups.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-border bg-card px-6 py-12 text-center">
           <Inbox className="mx-auto h-8 w-8 text-muted-foreground/40 mb-3" />
           <p className="text-sm font-semibold text-foreground">No submissions yet</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Submissions will appear here when students complete their assessments.
+            Submissions will appear here when students submit their work.
           </p>
         </div>
       ) : (
-        <div className="rounded-2xl border border-border bg-card overflow-hidden">
-          <div className="divide-y divide-border">
-            {items.map((item) => (
-              <SubmissionRow
-                key={item.attempt_id}
-                item={item}
-                classroomId={classroomId}
-                onReview={() => router.push(`/assessments/review/${item.attempt_id}`)}
-              />
-            ))}
-          </div>
+        <div className="space-y-3">
+          {groups.map((g) => {
+            const isExpanded = expandedId === g.assignmentId;
+            const pending = g.submissions.filter((s) => s.status === "SUBMITTED").length;
+            return (
+              <div key={g.assignmentId} className="rounded-2xl border border-border bg-card overflow-hidden shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => setExpandedId(isExpanded ? null : g.assignmentId)}
+                  className="flex w-full items-center justify-between px-5 py-4 text-left hover:bg-surface-2/50 transition-colors"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="font-bold text-foreground truncate">{g.assignmentTitle}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {g.submissions.length} submission{g.submissions.length !== 1 ? "s" : ""}
+                      {pending > 0 && (
+                        <span className="ml-1 font-bold text-amber-700">· {pending} pending</span>
+                      )}
+                    </p>
+                  </div>
+                  <ChevronRight
+                    className={cn(
+                      "h-5 w-5 shrink-0 text-muted-foreground transition-transform",
+                      isExpanded && "rotate-90",
+                    )}
+                  />
+                </button>
+                {isExpanded && (
+                  <div className="border-t border-border divide-y divide-border">
+                    {g.submissions.map((sub) => {
+                      const name = sub.student
+                        ? `${sub.student.first_name || ""} ${sub.student.last_name || ""}`.trim() || sub.student.email || `#${sub.student.id}`
+                        : `Student #${sub.student_id ?? "?"}`;
+                      const isGraded = sub.status === "REVIEWED";
+                      const grade = sub.review?.grade;
+                      return (
+                        <div key={sub.id} className="flex items-center gap-3 px-5 py-3 hover:bg-surface-2/30 transition-colors">
+                          <div
+                            className={cn(
+                              "shrink-0 flex h-9 w-9 items-center justify-center rounded-xl text-xs font-black",
+                              isGraded && grade != null
+                                ? "bg-emerald-100 text-emerald-700"
+                                : sub.status === "SUBMITTED"
+                                  ? "bg-amber-100 text-amber-700"
+                                  : "bg-surface-2 text-muted-foreground",
+                            )}
+                          >
+                            {isGraded && grade != null ? String(grade) : sub.status === "SUBMITTED" ? "…" : "—"}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-foreground truncate">{name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {sub.status}
+                              {sub.updated_at && (
+                                <span className="ml-1">
+                                  · {new Date(sub.updated_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                          {sub.attempt?.score != null && (
+                            <span className="text-xs font-bold text-foreground">
+                              Score: {sub.attempt.score}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -507,7 +605,7 @@ function ClassroomOpsPageInner() {
         </div>
       )}
       {tab === "students" && <StudentRosterSection people={people} />}
-      {tab === "submissions" && <SubmissionsPanel classroomId={classroomId} />}
+      {tab === "submissions" && <SubmissionsPanel classroomId={classroomId} assignments={assignments} />}
       {tab === "activity" && <ActivityFeedSection classroomId={classroomId} />}
       {tab === "interventions" && <InterventionPanel classroomId={classroomId} />}
 
