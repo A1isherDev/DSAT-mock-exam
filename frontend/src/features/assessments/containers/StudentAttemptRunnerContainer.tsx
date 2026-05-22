@@ -55,6 +55,7 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Clock,
   Loader2,
   Monitor,
@@ -62,6 +63,7 @@ import {
   Timer,
   Wifi,
   WifiOff,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 
@@ -1392,50 +1394,164 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
     );
   }
 
-  // ── Stage: exam ─────────────────────────────────────────────────────────────
+  // ── Stage: exam — SAT/pastpaper-style full-screen simulation ─────────────
   return (
-    // pb-20 on mobile creates breathing room below the sticky nav bar so the
-    // bottom of the question card is never obscured. sm:pb-0 removes it on
-    // wider layouts where the nav is static.
-    <div className="mx-auto w-full max-w-4xl space-y-3 pb-20 sm:pb-0">
+    <ExamSimulationView
+      // Header / meta
+      setTitle={setTitle}
+      subject={set?.subject ? String(set.subject) : "Assessment"}
+      classroomName={runnerMeta?.classroom_name ?? null}
+      // Timer
+      elapsedSec={elapsedSec}
+      questionElapsedSec={
+        (questionTimesRef.current[currentQuestionId] || 0) +
+        Math.floor((Date.now() - currentQuestionStartRef.current) / 1000)
+      }
+      // Connectivity / save state
+      online={online}
+      saveState={saveState}
+      saveError={saveError}
+      onRetrySave={() => void flushSave()}
+      draftRestoredBanner={draftRestoredBanner}
+      justReconnected={justReconnected}
+      // Conflicts
+      conflicts={conflicts}
+      onResolveKeepMine={resolveKeepMine}
+      onResolveUseOther={resolveUseOther}
+      onResolveKeepAllMine={resolveKeepAllMine}
+      conflictSaving={save.isPending}
+      // Question state
+      currentIdx={currentIdx}
+      totalCount={totalCount}
+      answeredCount={answeredCount}
+      answeredIds={answeredIds}
+      questionIds={questionIds}
+      onJump={setCurrentIdx}
+      current={current}
+      answerValue={answerValue}
+      onAnswer={(next) => {
+        setDraftById((prev) => ({ ...prev, [currentQuestionId]: next }));
+        enqueueSave(currentQuestionId, next);
+      }}
+      // Navigation
+      onPrevious={() => setCurrentIdx((i) => Math.max(0, i - 1))}
+      onNext={() => setCurrentIdx((i) => Math.min(totalCount - 1, i + 1))}
+      onSubmitClick={() => {
+        if (conflicts.length) {
+          setSubmitError("Please resolve the answer conflict above before submitting.");
+          return;
+        }
+        setStage("confirm-submit");
+      }}
+    />
+  );
+}
 
-      {/* ── Offline banner (calm, not alarming) ───────────────────────────── */}
+// ─── ExamSimulationView ───────────────────────────────────────────────────────
+// SAT-pastpaper-style full-screen simulation surface. Mirrors the visual
+// language of /exam/[attemptId] (white background, top header with timer,
+// clean question card, bottom nav bar) but specialised for assessment runs:
+// count-up timer (no deadline), single-column question layout, no calculator/
+// highlighter (assessment questions are simpler than SAT modules).
+
+type ExamSimulationProps = {
+  setTitle: string;
+  subject: string;
+  classroomName: string | null;
+
+  elapsedSec: number;
+  questionElapsedSec: number;
+
+  online: boolean;
+  saveState: SaveState;
+  saveError: string | null;
+  onRetrySave: () => void;
+  draftRestoredBanner: boolean;
+  justReconnected: boolean;
+
+  conflicts: AnswerConflict[];
+  onResolveKeepMine: (qid: number) => Promise<void>;
+  onResolveUseOther: (qid: number) => void;
+  onResolveKeepAllMine: () => void;
+  conflictSaving: boolean;
+
+  currentIdx: number;
+  totalCount: number;
+  answeredCount: number;
+  answeredIds: Set<number>;
+  questionIds: number[];
+  onJump: (idx: number) => void;
+  current: Record<string, unknown> | undefined;
+  answerValue: unknown;
+  onAnswer: (next: unknown) => void;
+
+  onPrevious: () => void;
+  onNext: () => void;
+  onSubmitClick: () => void;
+};
+
+function ExamSimulationView({
+  setTitle,
+  subject,
+  classroomName,
+  elapsedSec,
+  questionElapsedSec,
+  online,
+  saveState,
+  saveError,
+  onRetrySave,
+  draftRestoredBanner,
+  justReconnected,
+  conflicts,
+  onResolveKeepMine,
+  onResolveUseOther,
+  onResolveKeepAllMine,
+  conflictSaving,
+  currentIdx,
+  totalCount,
+  answeredCount,
+  answeredIds,
+  questionIds,
+  onJump,
+  current,
+  answerValue,
+  onAnswer,
+  onPrevious,
+  onNext,
+  onSubmitClick,
+}: ExamSimulationProps) {
+  const [showTimer, setShowTimer] = useState(true);
+  const [showMap, setShowMap] = useState(false);
+  const [zoomLevel, setZoomLevel] = useState(1.0);
+  const zoomIn = () => setZoomLevel((z) => Math.min(1.5, +(z + 0.1).toFixed(2)));
+  const zoomOut = () => setZoomLevel((z) => Math.max(0.7, +(z - 0.1).toFixed(2)));
+
+  const isLast = currentIdx >= totalCount - 1;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-white flex flex-col font-sans text-slate-900 overflow-hidden">
+      {/* Top banners — render above the header without breaking its layout */}
       {!online && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 flex items-center gap-2">
-          <WifiOff className="h-4 w-4 text-amber-600 shrink-0" />
-          <p className="text-sm font-semibold text-amber-800">
-            Working offline — your answers are saved locally and will sync when you reconnect.
-          </p>
+        <div className="w-full bg-amber-50 border-b border-amber-200 text-amber-900 text-xs font-bold py-1.5 px-4 text-center">
+          Offline. Your answers are kept locally and will sync when you reconnect.
         </div>
       )}
-
-      {/* ── Draft restored (auto-dismisses after 4s) ─────────────────────── */}
-      {draftRestoredBanner && (
-        <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-2.5 flex items-center gap-2">
-          <CheckCircle2 className="h-4 w-4 text-sky-600 shrink-0" />
-          <p className="text-sm font-semibold text-sky-800">
-            Your answers from your last session have been restored.
-          </p>
+      {draftRestoredBanner && online && (
+        <div className="w-full bg-sky-50 border-b border-sky-200 text-sky-800 text-xs font-bold py-1.5 px-4 text-center">
+          Your answers from your last session have been restored.
         </div>
       )}
-
-      {/* ── Reconnected confirmation (auto-dismisses) ─────────────────────── */}
       {online && justReconnected && (
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 flex items-center gap-2">
-          <Wifi className="h-4 w-4 text-emerald-600 shrink-0" />
-          <p className="text-sm font-semibold text-emerald-800">
-            Reconnected — syncing your answers now.
-          </p>
+        <div className="w-full bg-emerald-50 border-b border-emerald-200 text-emerald-800 text-xs font-bold py-1.5 px-4 text-center">
+          Reconnected — syncing your answers now.
         </div>
       )}
-
-      {/* ── Save error (quiet, non-alarming) ──────────────────────────────── */}
       {saveState === "error" && saveError && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 flex items-center justify-between gap-3">
-          <p className="text-sm font-semibold text-amber-800">{saveError}</p>
+        <div className="w-full bg-amber-50 border-b border-amber-200 px-4 py-1.5 flex items-center justify-center gap-3">
+          <p className="text-xs font-bold text-amber-800">{saveError}</p>
           <button
             type="button"
-            onClick={() => void flushSave()}
+            onClick={onRetrySave}
             className="text-xs font-bold text-amber-700 hover:underline whitespace-nowrap"
           >
             Retry
@@ -1443,162 +1559,228 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
         </div>
       )}
 
-      {/* ── Conflict resolution ────────────────────────────────────────────── */}
-      {conflicts.length > 0 && (
-        <ConflictDialog
-          conflicts={conflicts}
-          onKeepMine={resolveKeepMine}
-          onUseOther={resolveUseOther}
-          onKeepAllMine={resolveKeepAllMine}
-          saving={save.isPending}
-        />
-      )}
+      {/* ── Header (logo · title — timer — zoom / counters) ─────────────────── */}
+      <header className="flex items-start justify-between px-6 py-3 bg-white border-b border-slate-100 shadow-sm shrink-0">
+        <div className="flex-1 min-w-0 flex items-center gap-3">
+          <img src="/images/logo.png" alt="Master SAT" className="w-8 h-8 object-contain" />
+          <div className="min-w-0">
+            {classroomName && (
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.15em] truncate">
+                {classroomName}
+              </p>
+            )}
+            <h1 className="text-sm font-bold text-slate-900 tracking-tight truncate">
+              {subject}: {setTitle}
+            </h1>
+          </div>
+        </div>
 
-      {/* ── Header ────────────────────────────────────────────────────────── */}
-      <div className="rounded-2xl border border-border bg-card px-5 py-4 flex items-center justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          {/* Classroom context line — only rendered when meta is available */}
-          {runnerMeta?.classroom_name && (
-            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.15em] truncate mb-0.5">
-              {runnerMeta.classroom_name}
-            </p>
+        {/* Timer (count-up) */}
+        <div className="flex-1 flex flex-col items-center">
+          {showTimer ? (
+            <>
+              <span className="text-lg font-bold font-mono tracking-tight tabular-nums">
+                {fmtElapsed(elapsedSec)}
+              </span>
+              <button
+                onClick={() => setShowTimer(false)}
+                className="mt-0.5 text-[10px] font-bold text-slate-600 border border-slate-300 rounded-full px-3 py-0.5 hover:bg-slate-50 transition-colors"
+              >
+                Hide
+              </button>
+            </>
+          ) : (
+            <>
+              <Timer className="w-5 h-5 text-slate-400" />
+              <button
+                onClick={() => setShowTimer(true)}
+                className="mt-0.5 text-[10px] font-bold text-slate-600 border border-slate-300 rounded-full px-3 py-0.5 hover:bg-slate-50 transition-colors"
+              >
+                Show
+              </button>
+            </>
           )}
-          <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-primary truncate">
-            {set?.subject ? String(set.subject) : "Assessment"}
-          </p>
-          <p className="font-extrabold text-foreground text-base leading-tight truncate">
-            {setTitle}
-          </p>
         </div>
-        <div className="flex items-center gap-3 shrink-0">
-          {/* Elapsed timer */}
-          <div className="flex items-center gap-1.5 rounded-lg bg-surface-2 px-2.5 py-1">
-            <Timer className="h-3.5 w-3.5 text-primary/70" aria-hidden />
-            <span className="text-sm font-bold text-foreground tabular-nums">{fmtElapsed(elapsedSec)}</span>
-          </div>
-          {/* Connectivity dot (only when online and working) */}
-          {online && <Wifi className="h-3.5 w-3.5 text-muted-foreground/40" aria-hidden />}
-          {/* Save state dot */}
-          <SaveDot state={saveState} />
-          <span className="text-sm font-bold text-muted-foreground tabular-nums">
-            {answeredCount}/{totalCount}
-          </span>
-        </div>
-      </div>
 
-      {/* ── Question map ──────────────────────────────────────────────────── */}
-      <div className="rounded-2xl border border-border bg-card px-5 py-3">
-        <QuestionMap
-          total={totalCount}
-          currentIdx={currentIdx}
-          answeredIds={answeredIds}
-          questionIds={questionIds}
-          onJump={setCurrentIdx}
-        />
-      </div>
-
-      {/* ── Question card ─────────────────────────────────────────────────── */}
-      <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-            Question {currentIdx + 1} of {totalCount}
-          </p>
-          <div className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground">
-            <Clock className="h-3 w-3" />
-            <span className="tabular-nums">
-              {fmtElapsed(
-                (questionTimesRef.current[currentQuestionId] || 0) +
-                Math.floor((Date.now() - currentQuestionStartRef.current) / 1000)
-              )}
-            </span>
+        {/* Right controls: zoom + counters + connectivity + save dot */}
+        <div className="flex-1 flex justify-end items-start gap-4 pt-1">
+          <button
+            onClick={zoomOut}
+            disabled={zoomLevel <= 0.7}
+            className={`flex flex-col items-center gap-0.5 transition-all ${zoomLevel <= 0.7 ? "text-slate-300" : "text-slate-600 hover:text-slate-900"}`}
+          >
+            <span className="w-5 h-5 flex items-center justify-center border-2 border-current rounded font-bold text-xs">-</span>
+            <span className="text-[9px] font-bold uppercase tracking-wider">Zoom Out</span>
+          </button>
+          <span className="text-[10px] font-bold text-slate-400 mt-1.5">{Math.round(zoomLevel * 100)}%</span>
+          <button
+            onClick={zoomIn}
+            disabled={zoomLevel >= 1.5}
+            className={`flex flex-col items-center gap-0.5 transition-all ${zoomLevel >= 1.5 ? "text-slate-300" : "text-slate-600 hover:text-slate-900"}`}
+          >
+            <span className="w-5 h-5 flex items-center justify-center border-2 border-current rounded font-bold text-xs">+</span>
+            <span className="text-[9px] font-bold uppercase tracking-wider">Zoom In</span>
+          </button>
+          <div className="w-px h-8 bg-slate-100" />
+          <div className="flex flex-col items-center pt-0.5 gap-0.5">
+            <span className="text-sm font-bold text-slate-700 tabular-nums">{answeredCount}/{totalCount}</span>
+            <div className="flex items-center gap-1.5">
+              {online ? <Wifi className="h-3 w-3 text-slate-400" /> : <WifiOff className="h-3 w-3 text-amber-500" />}
+              <SaveDot state={saveState} />
+            </div>
           </div>
         </div>
-        {Boolean(current?.question_prompt) && (
-          // On mobile: cap the passage height and make it scrollable so the
-          // question stem + answer choices stay reachable without full-page scroll.
-          // On wider screens: remove the cap (full passage visible).
-          <div className="mb-4 border-l-4 border-primary/40 pl-4 py-1 bg-surface-2/50 rounded-r-xl max-h-48 overflow-y-auto sm:max-h-none sm:overflow-visible">
-            <MathText
-              text={String(current!.question_prompt)}
-              block
-              className="text-sm text-foreground leading-relaxed font-[Georgia,serif] italic"
-            />
-          </div>
-        )}
-        <MathText
-          text={String(current?.prompt || "").trim() || "—"}
-          block
-          className="text-base font-semibold text-foreground leading-relaxed"
-        />
-        <div className="mt-5">
-          <AnswerInput
-            type={String(current?.question_type || "") as import("@/features/assessments/types").AssessmentQuestionType}
-            choices={parseChoices(current?.choices)}
-            value={answerValue}
-            onChange={(next) => {
-              setDraftById((prev) => ({ ...prev, [currentQuestionId]: next }));
-              enqueueSave(currentQuestionId, next);
-            }}
+      </header>
+
+      {/* ── Conflict resolution banner (inline so it never blocks layout) ──── */}
+      {conflicts.length > 0 && (
+        <div className="px-6 py-2 border-b border-amber-200 bg-amber-50">
+          <ConflictDialog
+            conflicts={conflicts}
+            onKeepMine={onResolveKeepMine}
+            onUseOther={onResolveUseOther}
+            onKeepAllMine={onResolveKeepAllMine}
+            saving={conflictSaving}
           />
         </div>
-      </div>
+      )}
 
-      {/* ── Navigation + submit ───────────────────────────────────────────── */}
-      {/* sticky bottom-0 on mobile keeps buttons always reachable on long questions */}
-      <div className="flex items-center justify-between gap-3 sticky bottom-0 sm:static bg-background/95 sm:bg-transparent pb-safe py-2 sm:py-0 -mx-4 sm:mx-0 px-4 sm:px-0 border-t border-border sm:border-t-0">
+      {/* ── Question area ───────────────────────────────────────────────────── */}
+      <main className="flex-1 overflow-y-auto bg-white">
+        <div
+          className="mx-auto w-full max-w-3xl px-8 py-10"
+          style={{ fontSize: `${zoomLevel}rem` }}
+        >
+          {/* Question header line (question N of M + per-question time) */}
+          <div className="flex items-center justify-between mb-6 pb-3 border-b border-slate-200">
+            <p className="text-xs font-extrabold text-slate-700 uppercase tracking-widest">
+              Question {currentIdx + 1} of {totalCount}
+            </p>
+            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-500">
+              <Clock className="h-3.5 w-3.5" />
+              <span className="tabular-nums">{fmtElapsed(questionElapsedSec)}</span>
+            </div>
+          </div>
+
+          {/* Question prompt context (passage/stimulus) if any */}
+          {Boolean(current?.question_prompt) && (
+            <div className="mb-6 border-l-4 border-slate-300 pl-5 py-1">
+              <MathText
+                text={String(current!.question_prompt)}
+                block
+                className="text-base text-slate-700 leading-relaxed font-[Georgia,serif]"
+              />
+            </div>
+          )}
+
+          {/* The question itself */}
+          <MathText
+            text={String(current?.prompt || "").trim() || "—"}
+            block
+            className="text-lg font-semibold text-slate-900 leading-relaxed"
+          />
+
+          {/* Answer input */}
+          <div className="mt-8">
+            <AnswerInput
+              type={String(current?.question_type || "") as import("@/features/assessments/types").AssessmentQuestionType}
+              choices={parseChoices(current?.choices)}
+              value={answerValue}
+              onChange={onAnswer}
+            />
+          </div>
+        </div>
+      </main>
+
+      {/* ── Question map drawer (toggled from bottom bar) ───────────────────── */}
+      {showMap && (
+        <div
+          className="absolute inset-0 z-40 bg-black/40"
+          onClick={() => setShowMap(false)}
+        >
+          <div
+            className="absolute bottom-16 left-1/2 -translate-x-1/2 bg-white rounded-2xl shadow-2xl border border-slate-200 p-5 max-w-2xl w-[calc(100%-2rem)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs font-extrabold text-slate-700 uppercase tracking-widest">
+                Question navigation
+              </p>
+              <button
+                onClick={() => setShowMap(false)}
+                className="p-1 rounded-lg hover:bg-slate-100 text-slate-500"
+                aria-label="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <QuestionMap
+              total={totalCount}
+              currentIdx={currentIdx}
+              answeredIds={answeredIds}
+              questionIds={questionIds}
+              onJump={(i) => {
+                onJump(i);
+                setShowMap(false);
+              }}
+            />
+            <div className="mt-4 flex items-center gap-4 text-[11px] font-bold text-slate-600">
+              <span className="flex items-center gap-1.5">
+                <span className="h-3 w-3 rounded bg-primary inline-block" /> Current
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-3 w-3 rounded bg-emerald-100 border border-emerald-300 inline-block" /> Answered
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-3 w-3 rounded bg-slate-100 border border-slate-300 inline-block" /> Unanswered
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Bottom nav bar (previous · question map · next/submit) ─────────── */}
+      <footer className="bg-white border-t border-slate-200 px-6 py-3 flex items-center justify-between shrink-0">
         <button
           type="button"
-          onClick={() => setCurrentIdx((i) => Math.max(0, i - 1))}
+          onClick={onPrevious}
           disabled={currentIdx === 0}
-          className="inline-flex items-center gap-1 rounded-xl border border-border bg-card px-4 py-3 min-h-[44px] text-sm font-bold text-foreground hover:bg-surface-2 disabled:opacity-40 transition-colors"
+          className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 transition-colors"
         >
           <ChevronLeft className="h-4 w-4" />
           Previous
         </button>
 
-        {currentIdx < totalCount - 1 ? (
+        <button
+          type="button"
+          onClick={() => setShowMap((v) => !v)}
+          className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-extrabold text-white hover:bg-slate-800 transition-colors"
+        >
+          <span className="tabular-nums">Question {currentIdx + 1} of {totalCount}</span>
+          <ChevronUp className={`h-4 w-4 transition-transform ${showMap ? "rotate-180" : ""}`} />
+        </button>
+
+        {isLast ? (
           <button
             type="button"
-            onClick={() => setCurrentIdx((i) => Math.min(totalCount - 1, i + 1))}
-            className="inline-flex items-center gap-1 rounded-xl border border-border bg-card px-4 py-3 min-h-[44px] text-sm font-bold text-foreground hover:bg-surface-2 transition-colors"
+            onClick={onSubmitClick}
+            disabled={conflicts.length > 0}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-5 py-2.5 text-sm font-extrabold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
           >
-            Next
-            <ChevronRight className="h-4 w-4" />
+            <Send className="h-4 w-4" />
+            Review &amp; Submit
           </button>
         ) : (
           <button
             type="button"
-            onClick={() => {
-              if (conflicts.length) {
-                setSubmitError("Please resolve the answer conflict above before submitting.");
-                return;
-              }
-              setStage("confirm-submit");
-            }}
-            disabled={conflicts.length > 0}
-            className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-3 min-h-[44px] text-sm font-extrabold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+            onClick={onNext}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors"
           >
-            <Send className="h-4 w-4" />
-            Review & Submit
+            Next
+            <ChevronRight className="h-4 w-4" />
           </button>
         )}
-      </div>
-
-      {/* Submit shortcut (visible on all pages after question 3) */}
-      {currentIdx < totalCount - 1 && totalCount > 1 && (
-        <div className="text-center">
-          <button
-            type="button"
-            onClick={() => {
-              if (conflicts.length) return;
-              setStage("confirm-submit");
-            }}
-            className="text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
-          >
-            Done answering? Review & submit →
-          </button>
-        </div>
-      )}
+      </footer>
     </div>
   );
 }
