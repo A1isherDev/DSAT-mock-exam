@@ -109,8 +109,13 @@ def grade_attempt(*, attempt_id: int) -> AssessmentResult | None:
     Locks the attempt row for the duration of the transaction.
     Duplicate Celery deliveries are handled idempotently.
     """
+    # Lock the row first (Postgres rejects FOR UPDATE on the nullable side
+    # of an outer join — `homework` and `set_version` are nullable FKs).
+    locked_exists = AssessmentAttempt.objects.select_for_update().filter(pk=attempt_id).exists()
+    if not locked_exists:
+        return None
     att = (
-        AssessmentAttempt.objects.select_for_update()
+        AssessmentAttempt.objects
         .select_related("homework", "homework__assessment_set", "set_version")
         .filter(pk=attempt_id)
         .first()

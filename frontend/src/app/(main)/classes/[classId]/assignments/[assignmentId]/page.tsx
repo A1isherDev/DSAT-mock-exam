@@ -283,6 +283,16 @@ export default function AssignmentDetailPage() {
     : [];
   const hasPastpaperBundle = bundleTests.length > 0;
   const legacyPracticeTestId = assignment?.practice_test;
+  // Which pack does this homework target? Pastpaper packs route the
+  // student to /pastpapers/{id} (which uses the pastpaper attempt flow),
+  // practice test packs route to /practice-tests/{id}.
+  const pastpaperPackId = (assignment as { pastpaper_pack?: number | null } | null)?.pastpaper_pack ?? null;
+  const practiceTestPackId = (assignment as { practice_test_pack?: number | null } | null)?.practice_test_pack ?? null;
+  const sectionLinkFor = (testId: number) => {
+    if (pastpaperPackId) return `/pastpapers/${pastpaperPackId}`;
+    if (practiceTestPackId) return `/practice-tests/${practiceTestPackId}`;
+    return `/practice-test/${testId}`;
+  };
   /** Homework includes assigned practice/mock sections (tests can turn in automatically when finished). */
   const hasAssignedTests = Boolean(assignment?.locks_file_upload);
 
@@ -510,7 +520,7 @@ export default function AssignmentDetailPage() {
                         <button
                           key={t.id}
                           type="button"
-                          onClick={() => router.push(`/practice-test/${t.id}`)}
+                          onClick={() => router.push(sectionLinkFor(Number(t.id)))}
                           className={`${linkBtn} ms-btn-primary border-transparent shadow-sm ${
                             platformSubjectIsMath(t.subject) ? "ms-cta-math text-white" : "ms-cta-fill text-white"
                           }`}
@@ -523,7 +533,7 @@ export default function AssignmentDetailPage() {
                   {!hasPastpaperBundle && legacyPracticeTestId ? (
                     <button
                       type="button"
-                      onClick={() => router.push(`/practice-test/${legacyPracticeTestId}`)}
+                      onClick={() => router.push(sectionLinkFor(Number(legacyPracticeTestId)))}
                       className={`${linkBtn} ms-btn-primary ms-cta-fill border-transparent text-white`}
                     >
                       <ExternalLink className="h-4 w-4" />

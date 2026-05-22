@@ -1423,6 +1423,22 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
                     .order_by("-version_number")
                     .first()
                 )
+                # If the assessment set has no pinned version yet (newly created
+                # set with questions but no version snapshot), create one now so
+                # the homework can be assigned. Without a version, students
+                # cannot start attempts.
+                if pinned_version is None:
+                    try:
+                        from assessments.domain.publish_service import publish_assessment_set
+                        pinned_version = publish_assessment_set(
+                            set_id=aset.pk, actor=request.user
+                        )
+                    except Exception:
+                        logger.exception(
+                            "publish_assessment_set failed for assessment_set_id=%s; "
+                            "assigning without pinned_version",
+                            aset.pk,
+                        )
                 with transaction.atomic():
                     AssessHW.objects.create(
                         classroom=classroom,
@@ -1432,9 +1448,15 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
                         set_version=pinned_version,
                     )
             except IntegrityError:
-                pass
+                logger.exception(
+                    "IntegrityError creating assessment homework for assignment_id=%s set_id=%s",
+                    assignment.pk, assessment_set_id,
+                )
             except Exception:
-                pass
+                logger.exception(
+                    "Failed to create assessment homework for assignment_id=%s set_id=%s",
+                    assignment.pk, assessment_set_id,
+                )
 
         return Response(self.get_serializer(assignment).data, status=status.HTTP_201_CREATED)
 
