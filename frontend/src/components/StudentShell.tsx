@@ -16,7 +16,7 @@ import {
   FileWarning,
   Users,
   UserCircle,
-  Shield,
+  Languages,
   LogOut,
   LogIn,
   Sun,
@@ -64,7 +64,7 @@ const navSections: NavSection[] = [
     section: "Account",
     items: [
       { href: "/profile", label: "Profile", icon: UserCircle },
-      { href: "/security", label: "Security", icon: Shield },
+      { href: "/vocabulary/daily", label: "Vocabulary", icon: Languages },
     ],
   },
 ];
@@ -83,12 +83,13 @@ function isNavItemActive(href: string, pathname: string): boolean {
   if (href === "/") return pathname === "/";
   if (href === "/pastpapers") return pathname === "/pastpapers" || pathname.startsWith("/pastpapers/");
   if (href === "/practice-tests") return pathname === "/practice-tests" || pathname.startsWith("/practice-tests/");
+  if (href.startsWith("/vocabulary")) return pathname === "/vocabulary" || pathname.startsWith("/vocabulary/");
   return pathname.startsWith(href);
 }
 
 function pageTitle(pathname: string): string {
   if (pathname === "/") return "Dashboard";
-  if (pathname === "/security" || pathname.startsWith("/security/")) return "Security";
+  if (pathname === "/vocabulary" || pathname.startsWith("/vocabulary/")) return "Vocabulary";
   const item = nav.find((n) => n.href !== "/" && isNavItemActive(n.href, pathname));
   return item?.label ?? "MasterSAT";
 }

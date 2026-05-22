@@ -1357,6 +1357,20 @@ class SubmitAttemptView(APIView):
                 att.active_time_seconds = int(att.active_time_seconds or 0) + int(min(slice_cap, delta))
         att.last_activity_at = now
 
+        # Per-question time spent (sent by the student runner). Validate to a
+        # clean {str(qid): int seconds} dict so the result page can render it.
+        raw_qt = request.data.get("question_times") or {}
+        if isinstance(raw_qt, dict):
+            cleaned_qt: dict[str, int] = {}
+            for k, v in raw_qt.items():
+                try:
+                    qid = int(k)
+                    secs = max(0, min(span_cap, int(v)))
+                    cleaned_qt[str(qid)] = secs
+                except (TypeError, ValueError):
+                    continue
+            att.question_times = cleaned_qt
+
         broker = str(getattr(dj_settings, "CELERY_BROKER_URL", "") or "").strip()
         eager = bool(getattr(dj_settings, "CELERY_TASK_ALWAYS_EAGER", False))
         use_async = bool(broker) or eager
@@ -1367,6 +1381,7 @@ class SubmitAttemptView(APIView):
             "total_time_seconds",
             "last_activity_at",
             "active_time_seconds",
+            "question_times",
         ]
         if use_async:
             att.grading_status = AssessmentAttempt.GRADING_PENDING
@@ -1383,18 +1398,27 @@ class SubmitAttemptView(APIView):
         except Exception:
             logger.exception("sync_assessment_submission failed attempt_id=%s", att.pk)
 
-        if use_async:
-            transaction.on_commit(lambda pk=att.pk: grade_attempt_task.delay(pk))
+        # Always grade synchronously so students see their results immediately
+        # without waiting for the teacher or a background worker. Auto-gradeable
+        # question types (multiple choice, numeric, boolean, short text with
+        # tolerance) score in milliseconds. If sync grading fails, we fall back
+        # to the async path as a safety net.
+        try:
+            res = grade_attempt(attempt_id=att.pk)
+            att.refresh_from_db()
+            return Response({
+                "attempt": AttemptSerializer(att).data,
+                "result": ResultSerializer(res).data if res else None,
+            })
+        except Exception:
+            logger.exception("sync grade_attempt failed; falling back to async attempt_id=%s", att.pk)
+            if use_async:
+                transaction.on_commit(lambda pk=att.pk: grade_attempt_task.delay(pk))
             att.refresh_from_db()
             return Response(
                 {"attempt": AttemptSerializer(att).data, "result": None, "grading": "pending"},
                 status=status.HTTP_202_ACCEPTED,
             )
-
-        # No broker / not eager — single synchronous run of the shared grading service.
-        res = grade_attempt(attempt_id=att.pk)
-        att.refresh_from_db()
-        return Response({"attempt": AttemptSerializer(att).data, "result": ResultSerializer(res).data if res else None})
 
 
 class AbandonAttemptView(APIView):

@@ -171,6 +171,7 @@ class AttemptSerializer(serializers.ModelSerializer):
             "last_activity_at",
             "total_time_seconds",
             "active_time_seconds",
+            "question_times",
             "grading_status",
             "grading_attempts",
             "question_order",

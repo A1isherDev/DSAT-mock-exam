@@ -1079,7 +1079,10 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
     try {
       if (debouncedTimer.current) clearTimeout(debouncedTimer.current);
       await flushSave();
-      const submitResponse = await submit.mutateAsync({ attempt_id: attemptId });
+      const submitResponse = await submit.mutateAsync({
+        attempt_id: attemptId,
+        question_times: { ...questionTimesRef.current },
+      });
       // Use server-authoritative submitted_at so the receipt timestamp matches
       // what the server recorded, even if the client clock drifted.
       const serverSubmittedAt = submitResponse?.attempt?.submitted_at

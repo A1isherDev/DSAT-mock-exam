@@ -38,6 +38,7 @@ type MyResultData = {
     status: string;
     grading_status?: string | null;
     total_time_seconds?: number | null;
+    question_times?: Record<string, number> | null;
     answers?: Array<{
       question_id: number;
       answer: string | null;
@@ -636,47 +637,57 @@ export default function AssessmentResultPage() {
                 </div>
                 {retryError && <p className="px-5 py-2 text-xs text-red-600">{retryError}</p>}
                 <div className="divide-y divide-border">
-                  {answers.map((ans, i) => (
-                    <button
-                      key={ans.question_id}
-                      type="button"
-                      onClick={() => router.push(`/assessments/review/${attempt.id}?q=${i + 1}`)}
-                      className="w-full flex items-center gap-3 px-5 py-3 hover:bg-surface-2 transition-colors text-left"
-                    >
-                      <span className="text-xs font-bold text-muted-foreground w-6 text-right shrink-0">
-                        {i + 1}
-                      </span>
-                      {ans.is_correct === true ? (
-                        <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
-                      ) : ans.is_correct === false ? (
-                        <XCircle className="h-4 w-4 text-red-500 shrink-0" />
-                      ) : (
-                        <div className="h-4 w-4 rounded-full border-2 border-muted shrink-0" />
-                      )}
-                      <span
-                        className={cn(
-                          "text-sm font-semibold flex-1",
-                          ans.is_correct === true
-                            ? "text-emerald-700"
-                            : ans.is_correct === false
-                            ? "text-red-700"
-                            : "text-muted-foreground",
-                        )}
+                  {answers.map((ans, i) => {
+                    const qt = attempt?.question_times ?? null;
+                    const sec = qt ? Number(qt[String(ans.question_id)] || 0) : 0;
+                    return (
+                      <button
+                        key={ans.question_id}
+                        type="button"
+                        onClick={() => router.push(`/assessments/review/${attempt.id}?q=${i + 1}`)}
+                        className="w-full flex items-center gap-3 px-5 py-3 hover:bg-surface-2 transition-colors text-left"
                       >
-                        {ans.is_correct === true
-                          ? "Correct"
-                          : ans.is_correct === false
-                          ? "Incorrect"
-                          : "Not answered"}
-                      </span>
-                      {ans.points_awarded != null && (
-                        <span className="text-xs font-bold text-muted-foreground">
-                          +{ans.points_awarded} pts
+                        <span className="text-xs font-bold text-muted-foreground w-6 text-right shrink-0">
+                          {i + 1}
                         </span>
-                      )}
-                      <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    </button>
-                  ))}
+                        {ans.is_correct === true ? (
+                          <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                        ) : ans.is_correct === false ? (
+                          <XCircle className="h-4 w-4 text-red-500 shrink-0" />
+                        ) : (
+                          <div className="h-4 w-4 rounded-full border-2 border-muted shrink-0" />
+                        )}
+                        <span
+                          className={cn(
+                            "text-sm font-semibold flex-1",
+                            ans.is_correct === true
+                              ? "text-emerald-700"
+                              : ans.is_correct === false
+                              ? "text-red-700"
+                              : "text-muted-foreground",
+                          )}
+                        >
+                          {ans.is_correct === true
+                            ? "Correct"
+                            : ans.is_correct === false
+                            ? "Incorrect"
+                            : "Not answered"}
+                        </span>
+                        {sec > 0 && (
+                          <span className="text-xs font-semibold text-muted-foreground tabular-nums inline-flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            {formatTime(sec)}
+                          </span>
+                        )}
+                        {ans.points_awarded != null && (
+                          <span className="text-xs font-bold text-muted-foreground">
+                            +{ans.points_awarded} pts
+                          </span>
+                        )}
+                        <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}

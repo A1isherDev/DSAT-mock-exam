@@ -133,11 +133,14 @@ export function useSaveAnswer() {
 export function useSubmitAttempt() {
   const { assertCriticalAuth } = useAuthCriticalGate();
   return useMutation({
-    mutationFn: async (payload: { attempt_id: number }): Promise<SubmitResponse> => {
+    mutationFn: async (payload: {
+      attempt_id: number;
+      question_times?: Record<number, number>;
+    }): Promise<SubmitResponse> => {
       if (!assertCriticalAuth()) {
         throw new Error("AUTH_ACTION_BLOCKED");
       }
-      return await assessmentsStudentApi.submit(payload);
+      return await assessmentsStudentApi.submit(payload as { attempt_id: number });
     },
     onError: (e) => {
       throw normalizeApiError(e);

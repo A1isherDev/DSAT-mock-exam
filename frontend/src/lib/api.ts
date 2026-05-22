@@ -514,23 +514,6 @@ export const usersApi = {
         const r = await api.get('/users/exam-dates/');
         return r.data;
     },
-    getSecurity: async () => {
-        const r = await api.get('/users/me/security/');
-        return r.data as {
-            last_password_change: string | null;
-            security_step_up_active: boolean;
-            suspicious_login_alerts: number;
-            events: Array<{
-                id: number;
-                event_type: string;
-                severity: string;
-                ip: string;
-                user_agent: string;
-                detail: Record<string, unknown>;
-                created_at: string;
-            }>;
-        };
-    },
 };
 
 export const authApi = {

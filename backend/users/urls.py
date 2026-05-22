@@ -6,7 +6,6 @@ from .views import (
     UserDeleteView,
     UserRegistrationView,
     UserMeView,
-    UserSecurityView,
     GoogleAuthView,
     TelegramAuthView,
     TelegramOAuthCallbackView,
@@ -21,7 +20,6 @@ from .prometheus_security import AdminSecurityPrometheusMetricsView
 
 urlpatterns = [
     path('me/', UserMeView.as_view(), name='user-me'),
-    path('me/security/', UserSecurityView.as_view(), name='user-me-security'),
     path('exam-dates/', ExamDateOptionListView.as_view(), name='exam-date-options'),
     path('admin/exam-dates/', ExamDateOptionAdminListCreateView.as_view(), name='admin-exam-dates'),
     path('admin/exam-dates/<int:pk>/', ExamDateOptionAdminDetailView.as_view(), name='admin-exam-date-detail'),

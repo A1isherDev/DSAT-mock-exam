@@ -378,6 +378,9 @@ class AssessmentAttempt(models.Model):
     last_activity_at = models.DateTimeField(null=True, blank=True, db_index=True)
     total_time_seconds = models.PositiveIntegerField(default=0)
     active_time_seconds = models.PositiveIntegerField(default=0)
+    # Per-question time spent, keyed by question_id (string). Recorded by the
+    # student runner at submit so the result page can show a time breakdown.
+    question_times = models.JSONField(blank=True, default=dict)
     # Async grading status
     GRADING_PENDING = "pending"
     GRADING_PROCESSING = "processing"

@@ -748,34 +748,6 @@ class UserMeView(generics.RetrieveUpdateAPIView):
         return self.request.user
 
 
-class UserSecurityView(APIView):
-    """Recent security events and adaptive account flags for the signed-in user."""
-
-    permission_classes = [IsAuthenticatedAndNotFrozen]
-
-    def get(self, request):
-        from datetime import timedelta
-
-        from .models import SecurityAuditEvent
-
-        u = request.user
-        ev = SecurityAuditEvent.objects.filter(user=u)[:50]
-        since = timezone.now() - timedelta(days=7)
-        suspicious = SecurityAuditEvent.objects.filter(
-            user=u, severity__in=("warning", "critical"), created_at__gte=since
-        ).count()
-        return Response(
-            {
-                "last_password_change": u.last_password_change.isoformat() if u.last_password_change else None,
-                "security_step_up_active": bool(
-                    u.security_step_up_required_until and u.security_step_up_required_until > timezone.now()
-                ),
-                "suspicious_login_alerts": int(suspicious),
-                "events": SecurityAuditEventSerializer(ev, many=True).data,
-            }
-        )
-
-
 class ExamDateOptionListView(generics.ListAPIView):
     """Active exam dates for student profile dropdown."""
 
