@@ -1920,7 +1920,7 @@ function ExamPlayerInner() {
                         {showTimer ? (
                             <div className="flex flex-col items-center">
                                 <span className={`text-lg font-bold font-mono tracking-tight ${isPaused ? 'opacity-40' : ''}`}>
-                                    {formatTime(timeLeft)}
+                                    {timerReady ? formatTime(timeLeft) : '--:--'}
                                 </span>
                                 <div className="flex items-center gap-2 mt-0.5">
                                     {!mockFlow && (

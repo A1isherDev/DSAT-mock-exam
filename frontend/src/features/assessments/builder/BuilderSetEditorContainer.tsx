@@ -608,12 +608,15 @@ export default function BuilderSetEditorContainer() {
     const rawChoices: Array<{ id?: unknown }> = (selected as any).choices ?? [];
     const choiceIds = rawChoices.map((c) => String(c?.id ?? "").trim()).filter(Boolean);
     const rawCorrect = (selected as any).correct_answer;
-    // Normalise: if correct_answer is null/undefined or doesn't match any choice,
-    // fall back to the first choice ID so the editor draft is always valid.
+    // Normalise: for multiple_choice only, if correct_answer is null/undefined
+    // or doesn't match any choice, fall back to the first choice ID.
+    // For numeric/short_text/boolean, keep the raw value as-is.
     const resolvedCorrect =
-      rawCorrect != null && choiceIds.includes(String(rawCorrect))
-        ? rawCorrect
-        : (choiceIds[0] ?? null);
+      selected.question_type === "multiple_choice"
+        ? (rawCorrect != null && choiceIds.includes(String(rawCorrect))
+            ? rawCorrect
+            : (choiceIds[0] ?? null))
+        : rawCorrect;
     setEditing({
       questionId: selected.id,
       prompt: String(selected.prompt || ""),
