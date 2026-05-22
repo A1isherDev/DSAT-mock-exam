@@ -14,6 +14,7 @@ from .services import (
     can_manage_questions,
     get_effective_permission_codenames,
     is_global_scope_staff,
+    normalized_role,
 )
 
 
@@ -108,20 +109,24 @@ class CanAuthorAssessmentContent(BasePermission):
     """
     Create/update/delete ``/api/assessments/admin/`` sets and questions.
 
-    Narrower than :class:`CanEditTests`: **global staff only** (admin / test_admin / super_admin /
-    Django superuser). Teachers may list sets (for assignment UX) via :class:`CanViewTests` but must
-    not mutate assessment catalogue content — authoring lives with library staff on the questions
-    console; teachers assign on the admin console.
+    Allowed for global staff (admin / test_admin / super_admin / Django superuser)
+    AND teachers — teachers prepare and assign assessments to their own classrooms,
+    so they need authoring rights as well.
     """
 
     def has_permission(self, request, view):
         u = request.user
         if not getattr(u, "is_authenticated", False):
             return False
-        if not is_global_scope_staff(u):
-            return False
         subj = actor_subject_probe_for_domain_perm(u)
-        return bool(subj and can_edit_tests(u, subj))
+        if not subj:
+            return False
+        if is_global_scope_staff(u) and can_edit_tests(u, subj):
+            return True
+        # Teachers also author assessments for their classrooms.
+        if normalized_role(u) == constants.ROLE_TEACHER and can_edit_tests(u, subj):
+            return True
+        return False
 
 
 class CanAssignTests(BasePermission):

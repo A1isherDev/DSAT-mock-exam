@@ -57,6 +57,7 @@ import {
   ChevronRight,
   ChevronUp,
   Clock,
+  Highlighter,
   Loader2,
   Monitor,
   Send,
@@ -94,6 +95,14 @@ async function backoffDelayMs(attempt: number) {
 
 function syncFpFromAttempt(attempt: unknown): string {
   return fingerprintAnswersFromAttempt(attempt as Parameters<typeof fingerprintAnswersFromAttempt>[0]);
+}
+
+// Insert U+2060 WORD JOINER between consecutive underscores so a fill-in-the-
+// blank like "______" cannot break across lines. The joiner is zero-width and
+// invisible, so the rendered length and appearance of the blank are preserved.
+function preventUnderscoreBreaks(text: string): string {
+  if (!text) return text;
+  return text.replace(/_{2,}/g, (run) => run.split("").join("⁠"));
 }
 
 // ─── Save indicator ───────────────────────────────────────────────────────────
@@ -551,6 +560,14 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
   const questionTimesRef = useRef<Record<number, number>>({});
   // Timestamp when the student entered the current question
   const currentQuestionStartRef = useRef(Date.now());
+
+  // ── Per-question SAT tooling state ──────────────────────────────────────────
+  // Eliminated answer choices (per question id → set of choice ids).
+  const [eliminatedByQid, setEliminatedByQid] = useState<Record<number, Set<string>>>({});
+  // Persistent highlighter mode (toggle in header).
+  const [highlighterActive, setHighlighterActive] = useState(false);
+  // Per-question saved highlight HTML for the passage / prompt area.
+  const [highlightsByQid, setHighlightsByQid] = useState<Record<number, string>>({});
 
   // Count-up timer: tick every second while the exam stage is active
   useEffect(() => {
@@ -1395,11 +1412,29 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
   }
 
   // ── Stage: exam — SAT/pastpaper-style full-screen simulation ─────────────
+  const subjectLabel = (() => {
+    const raw = set?.subject ? String(set.subject).trim() : "";
+    if (!raw) return "Assessment";
+    // Pretty-print common subjects (english → English, math → Math) but keep
+    // any custom subject name untouched beyond title casing.
+    const map: Record<string, string> = {
+      english: "English",
+      math: "Math",
+      reading_writing: "Reading & Writing",
+      "reading & writing": "Reading & Writing",
+    };
+    const key = raw.toLowerCase();
+    if (map[key]) return map[key];
+    return raw
+      .split(/\s+/)
+      .map((w) => (w ? w[0].toUpperCase() + w.slice(1).toLowerCase() : w))
+      .join(" ");
+  })();
   return (
     <ExamSimulationView
       // Header / meta
       setTitle={setTitle}
-      subject={set?.subject ? String(set.subject) : "Assessment"}
+      subject={subjectLabel}
       classroomName={runnerMeta?.classroom_name ?? null}
       // Timer
       elapsedSec={elapsedSec}
@@ -1433,6 +1468,22 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
         setDraftById((prev) => ({ ...prev, [currentQuestionId]: next }));
         enqueueSave(currentQuestionId, next);
       }}
+      // Per-question SAT tools
+      eliminatedChoices={eliminatedByQid[currentQuestionId] ?? new Set<string>()}
+      onToggleElim={(choiceId) => {
+        setEliminatedByQid((prev) => {
+          const cur = new Set(prev[currentQuestionId] ?? []);
+          if (cur.has(choiceId)) cur.delete(choiceId);
+          else cur.add(choiceId);
+          return { ...prev, [currentQuestionId]: cur };
+        });
+      }}
+      highlighterActive={highlighterActive}
+      onToggleHighlighter={() => setHighlighterActive((v) => !v)}
+      questionHighlightHtml={highlightsByQid[currentQuestionId] ?? null}
+      onPassageHighlightChange={(html) =>
+        setHighlightsByQid((prev) => ({ ...prev, [currentQuestionId]: html }))
+      }
       // Navigation
       onPrevious={() => setCurrentIdx((i) => Math.max(0, i - 1))}
       onNext={() => setCurrentIdx((i) => Math.min(totalCount - 1, i + 1))}
@@ -1485,6 +1536,14 @@ type ExamSimulationProps = {
   answerValue: unknown;
   onAnswer: (next: unknown) => void;
 
+  // SAT tools
+  eliminatedChoices: Set<string>;
+  onToggleElim: (choiceId: string) => void;
+  highlighterActive: boolean;
+  onToggleHighlighter: () => void;
+  questionHighlightHtml: string | null;
+  onPassageHighlightChange: (html: string) => void;
+
   onPrevious: () => void;
   onNext: () => void;
   onSubmitClick: () => void;
@@ -1516,6 +1575,12 @@ function ExamSimulationView({
   current,
   answerValue,
   onAnswer,
+  eliminatedChoices,
+  onToggleElim,
+  highlighterActive,
+  onToggleHighlighter,
+  questionHighlightHtml,
+  onPassageHighlightChange,
   onPrevious,
   onNext,
   onSubmitClick,
@@ -1621,6 +1686,18 @@ function ExamSimulationView({
             <span className="w-5 h-5 flex items-center justify-center border-2 border-current rounded font-bold text-xs">+</span>
             <span className="text-[9px] font-bold uppercase tracking-wider">Zoom In</span>
           </button>
+          <button
+            onClick={onToggleHighlighter}
+            title={highlighterActive ? "Disable highlighter" : "Enable highlighter"}
+            className={`flex flex-col items-center gap-0.5 transition-colors ${
+              highlighterActive ? "text-yellow-600" : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            <Highlighter className="w-5 h-5" />
+            <span className="text-[9px] font-bold uppercase tracking-wider">
+              {highlighterActive ? "On" : "Highlight"}
+            </span>
+          </button>
           <div className="w-px h-8 bg-slate-100" />
           <div className="flex flex-col items-center pt-0.5 gap-0.5">
             <span className="text-sm font-bold text-slate-700 tabular-nums">{answeredCount}/{totalCount}</span>
@@ -1648,8 +1725,32 @@ function ExamSimulationView({
       {/* ── Question area ───────────────────────────────────────────────────── */}
       <main className="flex-1 overflow-y-auto bg-white">
         <div
-          className="mx-auto w-full max-w-3xl px-8 py-10"
+          className={`mx-auto w-full max-w-3xl px-8 py-10 ${highlighterActive ? "ms-highlighter-cursor" : ""}`}
           style={{ fontSize: `${zoomLevel}rem` }}
+          onMouseUp={() => {
+            if (!highlighterActive) return;
+            try {
+              const sel = window.getSelection();
+              if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+              const range = sel.getRangeAt(0);
+              // Only highlight if selection is fully inside the question area.
+              const area = (range.commonAncestorContainer as Node) || null;
+              if (!area) return;
+              const mark = document.createElement("mark");
+              mark.style.backgroundColor = "#fef08a"; // tailwind yellow-200
+              mark.style.padding = "0 1px";
+              mark.style.borderRadius = "2px";
+              try {
+                range.surroundContents(mark);
+                sel.removeAllRanges();
+              } catch {
+                // surroundContents fails when selection crosses element
+                // boundaries; ignore silently and let the user retry.
+              }
+            } catch {
+              /* ignore */
+            }
+          }}
         >
           {/* Question header line (question N of M + per-question time) */}
           <div className="flex items-center justify-between mb-6 pb-3 border-b border-slate-200">
@@ -1664,9 +1765,9 @@ function ExamSimulationView({
 
           {/* Question prompt context (passage/stimulus) if any */}
           {Boolean(current?.question_prompt) && (
-            <div className="mb-6 border-l-4 border-slate-300 pl-5 py-1">
+            <div className="mb-6 border-l-4 border-slate-300 pl-5 py-1 ms-no-break-underscores">
               <MathText
-                text={String(current!.question_prompt)}
+                text={preventUnderscoreBreaks(String(current!.question_prompt))}
                 block
                 className="text-base text-slate-700 leading-relaxed font-[Georgia,serif]"
               />
@@ -1674,11 +1775,13 @@ function ExamSimulationView({
           )}
 
           {/* The question itself */}
-          <MathText
-            text={String(current?.prompt || "").trim() || "—"}
-            block
-            className="text-lg font-semibold text-slate-900 leading-relaxed"
-          />
+          <div className="ms-no-break-underscores">
+            <MathText
+              text={preventUnderscoreBreaks(String(current?.prompt || "").trim() || "—")}
+              block
+              className="text-lg font-semibold text-slate-900 leading-relaxed"
+            />
+          </div>
 
           {/* Answer input */}
           <div className="mt-8">
@@ -1687,6 +1790,8 @@ function ExamSimulationView({
               choices={parseChoices(current?.choices)}
               value={answerValue}
               onChange={onAnswer}
+              eliminated={eliminatedChoices}
+              onToggleElim={onToggleElim}
             />
           </div>
         </div>

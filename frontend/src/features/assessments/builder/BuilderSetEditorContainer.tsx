@@ -668,6 +668,21 @@ export default function BuilderSetEditorContainer() {
           }
           payload.correct_answer = idList[0];
         }
+      } else if (payload.question_type === "numeric") {
+        // Coerce raw string ("5", "3.14") to a number so the backend stores
+        // it as a JSON number instead of a string. Empty/invalid stays null
+        // and the user sees the validation error from the server.
+        const ca = payload.correct_answer;
+        if (ca === null || ca === undefined || ca === "") {
+          toast.push({ tone: "error", message: "Enter a correct value for the numeric question." });
+          return;
+        }
+        const asNumber = Number(ca);
+        if (!Number.isFinite(asNumber)) {
+          toast.push({ tone: "error", message: "Correct value must be a number." });
+          return;
+        }
+        payload.correct_answer = asNumber;
       }
       // Use FormData when any image is attached or cleared
       const hasImages = Object.keys(imageFiles).length > 0 || Object.values(imageClears).some(Boolean);

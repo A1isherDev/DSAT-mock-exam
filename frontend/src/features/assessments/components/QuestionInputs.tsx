@@ -2,60 +2,88 @@
 
 import type { AssessmentChoice, AssessmentQuestionType } from "@/features/assessments/types";
 import { MathText } from "@/components/MathText";
+import { MinusCircle, Undo2 } from "lucide-react";
 
 export function MultipleChoiceInput({
   choices,
   value,
   onChange,
+  eliminated,
+  onToggleElim,
 }: {
   choices: AssessmentChoice[];
   value: string | null;
   onChange: (next: string | null) => void;
+  eliminated?: Set<string>;
+  onToggleElim?: (id: string) => void;
 }) {
+  const elim = eliminated ?? new Set<string>();
   return (
     <div className="grid gap-3">
       {choices.map((c) => {
         const checked = value === c.id;
+        const isEliminated = elim.has(c.id);
         return (
-          <button
+          <div
             key={c.id}
-            type="button"
-            onClick={() => onChange(checked ? null : c.id)}
-            // min-h-[52px] ensures 44px+ tap target even for short answer text.
-            // Border + bg change on checked provides unambiguous selection feedback.
-            // select-none prevents the iOS/Android long-press text-selection popup
-            // from interrupting an answer tap.
-            className={`select-none min-h-[52px] rounded-2xl border-2 p-4 text-left transition-colors ${
-              checked
-                ? "border-primary bg-primary/8 shadow-sm"
-                : "border-border bg-card hover:border-primary/40 hover:bg-surface-2"
+            className={`group flex items-stretch gap-2 transition-opacity ${
+              isEliminated ? "opacity-60" : ""
             }`}
-            aria-pressed={checked}
           >
-            <div className="flex items-start gap-3">
-              {/* Selection indicator circle */}
-              <span
-                className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
-                  checked ? "border-primary bg-primary" : "border-muted-foreground/40"
-                }`}
-                aria-hidden
-              >
-                {checked && (
-                  <span className="h-1.5 w-1.5 rounded-full bg-primary-foreground" />
-                )}
-              </span>
-              <div className="min-w-0">
-                <p className="text-xs font-extrabold uppercase tracking-wider text-label-foreground">{c.id}</p>
-                {/* MathText renders LaTeX delimiters via KaTeX and handles
-                    **bold** / *italic* markdown inline formatting. Long
-                    choice text wraps naturally — no truncation. */}
-                <MathText
-                  text={c.text}
-                  className="mt-0.5 text-sm text-foreground leading-snug"
-                />
+            <button
+              type="button"
+              onClick={() => {
+                if (isEliminated) return;
+                onChange(checked ? null : c.id);
+              }}
+              disabled={isEliminated}
+              className={`select-none flex-1 min-h-[64px] rounded-2xl border-2 px-4 py-3 text-left transition-all ${
+                checked
+                  ? "border-primary bg-primary/8 shadow-sm"
+                  : "border-slate-200 bg-white hover:border-primary/50 hover:bg-slate-50"
+              } ${isEliminated ? "cursor-not-allowed" : ""}`}
+              aria-pressed={checked}
+            >
+              <div className="flex items-center gap-4">
+                {/* SAT-style letter circle (A, B, C, D) */}
+                <span
+                  className={`shrink-0 flex h-9 w-9 items-center justify-center rounded-full border-2 text-sm font-extrabold transition-colors ${
+                    checked
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-slate-300 bg-white text-slate-700"
+                  }`}
+                  aria-hidden
+                >
+                  {c.id}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <MathText
+                    text={c.text}
+                    className={`text-base text-slate-900 leading-snug ${
+                      isEliminated ? "line-through decoration-2 decoration-slate-500" : ""
+                    }`}
+                  />
+                </div>
               </div>
-            </div>
-          </button>
+            </button>
+
+            {/* Eliminate / restore toggle */}
+            {onToggleElim && (
+              <button
+                type="button"
+                onClick={() => onToggleElim(c.id)}
+                title={isEliminated ? `Bring back option ${c.id}` : `Cross out option ${c.id}`}
+                aria-label={isEliminated ? "Restore option" : "Cross out option"}
+                className={`shrink-0 w-11 rounded-2xl border-2 flex items-center justify-center transition-colors ${
+                  isEliminated
+                    ? "border-slate-300 bg-white text-slate-500 hover:bg-slate-50"
+                    : "border-transparent bg-transparent text-slate-400 hover:border-slate-300 hover:bg-white hover:text-slate-700"
+                }`}
+              >
+                {isEliminated ? <Undo2 className="h-4 w-4" /> : <MinusCircle className="h-4 w-4" />}
+              </button>
+            )}
+          </div>
         );
       })}
     </div>
@@ -71,13 +99,10 @@ export function NumericInput({
 }) {
   return (
     <input
-      className="ui-input w-full rounded-xl border border-border bg-surface-2/80 px-4 py-3 min-h-[44px] text-base shadow-sm"
-      // type="text" + inputMode="decimal" + pattern: triggers numeric keyboard
-      // on both iOS Safari and Android Chrome consistently. type="number" causes
-      // stepper arrows on desktop and inconsistent mobile keyboards.
+      className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 min-h-[52px] text-base shadow-sm focus:border-primary focus:outline-none"
       type="text"
       inputMode="decimal"
-      pattern="[0-9.]*"
+      pattern="[0-9.-]*"
       value={value == null ? "" : String(value)}
       onChange={(e) => {
         const s = e.target.value.trim();
@@ -100,9 +125,7 @@ export function ShortTextInput({
 }) {
   return (
     <textarea
-      // text-base (16px) prevents iOS Safari auto-zoom on focus (triggered by
-      // any input with font-size < 16px).
-      className="ui-input w-full min-h-[120px] rounded-xl border border-border bg-surface-2/80 px-3 py-2 text-base shadow-sm"
+      className="w-full min-h-[120px] rounded-xl border-2 border-slate-200 bg-white px-4 py-3 text-base shadow-sm focus:border-primary focus:outline-none"
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder="Type your answer…"
@@ -115,18 +138,29 @@ export function AnswerInput({
   choices,
   value,
   onChange,
+  eliminated,
+  onToggleElim,
 }: {
   type: AssessmentQuestionType;
   choices?: AssessmentChoice[];
   value: any;
   onChange: (next: any) => void;
+  eliminated?: Set<string>;
+  onToggleElim?: (id: string) => void;
 }) {
   if (type === "multiple_choice") {
-    return <MultipleChoiceInput choices={choices || []} value={value ?? null} onChange={onChange} />;
+    return (
+      <MultipleChoiceInput
+        choices={choices || []}
+        value={value ?? null}
+        onChange={onChange}
+        eliminated={eliminated}
+        onToggleElim={onToggleElim}
+      />
+    );
   }
   if (type === "numeric") {
     return <NumericInput value={typeof value === "number" ? value : value == null ? null : Number(value)} onChange={onChange} />;
   }
   return <ShortTextInput value={String(value ?? "")} onChange={onChange} />;
 }
-

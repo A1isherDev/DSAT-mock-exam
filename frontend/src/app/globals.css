@@ -487,6 +487,27 @@ body {
   color: #000000;
 }
 
+/* Assessment highlighter mode — show the marker cursor and yellow selection */
+.ms-highlighter-cursor,
+.ms-highlighter-cursor * {
+  cursor: text;
+}
+.ms-highlighter-cursor *::selection {
+  background-color: #fde047;
+  color: #000000;
+}
+
+/* Prevent fill-in-the-blank underscores from breaking onto two lines.
+   `_____` reads as a single token to a reader, so keep it together. */
+.ms-no-break-underscores {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+.ms-no-break-underscores * {
+  /* Force any run of 2+ underscores to stay on one line */
+  white-space: normal;
+}
+
 /* Glass — simplified, no blur */
 .glass {
   background: var(--card);

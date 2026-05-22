@@ -360,12 +360,30 @@ export function AssessmentQuestionEditorFields({
               type="text"
               inputMode="decimal"
               placeholder="e.g. 42 or 3.14"
-              value={String(parseJson(draft.correctAnswerText, "") ?? "")}
+              value={(() => {
+                try {
+                  const parsed = JSON.parse(draft.correctAnswerText);
+                  if (parsed === null || parsed === undefined) return "";
+                  return String(parsed);
+                } catch {
+                  return draft.correctAnswerText ?? "";
+                }
+              })()}
               onChange={(e) => {
-                const raw = e.target.value.trim();
-                if (raw === "") onPatch({ correctAnswerText: JSON.stringify(null) });
-                else if (!Number.isNaN(Number(raw))) onPatch({ correctAnswerText: JSON.stringify(Number(raw)) });
-                else onPatch({ correctAnswerText: JSON.stringify(raw) });
+                const raw = e.target.value;
+                if (raw.trim() === "") {
+                  onPatch({ correctAnswerText: JSON.stringify(null) });
+                  return;
+                }
+                // Allow partial numeric typing (e.g. "3.", ".5", "-2") by
+                // preserving the raw string. The save handler coerces to a
+                // number before sending to the backend.
+                const n = Number(raw);
+                if (Number.isFinite(n) && String(n) === raw.trim()) {
+                  onPatch({ correctAnswerText: JSON.stringify(n) });
+                } else {
+                  onPatch({ correctAnswerText: JSON.stringify(raw) });
+                }
               }}
             />
           </div>

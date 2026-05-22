@@ -148,18 +148,18 @@ def normalized_role(user) -> str:
 
 def can_manage_questions(user) -> bool:
     """
-    Questions authoring API (``/api/exams/admin/...``): **global staff only**.
+    Questions authoring API (``/api/exams/admin/...``): admins and teachers.
 
-    This endpoint family is production-critical and effectively grants content-authoring powers
-    (create/update/delete mocks, tests, modules, questions, packs). In production we keep this
-    limited to global-scope staff: ``admin``, ``test_admin``, ``super_admin`` (and Django superuser).
-    Teachers should not implicitly gain authoring access by virtue of being non-students.
+    Authoring rights extended to teachers so they can prepare their own
+    assessments, mock exams, and practice tests for their classrooms.
     """
     if not user or not getattr(user, "is_authenticated", False):
         return False
     if getattr(user, "is_superuser", False):
         return True
-    return is_global_scope_staff(user)
+    if is_global_scope_staff(user):
+        return True
+    return normalized_role(user) == constants.ROLE_TEACHER
 
 
 def bulk_assign_request_platform_subjects(data: object) -> frozenset[str]:
