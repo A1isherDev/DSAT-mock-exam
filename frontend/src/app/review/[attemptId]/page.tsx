@@ -90,9 +90,28 @@ const QuestionReviewModal = ({ question, showCorrectAnswers, onClose, onNext, on
 
                             {!question.is_math_input ? (
                                 <div className="space-y-3">
+                                    {/* "You skipped this question" banner — surfaces the omitted
+                                        state above the choices so the student can see at a glance
+                                        why no option is marked as their answer. */}
+                                    {showCorrectAnswers &&
+                                        (!question.student_answer || String(question.student_answer).trim() === "") && (
+                                            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                                                <p className="text-sm font-bold text-amber-900">
+                                                    You did not answer this question.
+                                                </p>
+                                                <p className="text-xs text-amber-800 mt-1">
+                                                    The correct answer is highlighted in green below.
+                                                </p>
+                                            </div>
+                                        )}
                                     {Object.entries(question.options || {}).map(([key, val]) => {
-                                        const isStudent = question.student_answer === key;
-                                        const isCorrect = question.correct_answers === key;
+                                        // Normalise both sides so "D" vs "d" vs trailing spaces
+                                        // can't make the green/red highlight disappear.
+                                        const ans = String(question.student_answer ?? "").trim().toLowerCase();
+                                        const corr = String(question.correct_answers ?? "").trim().toLowerCase();
+                                        const k = String(key).trim().toLowerCase();
+                                        const isStudent = ans !== "" && ans === k;
+                                        const isCorrect = corr !== "" && corr === k;
 
                                         let boxStyle = "border-border bg-card text-foreground";
                                         let icon = null;
@@ -445,22 +464,39 @@ export default function ReviewPage() {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {module.questions.map((q: any, i: number) => (
+                                            {module.questions.map((q: any, i: number) => {
+                                                const isOmitted = !q.student_answer || String(q.student_answer).trim() === "";
+                                                const badge = isOmitted
+                                                    ? "bg-slate-100 text-slate-600 border-slate-200"
+                                                    : q.is_correct
+                                                    ? "bg-emerald-50 text-emerald-700 border-emerald-100"
+                                                    : "bg-red-50 text-red-700 border-red-100";
+                                                return (
                                                 <tr key={q.id} className="group hover:bg-surface-2/50 transition-colors border-b border-border/50 last:border-0 cursor-pointer" onClick={() => setSelectedQuestion({ ...q, index_in_module: i + 1 })}>
                                                     <td className="px-8 py-5">
-                                                        <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border font-bold text-xs uppercase tracking-wider ${q.is_correct ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-red-50 text-red-700 border-red-100'}`}>
+                                                        <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border font-bold text-xs uppercase tracking-wider ${badge}`}>
                                                             <span>Q{i + 1}</span>
                                                         </div>
                                                     </td>
-                                                    <td className="px-4 py-5 text-center font-bold text-foreground">
-                                                        {q.student_answer || 'Omitted'}
+                                                    <td className="px-4 py-5 text-center font-bold">
+                                                        {isOmitted ? (
+                                                            <span className="text-slate-500 italic">Omitted</span>
+                                                        ) : (
+                                                            <span className={q.is_correct ? "text-emerald-700" : "text-red-700"}>
+                                                                {q.student_answer}
+                                                            </span>
+                                                        )}
                                                     </td>
-                                                    <td className="px-4 py-5 text-center font-bold text-foreground">
+                                                    <td className="px-4 py-5 text-center font-bold text-emerald-700">
                                                         {showCorrectAnswers ? q.correct_answers : '---'}
                                                     </td>
                                                     <td className="px-4 py-5">
                                                         <div className="flex justify-center">
-                                                            {q.is_correct ? (
+                                                            {isOmitted ? (
+                                                                <div className="w-6 h-6 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center" title="Skipped">
+                                                                    <span className="text-xs font-bold">−</span>
+                                                                </div>
+                                                            ) : q.is_correct ? (
                                                                 <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
                                                                     <CheckCircle2 className="w-3.5 h-3.5" />
                                                                 </div>
@@ -480,7 +516,8 @@ export default function ReviewPage() {
                                                         </button>
                                                     </td>
                                                 </tr>
-                                            ))}
+                                                );
+                                            })}
                                         </tbody>
                                     </table>
                                 </div>
