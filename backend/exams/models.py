@@ -1215,6 +1215,16 @@ class TestAttempt(TimestampedModel):
         mock = getattr(pt, "mock_exam", None)
         if mock is None and pt.mock_exam_id:
             mock = MockExam.objects.filter(pk=pt.mock_exam_id).first()
+
+        # Pastpapers and standalone practice-test packs use raw-points scoring
+        # (sum of per-question scores for correctly answered questions). The
+        # SAT 200-base + 800-cap curve is reserved for mock exams that the
+        # teacher explicitly assembles as a full SAT simulation.
+        is_pastpaper_or_practice = (
+            getattr(pt, "pastpaper_pack_id", None) is not None
+            or getattr(pt, "practice_test_pack_id", None) is not None
+        )
+
         if mock and mock.kind == MockExam.KIND_MIDTERM:
             total_earned = 0
             for module_id_str, answers in self.module_answers.items():
@@ -1227,6 +1237,20 @@ class TestAttempt(TimestampedModel):
                     if question.check_answer(ans):
                         total_earned += question.score
             score_val = min(total_earned, 100)
+        elif is_pastpaper_or_practice:
+            # Raw-points scoring: just sum per-question scores of correct
+            # answers. No 200 base, no 800 cap, no proportional curve.
+            total_earned = 0
+            for module_id_str, answers in self.module_answers.items():
+                try:
+                    module = Module.objects.prefetch_related("questions").get(id=int(module_id_str))
+                except (ValueError, Module.DoesNotExist):
+                    continue
+                for question in module.questions.all():
+                    ans = answers.get(str(question.id))
+                    if question.check_answer(ans):
+                        total_earned += int(question.score or 0)
+            score_val = total_earned
         else:
             # ── SAT Section Scoring (Proportional) ──────────────────────────
             # Official Digital SAT score architecture:
@@ -1328,6 +1352,12 @@ class TestAttempt(TimestampedModel):
         if mock is None and pt.mock_exam_id:
             mock = MockExam.objects.filter(pk=pt.mock_exam_id).first()
         is_midterm = bool(mock and mock.kind == MockExam.KIND_MIDTERM)
+        # Pastpapers and standalone practice-test packs use raw-points scoring
+        # (no SAT 200-base / 800-cap curve). The review page should mirror that.
+        is_pastpaper_or_practice = (
+            getattr(pt, "pastpaper_pack_id", None) is not None
+            or getattr(pt, "practice_test_pack_id", None) is not None
+        )
 
         modules = self.practice_test.modules.prefetch_related('questions').order_by('module_order')
 
@@ -1359,8 +1389,9 @@ class TestAttempt(TimestampedModel):
                     'is_math_input': question.is_math_input
                 })
 
-            if is_midterm:
-                # Midterms: raw weighted sum, no proportional mapping
+            if is_midterm or is_pastpaper_or_practice:
+                # Midterms / pastpapers / practice tests: raw weighted sum,
+                # no proportional SAT mapping or 200-base curve.
                 capped_earned = correct_pts
                 module_cap = 0
             else:
