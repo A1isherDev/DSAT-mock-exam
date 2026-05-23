@@ -633,38 +633,16 @@ function ExamPlayerInner() {
                     return;
                 }
                 if (snapshot.is_expired) {
-                    // Module deadline passed. Trigger a submit which the backend
-                    // will force-transition using autosaved answers. This unsticks
-                    // students who came back after their timer ran out.
+                    // Module deadline passed before the student got back. Do
+                    // NOT auto-submit with empty answers here — that nukes any
+                    // unsaved work. Instead surface a calm error and let the
+                    // student click Retry, which will re-fetch and either land
+                    // them in MODULE_2_ACTIVE (if the backend already moved on)
+                    // or let them submit manually with their current answers.
                     setLoading(false);
-                    // Submit via the standard handler (the backend ignores the body
-                    // when the deadline has passed and uses autosaved answers).
-                    setTimeout(() => {
-                        try {
-                            void (async () => {
-                                try {
-                                    const resp = await examsPublicApi.submitModule(
-                                        attemptIdNum,
-                                        {},
-                                        [],
-                                        { idempotencyKey: `expired.${attemptIdNum}.${Date.now()}` },
-                                    );
-                                    mergeAttemptFromServer(resp);
-                                    if (resp.is_completed && resp.current_state === "COMPLETED") {
-                                        router.push(`/review/${attemptId}`);
-                                    }
-                                } catch (e) {
-                                    if (isAxiosError(e) && e.response?.status === 409) {
-                                        // Race: another tab already transitioned. Re-fetch.
-                                        try {
-                                            const refreshed = await examsPublicApi.getAttemptStatus(attemptIdNum);
-                                            mergeAttemptFromServer(refreshed);
-                                        } catch {}
-                                    }
-                                }
-                            })();
-                        } catch {}
-                    }, 100);
+                    setLoadError(
+                        "Your time on this module has elapsed. Click Retry to sync and continue.",
+                    );
                     return;
                 }
 

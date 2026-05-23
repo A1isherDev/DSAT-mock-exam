@@ -917,25 +917,34 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
 
                     timing = get_active_module_timing(attempt)
                     deadline_passed = bool(timing and timing.is_expired)
+                    # Always trust the request-body answers on submit. They are
+                    # what the student actually selected in the UI; the autosaved
+                    # state may be empty or stale. We merge them on top of any
+                    # already-autosaved values so nothing is lost either way.
+                    body_answers = request.data.get('answers', {}) or {}
+                    body_flagged = request.data.get('flagged', []) or []
+                    mid_key = str(int(getattr(attempt.current_module, "id", 0) or 0))
+                    existing_answers = (attempt.module_answers or {}).get(mid_key, {}) or {}
+                    existing_flagged = (attempt.flagged_questions or {}).get(mid_key, []) or []
+                    # Merge: keep any prior autosaved answers and let the submit
+                    # body overwrite per question. This preserves work when a
+                    # student answered something on another tab/device while
+                    # this tab's draft hadn't synced yet.
+                    merged_answers: dict = dict(existing_answers)
+                    if isinstance(body_answers, dict):
+                        merged_answers.update(body_answers)
+                    module_answers = merged_answers
+                    flagged = body_flagged if body_flagged else existing_flagged
                     if deadline_passed:
-                        # Deadline passed: force-transition the module using the
-                        # already-autosaved answers (ignore the request body so a
-                        # late submit cannot inject post-deadline edits). This
-                        # prevents students from getting stuck on an expired module
-                        # when they come back after the timer ran out.
-                        metric_incr("exam_module_deadline_force_transition_total")
+                        # Late submit: log and continue. We persist the answers
+                        # (so the student doesn't lose work) and transition the
+                        # module forward so they aren't stuck on an expired
+                        # screen the next time they reload.
+                        metric_incr("exam_module_deadline_late_submit_total")
                         logger.info(
-                            "[FORENSIC] submit_module_force_transition_after_deadline attempt_id=%s",
+                            "[FORENSIC] submit_module_late_submit_accepted attempt_id=%s",
                             attempt.id,
                         )
-                        mid_key = str(int(getattr(attempt.current_module, "id", 0) or 0))
-                        existing_answers = (attempt.module_answers or {}).get(mid_key, {}) or {}
-                        existing_flagged = (attempt.flagged_questions or {}).get(mid_key, []) or []
-                        module_answers = existing_answers
-                        flagged = existing_flagged
-                    else:
-                        module_answers = request.data.get('answers', {})
-                        flagged = request.data.get('flagged', [])
                     
                     submitting_module_order = int(getattr(attempt.current_module, "module_order", 0) or 0)
 
