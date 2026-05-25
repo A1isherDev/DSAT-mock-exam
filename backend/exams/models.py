@@ -1238,8 +1238,11 @@ class TestAttempt(TimestampedModel):
                         total_earned += question.score
             score_val = min(total_earned, 100)
         elif is_pastpaper_or_practice:
-            # Raw-points scoring: just sum per-question scores of correct
-            # answers. No 200 base, no 800 cap, no proportional curve.
+            # Pastpapers / practice tests: 200 floor + raw per-question score
+            # for each correctly answered question. No 800 ceiling and no
+            # proportional curve — students keep the full points they earned.
+            # The 200 floor mirrors the SAT minimum so a perfect-zero attempt
+            # still reads as a SAT-like number instead of "0".
             total_earned = 0
             for module_id_str, answers in self.module_answers.items():
                 try:
@@ -1250,7 +1253,7 @@ class TestAttempt(TimestampedModel):
                     ans = answers.get(str(question.id))
                     if question.check_answer(ans):
                         total_earned += int(question.score or 0)
-            score_val = total_earned
+            score_val = 200 + total_earned
         else:
             # ── SAT Section Scoring (Proportional) ──────────────────────────
             # Official Digital SAT score architecture:
