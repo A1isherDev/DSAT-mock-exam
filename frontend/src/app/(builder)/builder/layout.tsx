@@ -15,6 +15,7 @@ import {
   BookMarked,
   ClipboardCheck,
   FlaskConical,
+  GraduationCap,
 } from "lucide-react";
 
 /**
@@ -40,10 +41,11 @@ type NavItem = {
 
 // Learning system (pedagogical / classroom)
 const LEARNING_NAV: NavItem[] = [
-  { href: "/builder/bank",       label: "Question Bank", icon: Library,       exact: false },
-  { href: "/builder/sets",       label: "Assessments",   icon: LayoutGrid,    exact: false },
-  { href: "/builder/vocabulary", label: "Vocabulary",    icon: BookMarked,    exact: false },
-  { href: "/builder/categories", label: "Categories",    icon: Tag,           exact: false },
+  { href: "/builder/bank",       label: "Question Bank", icon: Library,        exact: false },
+  { href: "/builder/sets",       label: "Assessments",   icon: LayoutGrid,     exact: false },
+  { href: "/builder/midterms",   label: "Midterms",      icon: GraduationCap,  exact: false },
+  { href: "/builder/vocabulary", label: "Vocabulary",    icon: BookMarked,     exact: false },
+  { href: "/builder/categories", label: "Categories",    icon: Tag,            exact: false },
 ];
 
 // Simulation system (SAT preparation)

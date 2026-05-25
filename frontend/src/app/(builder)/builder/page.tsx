@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   ClipboardCheck,
   FileText,
+  GraduationCap,
   LayoutGrid,
   Library,
   PlayCircle,
@@ -37,15 +38,16 @@ type QuickLink = { href: string; icon: React.ElementType; title: string; cta: st
 
 const QUICK_LINKS: QuickLink[] = [
   // Learning system
-  { href: "/builder/bank",       icon: Library,       title: "Question Bank", cta: "Browse",  section: "Learning" },
-  { href: "/builder/sets",       icon: LayoutGrid,    title: "Assessments",   cta: "Manage",  section: "Learning" },
-  { href: "/builder/vocabulary", icon: BookMarked,    title: "Vocabulary",    cta: "Manage",  section: "Learning" },
-  { href: "/builder/categories", icon: Tag,           title: "Categories",    cta: "Edit",    section: "Learning" },
+  { href: "/builder/bank",       icon: Library,        title: "Question Bank", cta: "Browse",  section: "Learning" },
+  { href: "/builder/sets",       icon: LayoutGrid,     title: "Assessments",   cta: "Manage",  section: "Learning" },
+  { href: "/builder/midterms",   icon: GraduationCap,  title: "Midterms",      cta: "Manage",  section: "Learning" },
+  { href: "/builder/vocabulary", icon: BookMarked,     title: "Vocabulary",    cta: "Manage",  section: "Learning" },
+  { href: "/builder/categories", icon: Tag,            title: "Categories",    cta: "Edit",    section: "Learning" },
   // Simulation system
-  { href: "/builder/pastpapers", icon: FileText,       title: "Past papers",   cta: "Manage", section: "Simulation" },
-  { href: "/builder/mock-exams", icon: ClipboardCheck, title: "Mock exams",    cta: "Manage", section: "Simulation" },
+  { href: "/builder/pastpapers", icon: FileText,        title: "Past papers",   cta: "Manage", section: "Simulation" },
+  { href: "/builder/mock-exams", icon: ClipboardCheck,  title: "Mock exams",    cta: "Manage", section: "Simulation" },
   // Ops
-  { href: "/builder/archived",   icon: Archive,       title: "Archived",      cta: "Review" },
+  { href: "/builder/archived",   icon: Archive,        title: "Archived",      cta: "Review" },
 ];
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
