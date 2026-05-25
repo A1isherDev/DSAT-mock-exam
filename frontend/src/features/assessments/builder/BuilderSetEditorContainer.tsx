@@ -603,6 +603,19 @@ export default function BuilderSetEditorContainer() {
     stimulusContext: "",
   });
 
+  // Stable key representing the server-side correct_answer for the currently
+  // selected question. Used as a secondary useEffect dependency so that the
+  // editing state is re-hydrated when:
+  //   (a) the user switches to a different question (selected?.id changes), OR
+  //   (b) the server data for the SAME question arrives/updates with a
+  //       correct_answer value that differs from what we last loaded
+  //       (e.g. React Query returned a stale cache without correct_answer,
+  //        then a background refetch returned the real value — the ID hasn't
+  //        changed so [selected?.id] alone would miss this update).
+  // JSON.stringify normalises undefined → "null" so Object.is comparisons
+  // in React's dep-diffing work correctly for all value types.
+  const _selectedCorrectAnswerKey = JSON.stringify((selected as any)?.correct_answer ?? null);
+
   useEffect(() => {
     if (!selected) return;
     const rawChoices: Array<{ id?: unknown }> = (selected as any).choices ?? [];
@@ -627,7 +640,8 @@ export default function BuilderSetEditorContainer() {
       gradingConfigText: JSON.stringify((selected as any).grading_config ?? {}, null, 2),
       stimulusContext: String((selected as any).question_prompt ?? ""),
     });
-  }, [selected?.id]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id, _selectedCorrectAnswerKey]);
 
   const parseJson = (s: string, fallback: any) => {
     try { return JSON.parse(s); } catch { return fallback; }
