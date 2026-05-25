@@ -2045,21 +2045,46 @@ function ExamPlayerInner() {
                                     <button
                                         onClick={async () => {
                                             const next = !isPaused;
+                                            // Optimistic UI toggle first.
                                             setIsPaused(next);
                                             try {
                                                 if (next) {
+                                                    // Going INTO pause: hit the server so the
+                                                    // deadline freezes there too.
                                                     const upd = await examsPublicApi.pauseAttempt(Number(attemptId));
                                                     mergeAttemptFromServer(upd);
                                                 } else {
+                                                    // Coming OUT of pause: explicitly realign the
+                                                    // virtual timer anchor BEFORE the await so the
+                                                    // rAF loop (which restarts on this same React
+                                                    // commit) doesn't briefly compute from the
+                                                    // stale pre-pause start. Then call the server
+                                                    // to bank the elapsed pause window.
+                                                    const rem = timeLeftRef.current;
+                                                    const limitSec = attempt
+                                                        ? moduleWallClockLimitSec(attempt)
+                                                        : 0;
+                                                    if (limitSec > 0) {
+                                                        const nowMs = Date.now() + serverOffsetMsRef.current;
+                                                        virtualModuleStartMsRef.current =
+                                                            nowMs - (limitSec - rem) * 1000;
+                                                    }
+                                                    lastRenderedSecRef.current = -1;
+                                                    wasTimerPausedRef.current = false;
                                                     const upd = await examsPublicApi.resumePauseAttempt(Number(attemptId));
                                                     mergeAttemptFromServer(upd);
-                                                    // After resume, force the timer to recompute from
-                                                    // the now-banked pause window so the displayed
-                                                    // remaining time matches the server's.
+                                                    // Re-anchor again using the server's authoritative
+                                                    // remaining_seconds (handles any clock drift).
+                                                    const serverRem = clampedRemainingFromServer(upd);
+                                                    if (limitSec > 0 && serverRem != null) {
+                                                        const nowMs = Date.now() + serverOffsetMsRef.current;
+                                                        virtualModuleStartMsRef.current =
+                                                            nowMs - (limitSec - serverRem) * 1000;
+                                                        setTimeLeft(serverRem);
+                                                    }
                                                     lastRenderedSecRef.current = -1;
                                                 }
                                             } catch (e) {
-                                                // Roll back the visual state if the server call failed
                                                 setIsPaused(!next);
                                                 console.error("[exam] pause/resume failed", e);
                                             }
