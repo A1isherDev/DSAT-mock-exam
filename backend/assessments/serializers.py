@@ -36,6 +36,36 @@ class AssessmentQuestionSerializer(serializers.ModelSerializer):
         ]
 
 
+class AssessmentQuestionAdminReadSerializer(serializers.ModelSerializer):
+    """
+    Admin-only read serializer: identical to AssessmentQuestionSerializer but
+    also exposes correct_answer and grading_config so the builder UI can
+    correctly display the saved correct answer when re-opening a question.
+    NOT used on student-facing endpoints.
+    """
+
+    class Meta:
+        model = AssessmentQuestion
+        fields = [
+            "id",
+            "order",
+            "prompt",
+            "question_prompt",
+            "question_type",
+            "choices",
+            "correct_answer",
+            "grading_config",
+            "points",
+            "is_active",
+            "explanation",
+            "question_image",
+            "option_a_image",
+            "option_b_image",
+            "option_c_image",
+            "option_d_image",
+        ]
+
+
 class AssessmentQuestionAdminWriteSerializer(serializers.ModelSerializer):
     clear_question_image = serializers.BooleanField(write_only=True, required=False)
     clear_option_a_image = serializers.BooleanField(write_only=True, required=False)
@@ -99,6 +129,31 @@ class AssessmentQuestionAdminWriteSerializer(serializers.ModelSerializer):
 @extend_schema_serializer(component_name="AssessmentSet")
 class AssessmentSetSerializer(serializers.ModelSerializer):
     questions = AssessmentQuestionSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = AssessmentSet
+        fields = [
+            "id",
+            "subject",
+            "category",
+            "title",
+            "description",
+            "is_active",
+            "created_at",
+            "updated_at",
+            "questions",
+        ]
+
+
+@extend_schema_serializer(component_name="AssessmentSetAdmin")
+class AssessmentSetAdminSerializer(serializers.ModelSerializer):
+    """
+    Admin read serializer for a set: includes correct_answer + grading_config
+    on each question so the builder UI can display saved answers correctly.
+    Only used by admin endpoints — never exposed to students.
+    """
+
+    questions = AssessmentQuestionAdminReadSerializer(many=True, read_only=True)
 
     class Meta:
         model = AssessmentSet

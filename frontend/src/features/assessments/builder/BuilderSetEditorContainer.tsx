@@ -609,7 +609,10 @@ export default function BuilderSetEditorContainer() {
     const rawCorrect = (selected as any).correct_answer;
     // Show whatever the DB says — never silently mutate it. The earlier
     // fallback to choices[0] was turning "D" into "A" on every reload.
-    const resolvedCorrect = rawCorrect;
+    // Guard: JSON.stringify(undefined) returns the JS value `undefined` (not a
+    // string), which breaks parseJson later. Use null as a safe sentinel instead.
+    const correctAnswerText =
+      rawCorrect !== undefined ? JSON.stringify(rawCorrect) : JSON.stringify(null);
     setEditing({
       questionId: selected.id,
       prompt: String(selected.prompt || ""),
@@ -620,7 +623,7 @@ export default function BuilderSetEditorContainer() {
       is_active: Boolean(selected.is_active ?? true),
       explanation: String((selected as any).explanation ?? ""),
       choicesText: JSON.stringify(rawChoices, null, 2),
-      correctAnswerText: JSON.stringify(resolvedCorrect),
+      correctAnswerText,
       gradingConfigText: JSON.stringify((selected as any).grading_config ?? {}, null, 2),
       stimulusContext: String((selected as any).question_prompt ?? ""),
     });

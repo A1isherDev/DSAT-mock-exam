@@ -84,9 +84,18 @@ export const useBuilderStore = create<BuilderState>((set, get) => ({
   resetHistory: () => set({ past: [], future: [] }),
 
   hydrateFromServer: (serverSet) => {
+    // Preserve the current selection if the question still exists in the
+    // incoming server data — this prevents the selection from being
+    // wiped on every post-save refetch (which caused the correct-answer
+    // field to reset to empty/undefined after each save).
+    const currentId = get().selectedQuestionId;
+    const serverQuestions = Array.isArray((serverSet as any)?.questions)
+      ? (serverSet as any).questions
+      : [];
+    const stillExists = currentId != null && serverQuestions.some((q: any) => q.id === currentId);
     set({
       set: serverSet,
-      selectedQuestionId: null,
+      selectedQuestionId: stillExists ? currentId : null,
       setPatch: {},
       questionPatches: {},
       baseVersion: (serverSet as any)?.updated_at ? String((serverSet as any).updated_at) : null,

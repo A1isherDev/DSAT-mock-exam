@@ -59,6 +59,7 @@ from .worker_metrics import get_celery_worker_snapshot
 from .redis_health import get_redis_health_snapshot
 from .serializers import (
     AssessmentSetSerializer,
+    AssessmentSetAdminSerializer,
     AssessmentSetAdminWriteSerializer,
     AssessmentSetVersionSerializer,
     AdminPublishResponseSerializer,
@@ -289,7 +290,9 @@ class AdminAssessmentSetDetailView(APIView):
             ds = user_domain_subject(actor)
             if ds and inst.subject != ds:
                 return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
-        return Response(AssessmentSetSerializer(inst).data)
+        # Use admin serializer so the builder UI receives correct_answer + grading_config
+        # (the student-facing AssessmentSetSerializer intentionally omits correct_answer).
+        return Response(AssessmentSetAdminSerializer(inst).data)
 
     def patch(self, request, pk: int):
         inst = get_object_or_404(AssessmentSet, pk=pk)
