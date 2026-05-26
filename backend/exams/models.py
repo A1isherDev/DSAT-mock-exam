@@ -1226,17 +1226,22 @@ class TestAttempt(TimestampedModel):
         )
 
         if mock and mock.kind == MockExam.KIND_MIDTERM:
-            total_earned = 0
+            # Proportional scoring: (correct answers / total questions) × 100
+            # Each question counts equally regardless of its stored score weight,
+            # so the final result is always a clean 0–100 percentage.
+            correct_count = 0
+            total_count = 0
             for module_id_str, answers in self.module_answers.items():
                 try:
                     module = Module.objects.prefetch_related("questions").get(id=int(module_id_str))
                 except (ValueError, Module.DoesNotExist):
                     continue
                 for question in module.questions.all():
+                    total_count += 1
                     ans = answers.get(str(question.id))
                     if question.check_answer(ans):
-                        total_earned += question.score
-            score_val = min(total_earned, 100)
+                        correct_count += 1
+            score_val = round((correct_count / total_count) * 100) if total_count > 0 else 0
         elif is_pastpaper_or_practice:
             # Pastpapers / practice tests: 200 floor + raw per-question score
             # for each correctly answered question. No 800 ceiling and no

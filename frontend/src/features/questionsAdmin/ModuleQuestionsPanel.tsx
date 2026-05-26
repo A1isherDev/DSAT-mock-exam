@@ -60,6 +60,9 @@ import {
 
 // ─── Draft type ──────────────────────────────────────────────────────────────
 
+/** Answer format shown in the midterm question editor instead of SAT types. */
+type MidtermFormat = "mc" | "numeric" | "short_text" | "true_false";
+
 type QuestionDraft = {
   question_type: "MATH" | "READING" | "WRITING";
   question_text: string;
@@ -72,9 +75,22 @@ type QuestionDraft = {
   correct_answer: string;
   explanation: string;
   score: number;
+  /** Only meaningful when examKind === "MIDTERM". */
+  midtermFormat: MidtermFormat;
 };
 
-function questionToDraft(q: AdminModuleQuestion, sectionSubject?: string): QuestionDraft {
+/** Infer midterm answer format from existing question fields. */
+function detectMidtermFormat(q: AdminModuleQuestion): MidtermFormat {
+  if (q.is_math_input) return "numeric";
+  const a = (q.option_a ?? "").trim().toLowerCase();
+  const b = (q.option_b ?? "").trim().toLowerCase();
+  if (a === "true" && b === "false" && !(q.option_c ?? "").trim() && !(q.option_d ?? "").trim()) {
+    return "true_false";
+  }
+  return "mc";
+}
+
+function questionToDraft(q: AdminModuleQuestion, sectionSubject?: string, examKind?: string): QuestionDraft {
   // Use existing type, but if it's wrong for the subject, fall back to the first allowed type.
   const allowed = allowedQuestionTypesForSubject(sectionSubject);
   const existingType = q.question_type ?? "MATH";
@@ -93,6 +109,7 @@ function questionToDraft(q: AdminModuleQuestion, sectionSubject?: string): Quest
     correct_answer: q.correct_answer ?? "",
     explanation: q.explanation ?? "",
     score: q.score ?? 10,
+    midtermFormat: examKind === "MIDTERM" ? detectMidtermFormat(q) : "mc",
   };
 }
 
@@ -108,6 +125,7 @@ function QuestionEditor({
   testId,
   moduleId,
   sectionSubject,
+  examKind,
   onSaved,
   onDeleted,
 }: {
@@ -116,13 +134,16 @@ function QuestionEditor({
   moduleId: number;
   /** PracticeTest.subject — drives SAT type restrictions */
   sectionSubject?: string;
+  /** MockExam.kind — "MIDTERM" switches to pedagogical question formats */
+  examKind?: string;
   onSaved: (updated: AdminModuleQuestion) => void;
   onDeleted: () => void;
 }) {
   const update = useUpdateModuleQuestion(testId, moduleId);
   const del = useDeleteModuleQuestion(testId, moduleId);
+  const isMidterm = examKind === "MIDTERM";
 
-  const [draft, setDraft] = React.useState<QuestionDraft>(() => questionToDraft(question, sectionSubject));
+  const [draft, setDraft] = React.useState<QuestionDraft>(() => questionToDraft(question, sectionSubject, examKind));
   const [confirmDelete, setConfirmDelete] = React.useState(false);
   const [saveOk, setSaveOk] = React.useState(false);
 
@@ -132,32 +153,48 @@ function QuestionEditor({
 
   // Reset draft when question changes
   React.useEffect(() => {
-    setDraft(questionToDraft(question, sectionSubject));
+    setDraft(questionToDraft(question, sectionSubject, examKind));
     setSaveOk(false);
     setConfirmDelete(false);
     setImageFiles({});
     setClearImages({});
-  }, [question.id, sectionSubject]);
+  }, [question.id, sectionSubject, examKind]);
 
   const patch = (p: Partial<QuestionDraft>) => setDraft((d) => ({ ...d, ...p }));
 
   const handleSave = async () => {
     setSaveOk(false);
+
+    // Derive backend fields from midtermFormat when editing a midterm question.
+    // The underlying model uses is_math_input + option_a/b/c/d regardless of format.
+    const effectiveDraft = (() => {
+      if (!isMidterm) return draft;
+      const fmt = draft.midtermFormat;
+      if (fmt === "numeric" || fmt === "short_text") {
+        return { ...draft, is_math_input: true, option_a: "", option_b: "", option_c: "", option_d: "" };
+      }
+      if (fmt === "true_false") {
+        return { ...draft, is_math_input: false, option_a: "True", option_b: "False", option_c: "", option_d: "" };
+      }
+      // mc — use draft as-is
+      return { ...draft, is_math_input: false };
+    })();
+
     const hasFiles = Object.keys(imageFiles).length > 0 || Object.values(clearImages).some(Boolean);
     let data: FormData | Record<string, unknown>;
     if (hasFiles) {
       const fd = new FormData();
-      fd.append("question_type", draft.question_type);
-      fd.append("question_text", draft.question_text);
-      fd.append("question_prompt", draft.question_prompt);
-      fd.append("is_math_input", String(draft.is_math_input));
-      fd.append("option_a", draft.option_a);
-      fd.append("option_b", draft.option_b);
-      fd.append("option_c", draft.option_c);
-      fd.append("option_d", draft.option_d);
-      fd.append("correct_answer", draft.correct_answer);
-      fd.append("explanation", draft.explanation);
-      fd.append("score", String(draft.score));
+      fd.append("question_type", effectiveDraft.question_type);
+      fd.append("question_text", effectiveDraft.question_text);
+      fd.append("question_prompt", effectiveDraft.question_prompt);
+      fd.append("is_math_input", String(effectiveDraft.is_math_input));
+      fd.append("option_a", effectiveDraft.option_a);
+      fd.append("option_b", effectiveDraft.option_b);
+      fd.append("option_c", effectiveDraft.option_c);
+      fd.append("option_d", effectiveDraft.option_d);
+      fd.append("correct_answer", effectiveDraft.correct_answer);
+      fd.append("explanation", effectiveDraft.explanation);
+      fd.append("score", String(effectiveDraft.score));
       if (imageFiles.question) fd.append("question_image", imageFiles.question);
       if (imageFiles.a) fd.append("option_a_image", imageFiles.a);
       if (imageFiles.b) fd.append("option_b_image", imageFiles.b);
@@ -171,17 +208,17 @@ function QuestionEditor({
       data = fd;
     } else {
       data = {
-        question_type: draft.question_type,
-        question_text: draft.question_text,
-        question_prompt: draft.question_prompt,
-        is_math_input: draft.is_math_input,
-        option_a: draft.option_a,
-        option_b: draft.option_b,
-        option_c: draft.option_c,
-        option_d: draft.option_d,
-        correct_answer: draft.correct_answer,
-        explanation: draft.explanation,
-        score: draft.score,
+        question_type: effectiveDraft.question_type,
+        question_text: effectiveDraft.question_text,
+        question_prompt: effectiveDraft.question_prompt,
+        is_math_input: effectiveDraft.is_math_input,
+        option_a: effectiveDraft.option_a,
+        option_b: effectiveDraft.option_b,
+        option_c: effectiveDraft.option_c,
+        option_d: effectiveDraft.option_d,
+        correct_answer: effectiveDraft.correct_answer,
+        explanation: effectiveDraft.explanation,
+        score: effectiveDraft.score,
       };
     }
     try {
@@ -205,7 +242,11 @@ function QuestionEditor({
     }
   };
 
-  const isMC = !draft.is_math_input;
+  // For midterms, whether choices are shown is derived from midtermFormat,
+  // not from is_math_input (which is set on save, not during editing).
+  const isMC = isMidterm
+    ? (draft.midtermFormat === "mc" || draft.midtermFormat === "true_false")
+    : !draft.is_math_input;
   const isBusy = update.isPending || del.isPending;
 
   // ── SAT subject awareness ──────────────────────────────────────────────────
@@ -300,56 +341,74 @@ function QuestionEditor({
       <div className="flex-1 overflow-y-auto">
       <div className="space-y-5 p-5">
 
-        {/* Type row */}
-        <div className="grid grid-cols-2 gap-4">
+        {/* Type row — midterms use answer-format selector; SAT uses type + score */}
+        {isMidterm ? (
           <div>
-            <label className={FIELD_LABEL}>Question type</label>
+            <label className={FIELD_LABEL}>Answer format</label>
             <select
               className={INPUT}
-              value={draft.question_type}
-              onChange={(e) => patch({ question_type: e.target.value as QuestionDraft["question_type"] })}
+              value={draft.midtermFormat}
+              onChange={(e) => patch({ midtermFormat: e.target.value as MidtermFormat })}
             >
-              {allowedTypes.map((t) => (
-                <option key={t} value={t}>
-                  {SAT_QUESTION_TYPE_LABEL[t as SatQuestionType] ?? t}
-                </option>
-              ))}
+              <option value="mc">Multiple choice (A / B / C / D)</option>
+              <option value="numeric">Numeric (student enters a number)</option>
+              <option value="short_text">Short text (student types an answer)</option>
+              <option value="true_false">True / False</option>
             </select>
-            {/* SAT type mismatch warning */}
-            {typeWarning && (
-              <div className="mt-1.5 flex items-start gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5">
-                <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-600" />
-                <p className="text-[11px] font-semibold leading-snug text-amber-800">{typeWarning}</p>
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className={FIELD_LABEL}>Question type</label>
+                <select
+                  className={INPUT}
+                  value={draft.question_type}
+                  onChange={(e) => patch({ question_type: e.target.value as QuestionDraft["question_type"] })}
+                >
+                  {allowedTypes.map((t) => (
+                    <option key={t} value={t}>
+                      {SAT_QUESTION_TYPE_LABEL[t as SatQuestionType] ?? t}
+                    </option>
+                  ))}
+                </select>
+                {/* SAT type mismatch warning */}
+                {typeWarning && (
+                  <div className="mt-1.5 flex items-start gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5">
+                    <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-600" />
+                    <p className="text-[11px] font-semibold leading-snug text-amber-800">{typeWarning}</p>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-          <div>
-            <label className={FIELD_LABEL}>Score weight</label>
-            <select
-              className={INPUT}
-              value={draft.score}
-              onChange={(e) => patch({ score: Number(e.target.value) })}
-            >
-              <option value={10}>10 ball</option>
-              <option value={20}>20 ball</option>
-              <option value={40}>40 ball</option>
-            </select>
-          </div>
-        </div>
+              <div>
+                <label className={FIELD_LABEL}>Score weight</label>
+                <select
+                  className={INPUT}
+                  value={draft.score}
+                  onChange={(e) => patch({ score: Number(e.target.value) })}
+                >
+                  <option value={10}>10 ball</option>
+                  <option value={20}>20 ball</option>
+                  <option value={40}>40 ball</option>
+                </select>
+              </div>
+            </div>
 
-        {/* Math input toggle */}
-        <div className="flex items-center gap-3">
-          <input
-            type="checkbox"
-            id="is_math_input"
-            checked={draft.is_math_input}
-            onChange={(e) => patch({ is_math_input: e.target.checked })}
-            className="h-4 w-4 rounded border-border accent-primary"
-          />
-          <label htmlFor="is_math_input" className="text-sm font-semibold text-foreground cursor-pointer select-none">
-            Student types numeric answer (no A/B/C/D choices)
-          </label>
-        </div>
+            {/* Math input toggle — SAT only */}
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                id="is_math_input"
+                checked={draft.is_math_input}
+                onChange={(e) => patch({ is_math_input: e.target.checked })}
+                className="h-4 w-4 rounded border-border accent-primary"
+              />
+              <label htmlFor="is_math_input" className="text-sm font-semibold text-foreground cursor-pointer select-none">
+                Student types numeric answer (no A/B/C/D choices)
+              </label>
+            </div>
+          </>
+        )}
 
         {/* Question text */}
         <div>
@@ -436,8 +495,25 @@ function QuestionEditor({
           />
         </div>
 
-        {/* MC choices */}
-        {isMC && (
+        {/* MC choices — True/False mode shows static True/False labels; regular MC shows editable A-D */}
+        {isMC && draft.midtermFormat === "true_false" ? (
+          <div className="rounded-2xl border border-border bg-surface-2/30 p-4">
+            <p className={`${FIELD_LABEL} mb-3`}>Answer choices (True / False)</p>
+            <div className="flex gap-3">
+              {(["True", "False"] as const).map((label) => (
+                <div
+                  key={label}
+                  className="flex flex-1 items-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-semibold text-foreground"
+                >
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full border border-border bg-surface-2 text-xs font-extrabold text-muted-foreground">
+                    {label === "True" ? "A" : "B"}
+                  </span>
+                  {label}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : isMC && (
           <div className="rounded-2xl border border-border bg-surface-2/30 p-4 space-y-3">
             <p className={FIELD_LABEL}>Answer choices</p>
             {(["a", "b", "c", "d"] as const).map((letter) => {
@@ -523,29 +599,93 @@ function QuestionEditor({
           </div>
         )}
 
-        {/* Correct answer */}
+        {/* Correct answer — format-aware for midterms */}
         <div>
-          <label className={FIELD_LABEL}>
-            {isMC
-              ? "Correct answer (A, B, C, or D)"
-              : "Correct answer (comma-separated for multiple valid forms, e.g. 2/3, 0.667)"}
-          </label>
-          <input
-            className={INPUT}
-            placeholder={isMC ? "A" : "e.g. 42 or 2/3, 0.666, 0.667"}
-            value={draft.correct_answer}
-            onChange={(e) => patch({ correct_answer: e.target.value })}
-            onFocus={(e) => {
-              activeFieldRef.current = {
-                el: e.currentTarget,
-                setVal: (v) => patch({ correct_answer: v }),
-              };
-            }}
-          />
-          {isMC && (
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              Must exactly match one of the choice letters above (case-insensitive).
-            </p>
+          {isMidterm && draft.midtermFormat === "true_false" ? (
+            <>
+              <label className={FIELD_LABEL}>Correct answer</label>
+              <div className="flex gap-3 mt-1">
+                {(["True", "False"] as const).map((label, i) => {
+                  const letter = i === 0 ? "A" : "B";
+                  const isSelected = draft.correct_answer.toUpperCase() === letter;
+                  return (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => patch({ correct_answer: letter })}
+                      className={`flex flex-1 items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-bold transition-colors ${
+                        isSelected
+                          ? "border-emerald-400 bg-emerald-50 text-emerald-800"
+                          : "border-border bg-card text-foreground hover:bg-surface-2"
+                      }`}
+                    >
+                      {isSelected && <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />}
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          ) : isMidterm && draft.midtermFormat === "mc" ? (
+            <>
+              <label className={FIELD_LABEL}>Correct answer</label>
+              <div className="flex gap-2 mt-1">
+                {(["A", "B", "C", "D"] as const).map((letter) => {
+                  const isSelected = draft.correct_answer.toUpperCase() === letter;
+                  return (
+                    <button
+                      key={letter}
+                      type="button"
+                      onClick={() => patch({ correct_answer: letter })}
+                      className={`flex h-10 w-10 items-center justify-center rounded-xl border text-sm font-extrabold transition-colors ${
+                        isSelected
+                          ? "border-emerald-400 bg-emerald-50 text-emerald-800"
+                          : "border-border bg-card text-foreground hover:bg-surface-2"
+                      }`}
+                    >
+                      {letter}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            <>
+              <label className={FIELD_LABEL}>
+                {isMidterm && draft.midtermFormat === "numeric"
+                  ? "Correct answer (number — separate multiple valid forms with commas)"
+                  : isMidterm && draft.midtermFormat === "short_text"
+                  ? "Correct answer (text — case-insensitive, comma-separated alternatives)"
+                  : isMC
+                  ? "Correct answer (A, B, C, or D)"
+                  : "Correct answer (comma-separated for multiple valid forms, e.g. 2/3, 0.667)"}
+              </label>
+              <input
+                className={INPUT}
+                placeholder={
+                  isMidterm && draft.midtermFormat === "numeric"
+                    ? "e.g. 42 or 2/3, 0.667"
+                    : isMidterm && draft.midtermFormat === "short_text"
+                    ? "e.g. Paris or paris"
+                    : isMC
+                    ? "A"
+                    : "e.g. 42 or 2/3, 0.666, 0.667"
+                }
+                value={draft.correct_answer}
+                onChange={(e) => patch({ correct_answer: e.target.value })}
+                onFocus={(e) => {
+                  activeFieldRef.current = {
+                    el: e.currentTarget,
+                    setVal: (v) => patch({ correct_answer: v }),
+                  };
+                }}
+              />
+              {!isMidterm && isMC && (
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Must exactly match one of the choice letters above (case-insensitive).
+                </p>
+              )}
+            </>
           )}
         </div>
 
@@ -627,6 +767,7 @@ function SortableQRow({
   selected,
   reordering,
   hasTypeMismatch,
+  examKind,
   onSelect,
 }: {
   q: AdminModuleQuestion;
@@ -635,6 +776,7 @@ function SortableQRow({
   reordering: boolean;
   /** True when this question's type is wrong for the section subject */
   hasTypeMismatch?: boolean;
+  examKind?: string;
   onSelect: () => void;
 }) {
   const {
@@ -659,6 +801,17 @@ function SortableQRow({
     WRITING: "bg-teal-100 text-teal-700",
   };
   const color = typeColor[q.question_type] ?? "bg-surface-2 text-muted-foreground";
+  const isMidtermRow = examKind === "MIDTERM";
+
+  // For midterm rows, show the answer format instead of SAT type.
+  const midtermFormatLabel = (() => {
+    if (!isMidtermRow) return null;
+    const fmt = detectMidtermFormat(q);
+    if (fmt === "true_false") return { label: "T/F", color: "bg-violet-100 text-violet-700" };
+    if (fmt === "numeric") return { label: "Num", color: "bg-amber-100 text-amber-700" };
+    if (fmt === "short_text") return { label: "Text", color: "bg-teal-100 text-teal-700" };
+    return { label: "MC", color: "bg-blue-100 text-blue-700" };
+  })();
 
   return (
     <div
@@ -692,17 +845,25 @@ function SortableQRow({
           <span className="shrink-0 rounded-md bg-surface-2 px-1.5 py-0.5 text-[9px] font-extrabold tabular-nums text-muted-foreground">
             Q{index + 1}
           </span>
-          <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-extrabold uppercase ${color}`}>
-            {q.question_type}
-          </span>
-          {q.is_math_input && (
+          {midtermFormatLabel ? (
+            <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-extrabold uppercase ${midtermFormatLabel.color}`}>
+              {midtermFormatLabel.label}
+            </span>
+          ) : (
+            <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-extrabold uppercase ${color}`}>
+              {q.question_type}
+            </span>
+          )}
+          {!isMidtermRow && q.is_math_input && (
             <span className="shrink-0 rounded-md bg-amber-100 px-1.5 py-0.5 text-[9px] font-extrabold uppercase text-amber-700">
               INPUT
             </span>
           )}
-          <span className="shrink-0 rounded-md bg-emerald-100 px-1.5 py-0.5 text-[9px] font-extrabold tabular-nums text-emerald-700">
-            {q.score ?? 10}b
-          </span>
+          {!isMidtermRow && (
+            <span className="shrink-0 rounded-md bg-emerald-100 px-1.5 py-0.5 text-[9px] font-extrabold tabular-nums text-emerald-700">
+              {q.score ?? 10}b
+            </span>
+          )}
           {hasTypeMismatch && (
             <span title="Wrong question type for this section">
               <AlertTriangle className="h-3 w-3 shrink-0 text-amber-500" />
@@ -762,8 +923,10 @@ export default function ModuleQuestionsPanel(props: {
   backHref?: string;
   /** Override the "back" link label. Default: "Past papers" */
   backLabel?: string;
+  /** MockExam.kind — "MIDTERM" enables pedagogical question formats */
+  examKind?: string;
 }) {
-  const { testId, moduleId, packId, packTitle, sectionSubject, moduleOrder, backHref, backLabel } = props;
+  const { testId, moduleId, packId, packTitle, sectionSubject, moduleOrder, backHref, backLabel, examKind } = props;
 
   const {
     data: questions = [],
@@ -993,8 +1156,30 @@ export default function ModuleQuestionsPanel(props: {
         </div>
       )}
 
-      {/* Score calculator */}
+      {/* Score calculator — for midterms show proportional scoring info; SAT shows weighted points */}
       {!isLoading && questions.length > 0 && (() => {
+        if (examKind === "MIDTERM") {
+          return (
+            <div className="mb-4 flex items-center gap-3 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10">
+                <span className="text-sm font-black text-primary">%</span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-bold uppercase tracking-widest text-primary/70">Midterm scoring</p>
+                <p className="text-sm font-bold text-foreground leading-tight">
+                  {questions.length} question{questions.length !== 1 ? "s" : ""} ·{" "}
+                  <span className="text-muted-foreground font-normal">
+                    score = correct ÷ {questions.length} × 100
+                  </span>
+                </p>
+              </div>
+              <div className="shrink-0 text-right">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-primary/60">Max</p>
+                <p className="text-lg font-black tabular-nums text-primary leading-tight">100</p>
+              </div>
+            </div>
+          );
+        }
         const moduleCap = isSat && sectionSubject
           ? SAT_MODULE_SCORE_CAP[sectionSubject as SatSubject]?.[moduleOrderNum as 1 | 2] ?? null
           : null;
@@ -1137,6 +1322,7 @@ export default function ModuleQuestionsPanel(props: {
                       selected={q.id === selectedId}
                       reordering={reorderBulk.isPending}
                       hasTypeMismatch={typeMismatchIds.has(q.id)}
+                      examKind={examKind}
                       onSelect={() => setSelectedId(q.id)}
                     />
                   ))}
@@ -1169,6 +1355,7 @@ export default function ModuleQuestionsPanel(props: {
                 testId={testId}
                 moduleId={moduleId}
                 sectionSubject={sectionSubject}
+                examKind={examKind}
                 onSaved={(updated) => {
                   setSelectedId(updated.id);
                 }}

@@ -70,6 +70,7 @@ function MockExamModuleEditor({
         moduleOrder={moduleLabel}
         backHref={`/builder/mock-exams`}
         backLabel="Mock exams"
+        examKind={exam?.kind ?? undefined}
       />
     </div>
   );
