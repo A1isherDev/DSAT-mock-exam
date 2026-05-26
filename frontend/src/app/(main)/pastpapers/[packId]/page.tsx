@@ -59,6 +59,7 @@ function SectionCard({
   attempts,
   onStart,
   starting,
+  startError,
   locked,
   lockReason,
 }: {
@@ -66,6 +67,7 @@ function SectionCard({
   attempts: AttemptRow[];
   onStart: (sectionId: number) => void;
   starting: number | null;
+  startError?: string | null;  // error message for THIS section only
   locked?: boolean;
   lockReason?: string;
 }) {
@@ -137,6 +139,12 @@ function SectionCard({
       </div>
 
       {/* CTA */}
+      <div className="flex flex-col gap-2">
+      {startError && (
+        <p className="text-xs font-semibold text-red-600 bg-red-50 rounded-lg px-3 py-2">
+          {startError}
+        </p>
+      )}
       <div className="flex gap-2">
         {isCompleted ? (
           <>
@@ -180,6 +188,7 @@ function SectionCard({
             )}
           </button>
         )}
+      </div>
       </div>
     </div>
   );
@@ -241,6 +250,7 @@ function PastpaperPackDetailInner() {
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [starting, setStarting] = useState<number | null>(null);
+  const [startError, setStartError] = useState<{ sectionId: number; msg: string } | null>(null);
 
   useEffect(() => {
     if (!id || !Number.isFinite(id)) return;
@@ -282,6 +292,7 @@ function PastpaperPackDetailInner() {
   const handleStart = async (sectionId: number) => {
     if (!assertCriticalAuth()) return;
     setStarting(sectionId);
+    setStartError(null);  // Clear any previous error when retrying
     try {
       let attempt = attempts.find(
         (a) => a.practice_test === sectionId && !a.is_completed && !a.is_expired,
@@ -294,8 +305,19 @@ function PastpaperPackDetailInner() {
         sessionStorage.setItem(`mastersat.attempt.bootstrap.${attempt.id}`, JSON.stringify(attempt));
       } catch {}
       router.push(`/exam/${attempt.id}`);
-    } catch (e) {
+    } catch (e: unknown) {
       console.error("[pastpaper] start section failed", e);
+      // Extract a human-readable message from the API error.
+      const data = (e as { response?: { data?: unknown } })?.response?.data;
+      let msg = "Could not start the test. Please try again.";
+      if (data && typeof data === "object") {
+        const d = data as Record<string, unknown>;
+        if (typeof d.message === "string") msg = d.message;
+        else if (typeof d.detail === "string") msg = d.detail;
+        else if (typeof d.error === "string") msg = d.error;
+        else if (d.code === "practice_test_empty") msg = "This section has no questions yet.";
+      }
+      setStartError({ sectionId, msg });
       setStarting(null);
     }
   };
@@ -371,6 +393,7 @@ function PastpaperPackDetailInner() {
                 attempts={attempts}
                 onStart={handleStart}
                 starting={starting}
+                startError={startError?.sectionId === section.id ? startError.msg : null}
               />
           ))}
         </div>

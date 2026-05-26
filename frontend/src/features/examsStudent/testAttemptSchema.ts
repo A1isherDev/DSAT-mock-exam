@@ -156,6 +156,7 @@ export const testAttemptSchema = z.object({
   results_ready: z.boolean(),
   engine_phase: enginePhaseSchema,
   scoring_notice: z.string().nullable(),
+  is_paused: z.boolean().default(false),
 });
 
 export type TestAttempt = z.infer<typeof testAttemptSchema>;

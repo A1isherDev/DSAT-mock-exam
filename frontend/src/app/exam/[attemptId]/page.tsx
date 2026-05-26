@@ -1000,6 +1000,17 @@ function ExamPlayerInner() {
         if (mockFlow) setIsPaused(false);
     }, [mockFlow]);
 
+    // Sync pause state from server on initial load / page reload.
+    // Only applies when mockFlow is false (pastpapers support pause; mocks do not).
+    // We only SET isPaused=true here (not false) to avoid fighting with the
+    // button handler's optimistic toggle — the button handler owns the false→true
+    // and true→false transitions during an active session.
+    useEffect(() => {
+        if (mockFlow) return;
+        if (attempt?.is_paused) setIsPaused(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [mockFlow, attempt?.id]); // Only re-run when the attempt ID changes (new load), not on every poll
+
     // If the backend delivers a valid active module while the transition overlay is
     // showing, dismiss the overlay early so Module 2 renders immediately.
     // NOTE: `transitioning` is intentionally NOT in the dep array — including it

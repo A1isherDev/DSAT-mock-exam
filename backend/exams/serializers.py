@@ -305,6 +305,11 @@ class TestAttemptSerializer(serializers.ModelSerializer):
     results_ready = serializers.SerializerMethodField()
     engine_phase = serializers.SerializerMethodField()
     scoring_notice = serializers.SerializerMethodField()
+    is_paused = serializers.SerializerMethodField()
+
+    @extend_schema_field(serializers.BooleanField())
+    def get_is_paused(self, obj):
+        return getattr(obj, "pause_started_at", None) is not None
 
     @extend_schema_field(serializers.BooleanField())
     def get_is_expired(self, obj):
@@ -562,6 +567,7 @@ class TestAttemptSerializer(serializers.ModelSerializer):
             'results_ready',
             'engine_phase',
             'scoring_notice',
+            'is_paused',
         ]
 
         read_only_fields = [
