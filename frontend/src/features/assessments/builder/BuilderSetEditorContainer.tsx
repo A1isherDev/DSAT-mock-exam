@@ -732,6 +732,31 @@ export default function BuilderSetEditorContainer() {
       const savedId = (res as any).id as number;
       setImageFiles({});
       setImageClears({});
+
+      // Immediately sync editing state from the mutation response so the correct
+      // answer is visible right after save — without waiting for the
+      // cache → store → effect reactive chain to settle.
+      // The reactive chain (setQueryData in hooks.ts → hydrate → _selectedCorrectAnswerKey
+      // effect) will fire later and confirm the same values; this call just
+      // eliminates any flash where the UI would show "no answer selected".
+      const savedRes = res as any;
+      setEditing((prev) => ({
+        ...prev,
+        questionId: savedId,
+        correctAnswerText:
+          savedRes.correct_answer !== undefined
+            ? JSON.stringify(savedRes.correct_answer)
+            : prev.correctAnswerText,
+        choicesText:
+          Array.isArray(savedRes.choices)
+            ? JSON.stringify(savedRes.choices, null, 2)
+            : prev.choicesText,
+        gradingConfigText:
+          savedRes.grading_config !== undefined
+            ? JSON.stringify(savedRes.grading_config ?? {}, null, 2)
+            : prev.gradingConfigText,
+      }));
+
       toast.push({ tone: "success", message: editing.questionId ? "Question updated." : "Question created." });
 
       // Post-save navigation based on current mode
