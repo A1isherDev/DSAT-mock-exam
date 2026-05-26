@@ -1577,6 +1577,14 @@ function ExamPlayerInner() {
         // Align virtual start to the displayed remaining time so rAF timer is stable.
         virtualModuleStartMsRef.current = nowMs - (limitSec - remaining) * 1000;
 
+        console.log('[timer-init] fired', {
+            moduleId: attempt.current_module_details?.id,
+            startTime: attempt.current_module_start_time,
+            limitSec,
+            remainingFromServer,
+            remaining,
+        });
+
         // Use -1 sentinel so the rAF loop always calls setTimeLeft on its very first
         // tick after (re)starting. Setting it to `remaining` here would cause the rAF
         // to silently skip the first setTimeLeft call whenever it restarts right after
@@ -1606,11 +1614,13 @@ function ExamPlayerInner() {
         const paused = isPaused && !mockFlow;
         if (!attempt?.current_module_details || !attempt?.current_module_start_time) return;
         const limitSec = moduleWallClockLimitSec(attempt);
+        console.log('[wasTimerPaused-effect] fired', { paused, wasTimerPausedRef: wasTimerPausedRef.current, timeLeft: timeLeftRef.current });
         if (wasTimerPausedRef.current && !paused) {
             const rem = timeLeftRef.current;
             const nowMs = Date.now() + serverOffsetMsRef.current;
             virtualModuleStartMsRef.current = nowMs - (limitSec - rem) * 1000;
             lastRenderedSecRef.current = -1;
+            console.log('[wasTimerPaused-effect] realigned virtual start on resume', { rem });
         }
         wasTimerPausedRef.current = paused;
     }, [
@@ -1631,8 +1641,12 @@ function ExamPlayerInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(() => {
         if (!attempt?.current_module_details || !attempt?.current_module_start_time) return;
-        if (isPaused && !mockFlow) return;
+        if (isPaused && !mockFlow) {
+            console.log('[rAF-effect] skipped — isPaused=true');
+            return;
+        }
 
+        console.log('[rAF-effect] starting loop', { isPaused, virtualStart: virtualModuleStartMsRef.current });
         const limitSec = moduleWallClockLimitSec(attempt);
         let rafId = 0;
 
@@ -1654,7 +1668,10 @@ function ExamPlayerInner() {
         };
 
         rafId = requestAnimationFrame(loop);
-        return () => cancelAnimationFrame(rafId);
+        return () => {
+            console.log('[rAF-effect] cleanup — canceling rAF', rafId);
+            cancelAnimationFrame(rafId);
+        };
     }, [
         attempt?.current_module_details?.id,
         attempt?.current_module_start_time,
