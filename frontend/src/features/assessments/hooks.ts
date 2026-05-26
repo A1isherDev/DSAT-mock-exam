@@ -59,9 +59,27 @@ export function useUpsertAssessmentQuestion(setId: number) {
       if (x.id) return await assessmentsAdminApi.updateQuestion(x.id, x.payload);
       return await assessmentsAdminApi.createQuestion(setId, x.payload);
     },
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: assessmentsKeys.sets() });
-      await qc.invalidateQueries({ queryKey: assessmentsKeys.setDetail(setId) });
+    onSuccess: (data) => {
+      // Immediately patch the cached set-detail with the question data returned
+      // by the mutation (the write serializer includes correct_answer).
+      // This prevents the race condition where the editing form shows stale data
+      // (e.g. no correct_answer) between the save and the background refetch.
+      const savedQ = data as any;
+      if (savedQ?.id && Number.isFinite(Number(savedQ.id))) {
+        qc.setQueryData(assessmentsKeys.setDetail(setId), (old: any) => {
+          if (!old) return old;
+          const qs: any[] = Array.isArray(old.questions) ? old.questions : [];
+          const exists = qs.some((q: any) => q.id === savedQ.id);
+          const merged = exists
+            ? qs.map((q: any) => (q.id === savedQ.id ? { ...q, ...savedQ } : q))
+            : [...qs, savedQ]; // new question — append
+          return { ...old, questions: merged };
+        });
+      }
+      // Background refetch for a fully consistent server snapshot.
+      // Not awaited — the cache patch above already ensures correct data is shown.
+      void qc.invalidateQueries({ queryKey: assessmentsKeys.sets() });
+      void qc.invalidateQueries({ queryKey: assessmentsKeys.setDetail(setId) });
     },
     onError: (e) => {
       throw normalizeApiError(e);
