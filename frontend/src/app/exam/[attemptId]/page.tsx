@@ -468,6 +468,10 @@ function ExamPlayerInner() {
     const timeLeftRef = useRef<number>(0);
     const wasTimerPausedRef = useRef(false);
     const moduleTimerSubmitDoneRef = useRef(false);
+    // Ref-based pause flag so the rAF loop can check it every frame
+    // without depending on React's render/effect cycle. This prevents any
+    // React re-render from accidentally restarting the rAF while paused.
+    const isPausedRef = useRef(false);
 
     const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
 
@@ -487,6 +491,9 @@ function ExamPlayerInner() {
     const [highlighterActive, setHighlighterActive] = useState(false);
     const [isEliminationMode, setIsEliminationMode] = useState(false);
     const [isPaused, setIsPaused] = useState(false);
+    // Keep the ref in sync immediately (before any re-render) so the rAF loop
+    // sees the correct value without waiting for an effect to flush.
+    isPausedRef.current = isPaused;
     const [showTimer, setShowTimer] = useState(true);
     const [passageHighlights, setPassageHighlights] = useState<Record<number, string>>({});
     const [questionHighlights, setQuestionHighlights] = useState<Record<number, string>>({});
@@ -1632,25 +1639,30 @@ function ExamPlayerInner() {
         attempt?.module_duration_seconds,
     ]);
 
-    // rAF-driven timer: checks every frame, updates React only when the whole-second display changes.
-    // DEPS NOTE: handleSubmitModule is intentionally omitted — the loop body does not call it
-    // (auto-submit was moved to its own effect). Including it would restart the rAF on every
-    // 10-second poll (because handleSubmitModule closes over `attempt`), which combined with
-    // the timer-init effect overwriting lastRenderedSecRef caused the display to freeze for
-    // ≥ 1 s after every poll — manifesting as "timer stuck after resume".
+    // rAF-driven timer: runs continuously while the module is active.
+    // Pause is handled inside the loop via isPausedRef (a ref, not state) so that
+    // no React re-render can accidentally restart the rAF mid-pause. The loop simply
+    // skips display updates when paused but stays alive so resume is instant.
+    //
+    // DEPS: only module-identity fields. isPaused/mockFlow are intentionally excluded —
+    // the loop reads isPausedRef.current (synced from isPaused in the render body).
+    // handleSubmitModule is also excluded (auto-submit lives in its own effect).
     // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(() => {
         if (!attempt?.current_module_details || !attempt?.current_module_start_time) return;
-        if (isPaused && !mockFlow) {
-            console.log('[rAF-effect] skipped — isPaused=true');
-            return;
-        }
 
-        console.log('[rAF-effect] starting loop', { isPaused, virtualStart: virtualModuleStartMsRef.current });
+        console.log('[rAF-effect] starting loop for module', attempt.current_module_details.id);
         const limitSec = moduleWallClockLimitSec(attempt);
         let rafId = 0;
 
         const loop = () => {
+            // Check pause via ref — no React state dependency, immune to re-render races.
+            if (isPausedRef.current && !mockFlow) {
+                // Paused: keep the loop alive but don't advance the display.
+                rafId = requestAnimationFrame(loop);
+                return;
+            }
+
             const nowMs = Date.now() + serverOffsetMsRef.current;
             const elapsedSec = Math.floor((nowMs - virtualModuleStartMsRef.current) / 1000);
             const remaining = Math.max(0, limitSec - elapsedSec);
@@ -1661,7 +1673,7 @@ function ExamPlayerInner() {
             }
 
             if (remaining <= 0) {
-                return;
+                return; // time up — stop loop
             }
 
             rafId = requestAnimationFrame(loop);
@@ -1669,7 +1681,7 @@ function ExamPlayerInner() {
 
         rafId = requestAnimationFrame(loop);
         return () => {
-            console.log('[rAF-effect] cleanup — canceling rAF', rafId);
+            console.log('[rAF-effect] cleanup for module', attempt?.current_module_details?.id);
             cancelAnimationFrame(rafId);
         };
     }, [
@@ -1677,9 +1689,8 @@ function ExamPlayerInner() {
         attempt?.current_module_start_time,
         attempt?.current_module_details?.time_limit_minutes,
         attempt?.module_duration_seconds,
-        isPaused,
-        mockFlow,
-        // handleSubmitModule deliberately excluded — see comment above
+        // isPaused/mockFlow: read via isPausedRef inside loop — no dep needed.
+        // handleSubmitModule: not called in loop — lives in auto-submit effect below.
     ]);
 
     // Timer auto-submit: only fires after timerReady (state, not ref) so React
