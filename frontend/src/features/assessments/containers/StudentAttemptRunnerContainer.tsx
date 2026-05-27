@@ -1703,23 +1703,31 @@ function ExamSimulationView({
     setAnnotationPopover((prev) => ({ ...prev, visible: false }));
   };
 
-  // Math re-render: MutationObserver fires renderMath on any DOM change so KaTeX
-  // processes newly-rendered content and restores after highlight HTML swap.
+  // Re-render KaTeX whenever the displayed question changes (covers initial mount
+  // and navigation). Runs AFTER React commits the new innerHTML to the DOM.
+  useEffect(() => {
+    renderMath({ root: document.body });
+    // Retry once after a short delay in case KaTeX loads slightly after mount.
+    const t = setTimeout(() => renderMath({ root: document.body }), 150);
+    return () => clearTimeout(t);
+  }, [current?.id, questionHighlightHtml, passageHighlightHtml]);
+
+  // Listen for KaTeX becoming available (first page load race) and re-run on
+  // any DOM mutation (e.g. highlight marks injected after initial render).
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
     const schedule = () => {
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => renderMath({ root: document.body }), 40);
     };
-    renderMath({ root: document.body });
-    const initTimer = setTimeout(() => renderMath({ root: document.body }), 80);
+    const onKatexReady = () => {
+      renderMath({ root: document.body });
+    };
+    window.addEventListener("katex:ready", onKatexReady);
     const observer = new MutationObserver(schedule);
     observer.observe(document.body, { childList: true, subtree: true, characterData: true });
-    const onKatexReady = () => schedule();
-    window.addEventListener("katex:ready", onKatexReady);
     return () => {
       if (timer) clearTimeout(timer);
-      clearTimeout(initTimer);
       observer.disconnect();
       window.removeEventListener("katex:ready", onKatexReady);
     };
