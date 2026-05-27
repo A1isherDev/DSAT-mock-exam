@@ -1584,14 +1584,6 @@ function ExamPlayerInner() {
         // Align virtual start to the displayed remaining time so rAF timer is stable.
         virtualModuleStartMsRef.current = nowMs - (limitSec - remaining) * 1000;
 
-        console.log('[timer-init] fired', {
-            moduleId: attempt.current_module_details?.id,
-            startTime: attempt.current_module_start_time,
-            limitSec,
-            remainingFromServer,
-            remaining,
-        });
-
         // Use -1 sentinel so the rAF loop always calls setTimeLeft on its very first
         // tick after (re)starting. Setting it to `remaining` here would cause the rAF
         // to silently skip the first setTimeLeft call whenever it restarts right after
@@ -1621,13 +1613,11 @@ function ExamPlayerInner() {
         const paused = isPaused && !mockFlow;
         if (!attempt?.current_module_details || !attempt?.current_module_start_time) return;
         const limitSec = moduleWallClockLimitSec(attempt);
-        console.log('[wasTimerPaused-effect] fired', { paused, wasTimerPausedRef: wasTimerPausedRef.current, timeLeft: timeLeftRef.current });
         if (wasTimerPausedRef.current && !paused) {
             const rem = timeLeftRef.current;
             const nowMs = Date.now() + serverOffsetMsRef.current;
             virtualModuleStartMsRef.current = nowMs - (limitSec - rem) * 1000;
             lastRenderedSecRef.current = -1;
-            console.log('[wasTimerPaused-effect] realigned virtual start on resume', { rem });
         }
         wasTimerPausedRef.current = paused;
     }, [
@@ -1651,7 +1641,6 @@ function ExamPlayerInner() {
     useEffect(() => {
         if (!attempt?.current_module_details || !attempt?.current_module_start_time) return;
 
-        console.log('[rAF-effect] starting loop for module', attempt.current_module_details.id);
         const limitSec = moduleWallClockLimitSec(attempt);
         let rafId = 0;
 
@@ -1681,7 +1670,6 @@ function ExamPlayerInner() {
 
         rafId = requestAnimationFrame(loop);
         return () => {
-            console.log('[rAF-effect] cleanup for module', attempt?.current_module_details?.id);
             cancelAnimationFrame(rafId);
         };
     }, [
@@ -2098,6 +2086,12 @@ function ExamPlayerInner() {
                                     <button
                                         onClick={async () => {
                                             const next = !isPaused;
+                                            // Snapshot remaining BEFORE any await so we can
+                                            // inject it into mergeAttemptFromServer if the
+                                            // server response omits remaining_seconds (which
+                                            // would cause the timer-init effect to compute a
+                                            // wrong remaining from a reset start_time).
+                                            const remSnapshot = timeLeftRef.current;
                                             // Optimistic UI toggle first.
                                             setIsPaused(next);
                                             setPauseResumeError(null);
@@ -2105,10 +2099,12 @@ function ExamPlayerInner() {
                                                 if (next) {
                                                     // Going INTO pause: hit the server so the
                                                     // deadline freezes there too.
-                                                    console.log('[exam] pause: calling server...');
                                                     const upd = await examsPublicApi.pauseAttempt(Number(attemptId));
-                                                    console.log('[exam] pause: server ok', { is_paused: upd.is_paused, remaining: upd.remaining_seconds });
-                                                    mergeAttemptFromServer(upd);
+                                                    // Inject our snapshotted remaining so the timer-init
+                                                    // effect (if triggered by a start_time change) always
+                                                    // uses the correct remaining, not a recomputed value.
+                                                    const serverRem = clampedRemainingFromServer(upd);
+                                                    mergeAttemptFromServer({ ...upd, remaining_seconds: serverRem ?? remSnapshot });
                                                     // Sync from server — if server says not actually
                                                     // paused (race), correct it.
                                                     setIsPaused(upd.is_paused);
@@ -2119,29 +2115,31 @@ function ExamPlayerInner() {
                                                     // commit) doesn't briefly compute from the
                                                     // stale pre-pause start. Then call the server
                                                     // to bank the elapsed pause window.
-                                                    const rem = timeLeftRef.current;
                                                     const limitSec = attempt
                                                         ? moduleWallClockLimitSec(attempt)
                                                         : 0;
                                                     if (limitSec > 0) {
                                                         const nowMs = Date.now() + serverOffsetMsRef.current;
                                                         virtualModuleStartMsRef.current =
-                                                            nowMs - (limitSec - rem) * 1000;
+                                                            nowMs - (limitSec - remSnapshot) * 1000;
                                                     }
                                                     lastRenderedSecRef.current = -1;
                                                     wasTimerPausedRef.current = false;
-                                                    console.log('[exam] resume: calling server...', { rem, limitSec });
                                                     const upd = await examsPublicApi.resumePauseAttempt(Number(attemptId));
-                                                    console.log('[exam] resume: server ok', { is_paused: upd.is_paused, remaining: upd.remaining_seconds });
-                                                    mergeAttemptFromServer(upd);
-                                                    // Re-anchor again using the server's authoritative
-                                                    // remaining_seconds (handles any clock drift).
+                                                    // Use server's remaining if provided, otherwise fall
+                                                    // back to our pre-resume snapshot (prevents jump when
+                                                    // server omits remaining_seconds on resume response).
                                                     const serverRem = clampedRemainingFromServer(upd);
-                                                    if (limitSec > 0 && serverRem != null) {
+                                                    const effectiveRem = serverRem ?? remSnapshot;
+                                                    // Inject effectiveRem so timer-init effect (if
+                                                    // start_time changed) anchors to the correct time.
+                                                    mergeAttemptFromServer({ ...upd, remaining_seconds: effectiveRem });
+                                                    // Re-anchor virtual start and display to effectiveRem.
+                                                    if (limitSec > 0) {
                                                         const nowMs = Date.now() + serverOffsetMsRef.current;
                                                         virtualModuleStartMsRef.current =
-                                                            nowMs - (limitSec - serverRem) * 1000;
-                                                        setTimeLeft(serverRem);
+                                                            nowMs - (limitSec - effectiveRem) * 1000;
+                                                        setTimeLeft(effectiveRem);
                                                     }
                                                     lastRenderedSecRef.current = -1;
                                                     // Sync authoritative pause state from server.

@@ -28,11 +28,13 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import DOMPurify from "dompurify";
 import { useAttemptBundle, useSaveAnswer, useSubmitAttempt } from "@/features/assessments/hooks";
 import { normalizeApiError } from "@/lib/apiError";
 import type { AssessmentChoice, AssessmentQuestion } from "@/features/assessments/types";
 import { AnswerInput } from "@/features/assessments/components/QuestionInputs";
-import { MathText } from "@/components/MathText";
+import { MathText, prepareRichText } from "@/components/MathText";
+import { renderMath } from "@/lib/mathRender";
 import {
   answersMapFromAttempt,
   detectAnswerConflicts,
@@ -62,6 +64,7 @@ import {
   Monitor,
   Send,
   Timer,
+  Trash2,
   Wifi,
   WifiOff,
   X,
@@ -97,28 +100,6 @@ function syncFpFromAttempt(attempt: unknown): string {
   return fingerprintAnswersFromAttempt(attempt as Parameters<typeof fingerprintAnswersFromAttempt>[0]);
 }
 
-// Highlighter helper: copy of the pastpaper /exam approach.
-// Uses extractContents + insertNode (NOT surroundContents) so selections that
-// cross inline elements still highlight without throwing.
-function handleAnnotateMouseUp(e: React.MouseEvent, _target: string) {
-  try {
-    const sel = window.getSelection();
-    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
-    const range = sel.getRangeAt(0);
-    // Only highlight inside the element we attached the handler to.
-    const container = e.currentTarget as HTMLElement;
-    if (!container.contains(range.commonAncestorContainer)) return;
-    const mark = document.createElement("mark");
-    mark.style.cssText =
-      "background-color: #faed7d; color: #000; text-decoration: none;";
-    const fragment = range.extractContents();
-    mark.appendChild(fragment);
-    range.insertNode(mark);
-    sel.removeAllRanges();
-  } catch {
-    /* ignore — extractContents on detached ranges, etc. */
-  }
-}
 
 // ─── Save indicator ───────────────────────────────────────────────────────────
 // Shows ambient save state without alarming the student.
@@ -581,8 +562,10 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
   const [eliminatedByQid, setEliminatedByQid] = useState<Record<number, Set<string>>>({});
   // Persistent highlighter mode (toggle in header).
   const [highlighterActive, setHighlighterActive] = useState(false);
-  // Per-question saved highlight HTML for the passage / prompt area.
+  // Per-question saved highlight HTML for question text (prompt).
   const [highlightsByQid, setHighlightsByQid] = useState<Record<number, string>>({});
+  // Per-question saved highlight HTML for passage/context (question_prompt).
+  const [passageHighlightsByQid, setPassageHighlightsByQid] = useState<Record<number, string>>({});
 
   // Count-up timer: tick every second while the exam stage is active
   useEffect(() => {
@@ -1496,8 +1479,12 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
       highlighterActive={highlighterActive}
       onToggleHighlighter={() => setHighlighterActive((v) => !v)}
       questionHighlightHtml={highlightsByQid[currentQuestionId] ?? null}
-      onPassageHighlightChange={(html) =>
+      onQuestionHighlightChange={(html) =>
         setHighlightsByQid((prev) => ({ ...prev, [currentQuestionId]: html }))
+      }
+      passageHighlightHtml={passageHighlightsByQid[currentQuestionId] ?? null}
+      onPassageHighlightChange={(html) =>
+        setPassageHighlightsByQid((prev) => ({ ...prev, [currentQuestionId]: html }))
       }
       // Navigation
       onPrevious={() => setCurrentIdx((i) => Math.max(0, i - 1))}
@@ -1557,6 +1544,8 @@ type ExamSimulationProps = {
   highlighterActive: boolean;
   onToggleHighlighter: () => void;
   questionHighlightHtml: string | null;
+  onQuestionHighlightChange: (html: string) => void;
+  passageHighlightHtml: string | null;
   onPassageHighlightChange: (html: string) => void;
 
   onPrevious: () => void;
@@ -1595,6 +1584,8 @@ function ExamSimulationView({
   highlighterActive,
   onToggleHighlighter,
   questionHighlightHtml,
+  onQuestionHighlightChange,
+  passageHighlightHtml,
   onPassageHighlightChange,
   onPrevious,
   onNext,
@@ -1607,6 +1598,132 @@ function ExamSimulationView({
   const zoomOut = () => setZoomLevel((z) => Math.max(0.7, +(z - 0.1).toFixed(2)));
 
   const isLast = currentIdx >= totalCount - 1;
+
+  // ── Annotation popover (full highlight system, mirrors exam page) ─────────
+  const [annotationPopover, setAnnotationPopover] = useState<{
+    visible: boolean; x: number; y: number;
+    range?: Range | null;
+    targetId?: string;
+    markElement?: HTMLElement | null;
+  }>({ visible: false, x: 0, y: 0 });
+
+  // Convert sequences of 4+ underscores to <u> for blank display, then sanitize.
+  const processQuestionText = (text: string) => {
+    const withBlanks = text.replace(/_{4,}/g, (m) => `<u>${m}</u>`);
+    return prepareRichText(withBlanks);
+  };
+
+  // Sanitize saved highlight HTML (preserves <mark> with inline styles).
+  const sanitizeHighlight = (html: string) =>
+    DOMPurify.sanitize(html, { ADD_TAGS: ["mark"], ADD_ATTR: ["style", "class"] });
+
+  const handleShowPopover = (targetId: string, e?: React.MouseEvent) => {
+    const selection = window.getSelection();
+    const target = e?.target as HTMLElement;
+    if (selection && !selection.isCollapsed && selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      setAnnotationPopover({
+        visible: true,
+        x: rect.left + rect.width / 2,
+        y: rect.top - 10,
+        range: range.cloneRange(),
+        targetId,
+        markElement: null,
+      });
+    } else if (target && target.tagName === "MARK") {
+      const rect = target.getBoundingClientRect();
+      setAnnotationPopover({
+        visible: true,
+        x: rect.left + rect.width / 2,
+        y: rect.top - 10,
+        range: null,
+        targetId,
+        markElement: target,
+      });
+    } else {
+      setAnnotationPopover((prev) => ({ ...prev, visible: false }));
+    }
+  };
+
+  const applyAnnotation = (style: "yellow" | "blue" | "pink" | "underline" | "clear") => {
+    if (!annotationPopover.targetId) return;
+    const containerId =
+      annotationPopover.targetId === "passage"
+        ? "assessment-passage-content"
+        : "assessment-question-content";
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    const styleCss: Record<string, string> = {
+      yellow: "background-color: #faed7d; color: #000; text-decoration: none;",
+      blue: "background-color: #d0e6f5; color: #000; text-decoration: none;",
+      pink: "background-color: #fae0e0; color: #000; text-decoration: none;",
+      underline:
+        "background-color: transparent; text-decoration: underline; text-decoration-color: #3b82f6; text-decoration-thickness: 2px;",
+    };
+
+    if (annotationPopover.markElement) {
+      const markNode = annotationPopover.markElement;
+      if (style === "clear") {
+        const parent = markNode.parentNode;
+        if (parent) {
+          while (markNode.firstChild) parent.insertBefore(markNode.firstChild, markNode);
+          parent.removeChild(markNode);
+        }
+      } else {
+        markNode.className = `annot-${style}`;
+        markNode.style.cssText = styleCss[style] ?? "";
+      }
+    } else if (annotationPopover.range) {
+      if (style === "clear") return;
+      const range = annotationPopover.range;
+      if (!container.contains(range.commonAncestorContainer)) {
+        setAnnotationPopover((prev) => ({ ...prev, visible: false }));
+        return;
+      }
+      const mark = document.createElement("mark");
+      mark.className = `annot-${style}`;
+      mark.style.cssText = styleCss[style] ?? "";
+      try {
+        const fragment = range.extractContents();
+        mark.appendChild(fragment);
+        range.insertNode(mark);
+      } catch {
+        /* ignore cross-element selection errors */
+      }
+    }
+
+    window.getSelection()?.removeAllRanges();
+    if (annotationPopover.targetId === "passage") {
+      onPassageHighlightChange(container.innerHTML);
+    } else {
+      onQuestionHighlightChange(container.innerHTML);
+    }
+    setAnnotationPopover((prev) => ({ ...prev, visible: false }));
+  };
+
+  // Math re-render: MutationObserver fires renderMath on any DOM change so KaTeX
+  // processes newly-rendered content and restores after highlight HTML swap.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const schedule = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => renderMath({ root: document.body }), 40);
+    };
+    renderMath({ root: document.body });
+    const initTimer = setTimeout(() => renderMath({ root: document.body }), 80);
+    const observer = new MutationObserver(schedule);
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    const onKatexReady = () => schedule();
+    window.addEventListener("katex:ready", onKatexReady);
+    return () => {
+      if (timer) clearTimeout(timer);
+      clearTimeout(initTimer);
+      observer.disconnect();
+      window.removeEventListener("katex:ready", onKatexReady);
+    };
+  }, []);
 
   return (
     <div className="fixed inset-0 z-50 bg-white flex flex-col font-sans text-slate-900 overflow-hidden">
@@ -1758,28 +1875,27 @@ function ExamSimulationView({
           {Boolean(current?.question_prompt) && (
             <div
               id="assessment-passage-content"
-              className="mb-6 border-l-4 border-slate-300 pl-5 py-1"
-              onMouseUp={(e) => highlighterActive && handleAnnotateMouseUp(e, "passage")}
-            >
-              <MathText
-                text={String(current!.question_prompt)}
-                block
-                className="text-base text-slate-700 leading-relaxed font-[Georgia,serif]"
-              />
-            </div>
+              className={`mb-6 border-l-4 border-slate-300 pl-5 py-1 text-base text-slate-700 leading-relaxed font-[Georgia,serif] ${highlighterActive ? "cursor-text" : ""}`}
+              onMouseUp={(e) => highlighterActive && handleShowPopover("passage", e)}
+              dangerouslySetInnerHTML={{
+                __html: passageHighlightHtml
+                  ? sanitizeHighlight(passageHighlightHtml)
+                  : processQuestionText(String(current!.question_prompt)),
+              }}
+            />
           )}
 
-          {/* The question itself — regular weight; bold lives inline via **...** */}
+          {/* The question itself */}
           <div
             id="assessment-question-content"
-            onMouseUp={(e) => highlighterActive && handleAnnotateMouseUp(e, "question")}
-          >
-            <MathText
-              text={String(current?.prompt || "").trim() || "—"}
-              block
-              className="text-lg font-normal text-slate-900 leading-relaxed"
-            />
-          </div>
+            className={`text-lg font-normal text-slate-900 leading-relaxed font-[Georgia,serif] ${highlighterActive ? "cursor-text" : ""}`}
+            onMouseUp={(e) => highlighterActive && handleShowPopover("question", e)}
+            dangerouslySetInnerHTML={{
+              __html: questionHighlightHtml
+                ? sanitizeHighlight(questionHighlightHtml)
+                : processQuestionText(String(current?.prompt || "").trim() || "—"),
+            }}
+          />
 
           {/* Answer input */}
           <div className="mt-8">
@@ -1794,6 +1910,36 @@ function ExamSimulationView({
           </div>
         </div>
       </main>
+
+      {/* ── Annotation popover (highlight colour / underline / clear) ──────── */}
+      {annotationPopover.visible && highlighterActive && (
+        <div
+          onMouseDown={(e) => e.preventDefault()}
+          className="fixed z-[100] bg-[#ebf0f7] p-2 rounded-xl shadow-[0_5px_20px_rgba(0,0,0,0.15)] flex items-center gap-2 border border-slate-300"
+          style={{
+            left: `${annotationPopover.x}px`,
+            top: `${annotationPopover.y}px`,
+            transform: "translate(-50%, -100%)",
+          }}
+        >
+          <button onClick={() => applyAnnotation("yellow")} className="w-8 h-8 rounded-full bg-[#faed7d] border border-slate-400/30 shadow-inner hover:scale-110 transition-transform" />
+          <button onClick={() => applyAnnotation("blue")}   className="w-8 h-8 rounded-full bg-[#d0e6f5] border border-slate-400/30 shadow-inner hover:scale-110 transition-transform" />
+          <button onClick={() => applyAnnotation("pink")}   className="w-8 h-8 rounded-full bg-[#fae0e0] border border-slate-400/30 shadow-inner hover:scale-110 transition-transform" />
+          <div className="w-px h-6 bg-slate-300 mx-1" />
+          <button
+            onClick={() => applyAnnotation("underline")}
+            className="p-1 px-2.5 bg-white border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-1 font-bold text-xs"
+          >
+            <span className="underline text-base leading-none">U</span>
+          </button>
+          <button
+            onClick={() => applyAnnotation("clear")}
+            className="p-2 bg-white border border-slate-300 rounded-lg text-slate-400 hover:text-red-500 hover:border-red-200 transition-colors"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* ── Question map drawer (toggled from bottom bar) ───────────────────── */}
       {showMap && (
