@@ -34,7 +34,7 @@ import { normalizeApiError } from "@/lib/apiError";
 import type { AssessmentChoice, AssessmentQuestion } from "@/features/assessments/types";
 import { AnswerInput } from "@/features/assessments/components/QuestionInputs";
 import { MathText, prepareRichText } from "@/components/MathText";
-import { renderMath } from "@/lib/mathRender";
+import { renderMath, renderMathInString } from "@/lib/mathRender";
 import {
   answersMapFromAttempt,
   detectAnswerConflicts,
@@ -1635,10 +1635,11 @@ function ExamSimulationView({
     markElement?: HTMLElement | null;
   }>({ visible: false, x: 0, y: 0 });
 
-  // Convert sequences of 4+ underscores to <u> for blank display, then sanitize.
+  // Convert sequences of 4+ underscores to <u> for blank display, sanitize,
+  // then render any LaTeX delimiters to KaTeX HTML synchronously.
   const processQuestionText = (text: string) => {
     const withBlanks = text.replace(/_{4,}/g, (m) => `<u>${m}</u>`);
-    return prepareRichText(withBlanks);
+    return renderMathInString(prepareRichText(withBlanks));
   };
 
   // Sanitize saved highlight HTML (preserves <mark> with inline styles).

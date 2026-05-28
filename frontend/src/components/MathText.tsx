@@ -71,7 +71,7 @@
  */
 
 import { useEffect, useRef } from "react";
-import { renderMath } from "@/lib/mathRender";
+import { renderMath, renderMathInString } from "@/lib/mathRender";
 import { cn } from "@/lib/cn";
 
 // ── Security boundary ─────────────────────────────────────────────────────────
@@ -318,7 +318,10 @@ export function MathText({ text, className, block = false }: MathTextProps) {
     renderMath({ root: ref.current });
   }, [text]);
 
-  const html = prepareRichText(text);
+  // Render math synchronously in the string — no DOM-mutation useEffect needed
+  // for initial render. The useEffect below is a safety net for edge cases where
+  // text nodes are created after the initial innerHTML assignment.
+  const html = renderMathInString(prepareRichText(text));
 
   if (block) {
     return (
