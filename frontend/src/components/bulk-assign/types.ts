@@ -45,11 +45,19 @@ export type SkippedUserRow = {
   reason: string;
 };
 
+export type AssignOutcome = "granted" | "partial" | "no_recipients" | "no_targets";
+
 export type LastAssignResult = {
   ok: boolean;
   message?: string;
   dispatch_id?: number;
   dispatch_status?: string;
+  /** Backend-authoritative outcome — never infer success from HTTP 200 alone. */
+  outcome?: AssignOutcome;
+  /** True only when at least one student actually received access. */
+  succeeded?: boolean;
+  /** Subjects the actor lacked permission to assign (silent skip → surfaced). */
+  permission_denied_subjects?: string[];
   students_granted_count?: number;
   students_requested_count?: number;
   students_skipped_count?: number;

@@ -894,6 +894,17 @@ class AdminPastpaperPackSerializer(serializers.ModelSerializer):
     sections = AdminPracticeTestSerializer(many=True, read_only=True)
     sat_violations = serializers.SerializerMethodField()
     publish_ready = serializers.SerializerMethodField()
+    # Distinct students who actually have access to this pack (via any section's
+    # assigned_users). Lets the admin UI warn "published but 0 students have
+    # access" so publishing is never a silent zero-recipient success.
+    assigned_student_count = serializers.SerializerMethodField()
+
+    def get_assigned_student_count(self, obj) -> int:
+        return (
+            User.objects.filter(assigned_tests__pastpaper_pack=obj)
+            .distinct()
+            .count()
+        )
 
     class Meta:
         model = PastpaperPack
@@ -906,6 +917,7 @@ class AdminPastpaperPackSerializer(serializers.ModelSerializer):
             "is_published",
             "published_at",
             "sections",
+            "assigned_student_count",
             "sat_violations",
             "publish_ready",
             "created_at",

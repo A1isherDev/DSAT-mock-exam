@@ -521,6 +521,16 @@ function ExamPlayerInner() {
     const [pauseResumeError, setPauseResumeError] = useState<string | null>(null);
     const warningTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+    // The pause/resume notice is transient: the timer is client-authoritative and
+    // keeps running, and the next poll re-syncs state. Auto-dismiss it so a
+    // one-off sync hiccup never lingers on screen as a persistent SAT-runtime
+    // warning. (Previously it only cleared on the *next* pause/resume click.)
+    useEffect(() => {
+        if (!pauseResumeError) return;
+        const t = setTimeout(() => setPauseResumeError(null), 5000);
+        return () => clearTimeout(t);
+    }, [pauseResumeError]);
+
     const current_module_details = attempt?.current_module_details ?? null;
     const questions: ExamQuestion[] = current_module_details?.questions ?? [];
     const currentQuestion = questions[currentQuestionIndex];
@@ -2186,7 +2196,7 @@ function ExamPlayerInner() {
                                     </button>
                                 </div>
                                 {pauseResumeError && (
-                                    <p className="text-[10px] text-red-500 mt-1 max-w-[160px] text-center leading-tight">
+                                    <p className="text-[10px] text-amber-600 mt-1 max-w-[160px] text-center leading-tight">
                                         {pauseResumeError}
                                     </p>
                                 )}

@@ -108,9 +108,14 @@ def execute_library_bulk_assign(
     added_count = 0
     removed_count = 0
     practice_tests_matched = 0
+    exam_tests_matched = 0
     subject_grants_created = 0
     touched_student_ids: set[int] = set()
     subjects_touched: set[str] = set()
+    # Subjects the actor was NOT permitted to assign — these silently skipped
+    # before, producing zero-recipient "success". Surfaced in the result so the
+    # admin UI can show a permission-denied warning instead of a fake success.
+    permission_denied_subjects: set[str] = set()
 
     if practice_test_ids:
         pts = PracticeTest.objects.filter(pk__in=practice_test_ids, mock_exam__isnull=True)
@@ -125,6 +130,8 @@ def execute_library_bulk_assign(
                     for u in allowed:
                         touched_student_ids.add(u.pk)
                     added_count += 1
+            else:
+                permission_denied_subjects.add(str(pt.subject))
 
     mock_ids_touched: set[int] = set()
     if exam_ids:
@@ -143,6 +150,7 @@ def execute_library_bulk_assign(
 
         add_tests = PracticeTest.objects.filter(**add_filters)
         for pt in add_tests:
+            exam_tests_matched += 1
             subjects_touched.add(str(pt.subject))
             if authorize(actor, acc_const.PERM_ASSIGN_ACCESS, subject=pt.subject):
                 subject_grants_created += _ensure_global_grants_for_students(actor, users, pt.subject)
@@ -154,6 +162,8 @@ def execute_library_bulk_assign(
                     added_count += 1
                 if pt.mock_exam_id:
                     mock_ids_touched.add(pt.mock_exam_id)
+            else:
+                permission_denied_subjects.add(str(pt.subject))
 
         touched_users = [u for u in users if u.pk in touched_student_ids]
         for me in MockExam.objects.filter(pk__in=mock_ids_touched):
@@ -198,11 +208,34 @@ def execute_library_bulk_assign(
     students_granted = sum(1 for u in users if normalized_role(u) == acc_const.ROLE_STUDENT and u.pk in touched_student_ids)
     students_skipped_count = student_requested - students_granted
 
+    # Did any target content actually match the request, independent of
+    # permission? (e.g. practice_test_ids that were all timed-mock sections, or
+    # exam filters that matched nothing.) Permission-denied matches still count
+    # as "targets matched" so they resolve to no_recipients, not no_targets.
+    targets_matched = (practice_tests_matched + exam_tests_matched) > 0
+    no_targets = (bool(practice_test_ids) or bool(exam_ids)) and not targets_matched
+
+    # Explicit, single source of truth for the admin UI so success can NEVER be
+    # reported when zero student access rows were written.
+    if no_targets:
+        outcome = "no_targets"          # nothing matched — empty target
+    elif students_granted == 0:
+        outcome = "no_recipients"       # matched content but 0 students got access
+    elif students_skipped_count > 0:
+        outcome = "partial"             # some granted, some skipped
+    else:
+        outcome = "granted"             # everyone requested received access
+    succeeded = outcome in ("granted", "partial")
+
     return {
         "status": "bulk_assigned",
+        "outcome": outcome,
+        "succeeded": succeeded,
+        "permission_denied_subjects": sorted(permission_denied_subjects),
         "exams_count": len(exam_ids),
         "practice_tests_requested": len(practice_test_ids),
         "practice_tests_matched": practice_tests_matched,
+        "exam_tests_matched": exam_tests_matched,
         "practice_tests_count": len(practice_test_ids),
         "tests_added": added_count,
         "tests_removed": removed_count,

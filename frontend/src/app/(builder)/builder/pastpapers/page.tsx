@@ -5,6 +5,7 @@ import Link from "next/link";
 import { examsAdminApi } from "@/features/examsAdmin/api";
 import type { AdminPastpaperPack } from "@/lib/api";
 import {
+  AlertTriangle,
   BookOpen,
   Calculator,
   Calendar,
@@ -15,6 +16,7 @@ import {
   Plus,
   RefreshCcw,
   Trash2,
+  Users,
   X,
 } from "lucide-react";
 
@@ -221,6 +223,19 @@ function PackRow({
   const hasRW = !!rwSection;
   const hasMath = !!mathSection;
 
+  // is_published / assigned_student_count are served by the backend but not yet
+  // in the generated OpenAPI type — read them defensively at runtime.
+  const packMeta = pack as unknown as {
+    is_published?: boolean;
+    assigned_student_count?: number;
+  };
+  const isPublished = packMeta.is_published === true;
+  const assignedCount =
+    typeof packMeta.assigned_student_count === "number" ? packMeta.assigned_student_count : undefined;
+  // Operational visibility (NOT a publish block): a live pack with zero assigned
+  // students is invisible to students despite being published.
+  const publishedButNoAccess = isPublished && assignedCount === 0;
+
   return (
     <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
       {/* Pack header */}
@@ -234,6 +249,25 @@ function PackRow({
               {pack.form_type === "US" ? "US Form" : "International"}
               {pack.label ? ` · Form ${pack.label}` : ""}
             </span>
+            {/* Publish status chip */}
+            <span
+              className={`rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                isPublished
+                  ? publishedButNoAccess
+                    ? "bg-amber-100 text-amber-800"
+                    : "bg-emerald-100 text-emerald-700"
+                  : "bg-surface-2 text-muted-foreground"
+              }`}
+            >
+              {isPublished ? "Live" : "Draft"}
+            </span>
+            {/* Recipient count when published */}
+            {isPublished && assignedCount != null ? (
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-muted-foreground">
+                <Users className="h-3 w-3" />
+                {assignedCount} student{assignedCount !== 1 ? "s" : ""}
+              </span>
+            ) : null}
           </div>
           <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
             <Calendar className="h-3 w-3 shrink-0" />
@@ -280,6 +314,18 @@ function PackRow({
           )}
         </div>
       </div>
+
+      {/* Invisible-publish warning: live but no students have access. Operational
+          visibility only — publishing is never blocked (admins may pre-publish). */}
+      {publishedButNoAccess ? (
+        <div className="mt-3 flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50/90 px-4 py-2.5 text-xs text-amber-900">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <span>
+            <strong>Published, but no students currently have access.</strong> This pack is live
+            but invisible to students until you assign it. Use bulk assign to grant access.
+          </span>
+        </div>
+      ) : null}
 
       {/* Sections + per-module links */}
       {pack.sections.length > 0 && (

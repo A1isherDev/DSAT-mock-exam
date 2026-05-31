@@ -50,11 +50,49 @@ import {
 
 type TrackFilter = "ALL" | "MATH" | "ENGLISH";
 
+/**
+ * Tri-state banner view derived from the backend outcome. Distinguishes:
+ *   success  — students actually received access (granted)
+ *   warning  — operation ran but 0 / partial recipients, or nothing matched
+ *   failure  — the request errored (network / server / validation)
+ * A zero-recipient run is a WARNING, never a silent success and never a scary
+ * "failed".
+ */
+function assignBannerView(r: LastAssignResult): {
+  tone: "success" | "warning" | "failure";
+  headline: string;
+} {
+  if (!r.ok && r.message && !r.outcome) return { tone: "failure", headline: "Assignment failed" };
+  switch (r.outcome) {
+    case "granted":
+      return { tone: "success", headline: "Assignment finished" };
+    case "partial":
+      return { tone: "warning", headline: "Partially assigned — some students skipped" };
+    case "no_recipients":
+      return { tone: "warning", headline: "No students received access" };
+    case "no_targets":
+      return { tone: "warning", headline: "Nothing assigned — no matching sections" };
+    default:
+      return r.ok
+        ? { tone: "success", headline: "Assignment finished" }
+        : { tone: "failure", headline: "Assignment failed" };
+  }
+}
+
 function mapAssignApiToLastResult(res: Record<string, unknown>, ok: boolean, message?: string): LastAssignResult {
   const skipped = Array.isArray(res?.skipped_users) ? (res.skipped_users as LastAssignResult["skipped_users"]) : [];
+  const outcome = typeof res?.outcome === "string" ? (res.outcome as LastAssignResult["outcome"]) : undefined;
+  const permDenied = Array.isArray(res?.permission_denied_subjects)
+    ? (res.permission_denied_subjects as string[])
+    : [];
   return {
-    ok,
+    // A run only counts as "ok" if the backend says students actually received
+    // access. HTTP 200 alone never implies success (no_recipients / no_targets).
+    ok: ok && (typeof res?.succeeded === "boolean" ? res.succeeded : true),
     message,
+    outcome,
+    succeeded: typeof res?.succeeded === "boolean" ? res.succeeded : undefined,
+    permission_denied_subjects: permDenied,
     dispatch_id: typeof res?.dispatch_id === "number" ? res.dispatch_id : Number(res?.dispatch_id) || undefined,
     dispatch_status: typeof res?.dispatch_status === "string" ? res.dispatch_status : undefined,
     students_granted_count:
@@ -703,9 +741,8 @@ export function BulkAssignWizard({
         clientContext,
       )) as Record<string, unknown>;
 
-      const added = typeof res?.tests_added === "number" ? res.tests_added : null;
-      const matched = typeof res?.practice_tests_matched === "number" ? res.practice_tests_matched : null;
-      const requested = typeof res?.practice_tests_requested === "number" ? res.practice_tests_requested : null;
+      const granted = Number(res?.students_granted_count ?? 0);
+      const requestedStudents = Number(res?.students_requested_count ?? selectedUserIds.length);
       const skippedN = Number(res.students_skipped_count || 0);
       const grantsCreated =
         typeof res?.subject_grants_created === "number" ? res.subject_grants_created : 0;
@@ -713,21 +750,32 @@ export function BulkAssignWizard({
         grantsCreated > 0
           ? ` ${grantsCreated} subject access grant(s) added for students who had none.`
           : "";
+      const permDenied = Array.isArray(res?.permission_denied_subjects)
+        ? (res.permission_denied_subjects as string[])
+        : [];
+      const permNote = permDenied.length
+        ? ` You lack assign permission for: ${permDenied.join(", ")}.`
+        : "";
+      // Trust the backend's explicit outcome — never report success on HTTP 200
+      // alone. Fall back to a count-derived outcome for older responses.
+      const outcome =
+        (typeof res?.outcome === "string" && res.outcome) ||
+        (granted === 0 ? "no_recipients" : skippedN > 0 ? "partial" : "granted");
 
-      if (!isMocks && requested != null && matched != null && matched < requested) {
+      if (outcome === "no_targets") {
         showToast(
-          `Assigned library sections: ${matched} of ${requested} IDs matched. ${selectedUserIds.length} user(s).${grantNote}`,
+          `No assignment saved — no matching ${isMocks ? "mock" : "pastpaper"} sections for this selection.${permNote}`,
         );
-      } else if (!isMocks && added === 0 && resolvedPastpaperSectionIds.length > 0) {
-        showToast("No assignments were saved. Check section IDs.");
+      } else if (outcome === "no_recipients") {
+        showToast(
+          `No students received access (0 of ${requestedStudents}). Nothing was assigned.${permNote || grantNote}`,
+        );
+      } else if (outcome === "partial") {
+        showToast(
+          `Granted to ${granted} of ${requestedStudents} student(s); ${skippedN} skipped.${grantNote}${permNote}`,
+        );
       } else {
-        showToast(
-          skippedN > 0
-            ? `Granted where eligible: ${res.students_granted_count ?? "?"} of ${selectedUserIds.length} student(s); ${skippedN} skipped.${grantNote}`
-            : added != null
-              ? `Granted access (${added} test link(s)) to ${selectedUserIds.length} user(s).${grantNote}`
-              : `Assigned access to ${selectedUserIds.length} user(s).${grantNote}`,
-        );
+        showToast(`Granted access to ${granted} student(s).${grantNote}`);
       }
 
       setLastResult(mapAssignApiToLastResult(res, true));
@@ -787,24 +835,28 @@ export function BulkAssignWizard({
       ) : null}
 
       {/* Last result banner */}
-      {lastResult ? (
-        <div
-          className={cn(
-            "rounded-xl border px-4 py-3 text-sm flex flex-col gap-2",
-            lastResult.ok
-              ? "border-emerald-200 bg-emerald-50/90 text-emerald-950"
-              : "border-red-200 bg-red-50/90 text-red-950",
-          )}
-        >
+      {lastResult ? (() => {
+        const view = assignBannerView(lastResult);
+        const toneCls =
+          view.tone === "success"
+            ? "border-emerald-200 bg-emerald-50/90 text-emerald-950"
+            : view.tone === "warning"
+              ? "border-amber-300 bg-amber-50/90 text-amber-950"
+              : "border-red-200 bg-red-50/90 text-red-950";
+        const permDenied = lastResult.permission_denied_subjects ?? [];
+        return (
+        <div className={cn("rounded-xl border px-4 py-3 text-sm flex flex-col gap-2", toneCls)}>
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="flex items-start gap-2 min-w-0">
-              {lastResult.ok ? (
+              {view.tone === "success" ? (
                 <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-600 mt-0.5" />
               ) : (
-                <AlertTriangle className="w-5 h-5 shrink-0 text-red-600 mt-0.5" />
+                <AlertTriangle
+                  className={cn("w-5 h-5 shrink-0 mt-0.5", view.tone === "warning" ? "text-amber-600" : "text-red-600")}
+                />
               )}
               <div className="min-w-0">
-                <p className="font-bold">{lastResult.ok ? "Assignment finished" : "Assignment failed"}</p>
+                <p className="font-bold">{view.headline}</p>
                 {lastResult.dispatch_id != null ? (
                   <p className="text-xs opacity-90 mt-0.5">
                     Dispatch #{lastResult.dispatch_id}
@@ -818,6 +870,12 @@ export function BulkAssignWizard({
                   {lastResult.students_skipped_count != null && lastResult.students_skipped_count > 0 ? (
                     <span className="block text-amber-900 font-medium mt-1">
                       {lastResult.students_skipped_count} student(s) skipped (non-students or no matching subject access).
+                    </span>
+                  ) : null}
+                  {permDenied.length > 0 ? (
+                    <span className="block text-amber-900 font-semibold mt-1">
+                      You don&apos;t have permission to assign: {permDenied.join(", ")}. Ask an admin with{" "}
+                      <strong>assign_access</strong> for these subjects.
                     </span>
                   ) : null}
                   {lastResult.tests_added != null ? (
@@ -855,7 +913,8 @@ export function BulkAssignWizard({
             </div>
           ) : null}
         </div>
-      ) : null}
+        );
+      })() : null}
 
       {/* Horizontal step indicator */}
       <div className="flex items-center gap-0">
