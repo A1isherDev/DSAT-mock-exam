@@ -518,18 +518,7 @@ function ExamPlayerInner() {
     const [isNavigating, setIsNavigating] = useState(false);
     const [showFiveMinuteWarning, setShowFiveMinuteWarning] = useState(false);
     const [warningShownForModule, setWarningShownForModule] = useState<number | null>(null);
-    const [pauseResumeError, setPauseResumeError] = useState<string | null>(null);
     const warningTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-    // The pause/resume notice is transient: the timer is client-authoritative and
-    // keeps running, and the next poll re-syncs state. Auto-dismiss it so a
-    // one-off sync hiccup never lingers on screen as a persistent SAT-runtime
-    // warning. (Previously it only cleared on the *next* pause/resume click.)
-    useEffect(() => {
-        if (!pauseResumeError) return;
-        const t = setTimeout(() => setPauseResumeError(null), 5000);
-        return () => clearTimeout(t);
-    }, [pauseResumeError]);
 
     const current_module_details = attempt?.current_module_details ?? null;
     const questions: ExamQuestion[] = current_module_details?.questions ?? [];
@@ -2104,7 +2093,6 @@ function ExamPlayerInner() {
                                             const remSnapshot = timeLeftRef.current;
                                             // Optimistic UI toggle first.
                                             setIsPaused(next);
-                                            setPauseResumeError(null);
                                             try {
                                                 if (next) {
                                                     // Going INTO pause: hit the server so the
@@ -2171,16 +2159,11 @@ function ExamPlayerInner() {
                                                         ?.response?.data?.message ??
                                                     (e as { message?: string })?.message ??
                                                     'Unknown error';
+                                                // Quiet degradation: the timer is client-authoritative and
+                                                // keeps running, and the next poll re-syncs state, so a sync
+                                                // hiccup shows NO student-facing warning at all. Logged to the
+                                                // console for diagnostics only.
                                                 console.error('[exam] pause/resume error detail:', errDetail, e);
-                                                // Graceful degradation: the timer is client-authoritative
-                                                // and keeps running, so a sync hiccup must never read as
-                                                // "the test is broken". Keep the message calm and reassuring;
-                                                // the next poll re-syncs state. (errDetail kept for console.)
-                                                setPauseResumeError(
-                                                    next
-                                                        ? 'Your timer is still running.'
-                                                        : 'Your timer is running and your progress is safe.'
-                                                );
                                             }
                                         }}
                                         className="text-[10px] font-bold text-slate-600 border border-slate-300 rounded-full px-3 py-0.5 hover:bg-slate-50 transition-colors flex items-center gap-1"
@@ -2195,11 +2178,6 @@ function ExamPlayerInner() {
                                         Hide
                                     </button>
                                 </div>
-                                {pauseResumeError && (
-                                    <p className="text-[10px] text-amber-600 mt-1 max-w-[160px] text-center leading-tight">
-                                        {pauseResumeError}
-                                    </p>
-                                )}
                             </div>
                         ) : (
                             <div className="flex flex-col items-center">
