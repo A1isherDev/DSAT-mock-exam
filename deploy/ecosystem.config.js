@@ -11,6 +11,12 @@ const backendCwd = '/var/www/satapp/current/backend';
 const frontendCwd = '/var/www/satapp/current/frontend';
 const venvGunicorn = '/var/www/satapp/current/backend/venv/bin/gunicorn';
 const venvCelery = '/var/www/satapp/current/backend/venv/bin/celery';
+// Celery beat persists its schedule (a shelve DB) to disk. The cwd is the
+// per-release tree (created root-owned by the deploy), so the default
+// `celerybeat-schedule` file there is unwritable by the `satapp` service user
+// → beat crash-loops with PermissionError. Pin it to the satapp-owned shared/
+// dir, which is also stable across releases.
+const beatSchedule = '/var/www/satapp/shared/celerybeat-schedule';
 
 module.exports = {
   apps: [
@@ -68,7 +74,7 @@ module.exports = {
       name: 'sat-celery-beat',
       cwd: backendCwd,
       script: venvCelery,
-      args: '-A config beat -l INFO',
+      args: `-A config beat -l INFO --schedule ${beatSchedule}`,
       interpreter: 'none',
       instances: 1,
       autorestart: true,

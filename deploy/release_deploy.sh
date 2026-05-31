@@ -31,6 +31,18 @@ ECOSYSTEM_FILE="$DEPLOY_DIR/ecosystem.config.js"
 APP_GIT_DIR="${APP_GIT_DIR:-$APP_DIR}"
 KEEP_LAST_N="${KEEP_LAST_N:-5}"
 KEEP_BACKUP_DUMPS_N="${KEEP_BACKUP_DUMPS_N:-40}"
+
+# PM2 must manage the SERVICE user's daemon. The app runs under `satapp`; when
+# this deploy runs as root, a bare `pm2` talks to root's OWN daemon instead,
+# leaving the real (satapp) processes serving STALE code across deploys. Route
+# every pm2 *command* to the service user's daemon so reloads actually restart
+# the processes that serve traffic.
+PM2_USER="${PM2_USER:-satapp}"
+if [ "$(id -un)" = "$PM2_USER" ]; then
+  PM2="pm2"
+else
+  PM2="sudo -u $PM2_USER pm2"
+fi
 SKIP_PM2_RELOAD="${SKIP_PM2_RELOAD:-0}"
 SKIP_HEALTH_CHECKS="${SKIP_HEALTH_CHECKS:-0}"
 AUTO_DB_RESTORE_ON_FAIL="${AUTO_DB_RESTORE_ON_FAIL:-1}"
@@ -102,8 +114,8 @@ on_error() {
     ln -sfn "$OLD_CURRENT_REAL" "$APP_DIR/current" || true
     SYMLINK_DONE=0
     if command -v pm2 >/dev/null 2>&1 && [[ "$SKIP_PM2_RELOAD" != "1" ]]; then
-      pm2 startOrReload "$ECOSYSTEM_FILE" --update-env 2>/dev/null || true
-      pm2 save 2>/dev/null || true
+      $PM2 startOrReload "$ECOSYSTEM_FILE" --update-env 2>/dev/null || true
+      $PM2 save 2>/dev/null || true
     fi
   fi
   log_fail "$code"
@@ -262,12 +274,12 @@ npm run build --prefix "$RELEASE_DIR/frontend"
 
 DEPLOY_STAGE="pm2_stop_before_migrate"
 echo "-> Stop PM2 app processes (Celery first, then API/frontend)"
-pm2 stop sat-celery-worker 2>/dev/null || true
-pm2 stop sat-celery-beat 2>/dev/null || true
-pm2 delete sat-celery-worker 2>/dev/null || true
-pm2 delete sat-celery-beat 2>/dev/null || true
-pm2 stop sat-backend 2>/dev/null || true
-pm2 stop sat-frontend 2>/dev/null || true
+$PM2 stop sat-celery-worker 2>/dev/null || true
+$PM2 stop sat-celery-beat 2>/dev/null || true
+$PM2 delete sat-celery-worker 2>/dev/null || true
+$PM2 delete sat-celery-beat 2>/dev/null || true
+$PM2 stop sat-backend 2>/dev/null || true
+$PM2 stop sat-frontend 2>/dev/null || true
 sleep 1
 
 DUMP="$SHARED/backups/pg_${RELEASE_ID}_pre.dump"
@@ -356,12 +368,12 @@ perform_post_cutover_failure_rollback() {
   set +e
   echo ""
   echo "[POST-DEPLOY FAILED] Validation after symlink; rolling back DB + current + PM2"
-  pm2 stop sat-frontend 2>/dev/null || true
-  pm2 stop sat-backend 2>/dev/null || true
-  pm2 stop sat-celery-worker 2>/dev/null || true
-  pm2 stop sat-celery-beat 2>/dev/null || true
-  pm2 delete sat-celery-worker 2>/dev/null || true
-  pm2 delete sat-celery-beat 2>/dev/null || true
+  $PM2 stop sat-frontend 2>/dev/null || true
+  $PM2 stop sat-backend 2>/dev/null || true
+  $PM2 stop sat-celery-worker 2>/dev/null || true
+  $PM2 stop sat-celery-beat 2>/dev/null || true
+  $PM2 delete sat-celery-worker 2>/dev/null || true
+  $PM2 delete sat-celery-beat 2>/dev/null || true
   sleep 1
   if [[ -n "${DUMP_ABS:-}" ]] && [[ -f "$DUMP_ABS" ]]; then
     restore_database_from_dump "$DUMP_ABS" || echo "[WARN] pg_restore during post-deploy rollback failed"
@@ -371,8 +383,8 @@ perform_post_cutover_failure_rollback() {
     SYMLINK_DONE=0
   fi
   if [[ "$SKIP_PM2_RELOAD" != "1" ]]; then
-    pm2 startOrReload "$ECOSYSTEM_FILE" --update-env || pm2 start "$ECOSYSTEM_FILE"
-    pm2 save
+    $PM2 startOrReload "$ECOSYSTEM_FILE" --update-env || $PM2 start "$ECOSYSTEM_FILE"
+    $PM2 save
   fi
   MIGRATION_APPLIED="0"
   SYMLINK_DONE="0"
@@ -402,7 +414,7 @@ verify_pm2_pids() {
   local app
   for app in sat-backend sat-frontend sat-celery-worker sat-celery-beat; do
     local pid
-    pid="$(pm2 pid "$app" 2>/dev/null || true)"
+    pid="$($PM2 pid "$app" 2>/dev/null || true)"
     if [[ -z "$pid" ]] || [[ "$pid" == "0" ]]; then
       echo "PM2 app $app has no PID (not online)"
       return 1
@@ -423,8 +435,8 @@ if [[ "$SKIP_PM2_RELOAD" == "1" ]]; then
   echo "!! SKIP_PM2_RELOAD=1 — skipping PM2 and post-cutover validation"
 else
   echo "-> PM2 startOrReload"
-  pm2 startOrReload "$ECOSYSTEM_FILE" --update-env || pm2 start "$ECOSYSTEM_FILE"
-  pm2 save
+  $PM2 startOrReload "$ECOSYSTEM_FILE" --update-env || $PM2 start "$ECOSYSTEM_FILE"
+  $PM2 save
 
   DEPLOY_STAGE="pm2_wait_online"
   echo "-> Verify PM2 processes (backend, frontend, Celery)"
