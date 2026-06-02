@@ -185,6 +185,20 @@ class AssessmentQuestion(models.Model):
     option_d_image = models.ImageField(upload_to="assessment_questions/", blank=True, null=True)
     # Solution explanation shown to students after grading
     explanation = models.TextField(blank=True, default="")
+
+    # Question Bank links (M1, additive/nullable). bank_version pins the immutable
+    # bank version this row was sourced from. Published assessments already freeze
+    # via AssessmentSetVersion snapshots; these links add bank provenance/reuse
+    # without changing snapshot semantics. NULL = not yet linked to the bank.
+    bank_question = models.ForeignKey(
+        "questionbank.BankQuestion", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="assessment_questions", db_index=True,
+    )
+    bank_version = models.ForeignKey(
+        "questionbank.BankQuestionVersion", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="assessment_questions",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True, db_index=True)
 

@@ -97,6 +97,7 @@ INSTALLED_APPS = [
     'realtime',
     'vocabulary',
     'assessments.apps.AssessmentsConfig',
+    'questionbank.apps.QuestionBankConfig',
 ]
 
 MIDDLEWARE = [

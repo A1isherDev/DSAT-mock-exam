@@ -1,0 +1,195 @@
+"""
+SAT PDF question parser — PURE and PDF-library-independent.
+
+Input is a list of per-page text strings (produced by pdf_text.extract_pages,
+the only PDF-lib-dependent part). Everything here is deterministic text
+processing so it can be unit-tested with synthetic pages — crucially including
+the multi-page rationale merge.
+
+Expected per-question structure (College-Board-style):
+
+    Assessment ...
+    Test: Math / Reading and Writing
+    Domain: ...
+    Skill: ...
+    Difficulty: ...
+
+    Question
+    <stem ...>
+
+    A. <a>
+    B. <b>
+    C. <c>
+    D. <d>
+
+    Correct Answer: B
+
+    Rationale
+    <explanation, MAY continue across page breaks>
+
+MULTI-PAGE RATIONALE RULE: a Rationale runs until the NEXT record boundary
+(a "Question" line or a metadata-label block) — NOT until the page ends. Page
+breaks inside a rationale are stitched. Bare page numbers / running furniture are
+stripped before merging so they don't contaminate the explanation.
+
+The parser is a class so there is NO shared module state — concurrent imports are
+safe.
+"""
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+
+_HEADER_LABELS = ("assessment", "test", "domain", "skill", "difficulty")
+_QUESTION_RE = re.compile(r"^\s*question\b", re.IGNORECASE)
+_RATIONALE_RE = re.compile(r"^\s*rationale\b", re.IGNORECASE)
+_CORRECT_RE = re.compile(r"^\s*correct\s*answer\s*[:\-]?\s*([A-D])\b", re.IGNORECASE)
+_OPTION_RE = re.compile(r"^\s*([A-D])[\.\)]\s+(.*\S)\s*$")
+_LABEL_RE = re.compile(r"^\s*(assessment|test|domain|skill|difficulty)\s*[:\-]?\s*(.*)$", re.IGNORECASE)
+_PAGE_NUM_RE = re.compile(r"^\s*(page\s+)?\d+\s*$", re.IGNORECASE)
+
+
+@dataclass
+class ParsedQuestion:
+    subject: str = ""
+    raw_domain: str = ""
+    raw_skill: str = ""
+    raw_difficulty: str = ""
+    question_text: str = ""
+    options: dict[str, str] = field(default_factory=lambda: {"A": "", "B": "", "C": "", "D": ""})
+    correct_answer: str | None = None
+    explanation: str = ""
+    page_start: int | None = None
+    page_end: int | None = None
+
+
+def _is_label_line(line: str) -> tuple[str, str] | None:
+    m = _LABEL_RE.match(line)
+    if not m:
+        return None
+    label = m.group(1).lower()
+    # Guard: only treat as a label if the word is genuinely the line's label,
+    # not a sentence that merely starts with e.g. "Test scores rose". Strip a
+    # trailing colon so "Test:" matches "test".
+    first = line.strip().lower().split()[0].rstrip(":")
+    if first not in _HEADER_LABELS:
+        return None
+    return label, m.group(2).strip()
+
+
+class _Parser:
+    def __init__(self) -> None:
+        self.questions: list[ParsedQuestion] = []
+        self.cur: ParsedQuestion | None = None
+        self.mode = "idle"  # idle | header | stem | options | post_answer | rationale
+        self.pending = {"subject": "", "domain": "", "skill": "", "difficulty": ""}
+
+    # ── header accumulation ───────────────────────────────────────────────────
+    def _absorb_label(self, label: str, value: str) -> None:
+        if label == "test":
+            low = value.lower()
+            if "math" in low:
+                self.pending["subject"] = "MATH"
+            elif any(w in low for w in ("reading", "writing", "english")):
+                self.pending["subject"] = "ENGLISH"
+        elif label in ("domain", "skill", "difficulty"):
+            self.pending[label] = value
+
+    def _reset_pending(self) -> None:
+        self.pending = {"subject": "", "domain": "", "skill": "", "difficulty": ""}
+
+    def _commit(self) -> None:
+        if self.cur is not None:
+            self.cur.explanation = self.cur.explanation.strip()
+            self.cur.question_text = self.cur.question_text.strip()
+            self.questions.append(self.cur)
+            self.cur = None
+
+    # ── main loop ─────────────────────────────────────────────────────────────
+    def feed(self, page_no: int, raw: str) -> None:
+        line = raw.rstrip()
+        stripped = line.strip()
+        if not stripped:
+            return
+
+        if _QUESTION_RE.match(line):
+            self._commit()
+            self.cur = ParsedQuestion(page_start=page_no, page_end=page_no)
+            if any(self.pending.values()):
+                self.cur.subject = self.pending["subject"]
+                self.cur.raw_domain = self.pending["domain"]
+                self.cur.raw_skill = self.pending["skill"]
+                self.cur.raw_difficulty = self.pending["difficulty"]
+            self._reset_pending()
+            self.mode = "stem"
+            return
+
+        label = _is_label_line(line)
+
+        # In rationale: only a Question or a label block ends it (multi-page merge).
+        if self.mode == "rationale":
+            if label is not None:
+                self._commit()
+                self._reset_pending()
+                self._absorb_label(*label)
+                self.mode = "header"
+                return
+            self.cur.explanation += (" " if self.cur.explanation else "") + stripped
+            self.cur.page_end = page_no
+            return
+
+        if label is not None and (self.cur is None or self.mode in ("idle", "header", "post_answer")):
+            if self.mode == "post_answer":
+                # A new record's header arrived right after an answer (no rationale).
+                self._commit()
+                self._reset_pending()
+            self._absorb_label(*label)
+            self.mode = "header"
+            return
+
+        if self.cur is None:
+            return  # stray text outside any question
+
+        cm = _CORRECT_RE.match(line)
+        if cm:
+            self.cur.correct_answer = cm.group(1).upper()
+            self.mode = "post_answer"
+            return
+
+        if _RATIONALE_RE.match(line):
+            self.cur.explanation = ""
+            self.mode = "rationale"
+            return
+
+        om = _OPTION_RE.match(line)
+        if om and self.mode in ("stem", "options"):
+            self.cur.options[om.group(1).upper()] = om.group(2).strip()
+            self.mode = "options"
+            return
+
+        if self.mode == "stem":
+            self.cur.question_text += (" " if self.cur.question_text else "") + stripped
+        elif self.mode == "options":
+            last = self._last_filled_option()
+            if last:
+                self.cur.options[last] += " " + stripped
+
+    def _last_filled_option(self) -> str | None:
+        for letter in ("D", "C", "B", "A"):
+            if self.cur and self.cur.options[letter]:
+                return letter
+        return None
+
+    def finish(self) -> list[ParsedQuestion]:
+        self._commit()
+        return self.questions
+
+
+def parse_pages(pages: list[str]) -> list[ParsedQuestion]:
+    parser = _Parser()
+    for idx, page in enumerate(pages, start=1):
+        for raw in page.splitlines():
+            if _PAGE_NUM_RE.match(raw):
+                continue  # strip bare page numbers / running furniture
+            parser.feed(idx, raw)
+    return parser.finish()

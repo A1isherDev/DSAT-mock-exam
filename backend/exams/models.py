@@ -46,7 +46,20 @@ class Question(TimestampedModel):
     explanation = models.TextField(blank=True)
     order = models.PositiveIntegerField(default=0, db_index=True)
     module = models.ForeignKey('Module', on_delete=models.CASCADE, related_name='questions', null=True)
-    
+
+    # Question Bank links (M1, additive/nullable). When set, this row is a
+    # per-exam frozen copy sourced from the canonical bank question; bank_version
+    # pins the immutable version so a published exam stays frozen across future
+    # bank edits. NULL = legacy/standalone question not yet linked to the bank.
+    bank_question = models.ForeignKey(
+        'questionbank.BankQuestion', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='exam_questions', db_index=True,
+    )
+    bank_version = models.ForeignKey(
+        'questionbank.BankQuestionVersion', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='exam_questions',
+    )
+
     class Meta:
         db_table = 'questions'
         ordering = ['order', 'created_at']
