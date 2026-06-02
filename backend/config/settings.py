@@ -260,6 +260,15 @@ REALTIME_DEBUG_TRACE = os.getenv("REALTIME_DEBUG_TRACE", "False").lower() == "tr
 # SSE: DB replay polling interval per connection (seconds).
 REALTIME_SSE_DB_POLL_EVERY_S = float(os.getenv("REALTIME_SSE_DB_POLL_EVERY_S", "0.8"))
 
+# SSE: max lifetime of a single stream before the server ends it cleanly and the
+# browser's EventSource reconnects (seconds). MUST stay well below the gunicorn
+# worker --timeout (120s): a sync worker stays inside the streaming generator for
+# the whole connection, so if the stream outlives the timeout the arbiter kills
+# the worker (logged as a 500) and recycles it. Ending well before that yields a
+# clean 200 + graceful reconnect, and bounds how long each sync worker is tied up.
+# No events are lost: they are persisted and re-fetched via last_id on reconnect.
+REALTIME_SSE_MAX_STREAM_S = float(os.getenv("REALTIME_SSE_MAX_STREAM_S", "25"))
+
 # ─── Celery (optional in dev; required for scale) ─────────────────────────────
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "")
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "")

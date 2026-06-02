@@ -153,9 +153,26 @@ class RealtimeEventsSSEView(APIView):
             buckets: list[deque[dict[str, Any]]] = [deque(), deque(), deque()]
             last_ping = time.monotonic()
             last_db_poll = 0.0
+            stream_start = time.monotonic()
+            # End the stream cleanly before the gunicorn worker --timeout fires.
+            # A sync worker is parked inside this generator for the whole stream;
+            # outliving the timeout gets the worker force-killed (500) and recycled.
+            # Returning here completes the response normally (200); the client's
+            # EventSource reconnects with last_id, so no events are dropped.
+            max_stream_s = float(getattr(settings, "REALTIME_SSE_MAX_STREAM_S", 25))
             try:
                 while True:
                     got_event = False
+
+                    if max_stream_s > 0 and (time.monotonic() - stream_start) >= max_stream_s:
+                        # Graceful end-of-stream marker, then return to close cleanly.
+                        yield _sse_pack(
+                            event_id=last_id,
+                            event_type="ping",
+                            data={"ts": timezone.now().isoformat(), "cycle": True},
+                        )
+                        metric_incr("sse_stream_cycle")
+                        return
 
                     if pubsub:
                         while True:
