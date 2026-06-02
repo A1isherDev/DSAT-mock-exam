@@ -60,6 +60,7 @@ type AdminMidterm = {
   published_at: string | null;
   kind: "MIDTERM";
   midterm_subject: string | null;
+  midterm_scoring_scale: "SCALE_100" | "SCALE_800";
   midterm_module_count: number;
   midterm_module1_minutes: number;
   midterm_module2_minutes: number;
@@ -73,6 +74,7 @@ type MidtermForm = {
   title: string;
   practice_date: string;
   midterm_subject: "READING_WRITING" | "MATH";
+  midterm_scoring_scale: "SCALE_100" | "SCALE_800";
   midterm_module_count: "1" | "2";
   midterm_module1_minutes: string;
   midterm_module2_minutes: string;
@@ -83,6 +85,7 @@ const DEFAULT_FORM: MidtermForm = {
   title: "",
   practice_date: "",
   midterm_subject: "READING_WRITING",
+  midterm_scoring_scale: "SCALE_100",
   midterm_module_count: "2",
   midterm_module1_minutes: "60",
   midterm_module2_minutes: "60",
@@ -215,6 +218,21 @@ function MidtermModal({
             </div>
           </div>
 
+          {/* Scoring scale — controls how the final result is reported and how
+              the question console frames per-question scoring. */}
+          <div>
+            <label className={FL}>Scoring system</label>
+            <select value={form.midterm_scoring_scale} onChange={set("midterm_scoring_scale")} className={SI}>
+              <option value="SCALE_100">100-point (percentage)</option>
+              <option value="SCALE_800">800-point (SAT scaled)</option>
+            </select>
+            <p className="mt-1 text-[11px] text-slate-500">
+              {form.midterm_scoring_scale === "SCALE_800"
+                ? "Final score maps onto the SAT 200–800 curve. Give each question a point weight in the question console."
+                : "Final score is a clean 0–100 percentage. Every question counts equally."}
+            </p>
+          </div>
+
           {/* Module count + timing */}
           <div>
             <label className={FL}>Modules</label>
@@ -298,6 +316,7 @@ function MidtermRow({
   onDelete,
   onPublish,
   onUnpublish,
+  onResults,
   publishing,
 }: {
   exam: AdminMidterm;
@@ -305,6 +324,7 @@ function MidtermRow({
   onDelete: () => void;
   onPublish: () => void;
   onUnpublish: () => void;
+  onResults: () => void;
   publishing: boolean;
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -398,6 +418,15 @@ function MidtermRow({
 
           <button
             type="button"
+            onClick={onResults}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-700 hover:bg-sky-100 transition-colors"
+          >
+            <FileText className="h-3 w-3" />
+            Results
+          </button>
+
+          <button
+            type="button"
             onClick={onEdit}
             className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors"
           >
@@ -487,6 +516,7 @@ export default function BuilderMidtermsPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [publishingId, setPublishingId] = useState<number | null>(null);
+  const [resultsExam, setResultsExam] = useState<AdminMidterm | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -527,6 +557,7 @@ export default function BuilderMidtermsPage() {
         practice_date: form.practice_date || null,
         kind: "MIDTERM",
         midterm_subject: form.midterm_subject,
+        midterm_scoring_scale: form.midterm_scoring_scale,
         midterm_module_count: Number(form.midterm_module_count),
         midterm_module1_minutes: Number(form.midterm_module1_minutes),
         midterm_module2_minutes: Number(form.midterm_module2_minutes),
@@ -584,6 +615,7 @@ export default function BuilderMidtermsPage() {
         title: editingMidterm.title ?? "",
         practice_date: editingMidterm.practice_date ?? "",
         midterm_subject: (editingMidterm.midterm_subject as "READING_WRITING" | "MATH") ?? "READING_WRITING",
+        midterm_scoring_scale: (editingMidterm.midterm_scoring_scale as "SCALE_100" | "SCALE_800") ?? "SCALE_100",
         midterm_module_count: String(editingMidterm.midterm_module_count) as "1" | "2",
         midterm_module1_minutes: String(editingMidterm.midterm_module1_minutes ?? 60),
         midterm_module2_minutes: String(editingMidterm.midterm_module2_minutes ?? 60),
@@ -706,6 +738,7 @@ export default function BuilderMidtermsPage() {
               onDelete={() => void handleDelete(m.id)}
               onPublish={() => void handlePublish(m.id)}
               onUnpublish={() => void handleUnpublish(m.id)}
+              onResults={() => setResultsExam(m)}
               publishing={publishingId === m.id}
             />
           ))}
@@ -722,6 +755,132 @@ export default function BuilderMidtermsPage() {
         onSubmit={(f) => void handleSave(f)}
         onClose={() => setModalOpen(false)}
       />
+
+      {resultsExam && (
+        <MidtermResultsModal exam={resultsExam} onClose={() => setResultsExam(null)} />
+      )}
+    </div>
+  );
+}
+
+// ── Teacher-only midterm results ──────────────────────────────────────────
+// Per-student score plus the exact questions each student missed. This is the
+// breakdown students never see (they only get their final score).
+type MidtermResultRow = {
+  attempt_id: number;
+  student_id: number | null;
+  student_username: string;
+  student_name: string;
+  score: number | null;
+  max_score: number;
+  total_questions: number;
+  correct_count: number;
+  wrong_count: number;
+  wrong_questions: {
+    question_id: number;
+    module_order: number;
+    prompt: string;
+    student_answer: unknown;
+    correct_answers: unknown;
+  }[];
+  completed_at: string | null;
+};
+
+function MidtermResultsModal({ exam, onClose }: { exam: AdminMidterm; onClose: () => void }) {
+  const [rows, setRows] = useState<MidtermResultRow[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    examsAdminApi
+      .getMidtermResults(exam.id)
+      .then((data: { students?: MidtermResultRow[] }) => {
+        if (!cancelled) setRows(data.students ?? []);
+      })
+      .catch((e) => {
+        if (!cancelled) setErr(parseError(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [exam.id]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div
+        className="max-h-[85vh] w-full max-w-3xl overflow-hidden rounded-2xl bg-card shadow-2xl flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <div className="min-w-0">
+            <h2 className="font-extrabold text-foreground truncate">
+              Results · {exam.title || `Midterm #${exam.id}`}
+            </h2>
+            <p className="text-xs text-muted-foreground">Visible to teachers only</p>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-muted-foreground hover:bg-surface-2">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto p-5 space-y-2">
+          {err && (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{err}</div>
+          )}
+          {!rows && !err && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+            </div>
+          )}
+          {rows && rows.length === 0 && (
+            <p className="text-sm text-muted-foreground">No students have completed this midterm yet.</p>
+          )}
+          {rows?.map((r) => (
+            <div key={r.attempt_id} className="rounded-xl border border-border bg-surface-1">
+              <button
+                type="button"
+                onClick={() => setExpanded((cur) => (cur === r.attempt_id ? null : r.attempt_id))}
+                className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+              >
+                <div className="min-w-0">
+                  <p className="font-bold text-foreground truncate">{r.student_name || r.student_username}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {r.correct_count}/{r.total_questions} correct · {r.wrong_count} wrong
+                  </p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="text-lg font-black tabular-nums text-foreground">
+                    {r.score}
+                    <span className="text-xs font-bold text-muted-foreground"> / {r.max_score}</span>
+                  </p>
+                </div>
+              </button>
+              {expanded === r.attempt_id && (
+                <div className="border-t border-border px-4 py-3 space-y-2">
+                  {r.wrong_questions.length === 0 ? (
+                    <p className="text-xs font-semibold text-emerald-600">Perfect — no wrong answers.</p>
+                  ) : (
+                    r.wrong_questions.map((w) => (
+                      <div key={w.question_id} className="rounded-lg bg-surface-2 px-3 py-2 text-xs">
+                        <p className="font-semibold text-foreground">
+                          M{w.module_order} · {w.prompt || `Question #${w.question_id}`}
+                        </p>
+                        <p className="mt-0.5 text-red-600">
+                          Answered: {String(w.student_answer ?? "—")}
+                        </p>
+                        <p className="text-emerald-600">
+                          Correct: {Array.isArray(w.correct_answers) ? w.correct_answers.join(", ") : String(w.correct_answers ?? "—")}
+                        </p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

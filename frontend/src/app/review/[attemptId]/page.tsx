@@ -406,10 +406,24 @@ export default function ReviewPage() {
                                 </p>
                                 <p className="text-7xl font-black tabular-nums">{review.total_score}</p>
                                 <p className="text-[11px] font-bold opacity-40 mt-1 italic">
-                                  {review.mock_kind === "MOCK_SAT" ? "/ 800 Max" : `/ ${review.total_questions} questions`}
+                                  {review.mock_kind === "MOCK_SAT"
+                                    ? "/ 800 Max"
+                                    : review.score_only
+                                    ? (review.scoring_scale === "SCALE_800" ? "/ 800 Max" : "/ 100")
+                                    : `/ ${review.total_questions} questions`}
                                 </p>
                             </div>
 
+                            {/* Midterm students see ONLY their score — never the
+                                per-question correctness. The teacher gets the full
+                                breakdown from the admin results section. */}
+                            {review.score_only && (
+                                <p className="max-w-md text-center text-sm font-medium text-muted-foreground">
+                                    Your teacher can review the full breakdown of your answers.
+                                </p>
+                            )}
+
+                            {!review.score_only && (
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-3xl">
                                 <div className="bg-surface-2 rounded-2xl p-5 border border-border flex flex-col items-center">
                                     <p className="text-2xl font-bold text-emerald-600">{review.total_correct}</p>
@@ -428,6 +442,7 @@ export default function ReviewPage() {
                                     <p className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground">Accuracy</p>
                                 </div>
                             </div>
+                            )}
                         </div>
                     </div>
 

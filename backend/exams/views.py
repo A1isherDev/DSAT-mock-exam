@@ -92,6 +92,29 @@ def _enforce_attempt_student(request, attempt: TestAttempt) -> None:
     if getattr(attempt, "student_id", None) != getattr(request.user, "pk", None):
         raise PermissionDenied("This attempt belongs to another user.")
 
+
+def _revoke_midterm_access_after_result(attempt: TestAttempt, mock) -> None:
+    """
+    Once a student has viewed their midterm result, remove their access so the
+    midterm can't be retaken. The completed attempt (and thus their score) stays
+    accessible via their own attempt history — only the ability to *start* a new
+    attempt is withdrawn. Best-effort and idempotent: re-viewing is harmless.
+    """
+    student_id = getattr(attempt, "student_id", None)
+    if not mock or not student_id:
+        return
+    try:
+        mock.assigned_users.remove(student_id)
+        for pt in mock.tests.all():
+            pt.assigned_users.remove(student_id)
+        for portal in PortalMockExam.objects.filter(mock_exam=mock):
+            portal.assigned_users.remove(student_id)
+    except Exception:  # pragma: no cover - revocation must never break result view
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            "midterm access revoke failed for student=%s mock=%s", student_id, getattr(mock, "pk", None)
+        )
+
 def _expected_attempt_version(request) -> int | None:
     raw = request.data.get("expected_version_number")
     if raw is None:
@@ -278,11 +301,12 @@ class PastpaperPackStudentListView(generics.ListAPIView):
         if not user.is_authenticated:
             return base.none()
         if normalized_role(user) == acc_const.ROLE_STUDENT:
-            # Students only see published packs they are assigned to.
-            return base.filter(
-                is_published=True,
-                sections__assigned_users=user,
-            ).distinct()
+            # An explicit per-student section assignment IS the access grant, so it
+            # alone makes the pack visible — even if the pack was never flipped to
+            # is_published. Previously we required is_published AND assignment, which
+            # silently hid packs the admin had successfully granted (console reported
+            # success, student saw nothing). Assignment now governs visibility.
+            return base.filter(sections__assigned_users=user).distinct()
         # Teachers, admins, super_admins: full catalog (published + unpublished).
         return base
 
@@ -306,8 +330,9 @@ class PastpaperPackStudentDetailView(generics.RetrieveAPIView):
         if not user.is_authenticated:
             return base.none()
         if normalized_role(user) == acc_const.ROLE_STUDENT:
-            # Students can only access their assigned published packs.
-            return base.filter(is_published=True, sections__assigned_users=user).distinct()
+            # Visibility follows assignment (see list view): an assigned student may
+            # open the pack regardless of the is_published flag.
+            return base.filter(sections__assigned_users=user).distinct()
         return base
 
 
@@ -1122,6 +1147,28 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         attempt = self.get_object()
         if attempt.current_state != TestAttempt.STATE_COMPLETED or not getattr(attempt, "is_completed", False):
             raise PermissionDenied("Review is available only after you submit the test.")
+
+        pt0 = attempt.practice_test
+        mock0 = getattr(pt0, "mock_exam", None)
+        if mock0 is None and getattr(pt0, "mock_exam_id", None):
+            mock0 = MockExam.objects.filter(pk=pt0.mock_exam_id).first()
+        is_midterm = bool(mock0 and mock0.kind == MockExam.KIND_MIDTERM)
+
+        # Midterm policy: a STUDENT only ever sees their final score — never the
+        # questions, their answers, or which were right/wrong. Teachers see the full
+        # breakdown through the dedicated admin results endpoint, not this one (this
+        # viewset is scoped to the caller's own attempts). Viewing the result also
+        # consumes the student's access so the midterm can't be retaken.
+        if is_midterm:
+            _revoke_midterm_access_after_result(attempt, mock0)
+            return Response({
+                'score_only': True,
+                'total_score': attempt.score,
+                'mock_kind': mock0.kind,
+                'scoring_scale': getattr(mock0, 'midterm_scoring_scale', MockExam.SCALE_100),
+                'subject': getattr(pt0, 'subject', None),
+            })
+
         module_id_param = request.query_params.get('module_id')
         
         questions_data = []
@@ -1266,6 +1313,75 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
             return
 
         # Full SAT mock: admin adds R&W / Math sections via add_test (no forced two-section shell).
+
+    @action(detail=True, methods=["get"])
+    def results(self, request, pk=None):
+        """
+        Teacher/admin midterm results: every student attempt for this midterm with
+        their score and which questions they got wrong. This is the detail the
+        student themselves is NOT allowed to see (they only get their score).
+        """
+        exam = self.get_object()
+        scale = getattr(exam, "midterm_scoring_scale", MockExam.SCALE_100)
+        max_score = 800 if scale == MockExam.SCALE_800 else 100
+
+        # All completed attempts for any practice test belonging to this midterm.
+        pt_ids = list(exam.tests.values_list("id", flat=True))
+        attempts = (
+            TestAttempt.objects.filter(
+                practice_test_id__in=pt_ids,
+                is_completed=True,
+                current_state=TestAttempt.STATE_COMPLETED,
+            )
+            .select_related("student")
+            .order_by("-completed_at")
+        )
+
+        students_out = []
+        for att in attempts:
+            wrong = []
+            correct_count = 0
+            total = 0
+            for module in att.practice_test.modules.prefetch_related("questions").order_by("module_order"):
+                answers = att.module_answers.get(str(module.id), {})
+                for q in module.questions.all():
+                    total += 1
+                    ans = answers.get(str(q.id))
+                    if q.check_answer(ans):
+                        correct_count += 1
+                    else:
+                        wrong.append({
+                            "question_id": q.id,
+                            "module_order": module.module_order,
+                            "prompt": (q.question_text or q.question_prompt or "")[:200],
+                            "student_answer": ans,
+                            "correct_answers": q.correct_answers,
+                        })
+            student = att.student
+            students_out.append({
+                "attempt_id": att.id,
+                "student_id": getattr(student, "id", None),
+                "student_username": getattr(student, "username", "") or "",
+                "student_name": (
+                    f"{getattr(student, 'first_name', '')} {getattr(student, 'last_name', '')}".strip()
+                    or getattr(student, "username", "")
+                ),
+                "score": att.score,
+                "max_score": max_score,
+                "total_questions": total,
+                "correct_count": correct_count,
+                "wrong_count": len(wrong),
+                "wrong_questions": wrong,
+                "completed_at": att.completed_at,
+            })
+
+        return Response({
+            "mock_exam_id": exam.id,
+            "title": exam.title,
+            "scoring_scale": scale,
+            "max_score": max_score,
+            "students": students_out,
+        })
 
     @action(detail=True, methods=['post'])
     def assign_users(self, request, pk=None):

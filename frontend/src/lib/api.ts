@@ -932,6 +932,10 @@ export const examsAdminApi = {
         const r = await api.get('/exams/admin/mock-exams/');
         return unwrapAdminList<AdminListEntity>(r.data);
     },
+    getMidtermResults: async (examId: number) => {
+        const r = await api.get(`/exams/admin/mock-exams/${examId}/results/`);
+        return r.data;
+    },
     createMockExam: async (data: object) => { const r = await api.post('/exams/admin/mock-exams/', data); return r.data; },
     updateMockExam: async (id: number, data: object) => { const r = await api.patch(`/exams/admin/mock-exams/${id}/`, data); return r.data; },
     deleteMockExam: async (id: number) => { await api.delete(`/exams/admin/mock-exams/${id}/`); },

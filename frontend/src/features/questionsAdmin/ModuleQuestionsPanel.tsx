@@ -126,6 +126,7 @@ function QuestionEditor({
   moduleId,
   sectionSubject,
   examKind,
+  scoringScale,
   onSaved,
   onDeleted,
 }: {
@@ -136,12 +137,17 @@ function QuestionEditor({
   sectionSubject?: string;
   /** MockExam.kind — "MIDTERM" switches to pedagogical question formats */
   examKind?: string;
+  /** SCALE_800 midterms use per-question weights (like SAT); SCALE_100 ignores them. */
+  scoringScale?: "SCALE_100" | "SCALE_800";
   onSaved: (updated: AdminModuleQuestion) => void;
   onDeleted: () => void;
 }) {
   const update = useUpdateModuleQuestion(testId, moduleId);
   const del = useDeleteModuleQuestion(testId, moduleId);
   const isMidterm = examKind === "MIDTERM";
+  // SCALE_800 midterms feed the SAT 200–800 curve, which weights questions by
+  // their `score`. Surface the weight selector for those; SCALE_100 stays equal-weight.
+  const isScale800Midterm = isMidterm && scoringScale === "SCALE_800";
 
   const [draft, setDraft] = React.useState<QuestionDraft>(() => questionToDraft(question, sectionSubject, examKind));
   const [confirmDelete, setConfirmDelete] = React.useState(false);
@@ -343,18 +349,35 @@ function QuestionEditor({
 
         {/* Type row — midterms use answer-format selector; SAT uses type + score */}
         {isMidterm ? (
-          <div>
-            <label className={FIELD_LABEL}>Answer format</label>
-            <select
-              className={INPUT}
-              value={draft.midtermFormat}
-              onChange={(e) => patch({ midtermFormat: e.target.value as MidtermFormat })}
-            >
-              <option value="mc">Multiple choice (A / B / C / D)</option>
-              <option value="numeric">Numeric (student enters a number)</option>
-              <option value="short_text">Short text (student types an answer)</option>
-              <option value="true_false">True / False</option>
-            </select>
+          <div className={isScale800Midterm ? "grid grid-cols-2 gap-4" : ""}>
+            <div>
+              <label className={FIELD_LABEL}>Answer format</label>
+              <select
+                className={INPUT}
+                value={draft.midtermFormat}
+                onChange={(e) => patch({ midtermFormat: e.target.value as MidtermFormat })}
+              >
+                <option value="mc">Multiple choice (A / B / C / D)</option>
+                <option value="numeric">Numeric (student enters a number)</option>
+                <option value="short_text">Short text (student types an answer)</option>
+                <option value="true_false">True / False</option>
+              </select>
+            </div>
+            {/* 800-point midterms weight questions onto the SAT curve. */}
+            {isScale800Midterm && (
+              <div>
+                <label className={FIELD_LABEL}>Score weight</label>
+                <select
+                  className={INPUT}
+                  value={draft.score}
+                  onChange={(e) => patch({ score: Number(e.target.value) })}
+                >
+                  <option value={10}>10 ball</option>
+                  <option value={20}>20 ball</option>
+                  <option value={40}>40 ball</option>
+                </select>
+              </div>
+            )}
           </div>
         ) : (
           <>
@@ -925,8 +948,10 @@ export default function ModuleQuestionsPanel(props: {
   backLabel?: string;
   /** MockExam.kind — "MIDTERM" enables pedagogical question formats */
   examKind?: string;
+  /** MockExam.midterm_scoring_scale — SCALE_800 exposes per-question weights. */
+  scoringScale?: "SCALE_100" | "SCALE_800";
 }) {
-  const { testId, moduleId, packId, packTitle, sectionSubject, moduleOrder, backHref, backLabel, examKind } = props;
+  const { testId, moduleId, packId, packTitle, sectionSubject, moduleOrder, backHref, backLabel, examKind, scoringScale } = props;
 
   const {
     data: questions = [],
@@ -1159,23 +1184,28 @@ export default function ModuleQuestionsPanel(props: {
       {/* Score calculator — for midterms show proportional scoring info; SAT shows weighted points */}
       {!isLoading && questions.length > 0 && (() => {
         if (examKind === "MIDTERM") {
+          const is800 = scoringScale === "SCALE_800";
           return (
             <div className="mb-4 flex items-center gap-3 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10">
-                <span className="text-sm font-black text-primary">%</span>
+                <span className="text-sm font-black text-primary">{is800 ? "Σ" : "%"}</span>
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-xs font-bold uppercase tracking-widest text-primary/70">Midterm scoring</p>
+                <p className="text-xs font-bold uppercase tracking-widest text-primary/70">
+                  Midterm scoring · {is800 ? "800-point (SAT scaled)" : "100-point (percentage)"}
+                </p>
                 <p className="text-sm font-bold text-foreground leading-tight">
                   {questions.length} question{questions.length !== 1 ? "s" : ""} ·{" "}
                   <span className="text-muted-foreground font-normal">
-                    score = correct ÷ {questions.length} × 100
+                    {is800
+                      ? `${totalScore} pts → SAT 200–800 curve`
+                      : `score = correct ÷ ${questions.length} × 100`}
                   </span>
                 </p>
               </div>
               <div className="shrink-0 text-right">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-primary/60">Max</p>
-                <p className="text-lg font-black tabular-nums text-primary leading-tight">100</p>
+                <p className="text-lg font-black tabular-nums text-primary leading-tight">{is800 ? 800 : 100}</p>
               </div>
             </div>
           );
@@ -1356,6 +1386,7 @@ export default function ModuleQuestionsPanel(props: {
                 moduleId={moduleId}
                 sectionSubject={sectionSubject}
                 examKind={examKind}
+                scoringScale={scoringScale}
                 onSaved={(updated) => {
                   setSelectedId(updated.id);
                 }}

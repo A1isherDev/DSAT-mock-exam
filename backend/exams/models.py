@@ -222,6 +222,22 @@ class MockExam(TimestampedModel):
         choices=[("READING_WRITING", "Reading & Writing"), ("MATH", "Math")],
         default="READING_WRITING",
     )
+    # Midterm scoring scale chosen by the admin at creation time. SCALE_100 keeps
+    # the clean 0–100 percentage; SCALE_800 maps the midterm onto the SAT 200–800
+    # proportional curve (using midterm_subject for the per-module caps). The
+    # question console branches its scoring hints on this.
+    SCALE_100 = "SCALE_100"
+    SCALE_800 = "SCALE_800"
+    MIDTERM_SCORING_SCALE_CHOICES = [
+        (SCALE_100, "100-point (percentage)"),
+        (SCALE_800, "800-point (SAT scaled)"),
+    ]
+    midterm_scoring_scale = models.CharField(
+        max_length=20,
+        choices=MIDTERM_SCORING_SCALE_CHOICES,
+        default=SCALE_100,
+        help_text="Only used when kind=MIDTERM. Controls the final score scale.",
+    )
     midterm_module_count = models.PositiveSmallIntegerField(default=2)
     midterm_module1_minutes = models.PositiveIntegerField(default=60)
     midterm_module2_minutes = models.PositiveIntegerField(default=60)
@@ -1226,22 +1242,51 @@ class TestAttempt(TimestampedModel):
         )
 
         if mock and mock.kind == MockExam.KIND_MIDTERM:
-            # Proportional scoring: (correct answers / total questions) × 100
-            # Each question counts equally regardless of its stored score weight,
-            # so the final result is always a clean 0–100 percentage.
-            correct_count = 0
-            total_count = 0
-            for module_id_str, answers in self.module_answers.items():
-                try:
-                    module = Module.objects.prefetch_related("questions").get(id=int(module_id_str))
-                except (ValueError, Module.DoesNotExist):
-                    continue
-                for question in module.questions.all():
-                    total_count += 1
-                    ans = answers.get(str(question.id))
-                    if question.check_answer(ans):
-                        correct_count += 1
-            score_val = round((correct_count / total_count) * 100) if total_count > 0 else 0
+            scale = getattr(mock, "midterm_scoring_scale", MockExam.SCALE_100)
+            if scale == MockExam.SCALE_800:
+                # 800-point scale: map the midterm onto the SAT 200-base + per-module
+                # cap proportional curve, using the midterm's configured subject for
+                # the caps. Mirrors the full-SAT path but for a single subject.
+                from .sat_rules import compute_sat_module_score
+                subject = getattr(mock, "midterm_subject", None) or self.practice_test.subject
+                earned = 0
+                for module_id_str, answers in self.module_answers.items():
+                    try:
+                        module = Module.objects.prefetch_related("questions").get(id=int(module_id_str))
+                    except (ValueError, Module.DoesNotExist):
+                        continue
+                    correct_pts = 0
+                    total_pts = 0
+                    for question in module.questions.all():
+                        q_score = int(question.score or 0)
+                        total_pts += q_score
+                        ans = answers.get(str(question.id))
+                        if question.check_answer(ans):
+                            correct_pts += q_score
+                    earned += compute_sat_module_score(
+                        earned_points=correct_pts,
+                        total_possible_points=total_pts,
+                        subject=subject,
+                        module_order=module.module_order,
+                    )
+                score_val = min(200 + earned, 800)
+            else:
+                # 100-point scale: (correct answers / total questions) × 100.
+                # Each question counts equally regardless of its stored score weight,
+                # so the final result is always a clean 0–100 percentage.
+                correct_count = 0
+                total_count = 0
+                for module_id_str, answers in self.module_answers.items():
+                    try:
+                        module = Module.objects.prefetch_related("questions").get(id=int(module_id_str))
+                    except (ValueError, Module.DoesNotExist):
+                        continue
+                    for question in module.questions.all():
+                        total_count += 1
+                        ans = answers.get(str(question.id))
+                        if question.check_answer(ans):
+                            correct_count += 1
+                score_val = round((correct_count / total_count) * 100) if total_count > 0 else 0
         elif is_pastpaper_or_practice:
             # Pastpapers / practice tests: 200 floor + raw per-question score
             # for each correctly answered question. No 800 ceiling and no

@@ -20,6 +20,7 @@ type AdminMockExam = {
   id: number;
   title: string;
   kind: string;
+  midterm_scoring_scale?: "SCALE_100" | "SCALE_800";
   tests: AdminTestSection[];
 };
 
@@ -71,6 +72,7 @@ function MockExamModuleEditor({
         backHref={`/builder/mock-exams`}
         backLabel="Mock exams"
         examKind={exam?.kind ?? undefined}
+        scoringScale={exam?.midterm_scoring_scale ?? undefined}
       />
     </div>
   );

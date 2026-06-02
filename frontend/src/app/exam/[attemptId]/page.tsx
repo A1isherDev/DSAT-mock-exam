@@ -96,6 +96,9 @@ type QuestionPaneProps = {
   highlighterActive: boolean;
   passageHtml: string | undefined;
   handleShowPopover: (targetId: string, e?: React.MouseEvent) => void;
+  // Resizable-split override: inline width/overflow win over the w-1/2 class so the
+  // draggable divider can set this pane's size. Question content does not scroll.
+  paneStyle?: React.CSSProperties;
 };
 
 type RightPaneProps = {
@@ -117,6 +120,9 @@ type RightPaneProps = {
   flagged: number[];
   setFlagged: React.Dispatch<React.SetStateAction<number[]>>;
   showCalculator: boolean;
+  // Resizable-split override: inline width wins over the w-1/2 class. This is the
+  // "answers" pane — it is the only side allowed to scroll when content overflows.
+  paneStyle?: React.CSSProperties;
 };
 
 const formatFraction = (ans: string | undefined | null) => {
@@ -144,12 +150,12 @@ const SprFraction = ({ text }: { text: string }) => {
     return <span>{text}</span>;
 };
 
-const QuestionPane = memo(({ currentQuestion, zoomLevel, highlighterActive, passageHtml, handleShowPopover }: QuestionPaneProps) => {
+const QuestionPane = memo(({ currentQuestion, zoomLevel, highlighterActive, passageHtml, handleShowPopover, paneStyle }: QuestionPaneProps) => {
     // Fix for image URL if it's relative
     return (
         <div
-            className="w-1/2 p-10 overflow-y-auto border-r border-slate-200"
-            style={{ fontSize: `${16 * zoomLevel}px` }}
+            className="w-1/2 p-10 overflow-y-auto border-r border-slate-200 min-w-0"
+            style={{ fontSize: `${16 * zoomLevel}px`, ...paneStyle }}
             onMouseUp={(e) => highlighterActive && handleShowPopover('passage', e)}
         >
             <div
@@ -193,6 +199,7 @@ const RightPane = memo(({
     flagged,
     setFlagged,
     showCalculator,
+    paneStyle,
 }: RightPaneProps) => {
 
     const toggleFlag = useCallback(() => {
@@ -232,8 +239,8 @@ const RightPane = memo(({
             className={`overflow-y-auto bg-white pb-8 ${((attemptPtSubjectIsRW(attempt) && !showCalculator) || currentQuestion.is_math_input) ? 'w-1/2' : 'w-full'} flex justify-center transition-transform duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${(showCalculator && !currentQuestion.is_math_input) ? 'translate-x-[12vw] translate-y-0' : 'translate-x-0 translate-y-0'} ${
                 attemptPtSubjectIsRW(attempt) || currentQuestion.is_math_input
                     ? 'p-10' : ''
-            }`}
-            style={{ fontSize: `${15 * zoomLevel}px` }}
+            } min-w-0`}
+            style={{ fontSize: `${15 * zoomLevel}px`, ...paneStyle }}
         >
             <div className={
                 attemptPtSubjectIsRW(attempt)
@@ -491,6 +498,39 @@ function ExamPlayerInner() {
     const [highlighterActive, setHighlighterActive] = useState(false);
     const [isEliminationMode, setIsEliminationMode] = useState(false);
     const [isPaused, setIsPaused] = useState(false);
+    // Resizable split between the left (question content) and right (answers)
+    // panes, as a left-pane width percentage. Clamped 28–72% so neither pane can
+    // collapse. Drag the divider left/right to enlarge either side.
+    const [splitPct, setSplitPct] = useState(50);
+    const splitDraggingRef = useRef(false);
+    const mainAreaRef = useRef<HTMLElement | null>(null);
+    const onSplitDragStart = useCallback((e: React.MouseEvent) => {
+        e.preventDefault();
+        splitDraggingRef.current = true;
+        document.body.style.userSelect = 'none';
+        document.body.style.cursor = 'col-resize';
+    }, []);
+    useEffect(() => {
+        const onMove = (e: MouseEvent) => {
+            if (!splitDraggingRef.current || !mainAreaRef.current) return;
+            const rect = mainAreaRef.current.getBoundingClientRect();
+            if (rect.width <= 0) return;
+            const pct = ((e.clientX - rect.left) / rect.width) * 100;
+            setSplitPct(Math.min(72, Math.max(28, pct)));
+        };
+        const onUp = () => {
+            if (!splitDraggingRef.current) return;
+            splitDraggingRef.current = false;
+            document.body.style.userSelect = '';
+            document.body.style.cursor = '';
+        };
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+        return () => {
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+        };
+    }, []);
     // Keep the ref in sync immediately (before any re-render) so the rAF loop
     // sees the correct value without waiting for an effect to flush.
     isPausedRef.current = isPaused;
@@ -1009,12 +1049,15 @@ function ExamPlayerInner() {
 
     // Sync pause state from server on initial load / page reload.
     // Only applies when mockFlow is false (pastpapers support pause; mocks do not).
-    // We only SET isPaused=true here (not false) to avoid fighting with the
-    // button handler's optimistic toggle — the button handler owns the false→true
-    // and true→false transitions during an active session.
+    // Keyed on attempt.id, so this runs ONCE per attempt load — never on a poll
+    // and never on the optimistic button toggle (neither changes attempt.id), so
+    // it cannot fight the button handler mid-session. We sync the FULL server
+    // value (true AND false): a freshly started test is is_paused=false, and if a
+    // previous (paused) attempt left isPaused=true in state, SPA-navigating into a
+    // brand-new test must clear it — otherwise the new test opens spuriously paused.
     useEffect(() => {
         if (mockFlow) return;
-        if (attempt?.is_paused) setIsPaused(true);
+        setIsPaused(Boolean(attempt?.is_paused));
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [mockFlow, attempt?.id]); // Only re-run when the attempt ID changes (new load), not on every poll
 
@@ -2295,36 +2338,69 @@ function ExamPlayerInner() {
                 </header>
                 <div className="w-full h-[3px] opacity-100 shrink-0" style={{ background: 'repeating-linear-gradient(to right, #b91c1c 0, #b91c1c 24px, transparent 24px, transparent 28px, #ca8a04 28px, #ca8a04 52px, transparent 52px, transparent 56px, #15803d 56px, #15803d 80px, transparent 80px, transparent 84px, #0f172a 84px, #0f172a 108px, transparent 108px, transparent 112px)' }} />
 
-                {/* Main Content — adaptive layout based on question type */}
-                {currentQuestion && (
-                    <main className={`flex-1 flex overflow-hidden relative transition-all duration-300 ${isNavigating ? 'opacity-0 scale-[0.99]' : 'opacity-100 scale-100'}`}>
+                {/* Main Content — adaptive layout based on question type.
+                    Header + footer are siblings of <main> inside the
+                    `min-h-screen flex flex-col overflow-hidden` root, so they stay
+                    pinned and only the pane interiors move. `twoPane` is the case
+                    where a left (question-content) pane sits beside the right
+                    (answers) pane — there a draggable divider resizes the split. */}
+                {currentQuestion && (() => {
+                  const twoPane =
+                    currentQuestion.is_math_input ||
+                    (!showCalculator && attemptPtSubjectIsRW(attempt));
+                  return (
+                    <main
+                        ref={mainAreaRef}
+                        className={`flex-1 flex overflow-hidden relative transition-all duration-300 ${isNavigating ? 'opacity-0 scale-[0.99]' : 'opacity-100 scale-100'}`}
+                    >
 
-                        {/* LEFT PANE:
+                        {/* LEFT PANE — "question content". Non-scrolling by design
+                            (overflow hidden); use the divider to give it more room.
                             - Reading/Writing: passage text
                             - SPR (Math input): directions panel
                             - Plain Math: no left pane
                         */}
-                        {!showCalculator && attemptPtSubjectIsRW(attempt) ? (                                            
+                        {!showCalculator && attemptPtSubjectIsRW(attempt) ? (
                             <QuestionPane
                                 currentQuestion={currentQuestion}
                                 zoomLevel={zoomLevel}
-                                                highlighterActive={highlighterActive}
-                                                passageHtml={passageHighlights[currentQuestion.id]}
-                                                handleShowPopover={handleShowPopover}
-                                            />
+                                highlighterActive={highlighterActive}
+                                passageHtml={passageHighlights[currentQuestion.id]}
+                                handleShowPopover={handleShowPopover}
+                                paneStyle={{ width: `${splitPct}%`, flex: '0 0 auto', overflow: 'hidden' }}
+                            />
                         ) : currentQuestion.is_math_input ? (
-                            <div className="w-1/2 p-0 overflow-hidden border-r border-slate-200 bg-white flex flex-col justify-start shrink-0">
+                            <div
+                                className="p-0 overflow-hidden border-r border-slate-200 bg-white flex flex-col justify-start shrink-0 min-w-0"
+                                style={{ width: `${splitPct}%`, flex: '0 0 auto' }}
+                            >
                                 <div className="p-4 bg-slate-50 border-b border-slate-200">
                                     <h3 className="text-sm font-bold text-slate-900">Student-Produced Response Directions</h3>
                                 </div>
-                                <div className="flex-1 overflow-y-auto p-6">
+                                <div className="flex-1 overflow-hidden p-6">
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                     <img src="/images/spr_directions.png" alt="SPR Directions" className="max-w-full h-auto" />
                                 </div>
                             </div>
                         ) : null}
-                        {/* RIGHT PANE: always shown, full-width for plain Math */}
+                        {/* DIVIDER — drag left/right to resize the split. Only in
+                            the two-pane layout (RW passage or SPR math). */}
+                        {twoPane && (
+                            <div
+                                role="separator"
+                                aria-orientation="vertical"
+                                onMouseDown={onSplitDragStart}
+                                className="relative w-1.5 shrink-0 cursor-col-resize bg-slate-200 hover:bg-blue-400 active:bg-blue-500 transition-colors z-20 group"
+                                title="Drag to resize"
+                            >
+                                <div className="absolute inset-y-0 -left-1.5 -right-1.5" />
+                                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-8 w-1 rounded-full bg-slate-400 group-hover:bg-white" />
+                            </div>
+                        )}
+                        {/* RIGHT PANE — "answers". The only side allowed to scroll
+                            when its content overflows. Full-width for plain Math. */}
                         <RightPane
+                            paneStyle={twoPane ? { width: `${100 - splitPct}%`, flex: '0 0 auto' } : undefined}
                             currentQuestion={currentQuestion}
                             currentQuestionIndex={currentQuestionIndex}
                             attempt={attempt}
@@ -2345,8 +2421,8 @@ function ExamPlayerInner() {
                             showCalculator={showCalculator}
                         />
                     </main>
-
-                )}
+                  );
+                })()}
 
 
                 {/* Question Navigation Drawer */}

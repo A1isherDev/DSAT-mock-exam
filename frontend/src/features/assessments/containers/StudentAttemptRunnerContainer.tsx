@@ -56,7 +56,6 @@ import {
   writeDraftMirror,
   writeSubmitReceipt,
 } from "@/features/assessments/attemptDraftStorage";
-import { normalizeQuestionList } from "@/features/assessments/builder/normalize";
 import {
   CheckCircle2,
   ChevronLeft,
@@ -519,7 +518,15 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
     | { classroom_name?: string | null; assignment_title?: string | null; due_at?: string | null }
     | undefined;
 
-  const ordered = useMemo(() => normalizeQuestionList(questions), [questions]);
+  // IMPORTANT: preserve the backend-provided order. The bundle delivers
+  // questions in the per-attempt sequence (att.question_order), which is the
+  // same order the post-submission review uses. Re-sorting here by `order`/`id`
+  // (via normalizeQuestionList) silently diverges the runner's numbering from
+  // the review's, so e.g. the runner's "Question 3" shows up elsewhere in review.
+  const ordered = useMemo(
+    () => (Array.isArray(questions) ? questions : []),
+    [questions],
+  );
   const questionIds = useMemo(
     () => ordered.map((q) => Number((q as Record<string, unknown>).id || 0)),
     [ordered],
