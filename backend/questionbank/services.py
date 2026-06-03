@@ -16,7 +16,6 @@ from typing import Any
 
 from django.db import transaction
 
-from .content_hash import compute_question_content_hash
 from .models import (
     BankQuestion,
     BankQuestionVersion,
@@ -96,8 +95,10 @@ def _canonical_checksum(snapshot: dict[str, Any]) -> str:
 
 
 def compute_content_hash(q: BankQuestion) -> str:
+    from .dedup import question_content_hash
+
     payload = build_content_payload(q)
-    return compute_question_content_hash(
+    return question_content_hash(
         question_text=payload["question_text"],
         options=list(payload["options"].values()),
         correct_answer=payload["correct_answer"],
@@ -171,17 +172,7 @@ def create_bank_question(
         created_by=user,
         **fields,
     )
-    q.content_hash = compute_question_content_hash(
-        question_text=question_text,
-        options=[
-            fields.get("option_a", ""),
-            fields.get("option_b", ""),
-            fields.get("option_c", ""),
-            fields.get("option_d", ""),
-        ],
-        correct_answer=fields.get("correct_answer"),
-        passage_text=(q.passage.passage_text if q.passage_id else ""),
-    )
+    q.content_hash = compute_content_hash(q)
     q.save()
     if cut_initial_version:
         create_version(q, user=user)

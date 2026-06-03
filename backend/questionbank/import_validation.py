@@ -7,7 +7,7 @@ truncation-suspected rationale, and duplicate detection by content_hash.
 """
 from __future__ import annotations
 
-from .content_hash import compute_question_content_hash
+from .dedup import question_content_hash
 from .models import ImportCandidate
 from .pdf_parser import ParsedQuestion
 
@@ -63,9 +63,9 @@ def validate_parsed(q: ParsedQuestion) -> tuple[str, list[str]]:
 
 
 def candidate_content_hash(q: ParsedQuestion) -> str:
-    return compute_question_content_hash(
+    return question_content_hash(
         question_text=q.question_text,
         options=[q.options["A"], q.options["B"], q.options["C"], q.options["D"]],
         correct_answer=q.correct_answer,
-        passage_text=q.passage_text if hasattr(q, "passage_text") else "",
+        passage_text=q.passage_text,
     )

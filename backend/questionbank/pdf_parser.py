@@ -43,6 +43,9 @@ from dataclasses import dataclass, field
 _HEADER_LABELS = ("assessment", "test", "domain", "skill", "difficulty")
 _QUESTION_RE = re.compile(r"^\s*question\b", re.IGNORECASE)
 _RATIONALE_RE = re.compile(r"^\s*rationale\b", re.IGNORECASE)
+# A "Passage" (or "Stimulus") block introduces shared Reading & Writing passage
+# text that applies to the following question(s) until the next Passage block.
+_PASSAGE_RE = re.compile(r"^\s*(passage|stimulus)\b", re.IGNORECASE)
 _CORRECT_RE = re.compile(r"^\s*correct\s*answer\s*[:\-]?\s*([A-D])\b", re.IGNORECASE)
 _OPTION_RE = re.compile(r"^\s*([A-D])[\.\)]\s+(.*\S)\s*$")
 _LABEL_RE = re.compile(r"^\s*(assessment|test|domain|skill|difficulty)\s*[:\-]?\s*(.*)$", re.IGNORECASE)
@@ -55,6 +58,7 @@ class ParsedQuestion:
     raw_domain: str = ""
     raw_skill: str = ""
     raw_difficulty: str = ""
+    passage_text: str = ""
     question_text: str = ""
     options: dict[str, str] = field(default_factory=lambda: {"A": "", "B": "", "C": "", "D": ""})
     correct_answer: str | None = None
@@ -81,8 +85,12 @@ class _Parser:
     def __init__(self) -> None:
         self.questions: list[ParsedQuestion] = []
         self.cur: ParsedQuestion | None = None
-        self.mode = "idle"  # idle | header | stem | options | post_answer | rationale
+        self.mode = "idle"  # idle | header | passage | stem | options | post_answer | rationale
         self.pending = {"subject": "", "domain": "", "skill": "", "difficulty": ""}
+        # Sticky passage: a "Passage" block applies to every following question
+        # until the next "Passage" block — this is how Passage A → Q1..Q4 works.
+        self.current_passage = ""
+        self._passage_buf = ""
 
     # ── header accumulation ───────────────────────────────────────────────────
     def _absorb_label(self, label: str, value: str) -> None:
@@ -90,10 +98,18 @@ class _Parser:
             low = value.lower()
             if "math" in low:
                 self.pending["subject"] = "MATH"
+                # Math items have no Reading & Writing passage — drop any sticky one.
+                self.current_passage = ""
             elif any(w in low for w in ("reading", "writing", "english")):
                 self.pending["subject"] = "ENGLISH"
         elif label in ("domain", "skill", "difficulty"):
             self.pending[label] = value
+
+    def _finalize_passage_buffer(self) -> None:
+        """Promote the accumulated passage buffer to the sticky current passage."""
+        if self._passage_buf.strip():
+            self.current_passage = self._passage_buf.strip()
+        self._passage_buf = ""
 
     def _reset_pending(self) -> None:
         self.pending = {"subject": "", "domain": "", "skill": "", "difficulty": ""}
@@ -112,7 +128,18 @@ class _Parser:
         if not stripped:
             return
 
+        # A "Passage"/"Stimulus" block starts shared passage capture. It ends a
+        # rationale and any in-progress question.
+        if _PASSAGE_RE.match(line):
+            self._commit()
+            self._passage_buf = ""
+            self.current_passage = ""
+            self.mode = "passage"
+            return
+
         if _QUESTION_RE.match(line):
+            if self.mode == "passage":
+                self._finalize_passage_buffer()
             self._commit()
             self.cur = ParsedQuestion(page_start=page_no, page_end=page_no)
             if any(self.pending.values()):
@@ -120,13 +147,26 @@ class _Parser:
                 self.cur.raw_domain = self.pending["domain"]
                 self.cur.raw_skill = self.pending["skill"]
                 self.cur.raw_difficulty = self.pending["difficulty"]
+            # Attach the sticky passage (shared by every question in its group).
+            self.cur.passage_text = self.current_passage
             self._reset_pending()
             self.mode = "stem"
             return
 
         label = _is_label_line(line)
 
-        # In rationale: only a Question or a label block ends it (multi-page merge).
+        # Passage capture: accumulate until a header label or a Question/Passage
+        # boundary (both handled above) is reached.
+        if self.mode == "passage":
+            if label is not None:
+                self._finalize_passage_buffer()
+                self._absorb_label(*label)
+                self.mode = "header"
+                return
+            self._passage_buf += (" " if self._passage_buf else "") + stripped
+            return
+
+        # In rationale: only a Question/Passage or a label block ends it (multi-page merge).
         if self.mode == "rationale":
             if label is not None:
                 self._commit()

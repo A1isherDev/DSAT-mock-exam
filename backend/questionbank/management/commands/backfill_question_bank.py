@@ -21,7 +21,7 @@ from __future__ import annotations
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from questionbank.content_hash import compute_question_content_hash
+from questionbank.dedup import find_duplicate, question_content_hash
 
 
 class _Abort(Exception):
@@ -211,16 +211,18 @@ class Command(BaseCommand):
 
     # ── shared create-or-dedup ────────────────────────────────────────────────
     def _get_or_create_bank(self, *, subject, question_type, question_text, source_type, fields, stats):
-        from questionbank.models import BankQuestion
         from questionbank.services import create_bank_question
 
-        chash = compute_question_content_hash(
+        # Backfilled exam/assessment questions carry their stimulus inline (no
+        # separate passage row), so passage_text is "" here — same unified hash
+        # + (subject, content_hash) dedup strategy as the PDF import path.
+        chash = question_content_hash(
             question_text=question_text,
             options=[fields["option_a"], fields["option_b"], fields["option_c"], fields["option_d"]],
             correct_answer=fields["correct_answer"],
             passage_text="",
         )
-        existing = BankQuestion.objects.filter(content_hash=chash, subject=subject).first()
+        existing = find_duplicate(subject=subject, content_hash=chash)
         if existing:
             stats["deduped"] += 1
             return existing
