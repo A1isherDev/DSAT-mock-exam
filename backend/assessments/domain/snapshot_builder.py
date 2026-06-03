@@ -72,24 +72,34 @@ def build_snapshot(assessment_set: "AssessmentSet") -> dict[str, Any]:
         AssessmentQuestion.objects.filter(
             assessment_set=assessment_set,
             is_active=True,
-        ).order_by("order", "id")
+        )
+        .select_related("bank_question", "bank_version")
+        .order_by("order", "id")
     )
 
     questions_data: list[dict[str, Any]] = []
     for q in questions:
-        questions_data.append(
-            {
-                "id": q.id,
-                "order": q.order,
-                "prompt": q.prompt,
-                "question_type": q.question_type,
-                # choices and correct_answer are JSONField — already plain Python
-                "choices": q.choices if q.choices is not None else [],
-                "correct_answer": q.correct_answer,
-                "grading_config": q.grading_config if q.grading_config else {},
-                "points": q.points,
-            }
-        )
+        entry = {
+            "id": q.id,
+            "order": q.order,
+            "prompt": q.prompt,
+            "question_type": q.question_type,
+            # choices and correct_answer are JSONField — already plain Python
+            "choices": q.choices if q.choices is not None else [],
+            "correct_answer": q.correct_answer,
+            "grading_config": q.grading_config if q.grading_config else {},
+            "points": q.points,
+        }
+        # M4 FREEZE: pin the Question Bank source so future bank edits cannot alter
+        # this historical snapshot. Added ONLY when a bank link exists, so
+        # assessments authored without the bank produce byte-identical snapshots
+        # (and identical checksums) to before — zero behaviour change for them.
+        if q.bank_question_id:
+            entry["bank_qb_id"] = q.bank_question.qb_id
+            entry["bank_version_number"] = (
+                q.bank_version.version_number if q.bank_version_id else None
+            )
+        questions_data.append(entry)
 
     return {
         "schema_version": SNAPSHOT_SCHEMA_VERSION,

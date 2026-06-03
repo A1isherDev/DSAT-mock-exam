@@ -352,6 +352,66 @@ class AdminAssessmentQuestionDetailView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+class AdminQuestionBankSelectView(APIView):
+    """
+    M4 — list APPROVED Question Bank questions for the builder's
+    'Select From Question Bank' picker. Only status=APPROVED is ever returned;
+    TRIAGE/IMPORTED/REJECTED/ARCHIVED questions are never selectable.
+    """
+
+    permission_classes = [IsAuthenticatedAndNotFrozen, CanAuthorAssessmentContent]
+
+    def get(self, request):
+        from .domain.bank_integration import selectable_bank_questions
+
+        qs = selectable_bank_questions(
+            subject=request.query_params.get("subject") or None,
+            domain_id=request.query_params.get("domain_id") or None,
+            skill_id=request.query_params.get("skill_id") or None,
+            difficulty=request.query_params.get("difficulty") or None,
+            search=request.query_params.get("search") or None,
+        )
+        paginator = LimitOffsetPagination()
+        page = paginator.paginate_queryset(qs, request, view=self)
+        data = [
+            {
+                "id": q.id,
+                "qb_id": q.qb_id,
+                "subject": q.subject,
+                "domain": q.domain.name if q.domain_id else None,
+                "skill": q.skill.name if q.skill_id else None,
+                "difficulty": q.difficulty,
+                "question_type": q.question_type,
+                "question_text": q.question_text,
+                "current_version": q.current_version.version_number if q.current_version_id else None,
+            }
+            for q in page
+        ]
+        return paginator.get_paginated_response(data)
+
+
+class AdminAssessmentQuestionFromBankView(APIView):
+    """M4 — create an AssessmentQuestion sourced from an APPROVED bank question."""
+
+    permission_classes = [IsAuthenticatedAndNotFrozen, CanAuthorAssessmentContent]
+
+    def post(self, request, set_pk: int):
+        from django.core.exceptions import ValidationError as DjangoValidationError
+
+        from questionbank.models import BankQuestion
+
+        from .domain.bank_integration import create_question_from_bank
+
+        aset = get_object_or_404(AssessmentSet, pk=set_pk)
+        bank = get_object_or_404(BankQuestion, pk=request.data.get("bank_question_id"))
+        try:
+            aq = create_question_from_bank(aset, bank, order=request.data.get("order"))
+        except DjangoValidationError as exc:
+            msg = exc.messages[0] if getattr(exc, "messages", None) else str(exc)
+            return Response({"detail": msg}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(AssessmentQuestionAdminWriteSerializer(aq).data, status=status.HTTP_201_CREATED)
+
+
 class AssignAssessmentHomeworkView(APIView):
     """
     Teacher assigns an AssessmentSet into a classroom.
