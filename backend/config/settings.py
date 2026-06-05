@@ -45,6 +45,12 @@ LMS_AUTHZ_RAISE_ON_CONSISTENCY_DRIFT = _env_bool(
 # Log role/subject and queryset counts around test-library filters (set True to debug prod issues).
 LMS_AUTHZ_DEBUG_FILTERS = _env_bool('LMS_AUTHZ_DEBUG_FILTERS', default_when_unset=False)
 
+# Centralized access engine (Phase 2) rollout flags — all default OFF so the new
+# engine is inert in production until explicitly enabled. See docs/access-redesign/.
+ACCESS_ENGINE_DUAL_WRITE = _env_bool('ACCESS_ENGINE_DUAL_WRITE', default_when_unset=False)
+ACCESS_ENGINE_READ = _env_bool('ACCESS_ENGINE_READ', default_when_unset=False)
+ACCESS_ENGINE_SHADOW_READ = _env_bool('ACCESS_ENGINE_SHADOW_READ', default_when_unset=False)
+
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '')
 # Telegram bot HTTP API token (used for getMe to discover bot username, and as the default OIDC client_id source).
