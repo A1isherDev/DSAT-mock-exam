@@ -20,4 +20,17 @@ class AccessConfig(AppConfig):
 
             bus.subscribe(SessionRevoked, _on_session_revoked)
         except Exception:
-            return
+            pass
+
+        # Access engine dual-write signal mirroring. Handlers are inert unless
+        # ACCESS_ENGINE_DUAL_WRITE is enabled; connecting them is always safe.
+        try:
+            from access.engine import dual_write
+
+            dual_write.connect()
+        except Exception:  # pragma: no cover - never block app startup
+            import logging
+
+            logging.getLogger("access.dual_write").exception(
+                "failed to connect access dual-write signals"
+            )
