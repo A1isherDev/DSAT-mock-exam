@@ -16,6 +16,7 @@ import {
   BookOpen,
   GraduationCap,
   BookMarked,
+  KeyRound,
 } from "lucide-react";
 
 /**
@@ -49,6 +50,12 @@ const OPS_NAV = [
     href: "/ops/assign",
     label: "Assign",
     icon: BookMarked,
+    exact: false,
+  },
+  {
+    href: "/ops/access",
+    label: "Access",
+    icon: KeyRound,
     exact: false,
   },
   {
