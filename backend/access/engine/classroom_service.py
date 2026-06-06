@@ -58,6 +58,24 @@ class ClassroomAccessService:
 
     @classmethod
     @transaction.atomic
+    def assign_targets_to_classroom(
+        cls, classroom, targets, *, actor=None, expires_at=None, note="", require_exists=True,
+    ) -> dict:
+        """Grant several resource targets (e.g. expanded pack sections) to all enrolled students, atomically."""
+        from django.contrib.auth import get_user_model
+
+        User = get_user_model()
+        users = list(User.objects.filter(pk__in=cls._student_user_ids(classroom)))
+        result = AssignmentService.bulk_assign_targets(
+            users, targets, actor=actor, source=ResourceAccessGrant.SOURCE_CLASSROOM,
+            classroom=classroom, expires_at=expires_at, note=note or "classroom assignment",
+            require_exists=require_exists,
+        )
+        result["classroom_id"] = getattr(classroom, "pk", classroom)
+        return result
+
+    @classmethod
+    @transaction.atomic
     def on_student_enrolled(cls, classroom, user, *, actor=None) -> dict:
         """
         Backfill grants for a newly-enrolled student from this classroom's existing

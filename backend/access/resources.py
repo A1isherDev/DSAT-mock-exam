@@ -162,6 +162,46 @@ def models_F(name):
     return F(name)
 
 
+# --- subject-scoped pack expansion -----------------------------------------
+# When an admin assigns a *pack* (pastpaper / practice-test pack) they choose a
+# subject scope (math / reading / both). The engine then grants access only to
+# the matching section tests of that pack — not the whole pack.
+
+#: pack resource_type -> the PracticeTest FK field pointing back at that pack
+_PACK_SECTION_FIELD = {
+    RT_PASTPAPER_PACK: "pastpaper_pack_id",
+    RT_PRACTICE_TEST_PACK: "practice_test_pack_id",
+}
+
+#: subject scope token (UI) -> platform subject stored on PracticeTest.subject
+_SCOPE_TO_PLATFORM = {"math": "MATH", "reading": "READING_WRITING"}
+
+#: resource types for which a subject scope selector is meaningful
+SUBJECT_SCOPED_TYPES = frozenset(_PACK_SECTION_FIELD)
+
+
+def expand_subject_targets(resource_type: str, resource_id: int, subject_scope=None):
+    """
+    Resolve what to actually grant for ``(resource_type, resource_id)`` under an
+    optional ``subject_scope`` (``math`` / ``reading`` / ``both`` / ``None``).
+
+    * Pack types (pastpaper / practice-test pack): returns the pack's section
+      practice tests, filtered to the chosen subject (``both``/``None`` = all).
+    * Any other type: returns the resource itself unchanged.
+    """
+    field = _PACK_SECTION_FIELD.get(resource_type)
+    if field is None:
+        return [(resource_type, resource_id)]
+
+    from exams.models import PracticeTest
+
+    qs = PracticeTest.objects.filter(**{field: resource_id})
+    scope = (subject_scope or "both").strip().lower()
+    if scope in _SCOPE_TO_PLATFORM:
+        qs = qs.filter(subject=_SCOPE_TO_PLATFORM[scope])
+    return [(RT_PRACTICE_TEST, pk) for pk in qs.values_list("id", flat=True)]
+
+
 # --- registry -------------------------------------------------------------
 
 _REGISTRY: dict[str, ResourceType] = {}
