@@ -16,8 +16,9 @@ from django.db.models import Q
 from django.utils import timezone
 
 from access import constants, resources
-from access.models import AccessGrantEvent, ResourceAccessGrant
+from access.models import AccessGrantEvent, ResourceAccessGrant, UserAccess
 
+from . import enforcement
 from .access_service import AccessService, _snapshot
 
 
@@ -60,10 +61,15 @@ class AssignmentService:
         note="", require_exists=True,
     ) -> ResourceAccessGrant:
         cls._validate_resource(resource_type, resource_id, require_exists=require_exists)
-        return AccessService.grant_resource(
+        grant = AccessService.grant_resource(
             user, resource_type, resource_id, source=source, granted_by=actor,
             classroom=classroom, expires_at=expires_at, note=note,
         )
+        # Write-through to the active legacy enforcement so access is real, not just
+        # recorded. Soft on this individual path (used by enroll backfill): log drift
+        # rather than rolling back an enrollment. The console bulk path hard-verifies.
+        enforcement.apply_resource(resource_type, resource_id, [user], actor=actor)
+        return grant
 
     # -- bulk (set-based, constant query count) --------------------------
 
@@ -133,6 +139,10 @@ class AssignmentService:
                 if g.user_id not in existing_user_ids
             ]
         )
+        # Write-through to the active legacy enforcement for ALL requested users
+        # (not only the newly-created grants): idempotent, and this repairs users
+        # who hold a stale grant row but were never added to assigned_users.
+        enforcement.apply_resource(resource_type, resource_id, users, actor=actor)
         return {
             "requested": len(users),
             "created": len(to_create),
@@ -195,12 +205,52 @@ class AssignmentService:
                 if g.user_id not in existing_user_ids
             ]
         )
+        # Coexistence write-through: a SUBJECT grant must also exist as legacy
+        # UserAccess (the signal student-facing subject checks still read).
+        for u in users:
+            UserAccess.objects.get_or_create(
+                user=u, subject=subject, classroom_id=classroom_id,
+                defaults={"granted_by": actor},
+            )
         return {
             "requested": len(users),
             "created": len(to_create),
             "skipped": len(existing_user_ids),
             "grant_ids": [g.pk for g in fresh],
         }
+
+    @classmethod
+    @transaction.atomic
+    def bulk_assign_targets(
+        cls, users, targets, *, actor=None,
+        source=ResourceAccessGrant.SOURCE_BULK, classroom=None, expires_at=None,
+        note="", require_exists=True, verify=True,
+    ) -> dict:
+        """
+        Grant several resource targets to many users in one transaction. Used for
+        subject-scoped pack assignment, where one pack expands to many section
+        tests. Aggregates the per-target summaries.
+
+        When ``verify`` is set (default), every (target, student) pair is checked
+        against the active read path after grants + enforcement are written; if any
+        student is still locked out the whole transaction rolls back
+        (:class:`enforcement.AccessVerificationError`) — success is never reported
+        without real, usable access.
+        """
+        users = list(users)
+        targets = list(targets)
+        agg = {"requested": len(users), "created": 0, "skipped": 0, "grant_ids": [], "targets": len(targets)}
+        for rt, rid in targets:
+            r = cls.bulk_assign_resource(
+                users, rt, rid, actor=actor, source=source, classroom=classroom,
+                expires_at=expires_at, note=note, require_exists=require_exists,
+            )
+            agg["created"] += r["created"]
+            agg["skipped"] += r["skipped"]
+            agg["grant_ids"] += r["grant_ids"]
+        if verify:
+            enforcement.verify_targets(targets, users)
+        return agg
 
     # -- revocation convenience -----------------------------------------
 

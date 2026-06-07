@@ -283,9 +283,13 @@ class EngineGrantResourceView(APIView):
         if not resources.is_registered(resource_type):
             return Response({"detail": f"Unknown resource_type {resource_type!r}."}, status=400)
         users = list(User.objects.filter(pk__in=user_ids))
+        subject_scope = data.get("subject_scope")
+        targets = resources.expand_subject_targets(resource_type, resource_id, subject_scope)
+        if not targets:
+            return Response({"detail": "No matching sections for the chosen subject."}, status=400)
         try:
-            result = AssignmentService.bulk_assign_resource(
-                users, resource_type, resource_id, actor=request.user,
+            result = AssignmentService.bulk_assign_targets(
+                users, targets, actor=request.user,
                 source=ResourceAccessGrant.SOURCE_MANUAL,
                 expires_at=data.get("expires_at") or None,
             )
@@ -314,9 +318,13 @@ class EngineGrantClassroomView(APIView):
         classroom = Classroom.objects.filter(pk=classroom_id).first()
         if not classroom:
             return Response({"detail": "Classroom not found."}, status=404)
+        subject_scope = data.get("subject_scope")
+        targets = resources.expand_subject_targets(resource_type, resource_id, subject_scope)
+        if not targets:
+            return Response({"detail": "No matching sections for the chosen subject."}, status=400)
         try:
-            result = ClassroomAccessService.assign_resource_to_classroom(
-                classroom, resource_type, resource_id, actor=request.user,
+            result = ClassroomAccessService.assign_targets_to_classroom(
+                classroom, targets, actor=request.user,
                 expires_at=data.get("expires_at") or None,
             )
         except Exception as exc:
@@ -372,6 +380,8 @@ class EngineResourceSearchView(APIView):
             limit = 30
 
         qs = rt.model().objects.all()
+        if rt.queryset_filter:
+            qs = qs.filter(**rt.queryset_filter)
         if q:
             cond = Q()
             for field in ("title", "name"):
