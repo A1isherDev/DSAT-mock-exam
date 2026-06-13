@@ -3,7 +3,6 @@ import {
   LineChart,
   Users,
   ClipboardCheck,
-  Library,
   BookOpen,
   BookOpenCheck,
   ClipboardList,
@@ -49,7 +48,6 @@ export const studentNav: NavSection[] = [
   {
     section: "Practice",
     items: [
-      { href: "/library", label: "Library", icon: Library, isNew: true },
       { href: "/pastpapers", label: "Past papers", icon: BookOpen },
       { href: "/practice-tests", label: "Practice tests", icon: BookOpenCheck },
       { href: "/vocabulary", label: "Vocabulary", icon: Languages },
