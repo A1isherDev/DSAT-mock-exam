@@ -148,7 +148,9 @@ export function ExamRunnerPage() {
   });
 
   const mathQuestions = isMath(attempt);
-  useMathRendering(!loading && Boolean(attempt?.current_module_details), `${moduleId}:${currentIndex}`);
+  // Key on the actual question id (not just the index) so math re-renders when
+  // the question content lands, even if the index hasn't changed.
+  useMathRendering(!loading && Boolean(currentQuestion), `${moduleId}:${currentIndex}:${currentQuestion?.id ?? ""}`);
 
   // ── Always-on full screen + off-screen guards (anti-cheating) ────────────────
   // The simulation must stay in full screen. If the student leaves, a 10s grace
