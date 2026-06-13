@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { FileText, Paperclip, CheckCircle2, ClipboardPen, CornerDownLeft, ExternalLink } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  FileText, Paperclip, CheckCircle2, ClipboardPen, CornerDownLeft, ExternalLink,
+  ChevronUp, ChevronDown, History,
+} from "lucide-react";
 import { cn } from "@/lib/cn";
 import {
-  Card, CardContent, Badge, Button, Avatar, Textarea, Input, Field, EmptyState, Skeleton,
+  Card, CardContent, Badge, Button, IconButton, Avatar, Textarea, Input, Field, EmptyState, Skeleton,
   ToastProvider, useToast,
 } from "@/components/ui";
 import { useGradingQueue, studentName, type QueueItem } from "./useGradingQueue";
@@ -17,6 +20,15 @@ function fmtWhen(iso?: string | null) {
   if (hrs < 24) return `${hrs}h ago`;
   return `${Math.floor(hrs / 24)}d ago`;
 }
+
+// ── Draft feedback recovery (localStorage) ──────────────────────────────────
+type Draft = { score: string; feedback: string };
+const draftKey = (id: number) => `mastersat.gradeDraft.${id}`;
+function readDraft(id: number): Draft | null {
+  try { const r = localStorage.getItem(draftKey(id)); return r ? (JSON.parse(r) as Draft) : null; } catch { return null; }
+}
+function writeDraft(id: number, d: Draft) { try { localStorage.setItem(draftKey(id), JSON.stringify(d)); } catch { /* quota */ } }
+function clearDraft(id: number) { try { localStorage.removeItem(draftKey(id)); } catch { /* ignore */ } }
 
 export function TeacherGrading({ previewItems }: { previewItems?: QueueItem[] }) {
   return (
@@ -33,41 +45,67 @@ function GradingInner({ previewItems }: { previewItems?: QueueItem[] }) {
   const [score, setScore] = useState("");
   const [feedback, setFeedback] = useState("");
   const [saving, setSaving] = useState(false);
+  const [recovered, setRecovered] = useState(false);
 
-  const selected = useMemo(() => items.find((i) => i.key === selectedKey) ?? null, [items, selectedKey]);
+  const selectedIdx = useMemo(() => items.findIndex((i) => i.key === selectedKey), [items, selectedKey]);
+  const selected = selectedIdx >= 0 ? items[selectedIdx] : null;
 
   useEffect(() => {
     if (!selectedKey && items.length > 0) setSelectedKey(items[0].key);
     if (selectedKey && !items.some((i) => i.key === selectedKey)) setSelectedKey(items[0]?.key ?? null);
   }, [items, selectedKey]);
 
+  // Load grade fields — recovered draft takes precedence over a prior review.
   useEffect(() => {
-    if (!selected) { setScore(""); setFeedback(""); return; }
+    if (!selected) { setScore(""); setFeedback(""); setRecovered(false); return; }
+    const draft = readDraft(selected.submission.id);
     const r = selected.submission.review;
-    setScore(r?.grade != null ? String(r.grade) : "");
-    setFeedback(r?.feedback ?? "");
+    if (draft && (draft.score || draft.feedback)) {
+      setScore(draft.score); setFeedback(draft.feedback); setRecovered(true);
+    } else {
+      setScore(r?.grade != null ? String(r.grade) : ""); setFeedback(r?.feedback ?? ""); setRecovered(false);
+    }
   }, [selected]);
 
-  async function saveAndNext() {
+  // Persist draft as the teacher types so feedback survives navigation / reload.
+  useEffect(() => {
+    if (!selected) return;
+    if (!score && !feedback) { clearDraft(selected.submission.id); return; }
+    writeDraft(selected.submission.id, { score, feedback });
+  }, [score, feedback, selected]);
+
+  const move = useCallback((dir: 1 | -1) => {
+    setSelectedKey((cur) => {
+      const idx = items.findIndex((i) => i.key === cur);
+      const next = items[idx + dir];
+      return next ? next.key : cur;
+    });
+  }, [items]);
+
+  const saveAndNext = useCallback(async () => {
     if (!selected) return;
     const n = Number(score);
     if (!Number.isFinite(n) || n < 0 || n > 100) { toast({ title: "Enter a score 0–100", tone: "warning" }); return; }
-    const idx = items.findIndex((i) => i.key === selected.key);
-    const nextKey = items[idx + 1]?.key ?? items[idx - 1]?.key ?? null;
+    const nextKey = items[selectedIdx + 1]?.key ?? items[selectedIdx - 1]?.key ?? null;
     setSaving(true);
     const ok = await grade(selected, { grade: n, feedback });
     setSaving(false);
-    if (ok) { toast({ title: `Graded ${studentName(selected.submission.student)}`, tone: "success" }); setSelectedKey(nextKey); }
+    if (ok) { clearDraft(selected.submission.id); toast({ title: `Graded ${studentName(selected.submission.student)}`, tone: "success" }); setSelectedKey(nextKey); }
     else toast({ title: "Couldn't save — try again", tone: "danger" });
-  }
+  }, [selected, score, feedback, items, selectedIdx, grade, toast]);
 
+  // Keyboard: ⌘/Ctrl+Enter save & next; ↑/↓ navigate (when not typing).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); void saveAndNext(); }
+      const tag = (e.target as HTMLElement)?.tagName;
+      const typing = tag === "INPUT" || tag === "TEXTAREA";
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); void saveAndNext(); return; }
+      if (!typing && (e.key === "ArrowDown" || e.key === "j")) { e.preventDefault(); move(1); }
+      if (!typing && (e.key === "ArrowUp" || e.key === "k")) { e.preventDefault(); move(-1); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  });
+  }, [saveAndNext, move]);
 
   if (status === "booting" || (loading && items.length === 0)) {
     return <div className="mx-auto max-w-6xl"><Skeleton className="mb-4 h-10 w-48" /><div className="grid gap-4 lg:grid-cols-[340px_1fr]"><Skeleton className="h-96 rounded-2xl" /><Skeleton className="h-96 rounded-2xl" /></div></div>;
@@ -79,7 +117,11 @@ function GradingInner({ previewItems }: { previewItems?: QueueItem[] }) {
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-5">
       <div className="flex items-end justify-between gap-3">
-        <div><p className="ds-overline text-primary">Teacher</p><h1 className="ds-h1 mt-1">Grading</h1><p className="ds-small mt-1">{items.length} awaiting a grade · <kbd className="rounded bg-surface-2 px-1.5 py-0.5 text-[11px] font-semibold">⌘↵</kbd> save &amp; next</p></div>
+        <div>
+          <p className="ds-overline text-primary">Teacher</p>
+          <h1 className="ds-h1 mt-1">Grading</h1>
+          <p className="ds-small mt-1">{items.length} awaiting a grade · <kbd className="rounded bg-surface-2 px-1.5 py-0.5 text-[11px] font-semibold">⌘↵</kbd> save &amp; next · <kbd className="rounded bg-surface-2 px-1.5 py-0.5 text-[11px] font-semibold">↑↓</kbd> navigate</p>
+        </div>
       </div>
 
       {items.length === 0 ? (
@@ -90,6 +132,7 @@ function GradingInner({ previewItems }: { previewItems?: QueueItem[] }) {
           <div className="flex max-h-[72vh] flex-col gap-2 overflow-y-auto pr-1">
             {items.map((it) => {
               const active = it.key === selectedKey;
+              const hasDraft = !!readDraft(it.submission.id);
               return (
                 <button key={it.key} type="button" onClick={() => setSelectedKey(it.key)} className={cn("ds-ring flex items-center gap-3 rounded-xl border p-3 text-left transition-colors", active ? "border-primary/30 bg-primary-soft" : "border-border bg-card hover:bg-surface-2")}>
                   <Avatar name={studentName(it.submission.student)} size={34} />
@@ -97,6 +140,7 @@ function GradingInner({ previewItems }: { previewItems?: QueueItem[] }) {
                     <p className="truncate text-sm font-semibold text-foreground">{studentName(it.submission.student)}</p>
                     <p className="truncate text-[12px] text-muted-foreground">{it.assignmentTitle} · {it.className}</p>
                   </div>
+                  {hasDraft ? <span title="Draft saved" className="shrink-0 text-warning"><History className="h-3.5 w-3.5" /></span> : null}
                   <span className="shrink-0 text-[11px] text-label-foreground">{fmtWhen(it.submission.submitted_at)}</span>
                 </button>
               );
@@ -113,7 +157,11 @@ function GradingInner({ previewItems }: { previewItems?: QueueItem[] }) {
                     <p className="ds-h4 truncate">{studentName(selected.submission.student)}</p>
                     <p className="truncate text-[13px] text-muted-foreground">{selected.assignmentTitle} · {selected.className}</p>
                   </div>
-                  <Badge variant="info">Submitted {fmtWhen(selected.submission.submitted_at)}</Badge>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <span className="mr-1 text-[12px] text-label-foreground">{selectedIdx + 1} / {items.length}</span>
+                    <IconButton variant="ghost" size="sm" aria-label="Previous" disabled={selectedIdx <= 0} onClick={() => move(-1)}><ChevronUp className="h-4 w-4" /></IconButton>
+                    <IconButton variant="ghost" size="sm" aria-label="Next" disabled={selectedIdx >= items.length - 1} onClick={() => move(1)}><ChevronDown className="h-4 w-4" /></IconButton>
+                  </div>
                 </div>
 
                 {/* Submission */}
@@ -138,6 +186,9 @@ function GradingInner({ previewItems }: { previewItems?: QueueItem[] }) {
 
                 {/* Grade form */}
                 <div className="flex flex-col gap-3 border-t border-border pt-4">
+                  {recovered ? (
+                    <span className="inline-flex w-fit items-center gap-1.5 rounded-lg bg-warning-soft px-2.5 py-1 text-[12px] font-semibold text-warning-foreground"><History className="h-3.5 w-3.5" /> Recovered an unsaved draft</span>
+                  ) : null}
                   <Field label="Score (0–100)" htmlFor="grade-score">
                     <Input id="grade-score" type="number" min={0} max={100} value={score} onChange={(e) => setScore(e.target.value)} placeholder="e.g. 85" className="max-w-[160px]" />
                   </Field>

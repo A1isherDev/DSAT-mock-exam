@@ -13,10 +13,10 @@ function cellClass(c: Cell): string {
   if (c.status === "submitted") return "bg-info-soft text-info-foreground";
   const g = c.grade;
   if (g == null) return "bg-surface-2 text-muted-foreground";
-  if (g >= 85) return "bg-success-soft text-success-foreground";
-  if (g >= 70) return "bg-info-soft text-info-foreground";
-  if (g >= 50) return "bg-warning-soft text-warning-foreground";
-  return "bg-danger-soft text-danger-foreground";
+  // Positive / neutral semantics only — no punishing red.
+  if (g >= 80) return "bg-success-soft text-success-foreground"; // strong
+  if (g >= 60) return "bg-info-soft text-info-foreground"; // on track
+  return "bg-warning-soft text-warning-foreground"; // needs attention
 }
 function cellText(c: Cell): string {
   if (c.status === "missing") return "–";
@@ -110,10 +110,9 @@ export function TeacherGradebook({ preview }: { preview?: { classes: ClassOption
       </Card>
 
       <p className="text-[12px] text-label-foreground">
-        <span className="mr-3"><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-success" />85+</span>
-        <span className="mr-3"><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-info" />70–84</span>
-        <span className="mr-3"><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-warning" />50–69</span>
-        <span className="mr-3"><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-danger" />&lt;50</span>
+        <span className="mr-3"><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-success" />Strong 80+</span>
+        <span className="mr-3"><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-info" />On track 60–79</span>
+        <span className="mr-3"><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-warning" />Needs attention &lt;60</span>
         <span>· <strong>–</strong> missing · <strong>•</strong> awaiting grade</span>
       </p>
     </div>
