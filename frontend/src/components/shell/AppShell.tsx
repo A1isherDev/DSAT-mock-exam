@@ -19,6 +19,8 @@ import { cn } from "@/lib/cn";
 import { Avatar } from "@/components/ui/Avatar";
 import { IconButton } from "@/components/ui/IconButton";
 import { Tooltip } from "@/components/ui/Tooltip";
+import { Drawer } from "@/components/ui/Drawer";
+import { EmptyState } from "@/components/ui/EmptyState";
 import {
   flattenNav,
   isNavItemActive,
@@ -61,7 +63,6 @@ export function AppShell({
   const [cmdOpen, setCmdOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const cmdRef = useRef<HTMLDivElement>(null);
-  const notifRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => setMounted(true), []);
   useEffect(() => {
@@ -76,7 +77,6 @@ export function AppShell({
     const onDoc = (e: MouseEvent) => {
       const t = e.target as Node;
       if (cmdRef.current && !cmdRef.current.contains(t)) setCmdOpen(false);
-      if (notifRef.current && !notifRef.current.contains(t)) setNotifOpen(false);
     };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
@@ -314,34 +314,18 @@ export function AppShell({
           <p className="truncate text-base font-bold tracking-tight md:hidden">{title}</p>
 
           <div className="ml-auto flex shrink-0 items-center gap-1.5 md:gap-2">
-            <div className="relative" ref={notifRef}>
-              <Tooltip content="Notifications" side="bottom">
-                <IconButton
-                  variant="ghost"
-                  aria-label="Notifications"
-                  onClick={() => setNotifOpen((o) => !o)}
-                  className="relative"
-                >
-                  <Bell className="h-5 w-5" />
-                  <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-primary" aria-hidden />
-                </IconButton>
-              </Tooltip>
-              {notifOpen ? (
-                <div className="ds-anim-pop absolute right-0 top-[calc(100%+8px)] z-50 w-72 overflow-hidden rounded-xl border border-border bg-card shadow-modal">
-                  <div className="p-4">
-                    <p className="ds-overline">Notifications</p>
-                    <p className="mt-2 text-sm text-muted-foreground">You&apos;re all caught up.</p>
-                  </div>
-                  <Link
-                    href="/notifications"
-                    onClick={() => setNotifOpen(false)}
-                    className="block border-t border-border px-4 py-2.5 text-center text-[13px] font-semibold text-primary transition-colors hover:bg-surface-2"
-                  >
-                    View all
-                  </Link>
-                </div>
-              ) : null}
-            </div>
+            <Tooltip content="Notifications" side="bottom">
+              <IconButton
+                variant="ghost"
+                aria-label="Notifications"
+                aria-expanded={notifOpen}
+                onClick={() => setNotifOpen(true)}
+                className="relative"
+              >
+                <Bell className="h-5 w-5" />
+                <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-primary" aria-hidden />
+              </IconButton>
+            </Tooltip>
 
             {mounted ? (
               <Tooltip content={theme === "dark" ? "Light mode" : "Dark mode"} side="bottom">
@@ -374,6 +358,29 @@ export function AppShell({
 
         <main className="min-h-0 flex-1 overflow-y-auto px-3 py-5 md:px-6 lg:px-8">{children}</main>
       </div>
+
+      {/* Notifications — bell opens a drawer (not a primary nav item) */}
+      <Drawer
+        open={notifOpen}
+        onClose={() => setNotifOpen(false)}
+        title="Notifications"
+        footer={
+          <Link
+            href="/notifications"
+            onClick={() => setNotifOpen(false)}
+            className="ds-ring inline-flex w-full items-center justify-center rounded-xl bg-surface-2 px-4 py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-surface-3"
+          >
+            View all notifications
+          </Link>
+        }
+      >
+        <EmptyState
+          compact
+          icon={Bell}
+          title="You're all caught up"
+          description="Grades, assignments, and reminders will appear here."
+        />
+      </Drawer>
     </div>
   );
 }

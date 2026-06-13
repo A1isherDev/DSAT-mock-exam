@@ -19,6 +19,7 @@ import {
   Circle,
   ChevronRight,
   TrendingUp,
+  Rocket,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import {
@@ -95,72 +96,81 @@ export function StudentDashboard({ previewModel }: { previewModel?: DashboardMod
         </div>
       </div>
 
-      {/* Hero */}
+      {/* Hero — readiness + scores + prominent SAT countdown */}
       <HeroPanel model={model} />
 
-      {/* Motivation row */}
+      {/* Primary: what to do next (actions lead the page) */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <NextActionsCard model={model} className="lg:col-span-2" />
+        <UpcomingCard model={model} />
+      </div>
+      <FocusAreasCard model={model} />
+
+      {/* Engagement */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <MotivationStat icon={Flame} label="Day streak" value={model.streak} hint={model.streak > 0 ? "Keep it going" : "Practice today to start one"} />
         <WeeklyGoalCard sessions={model.weeklySessions} goal={model.weeklyGoal} />
         <MilestonesCard model={model} />
       </div>
 
-      {/* Analytics */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <ChartCard title="Score progression" description="Your recent scored sets">
-          <LineChart
-            data={model.scoreSeries}
-            xKey="label"
-            series={scoreSeries}
-            height={240}
-            emptyMessage={{ title: "No scores yet", description: "Complete a scored set to start your trend." }}
-          />
-        </ChartCard>
-        <ChartCard title="Weekly activity" description="Sessions over the last 7 days">
-          <BarChart data={model.weekly} xKey="label" series={weeklySeries} height={240} />
-        </ChartCard>
-        <ChartCard title="Practice focus" description="Where your sessions go">
-          <DonutChart
-            data={model.sectionMix}
-            height={240}
-            centerValue={model.totalCompleted}
-            centerLabel="Sets"
-            emptyMessage={{ title: "No practice yet", description: "Your section balance appears here." }}
-          />
-        </ChartCard>
-        <ChartCard
-          title="Skill analysis"
-          description="Domain-level strengths"
-          actions={
-            <Link href="/analytics" className="ds-ring inline-flex items-center gap-1 rounded-lg text-[13px] font-semibold text-primary">
-              Full breakdown <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
-          }
-        >
-          <RadarChart
-            data={[]}
-            axisKey="axis"
-            series={[]}
-            height={240}
-            emptyMessage={{
-              title: "Skill radar in Analytics",
-              description: "Per-domain accuracy across SAT skills opens on the Analytics page.",
-            }}
-          />
-        </ChartCard>
-      </div>
-
-      {/* Insights */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div className="flex flex-col gap-4">
-          <FocusAreasCard model={model} />
-          <NextActionsCard model={model} />
+      {/* Secondary: progress analytics (a look back, below the actions) */}
+      <section>
+        <div className="mb-4 flex items-end justify-between gap-3">
+          <div>
+            <h2 className="ds-h3">Your progress</h2>
+            <p className="ds-small">A look back — your next steps are above.</p>
+          </div>
+          <Link href="/analytics">
+            <Button variant="ghost" size="sm" rightIcon={<ArrowRight />}>Full analytics</Button>
+          </Link>
         </div>
-        <div className="flex flex-col gap-4">
-          <UpcomingCard model={model} />
+        <div className="grid gap-4 lg:grid-cols-2">
+          <ChartCard title="Score progression" description="Your recent scored sets">
+            <LineChart
+              data={model.scoreSeries}
+              xKey="label"
+              series={scoreSeries}
+              height={220}
+              emptyMessage={{ title: "No scores yet", description: "Complete a scored set to start your trend." }}
+            />
+          </ChartCard>
+          <ChartCard title="Weekly activity" description="Sessions over the last 7 days">
+            <BarChart data={model.weekly} xKey="label" series={weeklySeries} height={220} />
+          </ChartCard>
+          <ChartCard title="Practice focus" description="Where your sessions go">
+            <DonutChart
+              data={model.sectionMix}
+              height={220}
+              centerValue={model.totalCompleted}
+              centerLabel="Sets"
+              emptyMessage={{ title: "No practice yet", description: "Your section balance appears here." }}
+            />
+          </ChartCard>
+          <ChartCard
+            title="Skill analysis"
+            description="Domain-level strengths"
+            actions={
+              <Link href="/analytics" className="ds-ring inline-flex items-center gap-1 rounded-lg text-[13px] font-semibold text-primary">
+                Full breakdown <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            }
+          >
+            <RadarChart
+              data={[]}
+              axisKey="axis"
+              series={[]}
+              height={220}
+              emptyMessage={{
+                title: "Skill radar in Analytics",
+                description: "Per-domain accuracy across SAT skills opens on the Analytics page.",
+              }}
+            />
+          </ChartCard>
+        </div>
+        <div className="mt-4">
           <RecentCard model={model} />
         </div>
-      </div>
+      </section>
 
       <GoalModal
         open={goalOpen}
@@ -357,23 +367,37 @@ function FocusAreasCard({ model }: { model: DashboardModel }) {
   );
 }
 
-function NextActionsCard({ model }: { model: DashboardModel }) {
+function NextActionsCard({ model, className }: { model: DashboardModel; className?: string }) {
   return (
-    <Card>
+    <Card className={className}>
       <CardContent>
-        <p className="ds-h4 mb-3">Recommended next</p>
-        <div className="flex flex-col gap-2">
-          {model.nextActions.map((a) => (
+        <div className="mb-4 flex items-center gap-2.5">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+            <Rocket className="h-4 w-4" />
+          </span>
+          <div>
+            <p className="ds-h4 leading-tight">Recommended next</p>
+            <p className="text-[12px] text-muted-foreground">Your highest-impact steps right now</p>
+          </div>
+        </div>
+        <div className="flex flex-col gap-2.5">
+          {model.nextActions.map((a, i) => (
             <Link
               key={a.id}
               href={a.href}
-              className="ds-ring group flex items-center gap-3 rounded-xl bg-surface-2 p-3 transition-colors hover:bg-surface-3"
+              className={cn(
+                "ds-ring group flex items-center gap-3 rounded-xl p-4 transition-colors",
+                i === 0
+                  ? "border border-primary/20 bg-primary-soft hover:bg-primary/15"
+                  : "bg-surface-2 hover:bg-surface-3",
+              )}
             >
-              <PlayCircle className="h-5 w-5 shrink-0 text-primary" />
+              <PlayCircle className={cn("h-6 w-6 shrink-0", i === 0 ? "text-primary" : "text-muted-foreground")} />
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-foreground">{a.title}</p>
+                <p className={cn("text-sm font-bold", i === 0 ? "text-primary" : "text-foreground")}>{a.title}</p>
                 <p className="text-[12px] text-muted-foreground">{a.detail}</p>
               </div>
+              {i === 0 ? <Badge variant="primary">Start here</Badge> : null}
               <ArrowRight className="h-4 w-4 shrink-0 text-label-foreground transition-colors group-hover:text-foreground" />
             </Link>
           ))}
