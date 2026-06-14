@@ -33,14 +33,16 @@ import {
   Modal,
   Field,
   Input,
+  Skeleton,
+} from "@/components/ui";
+import {
   ChartCard,
   LineChart,
   BarChart,
   DonutChart,
   RadarChart,
-  Skeleton,
   type ChartSeries,
-} from "@/components/ui";
+} from "@/components/ui/charts";
 import { useDashboardData, type DashboardModel } from "./useDashboardData";
 
 const scoreSeries: ChartSeries[] = [{ key: "score", label: "Score" }];

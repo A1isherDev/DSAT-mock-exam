@@ -9,10 +9,9 @@ import {
 import { cn } from "@/lib/cn";
 import {
   Card, CardContent, Badge, Button, ProgressRing, Progress, EmptyState, Skeleton,
-  ChartCard, LineChart, BarChart, RadarChart,
   Table, TableHead, TableBody, TableRow, TableHeaderCell, TableCell,
-  type ChartSeries,
 } from "@/components/ui";
+import { ChartCard, LineChart, BarChart, RadarChart, type ChartSeries } from "@/components/ui/charts";
 import { useAnalyticsData, type AnalyticsModel } from "./useAnalyticsData";
 
 const scoreSeries: ChartSeries[] = [{ key: "score", label: "Score" }];

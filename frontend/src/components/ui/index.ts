@@ -78,18 +78,8 @@ export { StatCard } from "./StatCard";
 export { ActivityItem } from "./ActivityItem";
 export { MiniBarChart } from "./MiniBarChart";
 
-// Charts (Recharts behind a swappable abstraction)
-export {
-  ChartCard,
-  LineChart,
-  AreaChart,
-  BarChart,
-  StackedBarChart,
-  DonutChart,
-  RadarChart,
-  ChartSkeleton,
-  ChartEmptyState,
-  CHART_COLORS,
-  seriesColor,
-} from "./charts";
-export type { ChartSeries, DonutDatum } from "./charts";
+// Charts live in their own entry point: `@/components/ui/charts`. They are kept
+// OUT of this barrel on purpose — importing them here pulled Recharts into the
+// first-load JS of every page that touches the design system. Chart consumers
+// import directly from "@/components/ui/charts" (Recharts is then a single,
+// on-demand async chunk).

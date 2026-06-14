@@ -7,10 +7,9 @@ import {
 import { cn } from "@/lib/cn";
 import {
   Card, CardContent, Badge, Avatar, EmptyState, Skeleton, Progress,
-  ChartCard, LineChart, BarChart, DonutChart,
   Table, TableHead, TableBody, TableRow, TableHeaderCell, TableCell,
-  type ChartSeries,
 } from "@/components/ui";
+import { ChartCard, LineChart, BarChart, DonutChart, type ChartSeries } from "@/components/ui/charts";
 import { useTeacherAnalytics, type TeacherAnalyticsModel } from "./useTeacherAnalytics";
 
 const trendSeries: ChartSeries[] = [{ key: "score", label: "Group mean" }];

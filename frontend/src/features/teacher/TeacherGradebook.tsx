@@ -3,9 +3,10 @@
 import { Gauge, Users, AlertTriangle, ArrowUpRight, ArrowDownRight } from "lucide-react";
 import { cn } from "@/lib/cn";
 import {
-  Card, CardContent, Badge, EmptyState, Skeleton, ChartCard, BarChart,
+  Card, CardContent, Badge, EmptyState, Skeleton,
   Table, TableHead, TableBody, TableRow, TableHeaderCell, TableCell,
 } from "@/components/ui";
+import { ChartCard, BarChart } from "@/components/ui/charts";
 import { useGradebook, type Cell, type ClassOption, type GradebookModel } from "./useGradebook";
 
 function cellClass(c: Cell): string {

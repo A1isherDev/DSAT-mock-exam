@@ -60,6 +60,8 @@ import {
   TableRow,
   TableHeaderCell,
   TableCell,
+} from "@/components/ui";
+import {
   ChartCard,
   LineChart,
   AreaChart,
@@ -68,7 +70,7 @@ import {
   DonutChart,
   RadarChart,
   type ChartSeries,
-} from "@/components/ui";
+} from "@/components/ui/charts";
 
 function Section({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
