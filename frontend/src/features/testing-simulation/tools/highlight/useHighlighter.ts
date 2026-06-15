@@ -40,8 +40,12 @@ export interface HighlightPopover {
 export function useHighlighter({ getContainer, attemptId, questionId, active }: UseHighlighterArgs) {
   const [popover, setPopover] = useState<HighlightPopover | null>(null);
   const [activeStyle, setActiveStyle] = useState<HighlightStyle>(DEFAULT_HIGHLIGHT_STYLE);
+  // Mirror the active colour into a ref so the (effect-bound) mouseup handler
+  // always reads the latest value without re-subscribing.
   const activeStyleRef = useRef(activeStyle);
-  activeStyleRef.current = activeStyle;
+  useEffect(() => {
+    activeStyleRef.current = activeStyle;
+  }, [activeStyle]);
 
   // Paint stored highlights whenever the question changes (and shortly after, to
   // win against the post-commit KaTeX re-render). Also drops any open popover.
