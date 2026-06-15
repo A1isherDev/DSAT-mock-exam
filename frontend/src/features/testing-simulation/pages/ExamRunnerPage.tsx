@@ -29,6 +29,8 @@ import { ErrorScreen, LoadingScreen, ScoringScreen } from "../components/StatusS
 import { WelcomeScreen } from "../components/WelcomeScreen";
 import { FullscreenWarning } from "../components/FullscreenWarning";
 import { CheckYourWorkPage } from "../components/CheckYourWorkPage";
+import { StudentProducedResponseGuide } from "../components/StudentProducedResponseGuide";
+import { isStudentProducedResponse } from "../utils/questionKind";
 import { ATTEMPT_STATE } from "../types";
 
 import { useExamTools, ExamToolsLayer, MultiTabOverlay, useKeyboardShortcuts } from "../tools";
@@ -109,6 +111,28 @@ export function ExamRunnerPage() {
   const [navigatorOpen, setNavigatorOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [showDirections, setShowDirections] = useState(false);
+  // SPR directions panel collapse state — persisted for the tab session so it is
+  // remembered while navigating between Student-Produced Response questions.
+  const [sprGuideExpanded, setSprGuideExpanded] = useState(() => {
+    if (typeof window === "undefined") return true;
+    try {
+      const v = window.sessionStorage.getItem("ts.sprGuide.expanded");
+      return v == null ? true : v === "1";
+    } catch {
+      return true;
+    }
+  });
+  const toggleSprGuide = useCallback(() => {
+    setSprGuideExpanded((v) => {
+      const next = !v;
+      try {
+        window.sessionStorage.setItem("ts.sprGuide.expanded", next ? "1" : "0");
+      } catch {
+        /* sessionStorage unavailable — keep in-memory state */
+      }
+      return next;
+    });
+  }, []);
   const [splitPct, setSplitPct] = useState(50);
   const [transitionTo, setTransitionTo] = useState<number | null>(null);
   const zoom = tools.zoom;
@@ -518,6 +542,17 @@ export function ExamRunnerPage() {
                 style={{ width: "min(46%, 560px)" }}
               >
                 <DesmosCalculator docked onClose={tools.toggleCalculator} />
+              </div>
+            )}
+            {/* Student-Produced Response Directions — left column, SPR questions
+                only (item: SPR Directions Panel). Collapsible to give the
+                question more width; state persists across SPR questions. */}
+            {isStudentProducedResponse(currentQuestion) && (
+              <div
+                className="h-full shrink-0 overflow-hidden transition-[width] duration-300 ease-out"
+                style={{ width: sprGuideExpanded ? "min(46%, 640px)" : "3rem" }}
+              >
+                <StudentProducedResponseGuide expanded={sprGuideExpanded} onToggle={toggleSprGuide} />
               </div>
             )}
             <AnswerPane

@@ -60,17 +60,20 @@ export const AnswerPane = memo(function AnswerPane({
               Mark for Review
             </button>
           </div>
-          <button
-            type="button"
-            onClick={onToggleEliminationMode}
-            title="Eliminate answer choices"
-            className={`flex items-center justify-center rounded-md border-2 p-1 px-1.5 transition-all ${eliminationMode ? "border-blue-600 bg-blue-50 text-blue-700" : "border-slate-300 text-slate-600 hover:border-slate-400"}`}
-          >
-            <span className="relative">
-              <span className="text-[10px] font-black italic tracking-tighter">ABC</span>
-              <span className="absolute left-1/2 top-1/2 h-[1.5px] w-full -translate-x-1/2 -translate-y-1/2 rotate-[15deg] bg-current" />
-            </span>
-          </button>
+          {/* Answer-elimination toggle is meaningless for SPR (no choices). */}
+          {!isSpr && (
+            <button
+              type="button"
+              onClick={onToggleEliminationMode}
+              title="Eliminate answer choices"
+              className={`flex items-center justify-center rounded-md border-2 p-1 px-1.5 transition-all ${eliminationMode ? "border-blue-600 bg-blue-50 text-blue-700" : "border-slate-300 text-slate-600 hover:border-slate-400"}`}
+            >
+              <span className="relative">
+                <span className="text-[10px] font-black italic tracking-tighter">ABC</span>
+                <span className="absolute left-1/2 top-1/2 h-[1.5px] w-full -translate-x-1/2 -translate-y-1/2 rotate-[15deg] bg-current" />
+              </span>
+            </button>
+          )}
         </div>
 
         {/* Decorative SAT rule */}
