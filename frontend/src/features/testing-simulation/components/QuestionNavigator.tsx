@@ -15,7 +15,11 @@ interface QuestionNavigatorProps {
   onGoToReview: () => void;
 }
 
-/** Modal grid for jumping between questions (current / unanswered / for-review). */
+/**
+ * Question-jump grid (current / unanswered / for-review). Opens as a popover
+ * anchored to the bottom, just above the footer's "Question X of Y" button, with
+ * a downward pointer to it (Bluebook-style) rather than a centered modal.
+ */
 export function QuestionNavigator({
   open,
   onClose,
@@ -29,8 +33,10 @@ export function QuestionNavigator({
 }: QuestionNavigatorProps) {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/30 pb-24 sm:items-center sm:pb-0" onClick={onClose}>
-      <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/20 pb-[68px]" onClick={onClose}>
+      <div className="relative mx-4 w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        {/* Downward pointer to the "Question X of Y" button below. */}
+        <div className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-8 border-t-8 border-x-transparent border-t-white" />
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-lg font-bold tracking-tight text-slate-900">{title}</h3>
           <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-700">
