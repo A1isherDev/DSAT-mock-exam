@@ -30,28 +30,34 @@ export function ExamFooter({
   navLocked = false,
 }: ExamFooterProps) {
   return (
-    <footer className="flex shrink-0 items-center justify-between border-t border-slate-200 bg-white px-6 py-3">
+    <footer className="flex shrink-0 items-center justify-between bg-slate-50 px-6 py-3">
+      {/* Left: persistent student identity. */}
       <div className="flex flex-1 items-center">
         {studentName ? (
-          <span className="truncate text-sm font-bold text-slate-700" title={studentName}>
+          <span className="truncate text-sm font-semibold text-slate-600" title={studentName}>
             {studentName}
           </span>
         ) : null}
       </div>
+
+      {/* Center: the question-navigator pill (Bluebook-style rounded pill). */}
       <button
         type="button"
         onClick={onToggleNavigator}
-        className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white hover:bg-slate-800"
+        aria-haspopup="dialog"
+        className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-5 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-800"
       >
         {navLabel}
         <ChevronUp className="h-4 w-4" />
       </button>
-      <div className="flex flex-1 justify-end gap-3">
+
+      {/* Right: Back (secondary/outlined) + Next/Submit (primary). */}
+      <div className="flex flex-1 items-center justify-end gap-3">
         <button
           type="button"
           onClick={onBack}
           disabled={!canGoBack || navLocked}
-          className="rounded-full px-5 py-2 text-sm font-bold text-blue-700 transition-opacity disabled:opacity-30"
+          className="rounded-full border border-slate-300 bg-white px-6 py-2 text-sm font-bold text-slate-700 transition-colors hover:border-slate-400 disabled:opacity-40"
         >
           Back
         </button>
@@ -60,7 +66,7 @@ export function ExamFooter({
             type="button"
             onClick={onSubmitModule}
             disabled={submitting || navLocked}
-            className="rounded-full bg-blue-700 px-6 py-2 text-sm font-bold text-white hover:bg-blue-800 disabled:opacity-50"
+            className="rounded-full bg-blue-700 px-7 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-800 disabled:opacity-50"
           >
             {submitting ? "Submitting…" : "Submit"}
           </button>
@@ -69,7 +75,7 @@ export function ExamFooter({
             type="button"
             onClick={onNext}
             disabled={navLocked}
-            className="rounded-full bg-blue-700 px-6 py-2 text-sm font-bold text-white transition-opacity hover:bg-blue-800 disabled:opacity-60"
+            className="rounded-full bg-blue-700 px-7 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-800 disabled:opacity-60"
           >
             Next
           </button>

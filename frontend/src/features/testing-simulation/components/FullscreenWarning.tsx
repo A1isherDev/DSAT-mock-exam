@@ -18,7 +18,7 @@ export function FullscreenWarning({ onReturn }: FullscreenWarningProps) {
       role="alertdialog"
       aria-modal="true"
       aria-label="Full screen required"
-      className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/80 px-6 backdrop-blur-sm"
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/80 px-6"
     >
       <div className="w-full max-w-md rounded-2xl bg-white p-8 text-center shadow-2xl">
         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-blue-50">

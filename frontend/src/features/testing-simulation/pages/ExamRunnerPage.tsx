@@ -35,7 +35,6 @@ import { ATTEMPT_STATE } from "../types";
 
 import { useExamTools, ExamToolsLayer, MultiTabOverlay, useKeyboardShortcuts } from "../tools";
 import { useMultiTabGuard } from "../tools/useMultiTabGuard";
-import { DesmosCalculator } from "../tools/calculator/DesmosCalculator";
 
 /** Reflects browser connectivity so the runner can surface an offline state. */
 function useOnlineStatus(): boolean {
@@ -184,6 +183,29 @@ export function ExamRunnerPage() {
   useEffect(() => {
     setReviewOpen(false);
   }, [attempt?.current_module_details?.id]);
+
+  // ── Fullscreen-warning visibility (regression fix) ───────────────────────────
+  // Show the "return to fullscreen" overlay only after the user has stayed OUT of
+  // fullscreen for a short grace window — so the native enter/exit transition and
+  // the brief Start→enter gap never flash the modal. Hidden instantly on re-entry.
+  const [showFsWarning, setShowFsWarning] = useState(false);
+  const fsWarnTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fsIsFull = tools.fullscreen.isFullscreen;
+  const fsSupported = tools.fullscreen.supported;
+  useEffect(() => {
+    if (fsWarnTimer.current) {
+      clearTimeout(fsWarnTimer.current);
+      fsWarnTimer.current = null;
+    }
+    if (!fsSupported || fsIsFull) {
+      setShowFsWarning(false);
+      return;
+    }
+    fsWarnTimer.current = setTimeout(() => setShowFsWarning(true), 400);
+    return () => {
+      if (fsWarnTimer.current) clearTimeout(fsWarnTimer.current);
+    };
+  }, [fsIsFull, fsSupported]);
 
   // Keyboard shortcuts (pure input → existing handlers; no engine coupling).
   useKeyboardShortcuts({
@@ -533,17 +555,8 @@ export function ExamRunnerPage() {
           </>
         ) : (
           <>
-            {/* Docked calculator — a reserved column that shifts the question
-                content right rather than floating over it (item: Calculator
-                Layout). Math-only; toggled from the header. */}
-            {tools.calculatorOpen && (
-              <div
-                className="h-full shrink-0 overflow-hidden transition-[width] duration-300 ease-out"
-                style={{ width: "min(46%, 560px)" }}
-              >
-                <DesmosCalculator docked onClose={tools.toggleCalculator} />
-              </div>
-            )}
+            {/* Calculator floats over the content (see ExamToolsLayer); it never
+                reserves layout space, so the question column stays stable. */}
             {/* Student-Produced Response Directions — left column, SPR questions
                 only (item: SPR Directions Panel). Collapsible to give the
                 question more width; state persists across SPR questions. */}
@@ -605,11 +618,10 @@ export function ExamRunnerPage() {
       <ExamToolsLayer tools={tools} attemptId={attemptId} />
 
       {/* Forced fullscreen — if the student leaves fullscreen mid-test, block the
-          UI until they re-enter (the only path is a user-gesture button). Browsers
-          without fullscreen support never see this. */}
-      {tools.fullscreen.supported && !tools.fullscreen.isFullscreen && (
-        <FullscreenWarning onReturn={() => void tools.fullscreen.enter()} />
-      )}
+          UI until they re-enter (the only path is a user-gesture button). Gated on
+          a short grace window (showFsWarning) so it never flickers during the
+          native fullscreen transition. Unsupported browsers never see this. */}
+      {showFsWarning && <FullscreenWarning onReturn={() => void tools.fullscreen.enter()} />}
 
       {/* Timer warnings (5 min / 1 min / expiry) — announced to screen readers. */}
       {timerToast && (

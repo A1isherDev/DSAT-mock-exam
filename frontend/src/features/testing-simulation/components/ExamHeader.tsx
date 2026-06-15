@@ -1,5 +1,5 @@
 "use client";
-import { Calculator, ChevronDown, Highlighter, Pause, Play, StickyNote } from "lucide-react";
+import { Calculator, ChevronDown, Highlighter, StickyNote } from "lucide-react";
 import { Timer } from "./Timer";
 import { MoreMenu } from "../tools/MoreMenu";
 import type { ExamTools } from "../tools/useExamTools";
@@ -80,22 +80,17 @@ export function ExamHeader({
         </button>
       </div>
 
-      <div className="flex items-center justify-center gap-4">
-        <Timer secondsLeft={secondsLeft} hidden={timerHidden} onToggleHidden={onToggleTimer} warning={timerWarning} />
-        {/* Pause button placed next to the timer's Hide toggle (item: Pause Button). */}
-        {pauseAllowed && (
-          <button
-            type="button"
-            onClick={onTogglePause}
-            aria-pressed={paused}
-            className={`flex flex-col items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
-              paused ? "border-blue-600 bg-blue-50 text-blue-700" : "border-slate-300 text-slate-600 hover:border-slate-400 hover:text-slate-900"
-            }`}
-          >
-            {paused ? <Play className="h-5 w-5" /> : <Pause className="h-5 w-5" />}
-            {paused ? "Resume" : "Pause"}
-          </button>
-        )}
+      <div className="flex justify-center">
+        {/* Pause sits beside Hide as a matching pill (item: Pause Button). */}
+        <Timer
+          secondsLeft={secondsLeft}
+          hidden={timerHidden}
+          onToggleHidden={onToggleTimer}
+          warning={timerWarning}
+          pauseAllowed={pauseAllowed}
+          paused={paused}
+          onTogglePause={onTogglePause}
+        />
       </div>
 
       <div className="flex items-center justify-end gap-5">
