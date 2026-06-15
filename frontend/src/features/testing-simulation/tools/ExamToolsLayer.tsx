@@ -25,7 +25,12 @@ export function ExamToolsLayer({ tools, attemptId }: ExamToolsLayerProps) {
       {tools.notesOpen && <NotesPanel attemptId={attemptId} onClose={tools.toggleNotes} />}
       {tools.helpOpen && <KeyboardShortcutsHelp onClose={tools.closeHelp} />}
       {tools.highlighter.popover && (
-        <HighlightPopover popover={tools.highlighter.popover} onRemove={tools.highlighter.removeHighlight} />
+        <HighlightPopover
+          popover={tools.highlighter.popover}
+          onPick={tools.highlighter.setStyle}
+          onRemove={tools.highlighter.removeHighlight}
+          onClose={tools.highlighter.dismissPopover}
+        />
       )}
     </>
   );
