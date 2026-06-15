@@ -21,6 +21,9 @@ interface AnswerPaneProps {
   onSelect: (key: string) => void;
   onEliminate: (key: string) => void;
   style?: React.CSSProperties;
+  /** When true (calculator open), shift the question content to the right so the
+   *  floating calculator's default position doesn't cover it. */
+  shiftRight?: boolean;
 }
 
 /** Right pane: question header (number, Mark for Review, eliminate toggle) + answer area. */
@@ -38,11 +41,12 @@ export const AnswerPane = memo(function AnswerPane({
   onSelect,
   onEliminate,
   style,
+  shiftRight = false,
 }: AnswerPaneProps) {
   const isSpr = Boolean(question.is_math_input);
   return (
     <div className="min-w-0 overflow-y-auto bg-white p-10 pb-8" style={{ fontSize: `${15 * zoom}px`, ...style }}>
-      <div className="mx-auto w-full max-w-3xl">
+      <div className={`w-full max-w-3xl transition-[margin] duration-300 ease-out ${shiftRight ? "ml-auto mr-0 lg:mr-8" : "mx-auto"}`}>
         {/* Header bar */}
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-6">
