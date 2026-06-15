@@ -33,3 +33,6 @@ Thumbs.db
 .vscode/
 .idea/
 backend/dev.sqlite3
+
+# UAT scratch DB (built from model state)
+backend/uat.sqlite3

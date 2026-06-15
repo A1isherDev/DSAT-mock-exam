@@ -86,11 +86,36 @@ class Classroom(models.Model):
 
 
 class ClassroomMembership(models.Model):
-    ROLE_ADMIN = "ADMIN"
+    # Classroom-local roles. ``ADMIN`` is the legacy value for the class owner/manager
+    # and is retained as a stored value (capability layer treats ADMIN ≡ OWNER) so the
+    # ~30 existing ``role="ADMIN"`` checks keep working; OWNER/TEACHER/TA are the
+    # forward role model. A bulk ADMIN→OWNER data migration is deferred until all
+    # call sites route through ``classes.capabilities`` (see BUSINESS-ARCHITECTURE §0).
+    ROLE_ADMIN = "ADMIN"  # legacy owner/manager — equivalent to OWNER
+    ROLE_OWNER = "OWNER"
+    ROLE_TEACHER = "TEACHER"
+    ROLE_TA = "TA"
     ROLE_STUDENT = "STUDENT"
     ROLE_CHOICES = [
-        (ROLE_ADMIN, "Admin"),
+        (ROLE_ADMIN, "Admin (legacy owner)"),
+        (ROLE_OWNER, "Owner"),
+        (ROLE_TEACHER, "Teacher"),
+        (ROLE_TA, "Teaching Assistant"),
         (ROLE_STUDENT, "Student"),
+    ]
+
+    # Canonical capability sets — reference these, never compare role strings inline.
+    MANAGER_ROLES = frozenset({ROLE_ADMIN, ROLE_OWNER, ROLE_TEACHER})  # full class control
+    STAFF_ROLES = frozenset({ROLE_ADMIN, ROLE_OWNER, ROLE_TEACHER, ROLE_TA})  # teaching team
+    GRADER_ROLES = STAFF_ROLES  # TAs may grade + take attendance
+
+    STATUS_ACTIVE = "ACTIVE"
+    STATUS_INVITED = "INVITED"
+    STATUS_REMOVED = "REMOVED"
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, "Active"),
+        (STATUS_INVITED, "Invited"),
+        (STATUS_REMOVED, "Removed"),
     ]
 
     classroom = models.ForeignKey(
@@ -100,6 +125,9 @@ class ClassroomMembership(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="class_memberships"
     )
     role = models.CharField(max_length=10, choices=ROLE_CHOICES, db_index=True)
+    status = models.CharField(
+        max_length=10, choices=STATUS_CHOICES, default=STATUS_ACTIVE, db_index=True
+    )
     joined_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -109,6 +137,14 @@ class ClassroomMembership(models.Model):
 
     def __str__(self) -> str:
         return f"{self.user_id} in {self.classroom_id} ({self.role})"
+
+    @property
+    def is_staff_member(self) -> bool:
+        return self.role in self.STAFF_ROLES
+
+    @property
+    def is_manager(self) -> bool:
+        return self.role in self.MANAGER_ROLES
 
 
 class ClassPost(models.Model):
@@ -186,12 +222,113 @@ class Assignment(models.Model):
         help_text="For mock or pastpaper with multiple sections: assign all, English only, or Math only.",
     )
 
+    # Ranking routing (BUSINESS-ARCHITECTURE §3.4): SAT-scored categories feed SAT
+    # (via TestAttempt) and are excluded from Academic; the rest feed Academic via grades.
+    CATEGORY_HOMEWORK = "HOMEWORK"
+    CATEGORY_CLASSWORK = "CLASSWORK"
+    CATEGORY_QUIZ = "QUIZ"
+    CATEGORY_PARTICIPATION = "PARTICIPATION"
+    CATEGORY_PRACTICE_TEST = "PRACTICE_TEST"
+    CATEGORY_MOCK_EXAM = "MOCK_EXAM"
+    CATEGORY_PAST_PAPER = "PAST_PAPER"
+    CATEGORY_CHOICES = [
+        (CATEGORY_HOMEWORK, "Homework"),
+        (CATEGORY_CLASSWORK, "Classwork"),
+        (CATEGORY_QUIZ, "Quiz"),
+        (CATEGORY_PARTICIPATION, "Participation"),
+        (CATEGORY_PRACTICE_TEST, "Practice test"),
+        (CATEGORY_MOCK_EXAM, "Mock exam"),
+        (CATEGORY_PAST_PAPER, "Past paper"),
+    ]
+    # Categories whose outcome is a SAT scaled score → SAT ranking only.
+    SAT_CATEGORIES = frozenset({CATEGORY_PRACTICE_TEST, CATEGORY_MOCK_EXAM, CATEGORY_PAST_PAPER})
+    # Categories that contribute to the Academic ranking (graded work).
+    ACADEMIC_CATEGORIES = frozenset(
+        {CATEGORY_HOMEWORK, CATEGORY_CLASSWORK, CATEGORY_QUIZ, CATEGORY_PARTICIPATION}
+    )
+
+    # Assignment lifecycle (BUSINESS-ARCHITECTURE homework rebuild). DRAFT = teacher
+    # authoring (invisible to students, counts nowhere); PUBLISHED = live; ARCHIVED =
+    # retired (hidden from active lists, read-only; existing grades retained but dropped
+    # from the completion/"missing" denominator).
+    STATUS_DRAFT = "DRAFT"
+    STATUS_PUBLISHED = "PUBLISHED"
+    STATUS_ARCHIVED = "ARCHIVED"
+    STATUS_CHOICES = [
+        (STATUS_DRAFT, "Draft"),
+        (STATUS_PUBLISHED, "Published"),
+        (STATUS_ARCHIVED, "Archived"),
+    ]
+
+    category = models.CharField(
+        max_length=20,
+        choices=CATEGORY_CHOICES,
+        default=CATEGORY_HOMEWORK,
+        db_index=True,
+        help_text="Routes the result to SAT or Academic ranking. See BUSINESS-ARCHITECTURE §3.4.",
+    )
+    max_score = models.DecimalField(
+        max_digits=7,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Points this work is graded out of; required to normalize teacher grades for Academic ranking.",
+    )
+
+    # Default PUBLISHED so existing rows + the current quick-create flow stay visible.
+    status = models.CharField(
+        max_length=12, choices=STATUS_CHOICES, default=STATUS_PUBLISHED, db_index=True
+    )
+    published_at = models.DateTimeField(null=True, blank=True)
+    archived_at = models.DateTimeField(null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = "class_assignments"
         ordering = ["-created_at"]
+
+    @property
+    def is_visible_to_students(self) -> bool:
+        return self.status == self.STATUS_PUBLISHED
+
+    @property
+    def is_auto_graded(self) -> bool:
+        """Auto-graded = objective work (practice tests, past papers, mock exams, module
+        tests, quizzes/assessments). These are scored + graded automatically and never
+        enter the teacher's manual grading queue. Manual = file/instructions only."""
+        if (
+            self.mock_exam_id
+            or self.practice_test_id
+            or self.pastpaper_pack_id
+            or self.practice_test_pack_id
+            or self.module_id
+            or self.practice_test_ids
+        ):
+            return True
+        try:
+            return self.assessment_homework is not None
+        except Exception:
+            return False
+
+    @property
+    def auto_source_label(self) -> str:
+        """Human label for the auto-grading source shown in the gradebook."""
+        if self.mock_exam_id:
+            return "Mock Exam"
+        if self.pastpaper_pack_id:
+            return "Past Paper"
+        if self.module_id:
+            return "Module Test"
+        if self.practice_test_id or self.practice_test_pack_id or self.practice_test_ids:
+            return "Practice Test"
+        try:
+            if self.assessment_homework is not None:
+                return "Quiz"
+        except Exception:
+            pass
+        return "Manual"
 
 
 class AssignmentExtraAttachment(models.Model):
@@ -500,11 +637,29 @@ class SubmissionReview(models.Model):
         related_name="given_submission_reviews",
     )
     grade = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    # Points the work was graded out of (falls back to Assignment.max_score). Without it,
+    # a free-form grade can't be normalized to a percent for Academic ranking.
+    max_score = models.DecimalField(max_digits=7, decimal_places=2, null=True, blank=True)
     feedback = models.TextField(blank=True)
+    # True when produced by objective auto-grading (test/assessment), not human review.
+    # Auto grades never appear in the teacher's "Needs grading" queue.
+    is_auto = models.BooleanField(default=False, db_index=True)
     reviewed_at = models.DateTimeField(auto_now=True, db_index=True)
 
     class Meta:
         db_table = "class_submission_reviews"
+
+    def normalized_percent(self) -> float | None:
+        """Grade as 0–100, using this row's max_score or the assignment's. None if not gradable."""
+        if self.grade is None:
+            return None
+        ceiling = self.max_score
+        if ceiling is None:
+            ceiling = getattr(self.submission.assignment, "max_score", None)
+        if not ceiling or float(ceiling) <= 0:
+            return None
+        pct = 100.0 * float(self.grade) / float(ceiling)
+        return max(0.0, min(100.0, pct))
 
 
 class SubmissionAuditEvent(models.Model):
@@ -648,4 +803,15 @@ def _grant_practice_library_on_student_enroll(sender, instance, created, **kwarg
     if not created or instance.role != ClassroomMembership.ROLE_STUDENT:
         return
     grant_practice_test_library_access_for_user_in_classroom(instance.classroom, instance.user)
+
+
+# Register rebuild models (attendance, rankings, analytics) with the `classes` app.
+# Defined in separate modules for clarity; imported here so migrations detect them.
+from .models_attendance import AttendanceSession, AttendanceRecord  # noqa: E402,F401
+from .models_ranking import (  # noqa: E402,F401
+    AcademicWeightConfig,
+    ClassroomRankingConfig,
+    RankingSnapshot,
+)
+from .models_analytics import StudentGoal  # noqa: E402,F401
 

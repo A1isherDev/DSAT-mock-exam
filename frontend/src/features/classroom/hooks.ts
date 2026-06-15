@@ -1,0 +1,110 @@
+"use client";
+
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { classesApi } from "@/lib/api";
+import { classroomKeys } from "./queryKeys";
+import type {
+  ClassroomWithRole,
+  Interventions,
+  Member,
+  StudentWorkspace,
+} from "./types";
+
+const enabledId = (id: number) => Number.isFinite(id) && id > 0;
+
+export function useClassrooms() {
+  return useQuery({
+    queryKey: classroomKeys.list(),
+    queryFn: () => classesApi.list(),
+  });
+}
+
+export function useClassroom(id: number) {
+  return useQuery<ClassroomWithRole>({
+    queryKey: classroomKeys.detail(id),
+    queryFn: () => classesApi.get(id),
+    enabled: enabledId(id),
+  });
+}
+
+export function useClassMembers(id: number) {
+  return useQuery<{ members?: Member[] } | Member[]>({
+    queryKey: classroomKeys.members(id),
+    queryFn: () => classesApi.people(id),
+    enabled: enabledId(id),
+  });
+}
+
+export function useStudentWorkspace(id: number) {
+  return useQuery<StudentWorkspace>({
+    queryKey: classroomKeys.workspace(id),
+    queryFn: () => classesApi.getStudentWorkspace(id),
+    enabled: enabledId(id),
+    staleTime: 15_000,
+  });
+}
+
+export function useInterventions(id: number) {
+  return useQuery<Interventions>({
+    queryKey: classroomKeys.interventions(id),
+    queryFn: () => classesApi.getInterventions(id),
+    enabled: enabledId(id),
+    staleTime: 15_000,
+  });
+}
+
+export function useAssignments(id: number) {
+  return useQuery({
+    queryKey: classroomKeys.assignments(id),
+    queryFn: () => classesApi.listAssignments(id),
+    enabled: enabledId(id),
+  });
+}
+
+export function useStream(id: number, params?: { page?: number; page_size?: number }) {
+  return useQuery({
+    queryKey: [...classroomKeys.stream(id), params ?? {}],
+    queryFn: () => classesApi.getStream(id, params),
+    enabled: enabledId(id),
+  });
+}
+
+export function useJoinClass() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (joinCode: string) => classesApi.join(joinCode.trim()),
+    onSuccess: () => qc.invalidateQueries({ queryKey: classroomKeys.list() }),
+  });
+}
+
+export interface CreateClassInput {
+  name: string;
+  subject: "ENGLISH" | "MATH";
+  lesson_days: "ODD" | "EVEN";
+  lesson_time?: string;
+  lesson_hours?: number;
+  start_date?: string;
+  room_number?: string;
+  telegram_chat_id?: string;
+  teacher?: number;
+  max_students?: number;
+}
+
+export function useCreateClass() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: CreateClassInput) => classesApi.create(data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: classroomKeys.list() }),
+  });
+}
+
+export function useUpdateClass(id: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Record<string, unknown>) => classesApi.update(id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: classroomKeys.detail(id) });
+      qc.invalidateQueries({ queryKey: classroomKeys.list() });
+    },
+  });
+}

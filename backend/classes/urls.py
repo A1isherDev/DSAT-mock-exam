@@ -11,6 +11,20 @@ from .views import (
     OpsStatsView,
     OpsAttentionView,
 )
+from .views_rankings import RankingsView, RankingRecomputeView, RankingConfigView, RankingHistoryView
+from .views_attendance import (
+    AttendanceSessionsView,
+    AttendanceSessionDetailView,
+    AttendanceMarkView,
+    AttendanceMarkAllPresentView,
+    AttendanceFinalizeView,
+    AttendanceSummaryView,
+    AttendanceMeView,
+    AttendanceStudentView,
+)
+from .views_analytics import AnalyticsClassView, AnalyticsMeView, AnalyticsStudentView
+from .views_gradebook import GradebookOverviewView, GradebookAssignmentView
+from .views_roster import MemberManageView
 
 
 router = DefaultRouter()
@@ -31,6 +45,27 @@ urlpatterns = [
     path("ops/stats/", OpsStatsView.as_view(), name="class-ops-stats"),
     path("ops/attention/", OpsAttentionView.as_view(), name="class-ops-attention"),
     path("<int:classroom_pk>/comments/", ClassCommentListCreateView.as_view(), name="class-comments"),
+    path("<int:classroom_pk>/members/<int:user_id>/", MemberManageView.as_view(), name="class-member-manage"),
+    path("<int:classroom_pk>/rankings/recompute/", RankingRecomputeView.as_view(), name="class-rankings-recompute"),
+    path("<int:classroom_pk>/rankings/config/", RankingConfigView.as_view(), name="class-rankings-config"),
+    path("<int:classroom_pk>/rankings/<str:kind>/history/", RankingHistoryView.as_view(), name="class-rankings-history"),
+    path("<int:classroom_pk>/rankings/<str:kind>/", RankingsView.as_view(), name="class-rankings"),
+    # Attendance
+    path("<int:classroom_pk>/attendance/sessions/", AttendanceSessionsView.as_view(), name="attendance-sessions"),
+    path("<int:classroom_pk>/attendance/sessions/<int:session_id>/", AttendanceSessionDetailView.as_view(), name="attendance-session-detail"),
+    path("<int:classroom_pk>/attendance/sessions/<int:session_id>/mark/", AttendanceMarkView.as_view(), name="attendance-mark"),
+    path("<int:classroom_pk>/attendance/sessions/<int:session_id>/mark-all-present/", AttendanceMarkAllPresentView.as_view(), name="attendance-mark-all-present"),
+    path("<int:classroom_pk>/attendance/sessions/<int:session_id>/finalize/", AttendanceFinalizeView.as_view(), name="attendance-finalize"),
+    path("<int:classroom_pk>/attendance/summary/", AttendanceSummaryView.as_view(), name="attendance-summary"),
+    path("<int:classroom_pk>/attendance/me/", AttendanceMeView.as_view(), name="attendance-me"),
+    path("<int:classroom_pk>/attendance/students/<int:student_id>/", AttendanceStudentView.as_view(), name="attendance-student"),
+    # Analytics
+    path("<int:classroom_pk>/analytics/class/", AnalyticsClassView.as_view(), name="analytics-class"),
+    path("<int:classroom_pk>/analytics/me/", AnalyticsMeView.as_view(), name="analytics-me"),
+    path("<int:classroom_pk>/analytics/students/<int:student_id>/", AnalyticsStudentView.as_view(), name="analytics-student"),
+    # Teacher gradebook
+    path("<int:classroom_pk>/gradebook/", GradebookOverviewView.as_view(), name="gradebook-overview"),
+    path("<int:classroom_pk>/gradebook/assignments/<int:assignment_id>/", GradebookAssignmentView.as_view(), name="gradebook-assignment"),
     path("submissions/", include(submissions_router.urls)),
     path("<int:classroom_pk>/posts/", include(posts_router.urls)),
     path("<int:classroom_pk>/assignments/", include(assignments_router.urls)),

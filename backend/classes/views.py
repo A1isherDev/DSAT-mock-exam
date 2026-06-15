@@ -59,6 +59,7 @@ from .metrics import record_homework_submit_attempt, record_homework_submit_erro
 from .submission_limits import max_batch_upload_bytes, max_files_per_submission
 from .submission_uploads import abandon_staged_uploads, stream_upload_to_storage
 from .homework_auto_submit import sync_practice_submission_for_assignment
+from .capabilities import can as has_cap
 from .throttles import HomeworkSubmitClassThrottle, HomeworkSubmitGlobalThrottle, HomeworkSubmitThrottle
 from .submission_state import (
     assert_student_edit_allowed,
@@ -466,8 +467,8 @@ class ClassroomViewSet(ModelViewSet):
         return Response(out, status=status.HTTP_201_CREATED)
 
     def _ensure_class_admin(self, classroom):
-        if not classroom.memberships.filter(user=self.request.user, role="ADMIN").exists():
-            return Response({"detail": "Only class admins can edit groups."}, status=status.HTTP_403_FORBIDDEN)
+        if not has_cap(self.request.user, classroom, "can_manage_class"):
+            return Response({"detail": "Only class teachers can edit groups."}, status=status.HTTP_403_FORBIDDEN)
         return None
 
     def _sync_teacher_membership(self, instance):
@@ -490,14 +491,14 @@ class ClassroomViewSet(ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         classroom = self.get_object()
-        if not classroom.memberships.filter(user=request.user, role="ADMIN").exists():
-            return Response({"detail": "Only class admins can delete groups."}, status=status.HTTP_403_FORBIDDEN)
+        if not has_cap(request.user, classroom, "can_delete_class"):
+            return Response({"detail": "Only the class owner can delete this class."}, status=status.HTTP_403_FORBIDDEN)
         return super().destroy(request, *args, **kwargs)
 
     @action(detail=True, methods=["post"], permission_classes=[IsAuthenticatedAndNotFrozen])
     def regenerate_code(self, request, pk=None):
         classroom = self.get_object()
-        if not classroom.memberships.filter(user=request.user, role="ADMIN").exists():
+        if not has_cap(request.user, classroom, "can_manage_class"):
             return Response({"detail": "Not allowed."}, status=status.HTTP_403_FORBIDDEN)
         classroom.join_code = ""
         classroom.save(update_fields=["join_code", "updated_at"])
@@ -506,7 +507,11 @@ class ClassroomViewSet(ModelViewSet):
     @action(detail=True, methods=["get"], permission_classes=[IsAuthenticatedAndNotFrozen])
     def people(self, request, pk=None):
         classroom = self.get_object()
-        memberships = classroom.memberships.select_related("user").all().order_by("role", "-joined_at")
+        memberships = (
+            classroom.memberships.select_related("user")
+            .exclude(status=ClassroomMembership.STATUS_REMOVED)
+            .order_by("role", "-joined_at")
+        )
         return Response(ClassroomMembershipSerializer(memberships, many=True, context={"request": request}).data)
 
     @action(
@@ -518,7 +523,7 @@ class ClassroomViewSet(ModelViewSet):
     def homework_storage_metrics(self, request, pk=None):
         """Stale homework blob cleanup backlog and retry stats (platform-wide; class admins only)."""
         classroom = self.get_object()
-        if not classroom.memberships.filter(user=request.user, role="ADMIN").exists():
+        if not has_cap(request.user, classroom, "can_manage_class"):
             return Response({"detail": "Not allowed."}, status=status.HTTP_403_FORBIDDEN)
         return Response(get_homework_storage_observability())
 
@@ -529,7 +534,7 @@ class ClassroomViewSet(ModelViewSet):
         Uses the same visibility rules as /exams/ for the practice library.
         """
         classroom = self.get_object()
-        if not classroom.memberships.filter(user=request.user, role="ADMIN").exists():
+        if not has_cap(request.user, classroom, "can_manage_assignments"):
             return Response(
                 {"detail": "Only class teachers can load assignment options."},
                 status=status.HTTP_403_FORBIDDEN,
@@ -1115,6 +1120,11 @@ class ClassroomViewSet(ModelViewSet):
             .select_related("created_by", "assessment_homework__assessment_set")
             .order_by("-created_at")
         )
+        # Students see only PUBLISHED work; staff see everything except ARCHIVED.
+        if is_student:
+            assignments_qs = assignments_qs.filter(status=Assignment.STATUS_PUBLISHED)
+        else:
+            assignments_qs = assignments_qs.exclude(status=Assignment.STATUS_ARCHIVED)
         subs_map = {}
         if is_student:
             subs_map = {
@@ -1327,8 +1337,8 @@ class ClassPostViewSet(_ClassroomMemberGateMixin, ModelViewSet):
 
     def create(self, request, *args, **kwargs):
         classroom = self.get_classroom()
-        if not classroom.memberships.filter(user=request.user, role="ADMIN").exists():
-            return Response({"detail": "Only class admins can post."}, status=status.HTTP_403_FORBIDDEN)
+        if not has_cap(request.user, classroom, "can_post_announcement"):
+            return Response({"detail": "Only the teaching team can post."}, status=status.HTTP_403_FORBIDDEN)
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         post = serializer.save(classroom=classroom, author=request.user)
@@ -1336,13 +1346,13 @@ class ClassPostViewSet(_ClassroomMemberGateMixin, ModelViewSet):
 
     def perform_update(self, serializer):
         classroom = serializer.instance.classroom
-        if not classroom.memberships.filter(user=self.request.user, role="ADMIN").exists():
-            raise PermissionDenied("Only class admins can edit announcements.")
+        if not has_cap(self.request.user, classroom, "can_post_announcement"):
+            raise PermissionDenied("Only the teaching team can edit announcements.")
         serializer.save()
 
     def perform_destroy(self, instance):
-        if not instance.classroom.memberships.filter(user=self.request.user, role="ADMIN").exists():
-            raise PermissionDenied("Only class admins can delete announcements.")
+        if not has_cap(self.request.user, instance.classroom, "can_post_announcement"):
+            raise PermissionDenied("Only the teaching team can delete announcements.")
         instance.delete()
 
 
@@ -1356,16 +1366,72 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
 
     def get_queryset(self):
         classroom = self.get_classroom()
-        if not classroom.memberships.filter(user=self.request.user).exists():
+        user = self.request.user
+        if not classroom.memberships.filter(user=user).exists():
             return Assignment.objects.none()
-        return Assignment.objects.filter(classroom=classroom).select_related(
+        qs = Assignment.objects.filter(classroom=classroom).select_related(
             "created_by", "mock_exam", "practice_test", "pastpaper_pack", "practice_test_pack", "module"
         ).prefetch_related("extra_attachments").annotate(submissions_count=Count("submissions"))
+        is_staff = classroom.memberships.filter(
+            user=user, role__in=ClassroomMembership.STAFF_ROLES
+        ).exists()
+        if not is_staff:
+            # Students never see DRAFT or ARCHIVED assignments.
+            return qs.filter(status=Assignment.STATUS_PUBLISHED)
+        include_archived = str(self.request.query_params.get("include_archived", "")).lower() in ("1", "true")
+        return qs if include_archived else qs.exclude(status=Assignment.STATUS_ARCHIVED)
+
+    def _manage_or_404(self, request, pk):
+        """Fetch the assignment for lifecycle actions, bypassing the visibility filter,
+        and require manage permission (any staff role)."""
+        classroom = self.get_classroom()
+        if not classroom.memberships.filter(
+            user=request.user, role__in=ClassroomMembership.STAFF_ROLES
+        ).exists():
+            return None, Response({"detail": "You do not have permission to manage assignments."}, status=status.HTTP_403_FORBIDDEN)
+        a = Assignment.objects.filter(pk=pk, classroom=classroom).first()
+        if a is None:
+            return None, Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        return a, None
+
+    @action(detail=True, methods=["post"], permission_classes=[IsAuthenticatedAndNotFrozen])
+    def publish(self, request, classroom_pk=None, pk=None):
+        a, err = self._manage_or_404(request, pk)
+        if err:
+            return err
+        a.status = Assignment.STATUS_PUBLISHED
+        a.archived_at = None
+        if a.published_at is None:
+            a.published_at = timezone.now()
+        a.save(update_fields=["status", "archived_at", "published_at", "updated_at"])
+        return Response({"id": a.id, "status": a.status})
+
+    @action(detail=True, methods=["post"], permission_classes=[IsAuthenticatedAndNotFrozen])
+    def archive(self, request, classroom_pk=None, pk=None):
+        a, err = self._manage_or_404(request, pk)
+        if err:
+            return err
+        a.status = Assignment.STATUS_ARCHIVED
+        a.archived_at = timezone.now()
+        a.save(update_fields=["status", "archived_at", "updated_at"])
+        return Response({"id": a.id, "status": a.status})
+
+    @action(detail=True, methods=["post"], permission_classes=[IsAuthenticatedAndNotFrozen])
+    def unarchive(self, request, classroom_pk=None, pk=None):
+        a, err = self._manage_or_404(request, pk)
+        if err:
+            return err
+        a.status = Assignment.STATUS_PUBLISHED
+        a.archived_at = None
+        if a.published_at is None:
+            a.published_at = timezone.now()
+        a.save(update_fields=["status", "archived_at", "published_at", "updated_at"])
+        return Response({"id": a.id, "status": a.status})
 
     def create(self, request, *args, **kwargs):
         classroom = self.get_classroom()
-        if not classroom.memberships.filter(user=request.user, role="ADMIN").exists():
-            return Response({"detail": "Only class admins can create assignments."}, status=status.HTTP_403_FORBIDDEN)
+        if not has_cap(request.user, classroom, "can_manage_assignments"):
+            return Response({"detail": "Only the teaching team can create assignments."}, status=status.HTTP_403_FORBIDDEN)
 
         # Gather uploaded files BEFORE running the serializer. The serializer has
         # `attachment_file` as a writable FileField — if we let it run, DRF will
@@ -1507,13 +1573,13 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         return self.update(request, *args, **kwargs)
 
     def perform_destroy(self, instance):
-        if not instance.classroom.memberships.filter(user=self.request.user, role="ADMIN").exists():
-            raise PermissionDenied("Only class admins can delete assignments.")
+        if not has_cap(self.request.user, instance.classroom, "can_delete_assignment"):
+            raise PermissionDenied("Only a teacher or owner can delete assignments (TAs can archive).")
         instance.delete()
 
     def perform_update(self, serializer):
-        if not serializer.instance.classroom.memberships.filter(user=self.request.user, role="ADMIN").exists():
-            raise PermissionDenied("Only class admins can edit assignments.")
+        if not has_cap(self.request.user, serializer.instance.classroom, "can_manage_assignments"):
+            raise PermissionDenied("Only the teaching team can edit assignments.")
         serializer.save()
 
     def _parse_remove_file_ids(self, request) -> list[int]:
@@ -1891,8 +1957,8 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
     @action(detail=True, methods=["get"], url_path="submissions")
     def submissions(self, request, classroom_pk=None, pk=None):
         classroom = self.get_classroom()
-        if not classroom.memberships.filter(user=request.user, role="ADMIN").exists():
-            return Response({"detail": "Only class admins can view submissions."}, status=status.HTTP_403_FORBIDDEN)
+        if not has_cap(request.user, classroom, "can_grade"):
+            return Response({"detail": "Only the teaching team can view submissions."}, status=status.HTTP_403_FORBIDDEN)
         assignment = get_object_or_404(Assignment, pk=pk, classroom=classroom)
         if assignment_target_practice_test_ids(assignment):
             student_ids = classroom.memberships.filter(
@@ -1951,8 +2017,9 @@ class SubmissionAdminViewSet(ReadOnlyModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
+        # Graders = the teaching team (TA + Teacher + Owner) per the capability matrix.
         admin_class_ids = ClassroomMembership.objects.filter(
-            user=user, role=ClassroomMembership.ROLE_ADMIN
+            user=user, role__in=ClassroomMembership.STAFF_ROLES
         ).values_list("classroom_id", flat=True)
         return (
             Submission.objects.filter(assignment__classroom_id__in=admin_class_ids)
@@ -1989,8 +2056,8 @@ class SubmissionAdminViewSet(ReadOnlyModelViewSet):
     def grade(self, request, pk=None):
         submission = self.get_object()
         classroom = submission.assignment.classroom
-        if not classroom.memberships.filter(user=request.user, role="ADMIN").exists():
-            return Response({"detail": "Only class admins can grade."}, status=status.HTTP_403_FORBIDDEN)
+        if not has_cap(request.user, classroom, "can_grade"):
+            return Response({"detail": "Only the teaching team can grade."}, status=status.HTTP_403_FORBIDDEN)
 
         serializer = SubmissionReviewUpsertSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -2070,8 +2137,8 @@ class SubmissionAdminViewSet(ReadOnlyModelViewSet):
         """Teacher returns submitted/reviewed work so the student can edit and resubmit."""
         submission = self.get_object()
         classroom = submission.assignment.classroom
-        if not classroom.memberships.filter(user=request.user, role=ClassroomMembership.ROLE_ADMIN).exists():
-            return Response({"detail": "Only class admins can return submissions."}, status=status.HTTP_403_FORBIDDEN)
+        if not has_cap(request.user, classroom, "can_grade"):
+            return Response({"detail": "Only the teaching team can return submissions."}, status=status.HTTP_403_FORBIDDEN)
 
         ser = SubmissionReturnSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
@@ -2132,7 +2199,7 @@ class SubmissionAdminViewSet(ReadOnlyModelViewSet):
     def audit_log(self, request, pk=None):
         submission = self.get_object()
         classroom = submission.assignment.classroom
-        is_teacher = classroom.memberships.filter(user=request.user, role=ClassroomMembership.ROLE_ADMIN).exists()
+        is_teacher = has_cap(request.user, classroom, "can_grade")
         is_owner = request.user.pk == submission.student_id
         if not (is_teacher or is_owner):
             return Response({"detail": "Not allowed."}, status=status.HTTP_403_FORBIDDEN)

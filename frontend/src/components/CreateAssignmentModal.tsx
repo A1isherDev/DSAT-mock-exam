@@ -268,7 +268,7 @@ export default function CreateAssignmentModal({
     return () => { window.removeEventListener("keydown", onKey); document.body.style.overflow = prevOverflow; };
   }, [open, onClose]);
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (publishStatus: "DRAFT" | "PUBLISHED" = "PUBLISHED") => {
     setFormError(null);
     setCreatingAsg(true);
     try {
@@ -341,6 +341,8 @@ export default function CreateAssignmentModal({
         fd.append("attachment_file", f);
       }
 
+      // Draft = save without publishing (invisible to students); Published = live.
+      fd.append("status", publishStatus);
       await classesApi.createAssignment(classId, fd, true);
       resetForm();
       await onSuccess();
@@ -781,15 +783,26 @@ export default function CreateAssignmentModal({
           <ClassroomButton type="button" variant="secondary" className="flex-1" onClick={() => { resetForm(); onClose(); }}>
             Cancel
           </ClassroomButton>
+          {!isEditing && (
+            <ClassroomButton
+              type="button"
+              variant="secondary"
+              className="flex-1"
+              onClick={() => handleSubmit("DRAFT")}
+              disabled={!newAsg.title.trim() || creatingAsg || (includeAssessment && !selectedAssessmentId)}
+            >
+              Save as draft
+            </ClassroomButton>
+          )}
           <ClassroomButton
             type="button"
             variant="primary"
             className="flex-1"
-            onClick={handleSubmit}
+            onClick={() => handleSubmit("PUBLISHED")}
             disabled={!newAsg.title.trim() || creatingAsg || (includeAssessment && !selectedAssessmentId)}
           >
             {creatingAsg ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            {isEditing ? "Save changes" : "Create"}
+            {isEditing ? "Save changes" : "Publish"}
           </ClassroomButton>
         </div>
       </div>

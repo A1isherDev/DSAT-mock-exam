@@ -1,0 +1,107 @@
+"use client";
+
+import { useState } from "react";
+import Link from "next/link";
+import { ArrowLeft, Check, Copy, BookOpen, Calculator } from "lucide-react";
+import { cn } from "@/lib/cn";
+import { formatLessonDaysMeta } from "@/lib/classroomSchedule";
+import { Tabs } from "../ui/Tabs";
+import { Pill } from "../ui/Pill";
+import { capabilitiesFor, ROLE_LABEL, normalizeRole } from "../capabilities";
+import type { ClassroomWithRole } from "../types";
+import { visibleTabs, type ClassroomTabId } from "./tabs";
+
+function JoinCode({ code }: { code: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        navigator.clipboard?.writeText(code).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        });
+      }}
+      className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface-2 px-2.5 py-1 font-mono text-xs font-semibold text-foreground hover:bg-card"
+      title="Copy join code"
+    >
+      {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5 text-muted-foreground" />}
+      {code}
+    </button>
+  );
+}
+
+/**
+ * Classroom workspace chrome: back link, identity header, role-aware tab nav, content slot.
+ * Tab visibility derives from the viewer's capabilities (see ../capabilities + ./tabs).
+ */
+export function ClassroomShell({
+  classroom,
+  active,
+  onTabChange,
+  children,
+}: {
+  classroom: ClassroomWithRole;
+  active: ClassroomTabId;
+  onTabChange: (id: ClassroomTabId) => void;
+  children: React.ReactNode;
+}) {
+  const caps = capabilitiesFor(classroom.my_role);
+  const role = normalizeRole(classroom.my_role);
+  const tabs = visibleTabs(caps);
+
+  const subject = String((classroom as { subject?: string }).subject ?? "").toUpperCase();
+  const isMath = subject === "MATH";
+  const SubjectIcon = isMath ? Calculator : BookOpen;
+  const schedule = formatLessonDaysMeta((classroom as { lesson_days?: string }).lesson_days);
+  const lessonTime = (classroom as { lesson_time?: string }).lesson_time;
+  const joinCode = classroom.join_code;
+
+  return (
+    <div className="mx-auto w-full max-w-6xl px-4 pb-16 pt-4 sm:px-6">
+      <Link
+        href="/classes"
+        className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
+      >
+        <ArrowLeft className="h-4 w-4" /> All classes
+      </Link>
+
+      <header className="mt-4 flex flex-wrap items-start justify-between gap-4">
+        <div className="flex items-start gap-3">
+          <div
+            className={cn(
+              "flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl",
+              isMath ? "bg-blue-500/10 text-blue-600 dark:text-blue-400" : "bg-violet-500/10 text-violet-600 dark:text-violet-400",
+            )}
+          >
+            <SubjectIcon className="h-6 w-6" />
+          </div>
+          <div className="min-w-0">
+            <h1 className="truncate text-2xl font-semibold tracking-tight text-foreground">{classroom.name}</h1>
+            <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+              <Pill tone={isMath ? "info" : "primary"}>{isMath ? "Math" : "English"}</Pill>
+              {schedule && <span>{schedule}{lessonTime ? ` · ${lessonTime}` : ""}</span>}
+              {role && <span className="text-xs">· {ROLE_LABEL[role]}</span>}
+            </div>
+          </div>
+        </div>
+        {caps.canManageClass && joinCode && (
+          <div className="flex flex-col items-end gap-1">
+            <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Join code</span>
+            <JoinCode code={joinCode} />
+          </div>
+        )}
+      </header>
+
+      <div className="mt-6">
+        <Tabs
+          items={tabs.map((t) => ({ id: t.id, label: t.label, icon: t.icon }))}
+          active={active}
+          onChange={(id) => onTabChange(id as ClassroomTabId)}
+        />
+      </div>
+
+      <div className="mt-6">{children}</div>
+    </div>
+  );
+}
