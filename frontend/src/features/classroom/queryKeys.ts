@@ -1,0 +1,10 @@
+export const classroomKeys = {
+  all: ["classroom"] as const,
+  list: () => [...classroomKeys.all, "list"] as const,
+  detail: (id: number) => [...classroomKeys.all, "detail", id] as const,
+  members: (id: number) => [...classroomKeys.all, "members", id] as const,
+  workspace: (id: number) => [...classroomKeys.all, "workspace", id] as const,
+  interventions: (id: number) => [...classroomKeys.all, "interventions", id] as const,
+  assignments: (id: number) => [...classroomKeys.all, "assignments", id] as const,
+  stream: (id: number) => [...classroomKeys.all, "stream", id] as const,
+};

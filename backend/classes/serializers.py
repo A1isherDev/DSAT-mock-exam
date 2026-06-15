@@ -185,7 +185,7 @@ class ClassroomMembershipSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ClassroomMembership
-        fields = ["id", "role", "joined_at", "user"]
+        fields = ["id", "role", "status", "joined_at", "user"]
 
     def get_user(self, obj):
         u = obj.user
@@ -276,6 +276,11 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "attachment_file",
             "attachment_file_url",
             "attachment_urls",
+            "category",
+            "max_score",
+            "status",
+            "published_at",
+            "archived_at",
             "created_at",
             "created_by",
             "submissions_count",
@@ -288,6 +293,8 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "practice_bundle_tests",
             "locks_file_upload",
             "attachment_urls",
+            "published_at",
+            "archived_at",
         ]
 
     @extend_schema_field(serializers.BooleanField(read_only=True))
@@ -575,7 +582,9 @@ class SubmissionSerializer(serializers.ModelSerializer):
             review_context = "historical"
         return {
             "grade": str(r.grade) if r.grade is not None else None,
+            "max_score": str(r.max_score) if r.max_score is not None else None,
             "feedback": r.feedback,
+            "is_auto": r.is_auto,
             "reviewed_at": r.reviewed_at,
             "review_context": review_context,
             "teacher": {

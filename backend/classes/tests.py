@@ -106,7 +106,8 @@ class PracticeHomeworkAutoSubmitTests(TestCase):
         )
         self._TestAttempt = TestAttempt
 
-    def test_completed_attempt_creates_submitted_submission(self):
+    def test_completed_attempt_auto_grades_submission(self):
+        # Auto-graded homework moves straight to REVIEWED (never sits in "Needs grading").
         att = self._TestAttempt.objects.create(
             practice_test=self.pt,
             student=self.student,
@@ -114,8 +115,9 @@ class PracticeHomeworkAutoSubmitTests(TestCase):
         )
         sub = Submission.objects.filter(assignment=self.assignment, student=self.student).first()
         self.assertIsNotNone(sub)
-        self.assertEqual(sub.status, Submission.STATUS_SUBMITTED)
+        self.assertEqual(sub.status, Submission.STATUS_REVIEWED)
         self.assertEqual(sub.attempt_id, att.pk)
+        self.assertTrue(sub.review.is_auto)
 
     def test_student_can_upload_files_alongside_practice_homework(self):
         self.client.force_authenticate(self.student)

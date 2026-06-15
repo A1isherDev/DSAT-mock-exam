@@ -22,9 +22,42 @@ from .models import (
     ClassroomMembership,
     Submission,
     SubmissionAuditEvent,
+    SubmissionReview,
     assignment_target_practice_test_ids,
 )
 from .submission_audit import audit_submission_event
+
+
+def _auto_grade(s: Submission, assignment: Assignment, grade, max_score, source: str, rev: int) -> None:
+    """Create/update the automatic grade and move the submission straight to REVIEWED.
+
+    Auto grades (objective tests/assessments) never sit in the teacher's manual queue.
+    Recorded grader is the assignment author; ``is_auto=True`` marks it as machine-graded.
+    """
+    SubmissionReview.objects.update_or_create(
+        submission=s,
+        defaults={
+            "teacher": assignment.created_by,
+            "grade": grade,
+            "max_score": max_score,
+            "is_auto": True,
+        },
+    )
+    prev_status = s.status
+    s.status = Submission.STATUS_REVIEWED
+    if s.submitted_at is None:
+        s.submitted_at = timezone.now()
+    s.returned_at = None
+    s.return_note = ""
+    audit_submission_event(
+        s.pk, None, SubmissionAuditEvent.EVENT_REVIEW_UPSERT,
+        {"source": source, "auto": True, "grade": str(grade)}, submission_revision=rev,
+    )
+    if prev_status != s.status:
+        audit_submission_event(
+            s.pk, None, SubmissionAuditEvent.EVENT_STATUS_CHANGE,
+            {"from": prev_status, "to": s.status, "source": source}, submission_revision=rev,
+        )
 
 logger = logging.getLogger("classes.homework_auto_submit")
 
@@ -57,13 +90,15 @@ def _representative_attempt(attempts: list[TestAttempt]) -> TestAttempt:
     return max(attempts, key=lambda a: (a.submitted_at or timezone.now(), a.pk))
 
 
-def _apply_sync(student, assignment: Assignment, best: TestAttempt) -> bool:
+def _apply_sync(student, assignment: Assignment, best: TestAttempt, total_score) -> bool:
     """
-    Update submission to link ``best`` and SUBMITTED when appropriate.
-    Returns True if the row changed.
+    Link ``best`` and finalize the submission. Practice/SAT homework is auto-graded:
+    the submission moves straight to REVIEWED with an automatic grade (``total_score``),
+    so it never enters the teacher's manual grading queue. Returns True if the row changed.
     """
     from django.db import IntegrityError
 
+    SOURCE = "practice_targets_complete"
     with transaction.atomic():
         row = (
             Submission.objects.select_for_update()
@@ -80,67 +115,44 @@ def _apply_sync(student, assignment: Assignment, best: TestAttempt) -> bool:
 
         s = Submission.objects.select_for_update().get(pk=row.pk)
 
-        if s.status == Submission.STATUS_REVIEWED:
+        existing_review = SubmissionReview.objects.filter(submission=s).first()
+        manual_review = existing_review is not None and not existing_review.is_auto
+        # Never overwrite a human teacher's grade.
+        if s.status == Submission.STATUS_REVIEWED and manual_review:
             return False
 
-        prev_status = s.status
         prev_attempt_id = s.attempt_id
         attempt_changed = prev_attempt_id != best.id
+        auto = assignment.is_auto_graded
 
-        if prev_status == Submission.STATUS_SUBMITTED:
-            if not attempt_changed:
-                return False
-            s.revision += 1
-            rev = s.revision
-            audit_submission_event(
-                s.pk,
-                None,
-                SubmissionAuditEvent.EVENT_ATTEMPT_CHANGE,
-                {
-                    "from_attempt_id": prev_attempt_id,
-                    "to_attempt_id": best.id,
-                    "source": "practice_targets_complete",
-                },
-                submission_revision=rev,
-            )
-            s.attempt = best
-            s.save()
-            return True
-
-        if prev_status not in (
-            Submission.STATUS_DRAFT,
-            Submission.STATUS_RETURNED,
-        ):
+        # Already auto-graded on this exact attempt → nothing to do.
+        if s.status == Submission.STATUS_REVIEWED and not attempt_changed:
+            return False
+        if s.status == Submission.STATUS_SUBMITTED and not attempt_changed and not auto:
             return False
 
         s.revision += 1
         rev = s.revision
         if attempt_changed:
             audit_submission_event(
-                s.pk,
-                None,
-                SubmissionAuditEvent.EVENT_ATTEMPT_CHANGE,
-                {
-                    "from_attempt_id": prev_attempt_id,
-                    "to_attempt_id": best.id,
-                    "source": "practice_targets_complete",
-                },
+                s.pk, None, SubmissionAuditEvent.EVENT_ATTEMPT_CHANGE,
+                {"from_attempt_id": prev_attempt_id, "to_attempt_id": best.id, "source": SOURCE},
                 submission_revision=rev,
             )
         s.attempt = best
-        prev_for_status = s.status
-        s.mark_submitted()
-        audit_submission_event(
-            s.pk,
-            None,
-            SubmissionAuditEvent.EVENT_STATUS_CHANGE,
-            {
-                "from": prev_for_status,
-                "to": s.status,
-                "source": "practice_targets_complete",
-            },
-            submission_revision=rev,
-        )
+
+        if auto:
+            _auto_grade(s, assignment, total_score, None, SOURCE, rev)
+        else:
+            # Fallback (no auto-grade signal): finalize as submitted for manual review.
+            if s.status in (Submission.STATUS_DRAFT, Submission.STATUS_RETURNED):
+                prev_for_status = s.status
+                s.mark_submitted()
+                audit_submission_event(
+                    s.pk, None, SubmissionAuditEvent.EVENT_STATUS_CHANGE,
+                    {"from": prev_for_status, "to": s.status, "source": SOURCE},
+                    submission_revision=rev,
+                )
         s.save()
         return True
 
@@ -157,8 +169,10 @@ def sync_practice_submission_for_assignment(student, assignment: Assignment) -> 
     if not attempts:
         return False
     best = _representative_attempt(attempts)
+    # Auto grade = total scaled score across all required sections (real recorded scores).
+    total_score = sum(a.score for a in attempts if a.score is not None)
     try:
-        return _apply_sync(student, assignment, best)
+        return _apply_sync(student, assignment, best, total_score)
     except Exception:
         logger.exception(
             "sync_practice_submission_failed assignment_id=%s student_id=%s",
@@ -247,11 +261,15 @@ def sync_assessment_submission(assessment_attempt) -> bool:
 
 def _apply_assessment_sync(student, assignment: Assignment, assessment_attempt) -> bool:
     """
-    Create or update the class Submission for an assessment homework.
-    Unlike practice-test sync, we don't link a TestAttempt — the
-    AssessmentAttempt is the source of truth (tracked separately).
+    Auto-grade assessment homework. Once the assessment engine finishes grading
+    (status GRADED with a result), the class Submission goes straight to REVIEWED with an
+    automatic grade = result.percent (out of 100) — it never enters the manual queue.
+    While grading is still pending (SUBMITTED), record an interim submission; the assignment
+    is auto-graded so it stays out of "Needs grading" regardless.
     """
     from django.db import IntegrityError
+
+    from assessments.models import AssessmentAttempt
 
     with transaction.atomic():
         row = (
@@ -269,35 +287,46 @@ def _apply_assessment_sync(student, assignment: Assignment, assessment_attempt) 
 
         s = Submission.objects.select_for_update().get(pk=row.pk)
 
-        # Don't overwrite a teacher review
-        if s.status == Submission.STATUS_REVIEWED:
+        existing_review = SubmissionReview.objects.filter(submission=s).first()
+        manual_review = existing_review is not None and not existing_review.is_auto
+        if s.status == Submission.STATUS_REVIEWED and manual_review:
             return False
 
-        # Already submitted — nothing to do
-        if s.status == Submission.STATUS_SUBMITTED:
-            return False
-
-        if s.status not in (
-            Submission.STATUS_DRAFT,
-            Submission.STATUS_RETURNED,
-        ):
-            return False
-
-        s.revision += 1
-        rev = s.revision
-        prev_status = s.status
-        s.mark_submitted()
-        audit_submission_event(
-            s.pk,
-            None,
-            SubmissionAuditEvent.EVENT_STATUS_CHANGE,
-            {
-                "from": prev_status,
-                "to": s.status,
-                "source": "assessment_attempt_submitted",
-                "assessment_attempt_id": assessment_attempt.pk,
-            },
-            submission_revision=rev,
+        result = getattr(assessment_attempt, "result", None)
+        graded = assessment_attempt.status == AssessmentAttempt.STATUS_GRADED
+        percent = (
+            float(result.percent)
+            if (graded and result is not None and result.percent is not None)
+            else None
         )
-        s.save()
-        return True
+
+        if percent is not None:
+            # Skip if already auto-graded with the same score.
+            if (
+                s.status == Submission.STATUS_REVIEWED
+                and existing_review is not None
+                and existing_review.is_auto
+                and existing_review.grade is not None
+                and float(existing_review.grade) == percent
+            ):
+                return False
+            s.revision += 1
+            _auto_grade(s, assignment, percent, 100, "assessment_graded", s.revision)
+            s.save()
+            return True
+
+        # Grading still pending → interim submitted (only from editable states).
+        if s.status in (Submission.STATUS_DRAFT, Submission.STATUS_RETURNED):
+            s.revision += 1
+            rev = s.revision
+            prev_status = s.status
+            s.mark_submitted()
+            audit_submission_event(
+                s.pk, None, SubmissionAuditEvent.EVENT_STATUS_CHANGE,
+                {"from": prev_status, "to": s.status, "source": "assessment_attempt_submitted",
+                 "assessment_attempt_id": assessment_attempt.pk},
+                submission_revision=rev,
+            )
+            s.save()
+            return True
+        return False
