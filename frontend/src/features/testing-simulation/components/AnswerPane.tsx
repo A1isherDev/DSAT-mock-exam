@@ -45,8 +45,8 @@ export const AnswerPane = memo(function AnswerPane({
 }: AnswerPaneProps) {
   const isSpr = Boolean(question.is_math_input);
   return (
-    <div className="min-w-0 overflow-y-auto bg-white p-10 pb-8" style={{ fontSize: `${15 * zoom}px`, ...style }}>
-      <div className={`w-full max-w-3xl transition-[margin] duration-300 ease-out ${shiftRight ? "ml-auto mr-0 lg:mr-8" : "mx-auto"}`}>
+    <div className="min-w-0 overflow-y-auto overflow-x-hidden bg-white p-10 pb-8" style={{ fontSize: `${15 * zoom}px`, ...style }}>
+      <div className={`mx-auto w-full max-w-3xl transition-transform duration-300 ease-out ${shiftRight ? "translate-x-40" : ""}`}>
         {/* Header bar */}
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-6">
