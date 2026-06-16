@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   addHighlight,
   addUnderline,
@@ -63,19 +63,31 @@ export function useAnnotator({ getContainer, attemptId, questionId, active }: Us
   });
   const resolve = useCallback(() => getContainerRef.current(), []);
 
-  // Repaint stored annotations whenever the question changes (and shortly after,
-  // to win against the post-commit KaTeX re-render). Drops any open toolbar.
-  useEffect(() => {
+  // Paint stored annotations into the container — skipping while the user has a
+  // live selection there, so we never disrupt an in-progress drag.
+  const paint = useCallback(() => {
     if (questionId == null) return;
+    const c = resolve();
+    if (!c) return;
+    const sel = window.getSelection();
+    if (sel && !sel.isCollapsed && sel.anchorNode && c.contains(sel.anchorNode)) return;
+    applyAnnotations(c, readAnnotations(attemptId, questionId));
+  }, [resolve, attemptId, questionId]);
+
+  // Drop the toolbar on question change; repaint once more after KaTeX settles.
+  useEffect(() => {
     setToolbar(null);
-    const paint = () => {
-      const c = resolve();
-      if (c) applyAnnotations(c, readAnnotations(attemptId, questionId));
-    };
-    paint();
-    const t = setTimeout(paint, 140);
+    const t = setTimeout(paint, 150);
     return () => clearTimeout(t);
-  }, [questionId, attemptId, resolve]);
+  }, [questionId, attemptId, paint]);
+
+  // Re-apply after EVERY commit. The passage/stem is rendered via
+  // dangerouslySetInnerHTML (SafeHtml), so a routine re-render (timer tick,
+  // toolbar update, navigation) resets its HTML and wipes the marks. A layout
+  // effect restores them before the browser paints — no flicker.
+  useLayoutEffect(() => {
+    paint();
+  });
 
   useEffect(() => {
     if (!active || questionId == null) return;
