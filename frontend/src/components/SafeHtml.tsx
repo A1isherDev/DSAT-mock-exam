@@ -240,7 +240,7 @@
  * sufficiently restrictive for that content class.
  */
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import DOMPurify from "dompurify";
 
 export default function SafeHtml({
@@ -249,6 +249,18 @@ export default function SafeHtml({
 }: React.HTMLAttributes<HTMLDivElement> & { html: string }) {
   const safe = useMemo(() => DOMPurify.sanitize(html), [html]);
   const ref = useRef<HTMLDivElement | null>(null);
+
+  // Write innerHTML ONLY when the sanitized HTML actually changes — never on an
+  // unrelated parent re-render (e.g. the 1-second exam timer). `dangerouslySet-
+  // InnerHTML` re-applies on every commit, which replaces the text nodes and so
+  // (a) wipes runtime DOM mutations layered on top — the highlighter's <mark>
+  // spans — and (b) collapses any in-progress text selection. Setting innerHTML
+  // imperatively, keyed on `safe`, preserves both across re-renders. This is the
+  // surface SafeHtml exists for (runtime-mutated highlight HTML).
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el && el.innerHTML !== safe) el.innerHTML = safe;
+  }, [safe]);
 
   useEffect(() => {
     const el = ref.current;
@@ -274,5 +286,5 @@ export default function SafeHtml({
     };
   }, [safe]);
 
-  return <div ref={ref} {...divProps} dangerouslySetInnerHTML={{ __html: safe }} />;
+  return <div ref={ref} {...divProps} suppressHydrationWarning />;
 }
