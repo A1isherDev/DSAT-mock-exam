@@ -1,11 +1,12 @@
 "use client";
 import { memo } from "react";
-import { Bookmark, Flag } from "lucide-react";
+import { Bookmark } from "lucide-react";
 import SafeHtml from "@/components/SafeHtml";
 import type { ExamQuestion } from "../types";
 import { ChoiceList } from "./ChoiceList";
 import { SprInput } from "./SprInput";
 import { renderExamHtml } from "../utils/richContent";
+import { resolveImageUrl } from "../utils/image";
 
 interface AnswerPaneProps {
   question: ExamQuestion;
@@ -44,6 +45,8 @@ export const AnswerPane = memo(function AnswerPane({
   shiftRight = false,
 }: AnswerPaneProps) {
   const isSpr = Boolean(question.is_math_input);
+  // Math is single-pane (no PassagePane), so the question figure is rendered here.
+  const figure = isMath ? resolveImageUrl(question.question_image) : undefined;
   return (
     <div className="min-w-0 overflow-y-auto overflow-x-hidden bg-white p-10 pb-8" style={{ fontSize: `${15 * zoom}px`, ...style }}>
       <div className={`mx-auto w-full max-w-3xl transition-transform duration-300 ease-out ${shiftRight ? "translate-x-40" : ""}`}>
@@ -59,11 +62,7 @@ export const AnswerPane = memo(function AnswerPane({
               className={`flex items-center text-xs font-bold underline-offset-2 transition-colors ${flagged ? "text-red-600 underline" : "text-slate-500 hover:text-slate-900"}`}
             >
               <span className={`mr-1.5 flex h-5 w-5 items-center justify-center rounded-sm border ${flagged ? "border-red-300" : "border-slate-400"}`}>
-                {flagged ? (
-                  <Flag className="h-3.5 w-3.5 fill-red-600 text-red-600" />
-                ) : (
-                  <Bookmark className="h-3.5 w-3.5 text-slate-400" />
-                )}
+                <Bookmark className={`h-3.5 w-3.5 ${flagged ? "fill-red-600 text-red-600" : "text-slate-400"}`} />
               </span>
               {flagged ? "Marked for Review" : "Mark for Review"}
             </button>
@@ -92,6 +91,18 @@ export const AnswerPane = memo(function AnswerPane({
               "repeating-linear-gradient(to right, #b91c1c 0, #b91c1c 48px, transparent 48px, transparent 54px, #ca8a04 54px, #ca8a04 102px, transparent 102px, transparent 108px, #15803d 108px, #15803d 156px, transparent 156px, transparent 162px, #0f172a 162px, #0f172a 210px, transparent 210px, transparent 216px)",
           }}
         />
+
+        {/* Math question figure (single-pane layout has no PassagePane). */}
+        {figure && (
+          <div className="mb-6 flex justify-center">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={figure}
+              alt="Question figure"
+              className="max-h-[360px] max-w-full rounded-lg border border-slate-100 bg-slate-50 object-contain p-2"
+            />
+          </div>
+        )}
 
         {/* Highlightable question content (prompt for RW, stem for math). The
             annotator targets this container when there is no passage pane. */}
