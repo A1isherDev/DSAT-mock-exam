@@ -1,5 +1,5 @@
 "use client";
-import { X } from "lucide-react";
+import { Flag, MapPin, X } from "lucide-react";
 import type { ExamQuestion } from "../types";
 
 interface QuestionNavigatorProps {
@@ -43,35 +43,36 @@ export function QuestionNavigator({
             <X className="h-5 w-5" />
           </button>
         </div>
-        <div className="mb-4 flex items-center justify-center gap-5 border-b border-slate-100 pb-3 text-xs font-semibold text-slate-500">
-          <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-full bg-blue-600" /> Current</span>
-          <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm border border-dashed border-slate-400" /> Unanswered</span>
-          <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm bg-red-500" /> For Review</span>
+        <div className="mb-5 flex items-center justify-center gap-6 border-b border-slate-100 pb-3 text-sm font-semibold text-slate-600">
+          <span className="flex items-center gap-1.5"><MapPin className="h-4 w-4 fill-slate-800 text-slate-800" /> Current</span>
+          <span className="flex items-center gap-1.5"><span className="h-3.5 w-3.5 rounded-sm border border-dashed border-slate-400" /> Unanswered</span>
+          <span className="flex items-center gap-1.5"><Flag className="h-4 w-4 fill-red-500 text-red-500" /> For Review</span>
         </div>
-        <div className="grid grid-cols-6 gap-3">
+        <div className="grid grid-cols-6 gap-x-3 gap-y-2 pt-3">
           {questions.map((q, i) => {
             const answered = Boolean(answers[q.id]);
             const isCurrent = i === currentIndex;
             const isFlagged = flagged.includes(q.id);
             return (
-              <button
-                key={q.id}
-                type="button"
-                onClick={() => {
-                  onJump(i);
-                  onClose();
-                }}
-                className={`relative flex h-10 items-center justify-center rounded-md text-sm font-bold transition-all ${
-                  isCurrent
-                    ? "bg-blue-600 text-white ring-2 ring-blue-300 ring-offset-1"
-                    : answered
-                      ? "bg-blue-600 text-white"
-                      : "border border-dashed border-slate-400 text-slate-600 hover:border-slate-600"
-                }`}
-              >
-                {i + 1}
-                {isFlagged && <span className="absolute -right-1 -top-1 h-3 w-3 rounded-sm bg-red-500" />}
-              </button>
+              <div key={q.id} className="relative flex justify-center">
+                {isCurrent && <MapPin className="absolute -top-3 left-1/2 h-4 w-4 -translate-x-1/2 fill-slate-800 text-slate-800" aria-hidden />}
+                <button
+                  type="button"
+                  onClick={() => {
+                    onJump(i);
+                    onClose();
+                  }}
+                  aria-current={isCurrent ? "true" : undefined}
+                  className={`relative flex h-10 w-10 items-center justify-center rounded-md text-sm font-bold transition-colors ${
+                    answered
+                      ? "border border-slate-800 bg-slate-800 text-white"
+                      : "border border-dashed border-slate-400 text-slate-700 hover:border-slate-600"
+                  } ${isCurrent ? "underline underline-offset-2" : ""}`}
+                >
+                  {i + 1}
+                  {isFlagged && <Flag className="absolute -right-1.5 -top-1.5 h-3.5 w-3.5 fill-red-500 text-red-500" aria-hidden />}
+                </button>
+              </div>
             );
           })}
         </div>

@@ -58,26 +58,38 @@ export function ChoiceList({ question, selected, eliminated, eliminationMode, on
               </span>
             </button>
 
-            {eliminationMode && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onEliminate(key);
-                }}
-                title={isEliminated ? "Restore" : "Eliminate"}
-                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border-2 transition-all ${
-                  isEliminated
-                    ? "border-red-300 bg-red-50 text-red-600 shadow-sm"
-                    : "border-slate-200 text-slate-400 hover:border-red-400 hover:text-red-500"
-                }`}
-              >
-                <span className="relative">
-                  <span className="text-[11px] font-black">{key}</span>
-                  <span className="absolute left-1/2 top-1/2 h-0.5 w-4 -translate-x-1/2 -translate-y-1/2 rotate-45 bg-current" />
-                </span>
-              </button>
-            )}
+            {eliminationMode &&
+              (isEliminated ? (
+                // Eliminated → an "Undo" pill (Bluebook restores via a text link).
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEliminate(key);
+                  }}
+                  title="Restore"
+                  className="shrink-0 text-xs font-bold text-blue-700 underline underline-offset-2 hover:text-blue-800"
+                >
+                  Undo
+                </button>
+              ) : (
+                // Crossed-out circular letter (Bluebook eliminate control).
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEliminate(key);
+                  }}
+                  title={`Eliminate ${key}`}
+                  aria-label={`Eliminate ${key}`}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-400 text-slate-600 transition-colors hover:border-slate-600 hover:text-slate-900"
+                >
+                  <span className="relative text-xs font-bold leading-none">
+                    {key}
+                    <span className="absolute left-1/2 top-1/2 h-px w-5 -translate-x-1/2 -translate-y-1/2 bg-current" />
+                  </span>
+                </button>
+              ))}
           </div>
         );
       })}
