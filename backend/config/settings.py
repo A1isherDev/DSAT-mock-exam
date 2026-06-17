@@ -465,6 +465,7 @@ CSRF_TRUSTED_ORIGINS = [
     'https://www.mastersat.uz',
     'https://admin.mastersat.uz',
     'https://questions.mastersat.uz',
+    'https://teacher.mastersat.uz',
     'http://65.109.100.104',
 ]
 
@@ -483,8 +484,8 @@ if DEBUG:
 CSRF_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_HTTPONLY = False
 
-# Share CSRF + session cookies across subdomains in production so the admin/questions consoles
-# can complete login/refresh flows after navigating from the apex domain.
+# Share CSRF + session cookies across subdomains in production so the admin/questions/teacher
+# consoles can complete login/refresh flows after navigating from the apex domain.
 if not DEBUG:
     SESSION_COOKIE_DOMAIN = ".mastersat.uz"
     CSRF_COOKIE_DOMAIN = ".mastersat.uz"

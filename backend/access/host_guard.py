@@ -18,6 +18,7 @@ from exams.metrics import incr as exams_metric_incr
 class HostGuardConfig:
     admin_prefix: str = "admin."
     questions_prefix: str = "questions."
+    teacher_prefix: str = "teacher."
 
 
 def _host_kind(host: str, cfg: HostGuardConfig) -> str:
@@ -38,6 +39,8 @@ def _host_kind(host: str, cfg: HostGuardConfig) -> str:
         return "questions"
     if len(labels) >= 2 and labels[1] == "questions":
         return "questions"
+    if labels[0] == "teacher" or h.startswith(cfg.teacher_prefix):
+        return "teacher"
     return "main"
 
 
@@ -47,7 +50,8 @@ class SubdomainAPIGuardMiddleware:
     - admin.<domain>: users + bulk assign; LMS exam authoring SPA (pastpapers, mocks,
       questions CRUD via ``/api/exams/admin/…`` — same-origin as apex; enforced in DRF)
     - questions.<domain>: preferred authoring subdomain; full ``/api/exams/admin/*`` + assessments admin
-    - main domain: student/teacher portal APIs; exams authoring requires DRF roles
+    - teacher.<domain>: teacher workspace APIs (classes + exams data); teacher + super_admin only
+    - main domain: student portal APIs; exams authoring requires DRF roles
       (``/api/exams/admin/*`` is not HTTP-blocked here for same-origin SPAs).
     """
 
@@ -177,6 +181,34 @@ class SubdomainAPIGuardMiddleware:
                 exams_metric_incr("forbidden_admin_route_total")
                 return JsonResponse({"detail": "Users console is available on admin subdomain."}, status=403)
             return self.get_response(request)
+
+        # Teacher subdomain: teacher workspace APIs only, restricted to teacher + super_admin.
+        # This rule is intentionally role-based (not permission-based): admin and test_admin
+        # are denied here even though they hold staff permissions elsewhere.
+        if kind == "teacher":
+            # Auth bootstrap must work for everyone (returns the user or 401); required for
+            # the Next.js session boot + projection cookie refresh on this subdomain.
+            if path.startswith("/api/users/me/"):
+                return self.get_response(request)
+            if role not in ("teacher", "super_admin"):
+                exams_metric_incr("forbidden_admin_route_total")
+                return JsonResponse(
+                    {"detail": "You do not have permission to access the Teacher Portal."},
+                    status=403,
+                )
+            # Teacher-facing namespaces: classes + exams data powering the workspace,
+            # plus the read-only exam-dates lookup used by analytics.
+            if path.startswith("/api/classes/"):
+                return self.get_response(request)
+            if path.startswith("/api/exams/"):
+                return self.get_response(request)
+            if path.startswith("/api/users/admin/exam-dates/"):
+                return self.get_response(request)
+            exams_metric_incr("forbidden_admin_route_total")
+            return JsonResponse(
+                {"detail": "This endpoint is not available on the teacher portal."},
+                status=403,
+            )
 
         # Main domain: do **not** block ``/api/exams/admin/`` here. JWT attaches the user early
         # via ``JWTUserMiddleware``, but authoring permission is enforced in DRF views

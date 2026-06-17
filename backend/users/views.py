@@ -296,6 +296,26 @@ class CookieTokenObtainPairView(ThrottledTokenObtainPairView):
                 body["code"] = reason
             return Response(body, status=status.HTTP_401_UNAUTHORIZED)
 
+        # Login funnel: enforce the teacher-portal access boundary at the auth layer.
+        # Credentials are already valid here; this is an authorization gate, not enumeration.
+        #   - teacher.* : only teacher + super_admin may obtain a session.
+        #   - main domain: teacher accounts must use the Teacher Portal; refuse here so a
+        #     teacher can only enter via teacher.mastersat.uz.
+        # Returning before set_auth_cookies means no cookies and no session row are created.
+        login_console = str(getattr(request, "lms_console", "") or "").strip().lower()
+        login_user = getattr(serializer, "user", None)
+        login_role = str(getattr(login_user, "role", "") or "").strip().lower()
+        if login_console == "teacher" and login_role not in ("teacher", "super_admin"):
+            return Response(
+                {"detail": "You do not have permission to access the Teacher Portal."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if login_console == "main" and login_role == "teacher":
+            return Response(
+                {"detail": "Teachers must sign in at the Teacher Portal: https://teacher.mastersat.uz"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         data = dict(serializer.validated_data)
         access = str(data.get("access") or "")
         refresh = str(data.get("refresh") or "")
