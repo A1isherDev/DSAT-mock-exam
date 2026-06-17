@@ -121,9 +121,42 @@ pm2 status
 
 ## Step 6 — Enable SSL (HTTPS)
 
+Issue/expand one certificate covering the apex plus every console subdomain
+(`admin.`, `questions.`, `teacher.`). Re-running this command with all `-d` flags
+expands the existing cert in place; auto-renewal then covers all names.
+
 ```bash
-sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com
+sudo certbot --nginx \
+  -d mastersat.uz -d www.mastersat.uz \
+  -d admin.mastersat.uz -d questions.mastersat.uz \
+  -d teacher.mastersat.uz
 ```
+
+> Each `-d` host must already resolve to this server (HTTP-01 challenge). Verify with
+> `dig +short teacher.mastersat.uz` before running certbot.
+
+---
+
+## Adding a new console subdomain (e.g. teacher.mastersat.uz)
+
+The frontend is a single Next.js app that serves every console by Host header, so a new
+subdomain is additive config — no second app/process.
+
+1. **DNS:** add an `A` record `teacher` → this server's IP (same as the apex). Wait for
+   propagation (`dig +short teacher.mastersat.uz`).
+2. **nginx:** add the host to both `server_name` lines in `nginx.conf` (already done for
+   `teacher.`), then `sudo nginx -t && sudo systemctl reload nginx`.
+3. **SSL:** expand the cert (Step 6 above) to include the new `-d` host.
+4. **Backend env** (`shared/backend.env`): append the host to `ALLOWED_HOSTS`
+   (e.g. `,teacher.mastersat.uz`). `CSRF_TRUSTED_ORIGINS` already lists it in
+   `settings.py`; cookie domain `.mastersat.uz` already covers it.
+5. **Frontend env** (`shared/frontend.env.production`): ensure
+   `NEXT_PUBLIC_TEACHER_PORTAL_URL` and `NEXT_PUBLIC_MAIN_SITE_URL` are set.
+6. Redeploy (`release_deploy.sh`) so the new env is picked up.
+
+Access rules and routing for the teacher console are enforced in code:
+`frontend/middleware.ts`, `frontend/src/components/AuthGuard.tsx`,
+`backend/access/host_guard.py`, and the login gate in `backend/users/views.py`.
 
 ---
 
