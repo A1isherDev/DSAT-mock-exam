@@ -19,7 +19,13 @@ interface ExamToolsLayerProps {
 export function ExamToolsLayer({ tools, attemptId }: ExamToolsLayerProps) {
   return (
     <>
-      {tools.calculatorOpen && <DesmosCalculator onClose={tools.toggleCalculator} />}
+      {tools.calculatorOpen && (
+        <DesmosCalculator
+          onClose={tools.toggleCalculator}
+          enlarged={tools.calculatorEnlarged}
+          onToggleEnlarge={tools.toggleCalculatorEnlarge}
+        />
+      )}
       {tools.referenceOpen && <ReferenceSheet onClose={tools.toggleReference} />}
       {tools.notesOpen && <NotesPanel attemptId={attemptId} onClose={tools.toggleNotes} />}
       {tools.helpOpen && <KeyboardShortcutsHelp onClose={tools.closeHelp} />}

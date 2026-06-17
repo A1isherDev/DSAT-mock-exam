@@ -657,7 +657,7 @@ export function ExamRunnerPage() {
               onSelect={(v) => selectAnswer(currentQuestion.id, v)}
               onEliminate={(k) => toggleEliminate(currentQuestion.id, k)}
               style={{ flex: "1 1 0%", minWidth: 0 }}
-              shiftRight={tools.calculatorOpen}
+              calcReserve={tools.calculatorOpen ? (tools.calculatorEnlarged ? 760 : 500) : 0}
             />
           </>
         )}

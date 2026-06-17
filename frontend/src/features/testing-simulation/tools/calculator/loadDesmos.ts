@@ -12,6 +12,8 @@ export interface DesmosInstance {
 }
 export interface DesmosFactory {
   GraphingCalculator(el: HTMLElement, options?: Record<string, unknown>): DesmosInstance;
+  /** Same Desmos `calculator.js` bundle also ships the scientific calculator. */
+  ScientificCalculator?(el: HTMLElement, options?: Record<string, unknown>): DesmosInstance;
 }
 
 declare global {

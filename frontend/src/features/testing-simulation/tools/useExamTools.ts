@@ -18,6 +18,7 @@ interface UseExamToolsArgs {
  */
 export function useExamTools({ attemptId, questionId, getContainers }: UseExamToolsArgs) {
   const [calculatorOpen, setCalculatorOpen] = useState(false);
+  const [calculatorEnlarged, setCalculatorEnlarged] = useState(false);
   const [referenceOpen, setReferenceOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -33,7 +34,13 @@ export function useExamTools({ attemptId, questionId, getContainers }: UseExamTo
   return {
     // panels
     calculatorOpen,
-    toggleCalculator: useCallback(() => setCalculatorOpen((v) => !v), []),
+    toggleCalculator: useCallback(() => {
+      // Each open/close starts at the normal (non-enlarged) size.
+      setCalculatorEnlarged(false);
+      setCalculatorOpen((v) => !v);
+    }, []),
+    calculatorEnlarged,
+    toggleCalculatorEnlarge: useCallback(() => setCalculatorEnlarged((v) => !v), []),
     referenceOpen,
     toggleReference: useCallback(() => setReferenceOpen((v) => !v), []),
     notesOpen,

@@ -1,38 +1,46 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { Maximize2, Minimize2 } from "lucide-react";
 import { FloatingPanel } from "../FloatingPanel";
 import { ScientificCalculator } from "./ScientificCalculator";
 import { loadDesmos, type DesmosInstance } from "./loadDesmos";
 
 interface DesmosCalculatorProps {
   onClose: () => void;
+  /** Enlarged window (and the runner reserves more space for it). */
+  enlarged: boolean;
+  onToggleEnlarge: () => void;
 }
 
+type Mode = "graphing" | "scientific";
+
 /**
- * The real Desmos Graphing Calculator (as used on the digital SAT), in a
- * draggable floating panel that overlays the content (Bluebook-style) and never
- * reserves layout space. Falls back to the built-in scientific calculator if the
- * Desmos script can't load (offline / blocked by CSP). UI-only; no exam coupling.
+ * The real Desmos calculator (as used on the digital SAT) in a draggable floating
+ * panel. Two tabs — Graphing and Scientific — both from the same Desmos bundle;
+ * falls back to the built-in scientific calculator if the script can't load
+ * (offline / CSP). An enlarge button grows the window. UI-only; no exam coupling.
  */
-export function DesmosCalculator({ onClose }: DesmosCalculatorProps) {
+export function DesmosCalculator({ onClose, enlarged, onToggleEnlarge }: DesmosCalculatorProps) {
+  const [mode, setMode] = useState<Mode>("graphing");
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const mountRef = useRef<HTMLDivElement>(null);
   const instanceRef = useRef<DesmosInstance | null>(null);
 
+  // (Re)mount the Desmos instance whenever the tab changes.
   useEffect(() => {
     let cancelled = false;
+    setStatus("loading");
     loadDesmos().then((factory) => {
-      if (cancelled) return;
-      if (!factory || !mountRef.current) {
+      if (cancelled || !mountRef.current) return;
+      const create = mode === "scientific" ? factory?.ScientificCalculator : factory?.GraphingCalculator;
+      if (!factory || typeof create !== "function") {
         setStatus("error");
         return;
       }
-      instanceRef.current = factory.GraphingCalculator(mountRef.current, {
-        expressions: true,
-        settingsMenu: false,
-        zoomButtons: true,
-        border: false,
-      });
+      instanceRef.current =
+        mode === "scientific"
+          ? create(mountRef.current, {})
+          : create(mountRef.current, { expressions: true, settingsMenu: false, zoomButtons: true, border: false });
       setStatus("ready");
     });
     return () => {
@@ -40,22 +48,62 @@ export function DesmosCalculator({ onClose }: DesmosCalculatorProps) {
       instanceRef.current?.destroy();
       instanceRef.current = null;
     };
-  }, []);
+  }, [mode]);
+
+  const tab = (m: Mode, label: string) => (
+    <button
+      type="button"
+      onClick={() => setMode(m)}
+      aria-pressed={mode === m}
+      className={`flex-1 px-3 py-1.5 text-xs font-bold transition-colors ${
+        mode === m ? "border-b-2 border-blue-600 text-blue-700" : "text-slate-500 hover:text-slate-800"
+      }`}
+    >
+      {label}
+    </button>
+  );
 
   return (
-    <FloatingPanel title="Calculator" onClose={onClose} initial={{ x: 120, y: 80, w: 560, h: 620 }} minW={360} minH={420}>
-      {status === "error" ? (
-        <ScientificCalculator />
-      ) : (
-        <div className="relative h-full w-full">
-          <div ref={mountRef} className="h-full w-full" />
-          {status === "loading" && (
-            <div className="absolute inset-0 flex items-center justify-center bg-white/70">
-              <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" />
-            </div>
+    <FloatingPanel
+      title="Calculator"
+      onClose={onClose}
+      initial={{ x: 16, y: 80, w: enlarged ? 720 : 460, h: enlarged ? 700 : 560 }}
+      minW={360}
+      minH={420}
+      headerExtra={
+        <button
+          type="button"
+          onClick={onToggleEnlarge}
+          aria-label={enlarged ? "Shrink calculator" : "Enlarge calculator"}
+          title={enlarged ? "Shrink" : "Enlarge"}
+          className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+        >
+          {enlarged ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+        </button>
+      }
+    >
+      <div className="flex h-full flex-col">
+        {/* Graphing / Scientific tabs */}
+        <div className="flex shrink-0 border-b border-slate-200">
+          {tab("graphing", "Graphing")}
+          {tab("scientific", "Scientific")}
+        </div>
+
+        <div className="relative min-h-0 flex-1">
+          {status === "error" ? (
+            <ScientificCalculator />
+          ) : (
+            <>
+              <div ref={mountRef} className="h-full w-full" />
+              {status === "loading" && (
+                <div className="absolute inset-0 flex items-center justify-center bg-white/70">
+                  <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" />
+                </div>
+              )}
+            </>
           )}
         </div>
-      )}
+      </div>
     </FloatingPanel>
   );
 }

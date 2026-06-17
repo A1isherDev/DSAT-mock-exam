@@ -10,6 +10,8 @@ interface FloatingPanelProps {
   minW?: number;
   minH?: number;
   resizable?: boolean;
+  /** Extra controls rendered in the title bar, left of the close button. */
+  headerExtra?: React.ReactNode;
 }
 
 /**
@@ -25,10 +27,16 @@ export function FloatingPanel({
   minW = 280,
   minH = 200,
   resizable = true,
+  headerExtra,
 }: FloatingPanelProps) {
   const [pos, setPos] = useState({ x: initial.x, y: initial.y });
   const [size, setSize] = useState({ w: initial.w, h: initial.h });
   const drag = useRef<{ mode: "move" | "resize"; dx: number; dy: number } | null>(null);
+
+  // Resize when the caller changes the requested size (e.g. enlarge toggle).
+  useEffect(() => {
+    setSize({ w: initial.w, h: initial.h });
+  }, [initial.w, initial.h]);
 
   const onHeaderDown = useCallback(
     (e: React.MouseEvent) => {
@@ -79,9 +87,12 @@ export function FloatingPanel({
         className="flex shrink-0 cursor-move items-center justify-between border-b border-slate-200 bg-slate-50 px-3 py-2 select-none"
       >
         <span className="text-sm font-bold text-slate-700">{title}</span>
-        <button type="button" onClick={onClose} className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700" aria-label={`Close ${title}`}>
-          <X className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-1">
+          {headerExtra}
+          <button type="button" onClick={onClose} className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700" aria-label={`Close ${title}`}>
+            <X className="h-4 w-4" />
+          </button>
+        </div>
       </div>
       <div className="min-h-0 flex-1 overflow-auto">{children}</div>
       {resizable && (

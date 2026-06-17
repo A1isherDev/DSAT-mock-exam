@@ -22,9 +22,9 @@ interface AnswerPaneProps {
   onSelect: (key: string) => void;
   onEliminate: (key: string) => void;
   style?: React.CSSProperties;
-  /** When true (calculator open), shift the question content to the right so the
-   *  floating calculator's default position doesn't cover it. */
-  shiftRight?: boolean;
+  /** Left space (px) to reserve when the calculator is open, so the floating
+   *  Desmos window never covers the question content. 0 = no calculator. */
+  calcReserve?: number;
 }
 
 /** Right pane: question header (number, Mark for Review, eliminate toggle) + answer area. */
@@ -42,14 +42,17 @@ export const AnswerPane = memo(function AnswerPane({
   onSelect,
   onEliminate,
   style,
-  shiftRight = false,
+  calcReserve = 0,
 }: AnswerPaneProps) {
   const isSpr = Boolean(question.is_math_input);
   // Math is single-pane (no PassagePane), so the question figure is rendered here.
   const figure = isMath ? resolveImageUrl(question.question_image) : undefined;
   return (
-    <div className="min-w-0 overflow-y-auto overflow-x-hidden bg-white p-10 pb-8" style={{ fontSize: `${15 * zoom}px`, ...style }}>
-      <div className={`mx-auto w-full max-w-3xl transition-transform duration-300 ease-out ${shiftRight ? "translate-x-40" : ""}`}>
+    <div
+      className="min-w-0 overflow-y-auto overflow-x-hidden bg-white p-10 pb-8 transition-[padding] duration-300 ease-out"
+      style={{ fontSize: `${15 * zoom}px`, ...(calcReserve > 0 ? { paddingLeft: calcReserve } : null), ...style }}
+    >
+      <div className={`w-full max-w-3xl ${calcReserve > 0 ? "mr-auto" : "mx-auto"}`}>
         {/* Question header band — coloured block, kept within the centred content. */}
         <div className="mb-4 flex items-center justify-between rounded-lg bg-stone-100 px-4 py-2.5">
           <div className="flex items-center gap-6">
