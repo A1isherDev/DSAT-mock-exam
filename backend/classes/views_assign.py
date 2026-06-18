@@ -27,7 +27,7 @@ from access.engine.classroom_service import ClassroomAccessService
 from access.resources import RT_MIDTERM
 from exams.models import MockExam
 
-from .capabilities import classroom_capabilities, is_global_admin
+from .capabilities import classroom_capabilities
 from .models import Classroom, ClassroomMembership
 from .views_rankings import _ClassroomScopedView
 
@@ -81,7 +81,17 @@ class _AdminClassroomGovernanceView(APIView):
     permission_classes = [IsAuthenticated]
 
     def _guard(self, request) -> bool:
-        return is_global_admin(request.user)
+        # Governance (assign-teacher / transfer-ownership) is ADMIN-only by spec.
+        # NOTE: do NOT use ``is_global_admin`` here — it treats any LMS-staff user
+        # (including ordinary teachers, whose ``is_admin`` is permission-based) as a
+        # global admin, which would let teachers reassign/transfer each other's
+        # classrooms. Restrict strictly to super_admin / admin / Django superuser.
+        u = request.user
+        if not u or not getattr(u, "is_authenticated", False):
+            return False
+        if getattr(u, "is_superuser", False):
+            return True
+        return str(getattr(u, "role", "") or "").strip().lower() in ("super_admin", "admin")
 
     def _teacher_user(self, user_id):
         user = get_object_or_404(User, pk=user_id)
