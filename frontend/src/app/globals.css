@@ -90,9 +90,9 @@
   --border: var(--border-subtle);
 
   /* Brand */
-  --primary: #4338ca;
-  --primary-hover: #3730a3;
-  --primary-soft: rgba(67, 56, 202, 0.10);
+  --primary: #1828b1;
+  --primary-hover: #142296;
+  --primary-soft: rgba(24, 40, 177, 0.10);
   --primary-foreground: #ffffff;
 
   --accent: #0ea5e9;
@@ -117,10 +117,10 @@
   --info-foreground: #0369a1;
 
   --muted: var(--text-secondary);
-  --ring: rgba(67, 56, 202, 0.40);
+  --ring: rgba(24, 40, 177, 0.40);
 
   /* Chart ramp */
-  --chart-1: #4338ca;
+  --chart-1: #1828b1;
   --chart-2: #0ea5e9;
   --chart-3: #059669;
   --chart-4: #d97706;
@@ -178,9 +178,9 @@
   --card: var(--surface);
   --border: var(--border-subtle);
 
-  --primary: #6366f1;
-  --primary-hover: #818cf8;
-  --primary-soft: rgba(99, 102, 241, 0.18);
+  --primary: #4b5ce6;
+  --primary-hover: #6e7cf2;
+  --primary-soft: rgba(75, 92, 230, 0.18);
   --primary-foreground: #ffffff;
 
   --accent: #38bdf8;
@@ -204,9 +204,9 @@
   --info-foreground: #7dd3fc;
 
   --muted: var(--text-secondary);
-  --ring: rgba(129, 140, 248, 0.5);
+  --ring: rgba(75, 92, 230, 0.5);
 
-  --chart-1: #818cf8;
+  --chart-1: #4b5ce6;
   --chart-2: #38bdf8;
   --chart-3: #34d399;
   --chart-4: #fbbf24;
@@ -363,12 +363,12 @@ optgroup {
 }
 
 .ui-card:hover {
-  border-color: rgba(37, 99, 235, 0.25);
+  border-color: rgba(24, 40, 177, 0.25);
   box-shadow: var(--ds-shadow-md);
 }
 
 .dark .ui-card:hover {
-  border-color: rgba(59, 130, 246, 0.3);
+  border-color: rgba(75, 92, 230, 0.3);
 }
 
 /* Inputs */
@@ -466,7 +466,7 @@ optgroup {
   color: #fff;
   background: var(--primary);
   border: 1px solid transparent;
-  box-shadow: 0 1px 3px rgba(37, 99, 235, 0.3);
+  box-shadow: 0 1px 3px rgba(24, 40, 177, 0.3);
 }
 .ms-cta-fill:hover,
 .btn-primary:hover {
@@ -548,7 +548,7 @@ optgroup {
 }
 
 .metric-tile:hover {
-  border-color: rgba(37, 99, 235, 0.2);
+  border-color: rgba(24, 40, 177, 0.2);
   box-shadow: var(--ds-shadow-md);
 }
 
@@ -563,7 +563,7 @@ optgroup {
 }
 
 .dark .metric-tile:hover {
-  border-color: rgba(59, 130, 246, 0.25);
+  border-color: rgba(75, 92, 230, 0.25);
   box-shadow: var(--ds-shadow-md);
 }
 
@@ -577,8 +577,8 @@ optgroup {
   align-items: center;
   gap: 0.5rem;
   border-radius: 9999px;
-  border: 1px solid rgba(37, 99, 235, 0.2);
-  background: rgba(37, 99, 235, 0.06);
+  border: 1px solid rgba(24, 40, 177, 0.2);
+  background: rgba(24, 40, 177, 0.06);
   padding: 0.25rem 0.75rem;
   font-size: 0.75rem;
   line-height: 1rem;
