@@ -40,11 +40,15 @@ export function ClassroomShell({
   active,
   onTabChange,
   children,
+  backHref = "/classes",
+  backLabel = "All classes",
 }: {
   classroom: ClassroomWithRole;
   active: ClassroomTabId;
   onTabChange: (id: ClassroomTabId) => void;
   children: React.ReactNode;
+  backHref?: string;
+  backLabel?: string;
 }) {
   const caps = capabilitiesFor(classroom.my_role);
   const role = normalizeRole(classroom.my_role);
@@ -60,10 +64,10 @@ export function ClassroomShell({
   return (
     <div className="mx-auto w-full max-w-6xl px-4 pb-16 pt-4 sm:px-6">
       <Link
-        href="/classes"
+        href={backHref}
         className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
       >
-        <ArrowLeft className="h-4 w-4" /> All classes
+        <ArrowLeft className="h-4 w-4" /> {backLabel}
       </Link>
 
       <header className="mt-4 flex flex-wrap items-start justify-between gap-4">

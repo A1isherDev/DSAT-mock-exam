@@ -6,10 +6,7 @@ import api from "@/lib/api";
 import {
   AlertOctagon,
   ArrowRight,
-  CalendarX,
   CheckCircle2,
-  ClipboardList,
-  Clock,
   GraduationCap,
   KeyRound,
   School,
@@ -19,26 +16,11 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type OverdueAssignment = {
-  id: number;
-  title: string;
-  classroom_name: string;
-  classroom_id: number;
-  due_at: string;
-  days_overdue: number;
-};
-
+// Admin/Ops is governance-only. Operational assignment monitoring (overdue work)
+// lives in the Teacher Portal; the dashboard only surfaces governance signals.
 type AttentionData = {
-  overdue_assignments: OverdueAssignment[];
-  overdue_count: number;
   scoring_failures: number;
 };
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function pluralDays(n: number): string {
-  return n === 1 ? "1 day" : `${n} days`;
-}
 
 // ─── Components ───────────────────────────────────────────────────────────────
 
@@ -115,31 +97,6 @@ function AttentionBanner({
   );
 }
 
-function OverdueRow({ item }: { item: OverdueAssignment }) {
-  const urgent = item.days_overdue >= 7;
-  return (
-    <Link
-      href={`/ops/assignments`}
-      className="flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-surface-2 transition-colors"
-    >
-      <Clock
-        className={`h-4 w-4 shrink-0 ${urgent ? "text-red-500" : "text-amber-500"}`}
-      />
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold text-foreground truncate">{item.title}</p>
-        <p className="text-xs text-muted-foreground truncate">{item.classroom_name}</p>
-      </div>
-      <span
-        className={`shrink-0 text-xs font-bold tabular-nums ${
-          urgent ? "text-red-600" : "text-amber-600"
-        }`}
-      >
-        +{pluralDays(item.days_overdue)}
-      </span>
-    </Link>
-  );
-}
-
 function SkeletonBanner() {
   return (
     <div className="flex items-center gap-3 rounded-2xl border border-border bg-card px-4 py-3 animate-pulse">
@@ -160,12 +117,6 @@ const QUICK_LINKS = [
     icon: School,
     title: "Classrooms",
     cta: "View",
-  },
-  {
-    href: "/ops/assignments",
-    icon: ClipboardList,
-    title: "Assignments",
-    cta: "Manage",
   },
   {
     href: "/ops/access",
@@ -216,78 +167,35 @@ export default function OpsDashboardPage() {
     };
   }, []);
 
-  const overdueCount = attention?.overdue_count ?? 0;
   const scoringFailures = attention?.scoring_failures ?? 0;
-  const overdueItems = attention?.overdue_assignments ?? [];
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div>
         <h1 className="text-xl font-bold text-foreground tracking-tight">Operations</h1>
-        <p className="text-muted-foreground mt-1">Needs your attention right now.</p>
+        <p className="text-muted-foreground mt-1">Governance and platform health.</p>
       </div>
 
       {/* Attention signals */}
       <div className="space-y-2.5">
         {loading ? (
-          <>
-            <SkeletonBanner />
-            <SkeletonBanner />
-          </>
+          <SkeletonBanner />
         ) : (
-          <>
-            <AttentionBanner
-              icon={CalendarX}
-              count={overdueCount}
-              label={overdueCount === 1 ? "overdue assignment" : "overdue assignments"}
-              description={
-                overdueCount === 0
-                  ? "No assignments are currently past due."
-                  : `${overdueCount} assignment${overdueCount !== 1 ? "s" : ""} past their due date — close or extend.`
-              }
-              href="/ops/assignments"
-              severity={overdueCount === 0 ? "ok" : overdueCount >= 3 ? "critical" : "warning"}
-            />
-            <AttentionBanner
-              icon={Zap}
-              count={scoringFailures}
-              label={scoringFailures === 1 ? "scoring failure" : "scoring failures"}
-              description={
-                scoringFailures === 0
-                  ? "All assessments scored successfully."
-                  : `${scoringFailures} assessment${scoringFailures !== 1 ? "s" : ""} failed to score — review and retry.`
-              }
-              href="/ops/scoring-issues"
-              severity={scoringFailures === 0 ? "ok" : scoringFailures >= 5 ? "critical" : "warning"}
-            />
-          </>
+          <AttentionBanner
+            icon={Zap}
+            count={scoringFailures}
+            label={scoringFailures === 1 ? "scoring failure" : "scoring failures"}
+            description={
+              scoringFailures === 0
+                ? "All assessments scored successfully."
+                : `${scoringFailures} assessment${scoringFailures !== 1 ? "s" : ""} failed to score — review and retry.`
+            }
+            href="/ops/scoring-issues"
+            severity={scoringFailures === 0 ? "ok" : scoringFailures >= 5 ? "critical" : "warning"}
+          />
         )}
       </div>
-
-      {/* Overdue assignment list */}
-      {!loading && overdueItems.length > 0 && (
-        <div className="rounded-2xl border border-amber-200 bg-card overflow-hidden">
-          <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-amber-100">
-            <p className="text-xs font-bold uppercase tracking-widest text-amber-700">
-              Overdue assignments
-            </p>
-            {overdueCount > overdueItems.length && (
-              <Link
-                href="/ops/assignments"
-                className="text-xs font-semibold text-primary hover:underline"
-              >
-                +{overdueCount - overdueItems.length} more →
-              </Link>
-            )}
-          </div>
-          <div className="px-1 py-1">
-            {overdueItems.map((item) => (
-              <OverdueRow key={item.id} item={item} />
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Quick navigation */}
       <div>

@@ -3,9 +3,45 @@
 import { useState } from "react";
 import { Check, Timer } from "lucide-react";
 import { normalizeApiError } from "@/lib/apiError";
-import { Card, CardHeader, Button, LoadingState } from "../ui";
-import { useAssignmentOptions, useAssignMidterm } from "../hooks";
+import { pushGlobalToast } from "@/lib/toastBus";
+import { Card, CardHeader, Button, LoadingState, ConfirmDialog } from "../ui";
+import { useAssignmentOptions, useAssignMidterm, useMidtermResults } from "../hooks";
 import type { ClassroomWithRole } from "../types";
+
+function MidtermResultsSection({ classId }: { classId: number }) {
+  const { data, isLoading } = useMidtermResults(classId);
+  const midterms = data?.midterms ?? [];
+  if (isLoading) return <LoadingState label="Loading midterm results…" />;
+  if (midterms.length === 0) return null;
+  return (
+    <div className="space-y-4">
+      {midterms.map((m) => (
+        <Card key={m.midterm_id}>
+          <CardHeader title={m.title} description={`${m.subject} · ${m.assigned} assigned · ${m.started} started · ${m.completed} completed`} />
+          <div className="mt-3 grid grid-cols-3 gap-3 text-center">
+            <div className="rounded-lg bg-surface-2 p-2"><p className="text-xs text-muted-foreground">Average</p><p className="text-base font-bold text-foreground">{m.average ?? "—"}</p></div>
+            <div className="rounded-lg bg-surface-2 p-2"><p className="text-xs text-muted-foreground">Highest</p><p className="text-base font-bold text-foreground">{m.highest ?? "—"}</p></div>
+            <div className="rounded-lg bg-surface-2 p-2"><p className="text-xs text-muted-foreground">Lowest</p><p className="text-base font-bold text-foreground">{m.lowest ?? "—"}</p></div>
+          </div>
+          <table className="mt-4 w-full text-sm">
+            <thead><tr className="text-left text-xs text-muted-foreground"><th className="py-1.5">Student</th><th>State</th><th>Score</th><th>Attempts</th><th>Date</th></tr></thead>
+            <tbody>
+              {m.students.map((s) => (
+                <tr key={s.student_id} className="border-t border-border">
+                  <td className="py-1.5 font-medium text-foreground">{s.student}</td>
+                  <td className="text-muted-foreground">{s.state.replace("_", " ")}</td>
+                  <td className="text-foreground">{s.score ?? "—"}</td>
+                  <td className="text-muted-foreground">{s.attempt_count}</td>
+                  <td className="text-muted-foreground">{s.attempt_date ? s.attempt_date.slice(0, 10) : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      ))}
+    </div>
+  );
+}
 
 interface MidtermOption {
   id: number;
@@ -29,27 +65,37 @@ export function Midterms({ classroom }: { classroom: ClassroomWithRole }) {
   const assign = useAssignMidterm(id);
   const [assignedId, setAssignedId] = useState<number | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [pending, setPending] = useState<MidtermOption | null>(null);
 
   const wanted = MIDTERM_SUBJECT[classSubject];
   const all = ((data?.midterms ?? []) as MidtermOption[]);
   const midterms = wanted ? all.filter((m) => m.subject === wanted) : all;
 
-  async function doAssign(midtermId: number) {
+  async function doAssign() {
+    if (!pending) return;
+    const midtermId = pending.id;
+    const title = pending.title || `Midterm #${midtermId}`;
     setErr(null);
     try {
       await assign.mutateAsync(midtermId);
+      setPending(null);
       setAssignedId(midtermId);
+      pushGlobalToast({ tone: "success", message: `“${title}” assigned to the class.` });
       setTimeout(() => setAssignedId((cur) => (cur === midtermId ? null : cur)), 2500);
     } catch (e) {
-      setErr(normalizeApiError(e).message);
+      const msg = normalizeApiError(e).message;
+      setErr(msg);
+      setPending(null);
+      pushGlobalToast({ tone: "error", message: msg });
     }
   }
 
   return (
+    <div className="space-y-5">
     <Card>
       <CardHeader
         title="Assign a midterm"
-        description="Assign an existing interactive midterm to every student in this class. Results appear in the Grading tab."
+        description="Assign an existing interactive midterm to every student in this class. Results appear below."
       />
       {err && <p className="mt-4 rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-600">{err}</p>}
       {isLoading ? (
@@ -72,12 +118,24 @@ export function Midterms({ classroom }: { classroom: ClassroomWithRole }) {
                   <Check className="h-4 w-4" /> Assigned
                 </span>
               ) : (
-                <Button loading={assign.isPending} onClick={() => doAssign(m.id)}>Assign to class</Button>
+                <Button loading={assign.isPending && pending?.id === m.id} onClick={() => setPending(m)}>Assign to class</Button>
               )}
             </li>
           ))}
         </ul>
       )}
     </Card>
+    <MidtermResultsSection classId={id} />
+
+    <ConfirmDialog
+      open={pending !== null}
+      title="Assign midterm to the class?"
+      description={pending ? `Every student in this class will be given access to “${pending.title || `Midterm #${pending.id}`}” immediately.` : ""}
+      confirmLabel="Assign to class"
+      loading={assign.isPending}
+      onConfirm={doAssign}
+      onCancel={() => setPending(null)}
+    />
+    </div>
   );
 }

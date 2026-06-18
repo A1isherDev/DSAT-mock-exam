@@ -36,3 +36,8 @@ backend/dev.sqlite3
 
 # UAT scratch DB (built from model state)
 backend/uat.sqlite3
+
+# Local tooling / generated artifacts
+.claude/
+graphify-out/
+test-results/

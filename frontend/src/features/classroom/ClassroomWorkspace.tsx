@@ -17,13 +17,22 @@ import { Analytics } from "./pages/Analytics";
 import { Gradebook } from "./pages/Gradebook";
 import { Materials } from "./pages/Materials";
 import { Midterms } from "./pages/Midterms";
+import { Results } from "./pages/Results";
 import { ComingSoon } from "./pages/ComingSoon";
 
 function isTabId(v: string | null): v is ClassroomTabId {
-  return v != null && ["overview", "assignments", "materials", "midterms", "stream", "people", "rankings", "grading", "attendance", "analytics", "settings"].includes(v);
+  return v != null && ["overview", "assignments", "materials", "midterms", "results", "stream", "people", "rankings", "grading", "attendance", "analytics", "settings"].includes(v);
 }
 
-export function ClassroomWorkspace({ classId }: { classId: number }) {
+export function ClassroomWorkspace({
+  classId,
+  backHref,
+  backLabel,
+}: {
+  classId: number;
+  backHref?: string;
+  backLabel?: string;
+}) {
   const { data: classroom, isLoading, isError, refetch } = useClassroom(classId);
   const router = useRouter();
   const pathname = usePathname();
@@ -51,11 +60,12 @@ export function ClassroomWorkspace({ classId }: { classId: number }) {
   const current: ClassroomTabId = allowed ? active : "overview";
 
   return (
-    <ClassroomShell classroom={classroom} active={current} onTabChange={onTabChange}>
+    <ClassroomShell classroom={classroom} active={current} onTabChange={onTabChange} backHref={backHref} backLabel={backLabel}>
       {current === "overview" && <ClassroomOverview classroom={classroom} onNavigate={onTabChange} />}
       {current === "assignments" && <Assignments classroom={classroom} />}
       {current === "midterms" && caps.canManageAssignments && <Midterms classroom={classroom} />}
       {current === "materials" && caps.isMember && <Materials classroom={classroom} />}
+      {current === "results" && caps.isStaff && <Results classroom={classroom} />}
       {current === "people" && <People classroom={classroom} />}
       {current === "rankings" && <Rankings classroom={classroom} />}
       {current === "grading" && caps.canGrade && <Gradebook classroom={classroom} />}
