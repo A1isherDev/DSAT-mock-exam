@@ -25,6 +25,7 @@ from .views_attendance import (
 from .views_analytics import AnalyticsClassView, AnalyticsMeView, AnalyticsStudentView
 from .views_gradebook import GradebookOverviewView, GradebookAssignmentView
 from .views_materials import ClassroomMaterialsView, ClassroomMaterialDetailView
+from .views_assign import AssignMidtermView, AssignTeacherView, TransferOwnershipView
 from .views_roster import MemberManageView
 
 
@@ -64,6 +65,10 @@ urlpatterns = [
     path("<int:classroom_pk>/analytics/class/", AnalyticsClassView.as_view(), name="analytics-class"),
     path("<int:classroom_pk>/analytics/me/", AnalyticsMeView.as_view(), name="analytics-me"),
     path("<int:classroom_pk>/analytics/students/<int:student_id>/", AnalyticsStudentView.as_view(), name="analytics-student"),
+    # Teacher assignment + admin governance
+    path("<int:classroom_pk>/assign-midterm/", AssignMidtermView.as_view(), name="class-assign-midterm"),
+    path("<int:classroom_pk>/assign-teacher/", AssignTeacherView.as_view(), name="class-assign-teacher"),
+    path("<int:classroom_pk>/transfer-ownership/", TransferOwnershipView.as_view(), name="class-transfer-ownership"),
     # Classroom materials (downloadable PDF/DOCX)
     path("<int:classroom_pk>/materials/", ClassroomMaterialsView.as_view(), name="class-materials"),
     path("<int:classroom_pk>/materials/<int:material_id>/", ClassroomMaterialDetailView.as_view(), name="class-material-detail"),
