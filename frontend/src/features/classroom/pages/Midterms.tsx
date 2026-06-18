@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { Check, Timer } from "lucide-react";
 import { normalizeApiError } from "@/lib/apiError";
-import { Card, CardHeader, Button, LoadingState } from "../ui";
+import { pushGlobalToast } from "@/lib/toastBus";
+import { Card, CardHeader, Button, LoadingState, ConfirmDialog } from "../ui";
 import { useAssignmentOptions, useAssignMidterm, useMidtermResults } from "../hooks";
 import type { ClassroomWithRole } from "../types";
 
@@ -64,19 +65,28 @@ export function Midterms({ classroom }: { classroom: ClassroomWithRole }) {
   const assign = useAssignMidterm(id);
   const [assignedId, setAssignedId] = useState<number | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [pending, setPending] = useState<MidtermOption | null>(null);
 
   const wanted = MIDTERM_SUBJECT[classSubject];
   const all = ((data?.midterms ?? []) as MidtermOption[]);
   const midterms = wanted ? all.filter((m) => m.subject === wanted) : all;
 
-  async function doAssign(midtermId: number) {
+  async function doAssign() {
+    if (!pending) return;
+    const midtermId = pending.id;
+    const title = pending.title || `Midterm #${midtermId}`;
     setErr(null);
     try {
       await assign.mutateAsync(midtermId);
+      setPending(null);
       setAssignedId(midtermId);
+      pushGlobalToast({ tone: "success", message: `“${title}” assigned to the class.` });
       setTimeout(() => setAssignedId((cur) => (cur === midtermId ? null : cur)), 2500);
     } catch (e) {
-      setErr(normalizeApiError(e).message);
+      const msg = normalizeApiError(e).message;
+      setErr(msg);
+      setPending(null);
+      pushGlobalToast({ tone: "error", message: msg });
     }
   }
 
@@ -108,7 +118,7 @@ export function Midterms({ classroom }: { classroom: ClassroomWithRole }) {
                   <Check className="h-4 w-4" /> Assigned
                 </span>
               ) : (
-                <Button loading={assign.isPending} onClick={() => doAssign(m.id)}>Assign to class</Button>
+                <Button loading={assign.isPending && pending?.id === m.id} onClick={() => setPending(m)}>Assign to class</Button>
               )}
             </li>
           ))}
@@ -116,6 +126,16 @@ export function Midterms({ classroom }: { classroom: ClassroomWithRole }) {
       )}
     </Card>
     <MidtermResultsSection classId={id} />
+
+    <ConfirmDialog
+      open={pending !== null}
+      title="Assign midterm to the class?"
+      description={pending ? `Every student in this class will be given access to “${pending.title || `Midterm #${pending.id}`}” immediately.` : ""}
+      confirmLabel="Assign to class"
+      loading={assign.isPending}
+      onConfirm={doAssign}
+      onCancel={() => setPending(null)}
+    />
     </div>
   );
 }

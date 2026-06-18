@@ -6,7 +6,9 @@ import { ClipboardList, Plus, CalendarClock, Eye, Archive, RotateCcw } from "luc
 import CreateAssignmentModal from "@/components/CreateAssignmentModal";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
-import { Card, CardHeader, Button, Pill, LoadingState, ErrorState, EmptyState } from "../ui";
+import { normalizeApiError } from "@/lib/apiError";
+import { pushGlobalToast } from "@/lib/toastBus";
+import { Card, CardHeader, Button, Pill, LoadingState, ErrorState, EmptyState, ConfirmDialog } from "../ui";
 import { useAssignments } from "../hooks";
 import { useAssignmentLifecycle } from "../homeworkHooks";
 import { classroomKeys } from "../queryKeys";
@@ -130,6 +132,18 @@ export function Assignments({ classroom }: { classroom: ClassroomWithRole }) {
 
 function StaffRow({ classId, a, archived }: { classId: number; a: AsgRow; archived?: boolean }) {
   const lc = useAssignmentLifecycle(classId, a.id);
+  const [confirmArchive, setConfirmArchive] = useState(false);
+
+  async function run(m: { mutateAsync: () => Promise<unknown> }, ok: string) {
+    try {
+      await m.mutateAsync();
+      pushGlobalToast({ tone: "success", message: ok });
+      setConfirmArchive(false);
+    } catch (e) {
+      pushGlobalToast({ tone: "error", message: normalizeApiError(e).message });
+    }
+  }
+
   return (
     <div className="flex items-center justify-between gap-3 rounded-xl border border-border px-4 py-3">
       <Link href={hrefFor(classId, a)} className="min-w-0 flex-1">
@@ -143,15 +157,26 @@ function StaffRow({ classId, a, archived }: { classId: number; a: AsgRow; archiv
         {a.status === "DRAFT" && <Pill tone="neutral">Draft</Pill>}
         {a.status === "ARCHIVED" && <Pill tone="neutral">Archived</Pill>}
         {a.status === "DRAFT" && (
-          <Button size="sm" variant="secondary" icon={Eye} loading={lc.publish.isPending} onClick={() => lc.publish.mutate()}>Publish</Button>
+          <Button size="sm" variant="secondary" icon={Eye} loading={lc.publish.isPending} onClick={() => run(lc.publish, `“${a.title}” published.`)}>Publish</Button>
         )}
         {a.status === "PUBLISHED" && (
-          <Button size="sm" variant="ghost" icon={Archive} loading={lc.archive.isPending} onClick={() => lc.archive.mutate()}>Archive</Button>
+          <Button size="sm" variant="ghost" icon={Archive} loading={lc.archive.isPending} onClick={() => setConfirmArchive(true)}>Archive</Button>
         )}
         {(a.status === "ARCHIVED" || archived) && (
-          <Button size="sm" variant="secondary" icon={RotateCcw} loading={lc.unarchive.isPending} onClick={() => lc.unarchive.mutate()}>Unarchive</Button>
+          <Button size="sm" variant="secondary" icon={RotateCcw} loading={lc.unarchive.isPending} onClick={() => run(lc.unarchive, `“${a.title}” unarchived.`)}>Unarchive</Button>
         )}
       </div>
+
+      <ConfirmDialog
+        open={confirmArchive}
+        title="Archive assignment?"
+        description={`“${a.title}” will be hidden from students. Existing grades are kept and you can unarchive it later.`}
+        confirmLabel="Archive"
+        tone="danger"
+        loading={lc.archive.isPending}
+        onConfirm={() => run(lc.archive, `“${a.title}” archived.`)}
+        onCancel={() => setConfirmArchive(false)}
+      />
     </div>
   );
 }

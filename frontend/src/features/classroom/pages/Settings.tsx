@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { Check, RefreshCw, KeyRound } from "lucide-react";
 import { normalizeApiError } from "@/lib/apiError";
-import { Card, CardHeader, Button, Field, Select, TextField } from "../ui";
+import { pushGlobalToast } from "@/lib/toastBus";
+import { Card, CardHeader, Button, Field, Select, TextField, ConfirmDialog } from "../ui";
 import { useUpdateClass, useRegenerateCode } from "../hooks";
 import type { ClassroomWithRole } from "../types";
 
@@ -25,13 +26,15 @@ export function Settings({ classroom }: { classroom: ClassroomWithRole }) {
   });
   const [err, setErr] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [confirmArchive, setConfirmArchive] = useState(false);
+  const [confirmRegen, setConfirmRegen] = useState(false);
 
   const joinCode = String(c.join_code ?? "");
+  const wasActive = c.is_active !== false;
 
-  async function save() {
+  async function persist() {
     setErr(null);
     setSaved(false);
-    if (!form.name.trim()) return setErr("Class name can't be empty.");
     try {
       await update.mutateAsync({
         name: form.name.trim(),
@@ -42,10 +45,36 @@ export function Settings({ classroom }: { classroom: ClassroomWithRole }) {
         max_students: form.max_students.trim() === "" ? null : Number(form.max_students),
         is_active: form.is_active,
       });
+      setConfirmArchive(false);
       setSaved(true);
+      pushGlobalToast({ tone: "success", message: "Class settings saved." });
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {
-      setErr(normalizeApiError(e).message);
+      const msg = normalizeApiError(e).message;
+      setErr(msg);
+      setConfirmArchive(false);
+      pushGlobalToast({ tone: "error", message: msg });
+    }
+  }
+
+  function save() {
+    setErr(null);
+    if (!form.name.trim()) return setErr("Class name can't be empty.");
+    // Archiving (active → inactive) is significant — confirm before persisting.
+    if (wasActive && !form.is_active) {
+      setConfirmArchive(true);
+      return;
+    }
+    void persist();
+  }
+
+  async function regenerate() {
+    try {
+      await regen.mutateAsync();
+      setConfirmRegen(false);
+      pushGlobalToast({ tone: "success", message: "New join code generated." });
+    } catch (e) {
+      pushGlobalToast({ tone: "error", message: normalizeApiError(e).message });
     }
   }
 
@@ -113,12 +142,33 @@ export function Settings({ classroom }: { classroom: ClassroomWithRole }) {
           <span className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface-2 px-4 py-2 font-mono text-lg font-bold tracking-widest text-foreground">
             <KeyRound className="h-4 w-4 text-muted-foreground" /> {joinCode || "—"}
           </span>
-          <Button variant="secondary" icon={RefreshCw} loading={regen.isPending} onClick={() => regen.mutate()}>
+          <Button variant="secondary" icon={RefreshCw} loading={regen.isPending} onClick={() => setConfirmRegen(true)}>
             Regenerate
           </Button>
           <span className="text-xs text-muted-foreground">Regenerating invalidates the old code immediately.</span>
         </div>
       </Card>
+
+      <ConfirmDialog
+        open={confirmArchive}
+        title="Archive this class?"
+        description="Students will no longer be able to join or see this class. You can reactivate it later from these settings."
+        confirmLabel="Archive class"
+        tone="danger"
+        loading={update.isPending}
+        onConfirm={() => void persist()}
+        onCancel={() => setConfirmArchive(false)}
+      />
+      <ConfirmDialog
+        open={confirmRegen}
+        title="Regenerate join code?"
+        description="The current code stops working immediately. Anyone with the old code won't be able to join until you share the new one."
+        confirmLabel="Regenerate"
+        tone="danger"
+        loading={regen.isPending}
+        onConfirm={regenerate}
+        onCancel={() => setConfirmRegen(false)}
+      />
     </div>
   );
 }

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Users, Plus, GraduationCap, Calculator, BookOpen, Archive } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { normalizeApiError } from "@/lib/apiError";
+import { pushGlobalToast } from "@/lib/toastBus";
 import { formatLessonDaysMeta } from "@/lib/classroomSchedule";
 import { PageHeader, Card, Button, Dialog, Field, Select, TextField, EmptyState, LoadingState, ErrorState, Pill } from "../ui";
 import { useClassrooms, useCreateClass, type CreateClassInput } from "../hooks";
@@ -64,7 +65,8 @@ export function TeacherClassrooms() {
     setCreateErr(null);
     if (!form.name.trim()) return setCreateErr("Give the class a name.");
     try {
-      await create.mutateAsync(form);
+      const created = await create.mutateAsync(form);
+      pushGlobalToast({ tone: "success", message: `Classroom “${created?.name ?? form.name.trim()}” created.` });
       setCreateOpen(false);
       setForm({ name: "", subject: "ENGLISH", lesson_days: "ODD" });
     } catch (e) {

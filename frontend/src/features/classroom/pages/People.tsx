@@ -1,14 +1,46 @@
 "use client";
 
+import { useState } from "react";
 import { Users, UserMinus, GraduationCap } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { cn } from "@/lib/cn";
-import { Card, CardHeader, Button, LoadingState, ErrorState, EmptyState, Pill } from "../ui";
+import { normalizeApiError } from "@/lib/apiError";
+import { pushGlobalToast } from "@/lib/toastBus";
+import { Card, CardHeader, Button, LoadingState, ErrorState, EmptyState, Pill, ConfirmDialog } from "../ui";
 import { useClassMembers } from "../hooks";
 import { classroomKeys } from "../queryKeys";
 import { normalizeRole, ROLE_LABEL, capabilitiesFor } from "../capabilities";
 import type { ClassroomWithRole, Member } from "../types";
+
+type PendingAction =
+  | { kind: "make-ta"; userId: number; name: string }
+  | { kind: "revoke-ta"; userId: number; name: string }
+  | { kind: "remove"; userId: number; name: string };
+
+const ACTION_COPY: Record<PendingAction["kind"], { title: string; confirmLabel: string; tone: "primary" | "danger"; body: (name: string) => string; toast: (name: string) => string }> = {
+  "make-ta": {
+    title: "Make teaching assistant?",
+    confirmLabel: "Make TA",
+    tone: "primary",
+    body: (n) => `${n} will gain instructional access — they can create and grade assignments and mark attendance.`,
+    toast: (n) => `${n} is now a TA.`,
+  },
+  "revoke-ta": {
+    title: "Revoke teaching assistant?",
+    confirmLabel: "Revoke TA",
+    tone: "primary",
+    body: (n) => `${n} will return to being a regular student and lose instructional access.`,
+    toast: (n) => `${n} is no longer a TA.`,
+  },
+  remove: {
+    title: "Remove student?",
+    confirmLabel: "Remove",
+    tone: "danger",
+    body: (n) => `${n} will lose access to this class and its assignments. You can re-add them with the join code.`,
+    toast: (n) => `Removed ${n} from the class.`,
+  },
+};
 
 function initials(u: Member["user"]): string {
   const a = (u.first_name?.[0] || u.email?.[0] || "?").toUpperCase();
@@ -33,6 +65,24 @@ export function People({ classroom }: { classroom: ClassroomWithRole }) {
   const caps = capabilitiesFor(classroom.my_role);
   const { data, isLoading, isError, refetch } = useClassMembers(classId);
   const mutate = useMemberMutation(classId);
+  const [pending, setPending] = useState<PendingAction | null>(null);
+
+  async function runPending() {
+    if (!pending) return;
+    const vars =
+      pending.kind === "make-ta"
+        ? { userId: pending.userId, role: "TA" }
+        : pending.kind === "revoke-ta"
+          ? { userId: pending.userId, role: "STUDENT" }
+          : { userId: pending.userId, status: "REMOVED" };
+    try {
+      await mutate.mutateAsync(vars);
+      pushGlobalToast({ tone: "success", message: ACTION_COPY[pending.kind].toast(pending.name) });
+      setPending(null);
+    } catch (e) {
+      pushGlobalToast({ tone: "error", message: normalizeApiError(e).message });
+    }
+  }
 
   if (isLoading) return <LoadingState label="Loading people…" />;
   if (isError) return <ErrorState onRetry={() => refetch()} />;
@@ -59,14 +109,14 @@ export function People({ classroom }: { classroom: ClassroomWithRole }) {
         <div className="flex shrink-0 items-center gap-1.5">
           {/* Assign/revoke TA — Owner only */}
           {caps.canAssignTa && role === "STUDENT" && (
-            <Button size="sm" variant="secondary" icon={GraduationCap} disabled={busy} onClick={() => mutate.mutate({ userId: uid, role: "TA" })}>Make TA</Button>
+            <Button size="sm" variant="secondary" icon={GraduationCap} disabled={busy} onClick={() => setPending({ kind: "make-ta", userId: uid, name: fullName(m.user) })}>Make TA</Button>
           )}
           {caps.canAssignTa && role === "TA" && (
-            <Button size="sm" variant="ghost" disabled={busy} onClick={() => mutate.mutate({ userId: uid, role: "STUDENT" })}>Revoke TA</Button>
+            <Button size="sm" variant="ghost" disabled={busy} onClick={() => setPending({ kind: "revoke-ta", userId: uid, name: fullName(m.user) })}>Revoke TA</Button>
           )}
           {/* Remove student — Teacher+Owner */}
           {caps.canManageRoster && role === "STUDENT" && (
-            <Button size="sm" variant="ghost" icon={UserMinus} disabled={busy} onClick={() => mutate.mutate({ userId: uid, status: "REMOVED" })}>Remove</Button>
+            <Button size="sm" variant="ghost" icon={UserMinus} disabled={busy} onClick={() => setPending({ kind: "remove", userId: uid, name: fullName(m.user) })}>Remove</Button>
           )}
         </div>
       </div>
@@ -91,6 +141,17 @@ export function People({ classroom }: { classroom: ClassroomWithRole }) {
           )}
         </div>
       </Card>
+
+      <ConfirmDialog
+        open={pending !== null}
+        title={pending ? ACTION_COPY[pending.kind].title : ""}
+        description={pending ? ACTION_COPY[pending.kind].body(pending.name) : ""}
+        confirmLabel={pending ? ACTION_COPY[pending.kind].confirmLabel : "Confirm"}
+        tone={pending ? ACTION_COPY[pending.kind].tone : "primary"}
+        loading={mutate.isPending}
+        onConfirm={runPending}
+        onCancel={() => setPending(null)}
+      />
     </div>
   );
 }

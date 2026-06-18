@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { ArrowLeft, ChevronRight, GraduationCap, Sparkles, Bot, User2, ClipboardList } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { normalizeApiError } from "@/lib/apiError";
+import { pushGlobalToast } from "@/lib/toastBus";
 import { Card, CardHeader, Button, Pill, Field, Input, Textarea, EmptyState, LoadingState, ErrorState, StatCard } from "../ui";
 import type { PillTone } from "../ui";
 import type { ClassroomWithRole } from "../types";
@@ -176,6 +177,7 @@ function RosterRowItem({ classId, assignmentId, row, autoGraded, maxScore }: {
     setErr(null);
     try {
       await grade.mutateAsync({ submissionId: row.submission_id as number, grade: String(score), feedback });
+      pushGlobalToast({ tone: "success", message: `Saved grade for ${row.name}.` });
       setOpen(false);
     } catch (e) { setErr(normalizeApiError(e).message); }
   }
@@ -183,6 +185,7 @@ function RosterRowItem({ classId, assignmentId, row, autoGraded, maxScore }: {
     setErr(null);
     try {
       await ret.mutateAsync({ submissionId: row.submission_id as number, note: feedback });
+      pushGlobalToast({ tone: "success", message: `Returned ${row.name}'s work for revision.` });
       setOpen(false);
     } catch (e) { setErr(normalizeApiError(e).message); }
   }

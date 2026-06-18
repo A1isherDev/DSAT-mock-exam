@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { Download, Trash2, FileText } from "lucide-react";
 import { normalizeApiError } from "@/lib/apiError";
-import { Card, CardHeader, Button, TextField, LoadingState } from "../ui";
+import { pushGlobalToast } from "@/lib/toastBus";
+import { Card, CardHeader, Button, TextField, LoadingState, ConfirmDialog } from "../ui";
 import { capabilitiesFor } from "../capabilities";
 import { useMaterials, useUploadMaterial, useDeleteMaterial } from "../hooks";
 import type { ClassroomWithRole } from "../types";
@@ -20,6 +21,7 @@ export function Materials({ classroom }: { classroom: ClassroomWithRole }) {
   const [description, setDescription] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{ id: number; title: string } | null>(null);
 
   const materials = data?.results ?? [];
 
@@ -36,8 +38,20 @@ export function Materials({ classroom }: { classroom: ClassroomWithRole }) {
       setTitle("");
       setDescription("");
       setFile(null);
+      pushGlobalToast({ tone: "success", message: "Material uploaded." });
     } catch (e) {
       setErr(normalizeApiError(e).message);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    try {
+      await del.mutateAsync(pendingDelete.id);
+      pushGlobalToast({ tone: "success", message: `Removed “${pendingDelete.title}”.` });
+      setPendingDelete(null);
+    } catch (e) {
+      pushGlobalToast({ tone: "error", message: normalizeApiError(e).message });
     }
   }
 
@@ -91,7 +105,7 @@ export function Materials({ classroom }: { classroom: ClassroomWithRole }) {
                 )}
                 {caps.canManageAssignments && (
                   <button
-                    onClick={() => del.mutate(m.id)}
+                    onClick={() => setPendingDelete({ id: m.id, title: m.title })}
                     disabled={del.isPending}
                     className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-semibold text-rose-600 hover:bg-rose-500/10 disabled:opacity-50"
                     aria-label={`Remove ${m.title}`}
@@ -104,6 +118,17 @@ export function Materials({ classroom }: { classroom: ClassroomWithRole }) {
           </ul>
         )}
       </Card>
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="Remove material?"
+        description={pendingDelete ? `“${pendingDelete.title}” will be removed for everyone in this class. This can't be undone.` : ""}
+        confirmLabel="Remove"
+        tone="danger"
+        loading={del.isPending}
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   );
 }

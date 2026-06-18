@@ -12,6 +12,8 @@ export { Tabs } from "./Tabs";
 export type { TabItem } from "./Tabs";
 export { Dialog } from "./Dialog";
 export type { DialogProps } from "./Dialog";
+export { ConfirmDialog } from "./ConfirmDialog";
+export type { ConfirmDialogProps } from "./ConfirmDialog";
 export { Pill } from "./Pill";
 export type { PillTone } from "./Pill";
 export { Spinner, Skeleton, LoadingState, ErrorState, EmptyState } from "./states";
