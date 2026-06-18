@@ -5,6 +5,7 @@ import string
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.db.models import Q
 from django.db.models.signals import post_save
@@ -36,6 +37,11 @@ class Classroom(models.Model):
 
     name = models.CharField(max_length=120, db_index=True)
     subject = models.CharField(max_length=20, choices=SUBJECT_CHOICES, db_index=True)
+    description = models.TextField(
+        blank=True,
+        default="",
+        help_text="Free-text classroom description shown to teachers and students.",
+    )
     lesson_days = models.CharField(max_length=10, choices=DAYS_CHOICES, db_index=True)
     lesson_time = models.CharField(max_length=40, help_text="Example: 18:00", blank=True)
     lesson_hours = models.PositiveIntegerField(default=2, help_text="Lesson duration in hours")
@@ -145,6 +151,45 @@ class ClassroomMembership(models.Model):
     @property
     def is_manager(self) -> bool:
         return self.role in self.MANAGER_ROLES
+
+
+class ClassroomMaterial(models.Model):
+    """
+    Downloadable study material (PDF/DOCX) a teacher uploads to a classroom.
+
+    Deliberately distinct from the interactive Midterm engine (``MockExam``):
+    materials are plain files students download — no attempts, timing, or scoring.
+    Soft-archived via ``is_active`` (mirrors ``Classroom.is_active``).
+    """
+
+    MATERIAL_EXTENSIONS = ["pdf", "doc", "docx"]
+
+    classroom = models.ForeignKey(
+        Classroom, on_delete=models.CASCADE, related_name="materials"
+    )
+    teacher = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="uploaded_materials",
+    )
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True, default="")
+    file = models.FileField(
+        upload_to="classroom_materials/",
+        validators=[FileExtensionValidator(allowed_extensions=MATERIAL_EXTENSIONS)],
+    )
+    is_active = models.BooleanField(default=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "classroom_materials"
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.title} ({self.classroom_id})"
 
 
 class ClassPost(models.Model):

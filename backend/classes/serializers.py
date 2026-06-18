@@ -12,6 +12,7 @@ from .submission_validation import validate_submission_grade
 
 from .models import (
     Classroom,
+    ClassroomMaterial,
     ClassroomMembership,
     ClassPost,
     Assignment,
@@ -769,4 +770,29 @@ class ClassCommentSerializer(serializers.ModelSerializer):
             if parent.classroom_id != classroom.pk or parent.target_type != t_type or parent.target_id != t_id:
                 raise serializers.ValidationError({"parent": "Reply must belong to the same thread."})
         return attrs
+
+
+class ClassroomMaterialSerializer(serializers.ModelSerializer):
+    """Read serializer for downloadable classroom materials."""
+
+    file_url = serializers.SerializerMethodField()
+    teacher_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ClassroomMaterial
+        fields = ["id", "title", "description", "file_url", "teacher_name", "created_at"]
+        read_only_fields = fields
+
+    def get_file_url(self, obj) -> str | None:
+        if not obj.file:
+            return None
+        request = self.context.get("request")
+        return request.build_absolute_uri(obj.file.url) if request else obj.file.url
+
+    def get_teacher_name(self, obj) -> str | None:
+        u = obj.teacher
+        if not u:
+            return None
+        full = f"{(u.first_name or '').strip()} {(u.last_name or '').strip()}".strip()
+        return full or getattr(u, "email", None)
 
