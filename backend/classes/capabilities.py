@@ -19,14 +19,20 @@ from .models import ClassroomMembership
 
 
 def is_global_admin(user) -> bool:
-    """Org-wide staff: bypasses classroom-local role checks."""
+    """Org-wide admins that bypass classroom-local role checks: super_admin / admin / Django
+    superuser ONLY.
+
+    Deliberately does NOT use ``user.is_admin``: that property is permission-based
+    (``is_lms_staff_user``) and is True for ordinary teachers, which previously made every
+    teacher a "global admin" — granting full capabilities (and membership) on *any* classroom
+    via classroom_capabilities + IsClassMemberCap. Membership/ownership must be a real security
+    boundary, so global-admin status is now strictly role-based.
+    """
     if not user or not getattr(user, "is_authenticated", False):
         return False
     if getattr(user, "is_superuser", False):
         return True
-    if getattr(user, "is_admin", False):
-        return True
-    return getattr(user, "role", None) in ("super_admin", "admin")
+    return str(getattr(user, "role", "") or "").strip().lower() in ("super_admin", "admin")
 
 
 @dataclass(frozen=True)
