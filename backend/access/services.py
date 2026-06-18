@@ -72,6 +72,10 @@ _LEGACY_ROLE_ALIASES: dict[str, str] = {
     "english_teacher": constants.ROLE_TEACHER,
     "math_admin": constants.ROLE_ADMIN,
     "english_admin": constants.ROLE_ADMIN,
+    # Legacy/site "owner" role → full access. Mapped to the canonical super_admin
+    # so owner accounts are not silently downgraded to student. No new permission
+    # set or model; owner inherits super_admin's wildcard via the existing map.
+    "owner": constants.ROLE_SUPER_ADMIN,
 }
 
 
@@ -143,6 +147,17 @@ def normalized_role(user) -> str:
         return v
     if v in _LEGACY_ROLE_ALIASES:
         return _LEGACY_ROLE_ALIASES[v]
+    # Unknown role: fall back to student but NEVER silently — surface it so a
+    # mis-set / new role string is visible in logs/Sentry instead of quietly
+    # stripping a staff account's access (see owner-role RBAC incident).
+    logger.warning(
+        "access.normalized_role: unrecognized role %r -> student "
+        "(user_id=%s, username=%s, email=%s)",
+        raw,
+        getattr(user, "pk", None),
+        getattr(user, "username", None),
+        getattr(user, "email", None),
+    )
     return constants.ROLE_STUDENT
 
 

@@ -183,6 +183,38 @@ class AccessPrimitivesTests(TestCase):
         u.refresh_from_db()
         self.assertEqual(normalized_role(u), C.ROLE_TEACHER)
 
+    def test_owner_role_maps_to_super_admin(self):
+        u = User.objects.create_user(email="owner1@example.com", password="x", role=C.ROLE_STUDENT)
+        User.objects.filter(pk=u.pk).update(role="owner")
+        u.refresh_from_db()
+        self.assertEqual(normalized_role(u), C.ROLE_SUPER_ADMIN)
+        from access.services import get_effective_permission_codenames
+
+        self.assertIn(C.WILDCARD, get_effective_permission_codenames(u))
+
+    def test_owner_role_is_case_insensitive(self):
+        u = User.objects.create_user(email="owner2@example.com", password="x", role=C.ROLE_STUDENT)
+        for raw in ("Owner", "OWNER", " owner "):
+            User.objects.filter(pk=u.pk).update(role=raw)
+            u.refresh_from_db()
+            self.assertEqual(normalized_role(u), C.ROLE_SUPER_ADMIN, f"role={raw!r}")
+
+    def test_normalized_role_matrix_and_unknown_fallback(self):
+        cases = {
+            "owner": C.ROLE_SUPER_ADMIN,
+            C.ROLE_SUPER_ADMIN: C.ROLE_SUPER_ADMIN,
+            C.ROLE_ADMIN: C.ROLE_ADMIN,
+            C.ROLE_TEACHER: C.ROLE_TEACHER,
+            C.ROLE_TEST_ADMIN: C.ROLE_TEST_ADMIN,
+            C.ROLE_STUDENT: C.ROLE_STUDENT,
+            "garbage_value": C.ROLE_STUDENT,
+        }
+        u = User.objects.create_user(email="matrix@example.com", password="x", role=C.ROLE_STUDENT)
+        for stored, expected in cases.items():
+            User.objects.filter(pk=u.pk).update(role=stored)
+            u.refresh_from_db()
+            self.assertEqual(normalized_role(u), expected, f"role={stored!r}")
+
     @override_settings(LMS_AUTHZ_RAISE_ON_MISSING_SUBJECT=True)
     def test_authorize_raises_when_strict_missing_subject(self):
         with self.assertRaises(SubjectContractViolation):
