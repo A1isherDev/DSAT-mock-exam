@@ -7,7 +7,6 @@ import { cn } from "@/lib/cn";
 import { useMe } from "@/hooks/useMe";
 import {
   LayoutDashboard,
-  ClipboardList,
   Users,
   School,
   AlertOctagon,
@@ -40,12 +39,8 @@ const OPS_NAV = [
     icon: School,
     exact: false,
   },
-  {
-    href: "/ops/assignments",
-    label: "Assignments",
-    icon: ClipboardList,
-    exact: false,
-  },
+  // Operational assignment management moved to the Teacher Portal. Admin keeps
+  // governance (Classrooms) + content authoring (Midterms) + Access/Users/Audit.
   {
     href: "/ops/access",
     label: "Access",

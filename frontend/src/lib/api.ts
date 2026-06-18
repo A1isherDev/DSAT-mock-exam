@@ -794,6 +794,14 @@ export const classesApi = {
         const r = await api.get(`/classes/${classId}/results/`, { params });
         return r.data;
     },
+    // Admin governance (admin/super_admin only)
+    directory: async () => {
+        const r = await api.get('/classes/directory/');
+        return r.data;
+    },
+    governanceDelete: async (classId: number) => {
+        await api.delete(`/classes/${classId}/governance-delete/`);
+    },
     join: async (join_code: string) => {
         const r = await api.post('/classes/join/', { join_code });
         return r.data;
