@@ -657,7 +657,16 @@ export function ExamRunnerPage() {
               onSelect={(v) => selectAnswer(currentQuestion.id, v)}
               onEliminate={(k) => toggleEliminate(currentQuestion.id, k)}
               style={{ flex: "1 1 0%", minWidth: 0 }}
-              calcReserve={tools.calculatorOpen ? (tools.calculatorEnlarged ? 760 : 500) : 0}
+              // SPR questions already show the directions panel on the left, so
+              // don't also reserve calculator space (that pushes the question
+              // off-screen); Desmos floats over the directions instead.
+              calcReserve={
+                tools.calculatorOpen && !isStudentProducedResponse(currentQuestion)
+                  ? tools.calculatorEnlarged
+                    ? 760
+                    : 500
+                  : 0
+              }
             />
           </>
         )}
