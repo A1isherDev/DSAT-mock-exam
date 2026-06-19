@@ -7,7 +7,6 @@ import {
   Target,
   CalendarDays,
   ArrowRight,
-  TrendingUp,
   GraduationCap,
   ChevronLeft,
   ChevronRight,
@@ -21,8 +20,6 @@ import {
   Button,
   Card,
   CardContent,
-  Badge,
-  ProgressRing,
   EmptyState,
   Modal,
   Field,
@@ -77,14 +74,14 @@ export function StudentDashboard({ previewModel }: { previewModel?: DashboardMod
           <Button variant="secondary" leftIcon={<Target />} onClick={() => setGoalOpen(true)}>
             {model.target != null ? "Update goal" : "Set goal"}
           </Button>
-          <Link href="/analytics">
-            <Button variant="ghost" rightIcon={<ArrowRight />}>Analytics</Button>
-          </Link>
         </div>
       </div>
 
-      {/* Hero — readiness + scores + SAT countdown */}
-      <HeroPanel model={model} onEditGoal={() => setGoalOpen(true)} />
+      {/* Top — target scores + SAT countdown */}
+      <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
+        <TargetScoresCard model={model} onEditGoal={() => setGoalOpen(true)} />
+        <CountdownCard model={model} />
+      </div>
 
       {/* Schedule — monthly calendar + next lesson + selected-day lessons */}
       <ScheduleSection />
@@ -103,98 +100,75 @@ export function StudentDashboard({ previewModel }: { previewModel?: DashboardMod
   );
 }
 
-/* ── Hero ───────────────────────────────────────────────────────────────── */
-function HeroPanel({ model, onEditGoal }: { model: DashboardModel; onEditGoal: () => void }) {
-  const ringTone = model.goalReached ? "text-success" : "text-primary";
+/* ── Target scores ──────────────────────────────────────────────────────── */
+function TargetScoresCard({ model, onEditGoal }: { model: DashboardModel; onEditGoal: () => void }) {
+  const target = model.target;
+  const english = target != null ? Math.round(target / 20) * 10 : null;
+  const math = target != null && english != null ? target - english : null;
   return (
     <Card>
-      <CardContent className="grid items-center gap-6 md:grid-cols-[auto_1fr_auto]">
-        {/* Readiness ring */}
-        <div className="flex items-center gap-5">
-          <ProgressRing value={model.readiness ?? 0} size={108} strokeWidth={9} color={ringTone} showLabel={false}>
-            <div className="text-center">
-              <span className="ds-num block text-2xl font-extrabold leading-none text-foreground">
-                {model.readiness != null ? `${model.readiness}%` : "—"}
-              </span>
-              <span className="ds-overline mt-1 block">Ready</span>
-            </div>
-          </ProgressRing>
-          <div className="md:hidden">
-            <HeroNumbers model={model} onEditGoal={onEditGoal} />
+      <CardContent className="flex h-full flex-col gap-5">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-soft text-primary">
+            <Target className="h-5 w-5" />
+          </span>
+          <div>
+            <p className="text-sm font-bold text-foreground">Target scores</p>
+            <p className="text-[12px] text-muted-foreground">Where you&apos;re aiming on test day</p>
           </div>
         </div>
-
-        {/* Numbers (desktop) */}
-        <div className="hidden md:block">
-          <HeroNumbers model={model} onEditGoal={onEditGoal} />
-        </div>
-
-        {/* Exam countdown */}
-        <div className="rounded-2xl bg-primary p-5 text-primary-foreground md:w-48">
-          <div className="flex items-center gap-2 opacity-90">
-            <CalendarDays className="h-4 w-4" />
-            <span className="text-[11px] font-bold uppercase tracking-wider">SAT countdown</span>
-          </div>
-          <p className="ds-num mt-2 text-4xl font-extrabold leading-none">
-            {model.examDaysLeft == null ? "—" : Math.max(0, model.examDaysLeft)}
-          </p>
-          <p className="mt-1 text-xs font-semibold opacity-90">
-            {model.examDaysLeft == null ? "Set your exam date" : "days to go"}
-          </p>
-          {model.examDate ? (
-            <p className="mt-2 text-[11px] opacity-75">
-              {new Date(model.examDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-            </p>
-          ) : null}
+        <div className="grid grid-cols-3 gap-3">
+          <ScoreBox label="Overall" value={target} highlight onClick={onEditGoal} />
+          <ScoreBox label="English" value={english} onClick={onEditGoal} />
+          <ScoreBox label="Math" value={math} onClick={onEditGoal} />
         </div>
       </CardContent>
     </Card>
   );
 }
 
-function HeroNumbers({ model, onEditGoal }: { model: DashboardModel; onEditGoal: () => void }) {
-  // English/Math sub-targets derived from the total goal (matches the design).
-  const sub = useMemo(() => {
-    if (model.target == null) return null;
-    const english = Math.round(model.target / 20) * 10;
-    return { english, math: model.target - english };
-  }, [model.target]);
-
+function ScoreBox({ label, value, highlight, onClick }: { label: string; value: number | null; highlight?: boolean; onClick: () => void }) {
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
-        <Metric label="Current" value={model.current ?? "—"} big />
-        <Metric label="Projected" value={model.predicted ?? "—"} icon={<TrendingUp className="h-4 w-4 text-success" />} />
-        <Metric label="Goal" value={model.target ?? "—"} />
-      </div>
-      {sub ? (
-        <p className="text-[12px] text-muted-foreground">
-          Target split — <span className="font-semibold text-foreground">English {sub.english}</span> ·{" "}
-          <span className="font-semibold text-foreground">Math {sub.math}</span>
-        </p>
-      ) : null}
-      {model.goalReached ? (
-        <Badge variant="success" dot>Goal reached — outstanding work</Badge>
-      ) : model.gap != null ? (
-        <Badge variant="primary">{model.gap} points to your goal</Badge>
-      ) : (
-        <button type="button" onClick={onEditGoal} className="ds-ring self-start rounded-lg">
-          <Badge variant="neutral">Set a goal to track your gap</Badge>
-        </button>
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "ds-ring rounded-2xl border p-4 text-left transition-colors",
+        highlight ? "border-primary/40 bg-primary-soft" : "border-border bg-surface-2 hover:bg-surface-3",
       )}
-    </div>
+    >
+      <p className="ds-overline">{label}</p>
+      <p className={cn("ds-num mt-1 text-3xl font-extrabold leading-none", highlight ? "text-primary" : "text-foreground")}>
+        {value ?? "—"}
+      </p>
+    </button>
   );
 }
 
-function Metric({ label, value, big, icon }: { label: string; value: React.ReactNode; big?: boolean; icon?: React.ReactNode }) {
+/* ── SAT countdown ──────────────────────────────────────────────────────── */
+function CountdownCard({ model }: { model: DashboardModel }) {
   return (
-    <div>
-      <p className="ds-overline">{label}</p>
-      <p className={cn("ds-num flex items-center gap-1.5 font-extrabold tracking-tight text-foreground", big ? "text-4xl" : "text-2xl")}>
-        {value}
-        {icon}
-      </p>
-    </div>
+    <Card className="relative overflow-hidden bg-primary text-primary-foreground">
+      <span aria-hidden className="pointer-events-none absolute -right-10 -top-10 h-44 w-44 rounded-full bg-white/10" />
+      <span aria-hidden className="pointer-events-none absolute -bottom-12 right-10 h-28 w-28 rounded-full bg-white/5" />
+      <CardContent className="relative flex h-full flex-col justify-center">
+        <div className="flex items-center gap-2 opacity-90">
+          <CalendarDays className="h-4 w-4" />
+          <span className="text-[11px] font-bold uppercase tracking-wider">SAT countdown</span>
+        </div>
+        <p className="ds-num mt-2 text-6xl font-extrabold leading-none">
+          {model.examDaysLeft == null ? "—" : Math.max(0, model.examDaysLeft)}
+        </p>
+        <p className="mt-1 text-sm font-semibold opacity-90">
+          {model.examDaysLeft == null ? "Set your exam date" : "days to go"}
+        </p>
+        {model.examDate ? (
+          <p className="mt-2 text-[12px] opacity-75">
+            {new Date(model.examDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+          </p>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -248,16 +222,22 @@ function ScheduleSection() {
       {/* Calendar */}
       <Card>
         <CardContent>
-          <div className="mb-4 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <CalendarDays className="h-5 w-5 text-primary" />
-              <h2 className="ds-h4">{monthLabel}</h2>
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-soft text-primary">
+                <CalendarDays className="h-5 w-5" />
+              </span>
+              <div>
+                <p className="text-sm font-bold text-foreground">Lesson calendar</p>
+                <p className="text-[12px] text-muted-foreground">Tap a day to see what&apos;s on</p>
+              </div>
             </div>
             <div className="flex items-center gap-1">
               <button type="button" onClick={prevMonth} aria-label="Previous month"
                 className="ds-ring rounded-lg p-1.5 text-muted-foreground hover:bg-surface-2 hover:text-foreground">
                 <ChevronLeft className="h-4 w-4" />
               </button>
+              <span className="min-w-[7.5rem] text-center text-sm font-bold text-foreground">{monthLabel}</span>
               <button type="button" onClick={nextMonth} aria-label="Next month"
                 className="ds-ring rounded-lg p-1.5 text-muted-foreground hover:bg-surface-2 hover:text-foreground">
                 <ChevronRight className="h-4 w-4" />
@@ -287,9 +267,9 @@ function ScheduleSection() {
                     c.isSelected || c.isNext
                       ? "bg-primary text-primary-foreground"
                       : c.hasMock
-                        ? "border-2 border-warning text-warning-foreground"
+                        ? "border-2 border-warning text-warning"
                         : c.hasClass
-                          ? "border-2 border-primary bg-primary-soft text-primary"
+                          ? "border-2 border-primary text-primary"
                           : c.isToday
                             ? "border-2 border-dashed border-primary text-primary"
                             : c.hasAssignment
@@ -310,21 +290,7 @@ function ScheduleSection() {
 
       {/* Next lesson + selected day */}
       <div className="flex flex-col gap-4">
-        <Card>
-          <CardContent>
-            <p className="ds-overline mb-2 text-primary">Next lesson</p>
-            {nextEvents.length === 0 ? (
-              <EmptyState compact icon={Sparkles} title="You're all caught up" description="Upcoming lessons will appear here." />
-            ) : (
-              <>
-                <LessonRow event={nextEvents[0]} />
-                <p className="mt-2 text-[12px] text-muted-foreground">
-                  {nextLessonDate ? new Date(nextLessonDate + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) : ""}
-                </p>
-              </>
-            )}
-          </CardContent>
-        </Card>
+        <NextLessonCard date={nextLessonDate} event={nextEvents[0] ?? null} />
 
         <Card>
           <CardContent>
@@ -343,6 +309,78 @@ function ScheduleSection() {
           </CardContent>
         </Card>
       </div>
+    </div>
+  );
+}
+
+function relativeDays(iso: string | null): string {
+  if (!iso) return "";
+  const today = new Date();
+  const t0 = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  const d = new Date(iso + "T00:00:00").getTime();
+  const days = Math.round((d - t0) / 86400000);
+  if (days <= 0) return "today";
+  if (days === 1) return "tomorrow";
+  return `in ${days} days`;
+}
+
+function NextLessonCard({ date, event }: { date: string | null; event: ScheduleEvent | null }) {
+  if (!event || !date) {
+    return (
+      <Card>
+        <CardContent>
+          <p className="ds-overline mb-2 flex items-center gap-1.5 text-primary">
+            <span className="h-2 w-2 rounded-full bg-primary" /> Next lesson
+          </p>
+          <EmptyState compact icon={Sparkles} title="You're all caught up" description="Upcoming lessons will appear here." />
+        </CardContent>
+      </Card>
+    );
+  }
+  const when = new Date(date + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  const href =
+    event.type === "assignment" && event.classroom_id
+      ? `/classes/${event.classroom_id}/assignments/${event.assignment_id}`
+      : event.classroom_id
+        ? `/classes/${event.classroom_id}`
+        : null;
+  const isClass = event.type === "class";
+  const cta = isClass ? "Join lesson" : event.type === "assignment" ? "Open assignment" : "View details";
+  return (
+    <Card>
+      <CardContent className="flex flex-col gap-4">
+        <p className="ds-overline flex items-center gap-1.5 text-primary">
+          <span className="h-2 w-2 rounded-full bg-primary" /> Next lesson
+        </p>
+        <div>
+          <p className="ds-h3 leading-tight">{event.title}</p>
+          {event.sub ? <p className="mt-0.5 text-sm text-muted-foreground">{event.sub}</p> : null}
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <InfoBox label="When" value={when} />
+          <InfoBox label="Time" value={event.time || "—"} />
+        </div>
+        {href ? (
+          <Link href={href}>
+            <Button fullWidth rightIcon={<ArrowRight />}>
+              {cta} · {relativeDays(date)}
+            </Button>
+          </Link>
+        ) : (
+          <Button fullWidth disabled rightIcon={<ArrowRight />}>
+            {cta} · {relativeDays(date)}
+          </Button>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function InfoBox({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-border bg-surface-2 p-3">
+      <p className="ds-overline">{label}</p>
+      <p className="mt-1 truncate text-sm font-bold text-foreground">{value}</p>
     </div>
   );
 }
@@ -384,9 +422,10 @@ function LessonRow({ event }: { event: ScheduleEvent }) {
 
 function Legend() {
   const items = [
-    { cls: "border-2 border-primary bg-primary-soft", label: "Class" },
-    { cls: "border-2 border-warning", label: "Mock / Midterm" },
-    { cls: "bg-primary", label: "Selected / Next" },
+    { cls: "border-2 border-primary", label: "Class" },
+    { cls: "border-2 border-warning", label: "Mock test" },
+    { cls: "bg-primary border-2 border-primary", label: "Next lesson" },
+    { cls: "border-2 border-dashed border-primary", label: "Today" },
   ];
   return (
     <div className="mt-4 flex flex-wrap items-center gap-4">

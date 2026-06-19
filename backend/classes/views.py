@@ -456,7 +456,7 @@ class ClassroomViewSet(ModelViewSet):
                         "date": d.isoformat(),
                         "type": "class",
                         "title": c.name,
-                        "sub": f"{subj} · {c.lesson_time}" if c.lesson_time else subj,
+                        "sub": subj,
                         "time": c.lesson_time or "",
                         "classroom_id": c.id,
                     })
