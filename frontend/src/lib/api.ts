@@ -736,6 +736,17 @@ export const examsPublicApi = {
     },
 };
 
+export type ScheduleEvent = {
+    date: string; // YYYY-MM-DD
+    type: "class" | "mock" | "midterm" | "assignment";
+    title: string;
+    sub?: string;
+    time?: string;
+    classroom_id?: number;
+    mock_exam_id?: number;
+    assignment_id?: number;
+};
+
 export const classesApi = {
     list: async (): Promise<NormalizedList<Classroom>> => {
         const r = await api.get('/classes/');
@@ -933,6 +944,12 @@ export const classesApi = {
             count: data.count ?? 0,
             items: (data.items ?? []) as Assignment[],
         };
+    },
+    /** Student lessons calendar: class meetings + mock/midterm + assignment due dates in a date range. */
+    mySchedule: async (from: string, to: string): Promise<{ from: string; to: string; events: ScheduleEvent[] }> => {
+        const r = await api.get('/classes/my-schedule/', { params: { from, to } });
+        const data = r.data as { from?: string; to?: string; events?: ScheduleEvent[] };
+        return { from: data.from ?? from, to: data.to ?? to, events: data.events ?? [] };
     },
     /**
      * Teacher/admin: intervention signals for a classroom.

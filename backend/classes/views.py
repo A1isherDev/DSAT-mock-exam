@@ -398,6 +398,108 @@ class ClassroomViewSet(ModelViewSet):
 
         return Response({"count": len(items), "items": items})
 
+    @action(detail=False, methods=["get"], permission_classes=[IsAuthenticatedAndNotFrozen], url_path="my-schedule")
+    def my_schedule(self, request):
+        """
+        Student lessons calendar for ?from=YYYY-MM-DD&to=YYYY-MM-DD (range capped at 70 days):
+          - recurring class meetings from each enrolled active classroom's lesson_days
+            (ODD → Mon/Wed/Fri, EVEN → Tue/Thu/Sat) + lesson_time + subject, from start_date,
+          - assigned mock/midterm tests on their practice_date,
+          - published assignment due dates.
+        Returns a flat ``events`` list the frontend buckets by day.
+        """
+        import datetime as _dt
+        from exams.models import MockExam
+
+        user = request.user
+
+        def _parse(s):
+            try:
+                return _dt.date.fromisoformat(str(s))
+            except (TypeError, ValueError):
+                return None
+
+        today = timezone.localdate()
+        frm = _parse(request.query_params.get("from")) or today.replace(day=1)
+        to = _parse(request.query_params.get("to")) or (frm + _dt.timedelta(days=41))
+        if to < frm:
+            frm, to = to, frm
+        if (to - frm).days > 70:
+            to = frm + _dt.timedelta(days=70)
+
+        # ODD = Mon/Wed/Fri, EVEN = Tue/Thu/Sat (Python weekday: Mon=0 … Sun=6).
+        # Mirrors frontend src/lib/classroomSchedule.ts.
+        ODD_WD = {0, 2, 4}
+        EVEN_WD = {1, 3, 5}
+        SUBJECT_LABEL = {"MATH": "Math", "ENGLISH": "English"}
+
+        events: list[dict] = []
+
+        classes = list(
+            Classroom.objects.filter(memberships__user=user, is_active=True)
+            .only("id", "name", "subject", "lesson_days", "lesson_time", "start_date")
+            .distinct()
+        )
+        for c in classes:
+            if c.lesson_days == Classroom.DAYS_ODD:
+                wd = ODD_WD
+            elif c.lesson_days == Classroom.DAYS_EVEN:
+                wd = EVEN_WD
+            else:
+                continue
+            start = c.start_date or frm
+            subj = SUBJECT_LABEL.get(str(c.subject).upper(), str(c.subject or ""))
+            d = frm
+            while d <= to:
+                if d.weekday() in wd and d >= start:
+                    events.append({
+                        "date": d.isoformat(),
+                        "type": "class",
+                        "title": c.name,
+                        "sub": f"{subj} · {c.lesson_time}" if c.lesson_time else subj,
+                        "time": c.lesson_time or "",
+                        "classroom_id": c.id,
+                    })
+                d += _dt.timedelta(days=1)
+
+        for m in (
+            MockExam.objects.filter(assigned_users=user, practice_date__range=(frm, to))
+            .only("id", "title", "kind", "practice_date")
+            .distinct()
+        ):
+            is_mt = m.kind == MockExam.KIND_MIDTERM
+            events.append({
+                "date": m.practice_date.isoformat(),
+                "type": "midterm" if is_mt else "mock",
+                "title": m.title or ("Midterm" if is_mt else "Mock exam"),
+                "sub": "Midterm · test-day conditions" if is_mt else "Full-length · test-day conditions",
+                "time": "",
+                "mock_exam_id": m.id,
+            })
+
+        class_ids = [c.id for c in classes]
+        if class_ids:
+            for a in (
+                Assignment.objects.filter(
+                    classroom_id__in=class_ids,
+                    status=Assignment.STATUS_PUBLISHED,
+                    due_at__date__range=(frm, to),
+                )
+                .select_related("classroom")
+            ):
+                dd = timezone.localtime(a.due_at).date()
+                events.append({
+                    "date": dd.isoformat(),
+                    "type": "assignment",
+                    "title": a.title,
+                    "sub": f"Due · {a.classroom.name}",
+                    "time": "",
+                    "classroom_id": a.classroom_id,
+                    "assignment_id": a.id,
+                })
+
+        return Response({"from": frm.isoformat(), "to": to.isoformat(), "events": events})
+
     @action(detail=False, methods=["get"], url_path="directory")
     def directory(self, request):
         """Directory-wide classroom list (governance: admin / super_admin / superuser)."""

@@ -1,25 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Target,
-  Flame,
-  Trophy,
   CalendarDays,
   ArrowRight,
-  PlayCircle,
-  BookOpen,
-  Calculator,
-  GraduationCap,
-  Sparkles,
-  Clock,
-  CheckCircle2,
-  Circle,
-  ChevronRight,
   TrendingUp,
-  Rocket,
+  GraduationCap,
+  ChevronLeft,
+  ChevronRight,
+  Users,
+  ClipboardList,
+  FileText,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import {
@@ -28,25 +23,15 @@ import {
   CardContent,
   Badge,
   ProgressRing,
-  Progress,
   EmptyState,
   Modal,
   Field,
   Input,
   Skeleton,
 } from "@/components/ui";
-import {
-  ChartCard,
-  LineChart,
-  BarChart,
-  DonutChart,
-  RadarChart,
-  type ChartSeries,
-} from "@/components/ui/charts";
+import type { ScheduleEvent } from "@/lib/api";
 import { useDashboardData, type DashboardModel } from "./useDashboardData";
-
-const scoreSeries: ChartSeries[] = [{ key: "score", label: "Score" }];
-const weeklySeries: ChartSeries[] = [{ key: "sessions", label: "Sessions" }];
+import { gridRange, isoDate, useStudentSchedule } from "./useStudentSchedule";
 
 export function StudentDashboard({ previewModel }: { previewModel?: DashboardModel }) {
   const live = useDashboardData();
@@ -86,7 +71,7 @@ export function StudentDashboard({ previewModel }: { previewModel?: DashboardMod
         <div>
           <p className="ds-overline text-primary">Dashboard</p>
           <h1 className="ds-h1 mt-1">Welcome back, {model.firstName}</h1>
-          <p className="ds-small mt-1">Your prep, progress, and next steps at a glance.</p>
+          <p className="ds-small mt-1">Your goal, schedule, and next lessons at a glance.</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="secondary" leftIcon={<Target />} onClick={() => setGoalOpen(true)}>
@@ -98,81 +83,11 @@ export function StudentDashboard({ previewModel }: { previewModel?: DashboardMod
         </div>
       </div>
 
-      {/* Hero — readiness + scores + prominent SAT countdown */}
-      <HeroPanel model={model} />
+      {/* Hero — readiness + scores + SAT countdown */}
+      <HeroPanel model={model} onEditGoal={() => setGoalOpen(true)} />
 
-      {/* Primary: what to do next (actions lead the page) */}
-      <div className="grid gap-4 lg:grid-cols-3">
-        <NextActionsCard model={model} className="lg:col-span-2" />
-        <UpcomingCard model={model} />
-      </div>
-      <FocusAreasCard model={model} />
-
-      {/* Engagement */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <MotivationStat icon={Flame} label="Day streak" value={model.streak} hint={model.streak > 0 ? "Keep it going" : "Practice today to start one"} />
-        <WeeklyGoalCard sessions={model.weeklySessions} goal={model.weeklyGoal} />
-        <MilestonesCard model={model} />
-      </div>
-
-      {/* Secondary: progress analytics (a look back, below the actions) */}
-      <section>
-        <div className="mb-4 flex items-end justify-between gap-3">
-          <div>
-            <h2 className="ds-h3">Your progress</h2>
-            <p className="ds-small">A look back — your next steps are above.</p>
-          </div>
-          <Link href="/analytics">
-            <Button variant="ghost" size="sm" rightIcon={<ArrowRight />}>Full analytics</Button>
-          </Link>
-        </div>
-        <div className="grid gap-4 lg:grid-cols-2">
-          <ChartCard title="Score progression" description="Your recent scored sets">
-            <LineChart
-              data={model.scoreSeries}
-              xKey="label"
-              series={scoreSeries}
-              height={220}
-              emptyMessage={{ title: "No scores yet", description: "Complete a scored set to start your trend." }}
-            />
-          </ChartCard>
-          <ChartCard title="Weekly activity" description="Sessions over the last 7 days">
-            <BarChart data={model.weekly} xKey="label" series={weeklySeries} height={220} />
-          </ChartCard>
-          <ChartCard title="Practice focus" description="Where your sessions go">
-            <DonutChart
-              data={model.sectionMix}
-              height={220}
-              centerValue={model.totalCompleted}
-              centerLabel="Sets"
-              emptyMessage={{ title: "No practice yet", description: "Your section balance appears here." }}
-            />
-          </ChartCard>
-          <ChartCard
-            title="Skill analysis"
-            description="Domain-level strengths"
-            actions={
-              <Link href="/analytics" className="ds-ring inline-flex items-center gap-1 rounded-lg text-[13px] font-semibold text-primary">
-                Full breakdown <ArrowRight className="h-3.5 w-3.5" />
-              </Link>
-            }
-          >
-            <RadarChart
-              data={[]}
-              axisKey="axis"
-              series={[]}
-              height={220}
-              emptyMessage={{
-                title: "Skill radar in Analytics",
-                description: "Per-domain accuracy across SAT skills opens on the Analytics page.",
-              }}
-            />
-          </ChartCard>
-        </div>
-        <div className="mt-4">
-          <RecentCard model={model} />
-        </div>
-      </section>
+      {/* Schedule — monthly calendar + next lesson + selected-day lessons */}
+      <ScheduleSection />
 
       <GoalModal
         open={goalOpen}
@@ -189,7 +104,7 @@ export function StudentDashboard({ previewModel }: { previewModel?: DashboardMod
 }
 
 /* ── Hero ───────────────────────────────────────────────────────────────── */
-function HeroPanel({ model }: { model: DashboardModel }) {
+function HeroPanel({ model, onEditGoal }: { model: DashboardModel; onEditGoal: () => void }) {
   const ringTone = model.goalReached ? "text-success" : "text-primary";
   return (
     <Card>
@@ -205,13 +120,13 @@ function HeroPanel({ model }: { model: DashboardModel }) {
             </div>
           </ProgressRing>
           <div className="md:hidden">
-            <HeroNumbers model={model} />
+            <HeroNumbers model={model} onEditGoal={onEditGoal} />
           </div>
         </div>
 
         {/* Numbers (desktop) */}
         <div className="hidden md:block">
-          <HeroNumbers model={model} />
+          <HeroNumbers model={model} onEditGoal={onEditGoal} />
         </div>
 
         {/* Exam countdown */}
@@ -237,7 +152,14 @@ function HeroPanel({ model }: { model: DashboardModel }) {
   );
 }
 
-function HeroNumbers({ model }: { model: DashboardModel }) {
+function HeroNumbers({ model, onEditGoal }: { model: DashboardModel; onEditGoal: () => void }) {
+  // English/Math sub-targets derived from the total goal (matches the design).
+  const sub = useMemo(() => {
+    if (model.target == null) return null;
+    const english = Math.round(model.target / 20) * 10;
+    return { english, math: model.target - english };
+  }, [model.target]);
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
@@ -245,12 +167,20 @@ function HeroNumbers({ model }: { model: DashboardModel }) {
         <Metric label="Projected" value={model.predicted ?? "—"} icon={<TrendingUp className="h-4 w-4 text-success" />} />
         <Metric label="Goal" value={model.target ?? "—"} />
       </div>
+      {sub ? (
+        <p className="text-[12px] text-muted-foreground">
+          Target split — <span className="font-semibold text-foreground">English {sub.english}</span> ·{" "}
+          <span className="font-semibold text-foreground">Math {sub.math}</span>
+        </p>
+      ) : null}
       {model.goalReached ? (
         <Badge variant="success" dot>Goal reached — outstanding work</Badge>
       ) : model.gap != null ? (
         <Badge variant="primary">{model.gap} points to your goal</Badge>
       ) : (
-        <Badge variant="neutral">Set a goal to track your gap</Badge>
+        <button type="button" onClick={onEditGoal} className="ds-ring self-start rounded-lg">
+          <Badge variant="neutral">Set a goal to track your gap</Badge>
+        </button>
       )}
     </div>
   );
@@ -268,204 +198,205 @@ function Metric({ label, value, big, icon }: { label: string; value: React.React
   );
 }
 
-/* ── Motivation ─────────────────────────────────────────────────────────── */
-function MotivationStat({ icon: Icon, label, value, hint }: { icon: React.ElementType; label: string; value: React.ReactNode; hint: string }) {
-  return (
-    <Card>
-      <CardContent className="flex items-center gap-4">
-        <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-warning-soft text-warning-foreground">
-          <Icon className="h-6 w-6" />
-        </span>
-        <div>
-          <p className="ds-num text-2xl font-extrabold leading-none text-foreground">{value}</p>
-          <p className="mt-1 text-sm font-semibold text-foreground">{label}</p>
-          <p className="text-[12px] text-muted-foreground">{hint}</p>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
+/* ── Schedule (calendar + lessons) ──────────────────────────────────────── */
+const WEEKDAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 
-function WeeklyGoalCard({ sessions, goal }: { sessions: number; goal: number }) {
-  const pct = Math.min(100, Math.round((sessions / goal) * 100));
-  const done = sessions >= goal;
-  return (
-    <Card>
-      <CardContent className="flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-semibold text-foreground">Weekly goal</p>
-          <Badge variant={done ? "success" : "primary"}>{done ? "Goal reached" : "In progress"}</Badge>
-        </div>
-        <p className="ds-num text-2xl font-extrabold text-foreground">
-          {sessions}<span className="text-base font-bold text-muted-foreground"> / {goal} sessions</span>
-        </p>
-        <Progress value={pct} tone={done ? "success" : "primary"} />
-      </CardContent>
-    </Card>
-  );
-}
+function ScheduleSection() {
+  const today = useMemo(() => new Date(), []);
+  const [viewY, setViewY] = useState(today.getFullYear());
+  const [viewM, setViewM] = useState(today.getMonth());
+  const [selected, setSelected] = useState<string | null>(null);
 
-function MilestonesCard({ model }: { model: DashboardModel }) {
-  const earned = model.milestones.filter((m) => m.done).length;
-  return (
-    <Card>
-      <CardContent className="flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-semibold text-foreground">Milestones</p>
-          <span className="inline-flex items-center gap-1.5 text-sm font-bold text-foreground">
-            <Trophy className="h-4 w-4 text-warning" /> {earned}/{model.milestones.length}
-          </span>
-        </div>
-        <ul className="flex flex-col gap-1.5">
-          {model.milestones.map((m) => (
-            <li key={m.id} className="flex items-center gap-2 text-[13px]">
-              {m.done ? (
-                <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
-              ) : (
-                <Circle className="h-4 w-4 shrink-0 text-label-foreground" />
-              )}
-              <span className={cn(m.done ? "font-semibold text-foreground" : "text-muted-foreground")}>{m.label}</span>
-            </li>
-          ))}
-        </ul>
-      </CardContent>
-    </Card>
-  );
-}
+  const { loading, byDate, nextLessonDate } = useStudentSchedule(viewY, viewM);
 
-/* ── Insights ───────────────────────────────────────────────────────────── */
-function FocusAreasCard({ model }: { model: DashboardModel }) {
+  // Default the selected day to the next upcoming lesson once the schedule loads.
+  useEffect(() => {
+    if (selected == null && nextLessonDate) setSelected(nextLessonDate);
+  }, [selected, nextLessonDate]);
+
+  const monthLabel = new Date(viewY, viewM, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const todayIso = isoDate(today);
+
+  const cells = useMemo(() => {
+    const { start } = gridRange(viewY, viewM);
+    return Array.from({ length: 42 }, (_, i) => {
+      const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
+      const iso = isoDate(d);
+      const events = byDate.get(iso) ?? [];
+      return {
+        iso,
+        day: d.getDate(),
+        inMonth: d.getMonth() === viewM,
+        isToday: iso === todayIso,
+        isSelected: iso === selected,
+        isNext: iso === nextLessonDate,
+        hasMock: events.some((e) => e.type === "mock" || e.type === "midterm"),
+        hasClass: events.some((e) => e.type === "class"),
+        hasAssignment: events.some((e) => e.type === "assignment"),
+      };
+    });
+  }, [viewY, viewM, byDate, todayIso, selected, nextLessonDate]);
+
+  const prevMonth = () => setViewM((m) => { if (m === 0) { setViewY((y) => y - 1); return 11; } return m - 1; });
+  const nextMonth = () => setViewM((m) => { if (m === 11) { setViewY((y) => y + 1); return 0; } return m + 1; });
+
+  const nextEvents = nextLessonDate ? (byDate.get(nextLessonDate) ?? []) : [];
+  const selEvents = selected ? (byDate.get(selected) ?? []) : [];
+
   return (
-    <Card>
-      <CardContent>
-        <div className="mb-3 flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-primary" />
-          <p className="ds-h4">Focus areas</p>
-        </div>
-        {model.focusAreas.length === 0 ? (
-          <p className="text-sm text-muted-foreground">You&apos;re well-rounded right now — keep up the steady practice.</p>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {model.focusAreas.map((f) => (
-              <Link
-                key={f.id}
-                href={f.href}
-                className="ds-ring group flex items-center gap-3 rounded-xl border border-border p-3 transition-colors hover:border-border-strong hover:bg-surface-2"
+    <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
+      {/* Calendar */}
+      <Card>
+        <CardContent>
+          <div className="mb-4 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <CalendarDays className="h-5 w-5 text-primary" />
+              <h2 className="ds-h4">{monthLabel}</h2>
+            </div>
+            <div className="flex items-center gap-1">
+              <button type="button" onClick={prevMonth} aria-label="Previous month"
+                className="ds-ring rounded-lg p-1.5 text-muted-foreground hover:bg-surface-2 hover:text-foreground">
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <button type="button" onClick={nextMonth} aria-label="Next month"
+                className="ds-ring rounded-lg p-1.5 text-muted-foreground hover:bg-surface-2 hover:text-foreground">
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-7 gap-1 text-center">
+            {WEEKDAYS.map((w) => (
+              <div key={w} className="pb-1 text-[10px] font-bold tracking-wider text-label-foreground">{w}</div>
+            ))}
+            {cells.map((c) => (
+              <button
+                key={c.iso}
+                type="button"
+                disabled={!c.inMonth}
+                onClick={() => c.inMonth && setSelected(c.iso)}
+                className={cn(
+                  "ds-ring flex h-12 items-center justify-center rounded-xl transition-colors",
+                  !c.inMonth && "opacity-30",
+                  c.inMonth && "hover:bg-surface-2",
+                )}
               >
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary">
-                  <Target className="h-4 w-4" />
+                <span
+                  className={cn(
+                    "flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold",
+                    c.isSelected || c.isNext
+                      ? "bg-primary text-primary-foreground"
+                      : c.hasMock
+                        ? "border-2 border-warning text-warning-foreground"
+                        : c.hasClass
+                          ? "border-2 border-primary bg-primary-soft text-primary"
+                          : c.isToday
+                            ? "border-2 border-dashed border-primary text-primary"
+                            : c.hasAssignment
+                              ? "text-primary underline decoration-dotted underline-offset-4"
+                              : "text-foreground",
+                  )}
+                >
+                  {c.day}
                 </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-foreground">{f.title}</p>
-                  <p className="text-[12px] text-muted-foreground">{f.detail}</p>
-                </div>
-                <ChevronRight className="h-4 w-4 shrink-0 text-label-foreground transition-colors group-hover:text-primary" />
-              </Link>
+              </button>
             ))}
           </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
 
-function NextActionsCard({ model, className }: { model: DashboardModel; className?: string }) {
-  return (
-    <Card className={className}>
-      <CardContent>
-        <div className="mb-4 flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-            <Rocket className="h-4 w-4" />
-          </span>
-          <div>
-            <p className="ds-h4 leading-tight">Recommended next</p>
-            <p className="text-[12px] text-muted-foreground">Your highest-impact steps right now</p>
-          </div>
-        </div>
-        <div className="flex flex-col gap-2.5">
-          {model.nextActions.map((a, i) => (
-            <Link
-              key={a.id}
-              href={a.href}
-              className={cn(
-                "ds-ring group flex items-center gap-3 rounded-xl p-4 transition-colors",
-                i === 0
-                  ? "border border-primary/20 bg-primary-soft hover:bg-primary/15"
-                  : "bg-surface-2 hover:bg-surface-3",
-              )}
-            >
-              <PlayCircle className={cn("h-6 w-6 shrink-0", i === 0 ? "text-primary" : "text-muted-foreground")} />
-              <div className="min-w-0 flex-1">
-                <p className={cn("text-sm font-bold", i === 0 ? "text-primary" : "text-foreground")}>{a.title}</p>
-                <p className="text-[12px] text-muted-foreground">{a.detail}</p>
+          {loading ? <p className="mt-3 text-[12px] text-muted-foreground">Loading your schedule…</p> : null}
+          <Legend />
+        </CardContent>
+      </Card>
+
+      {/* Next lesson + selected day */}
+      <div className="flex flex-col gap-4">
+        <Card>
+          <CardContent>
+            <p className="ds-overline mb-2 text-primary">Next lesson</p>
+            {nextEvents.length === 0 ? (
+              <EmptyState compact icon={Sparkles} title="You're all caught up" description="Upcoming lessons will appear here." />
+            ) : (
+              <>
+                <LessonRow event={nextEvents[0]} />
+                <p className="mt-2 text-[12px] text-muted-foreground">
+                  {nextLessonDate ? new Date(nextLessonDate + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) : ""}
+                </p>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent>
+            <p className="ds-h4 mb-3">
+              {selected
+                ? new Date(selected + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })
+                : "Select a day"}
+            </p>
+            {selEvents.length === 0 ? (
+              <EmptyState compact icon={CalendarDays} title="Nothing scheduled" description="No lessons or work on this day." />
+            ) : (
+              <div className="flex flex-col gap-2">
+                {selEvents.map((e, i) => <LessonRow key={i} event={e} />)}
               </div>
-              {i === 0 ? <Badge variant="primary">Start here</Badge> : null}
-              <ArrowRight className="h-4 w-4 shrink-0 text-label-foreground transition-colors group-hover:text-foreground" />
-            </Link>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   );
 }
 
-function UpcomingCard({ model }: { model: DashboardModel }) {
-  return (
-    <Card>
-      <CardContent>
-        <div className="mb-3 flex items-center gap-2">
-          <CalendarDays className="h-4 w-4 text-primary" />
-          <p className="ds-h4">Upcoming</p>
-        </div>
-        {model.upcoming.length === 0 ? (
-          <EmptyState compact icon={CalendarDays} title="Nothing due" description="Assigned work will show up here." />
-        ) : (
-          <div className="flex flex-col gap-2">
-            {model.upcoming.map((u) => (
-              <Link
-                key={u.id}
-                href={u.href}
-                className="ds-ring flex items-center justify-between gap-3 rounded-xl border border-border p-3 transition-colors hover:bg-surface-2"
-              >
-                <span className="min-w-0 truncate text-sm font-semibold text-foreground">{u.title}</span>
-                <Badge variant={u.soon ? "warning" : "neutral"}>{u.dueLabel}</Badge>
-              </Link>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
+function eventVisual(type: ScheduleEvent["type"]) {
+  switch (type) {
+    case "mock":
+    case "midterm":
+      return { Icon: ClipboardList, wrap: "bg-warning-soft text-warning-foreground" };
+    case "assignment":
+      return { Icon: FileText, wrap: "bg-info-soft text-info-foreground" };
+    default:
+      return { Icon: Users, wrap: "bg-primary-soft text-primary" };
+  }
 }
 
-function RecentCard({ model }: { model: DashboardModel }) {
+function LessonRow({ event }: { event: ScheduleEvent }) {
+  const { Icon, wrap } = eventVisual(event.type);
+  const href =
+    event.type === "assignment" && event.classroom_id
+      ? `/classes/${event.classroom_id}/assignments/${event.assignment_id}`
+      : event.classroom_id
+        ? `/classes/${event.classroom_id}`
+        : null;
+  const body = (
+    <div className="flex items-center gap-3 rounded-xl border border-border p-3">
+      <span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", wrap)}>
+        <Icon className="h-5 w-5" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-semibold text-foreground">{event.title}</p>
+        {event.sub ? <p className="truncate text-[12px] text-muted-foreground">{event.sub}</p> : null}
+      </div>
+      {event.time ? <span className="shrink-0 text-[12px] font-semibold text-muted-foreground">{event.time}</span> : null}
+    </div>
+  );
+  return href ? <Link href={href} className="ds-ring block rounded-xl transition-colors hover:bg-surface-2">{body}</Link> : body;
+}
+
+function Legend() {
+  const items = [
+    { cls: "border-2 border-primary bg-primary-soft", label: "Class" },
+    { cls: "border-2 border-warning", label: "Mock / Midterm" },
+    { cls: "bg-primary", label: "Selected / Next" },
+  ];
   return (
-    <Card>
-      <CardContent>
-        <div className="mb-3 flex items-center gap-2">
-          <Clock className="h-4 w-4 text-primary" />
-          <p className="ds-h4">Recent activity</p>
-        </div>
-        {model.recent.length === 0 ? (
-          <EmptyState compact icon={BookOpen} title="No activity yet" description="Your completed sets appear here." />
-        ) : (
-          <ul className="divide-y divide-border">
-            {model.recent.map((r) => (
-              <li key={r.id} className="flex items-center gap-3 py-2.5">
-                <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg", r.isMath ? "bg-success-soft text-success-foreground" : "bg-info-soft text-info-foreground")}>
-                  {r.isMath ? <Calculator className="h-4 w-4" /> : <BookOpen className="h-4 w-4" />}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-foreground">{r.title}</p>
-                  <p className="text-[12px] text-muted-foreground">{r.meta}</p>
-                </div>
-                <span className="shrink-0 text-[12px] text-label-foreground">{r.time}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </CardContent>
-    </Card>
+    <div className="mt-4 flex flex-wrap items-center gap-4">
+      {items.map((it) => (
+        <span key={it.label} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <span className={cn("h-3.5 w-3.5 rounded-full", it.cls)} />
+          {it.label}
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -484,6 +415,7 @@ function GoalModal({
   onSave: (total: number) => void | Promise<void>;
 }) {
   const [value, setValue] = useState(String(initial));
+  const quick = [1400, 1500, 1550, 1600];
   return (
     <Modal
       open={open}
@@ -499,6 +431,23 @@ function GoalModal({
         </>
       }
     >
+      <div className="mb-4 flex flex-wrap gap-2">
+        {quick.map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => setValue(String(v))}
+            className={cn(
+              "ds-ring rounded-xl border px-4 py-2 text-sm font-bold transition-colors",
+              Number(value) === v
+                ? "border-primary bg-primary-soft text-primary"
+                : "border-border text-foreground hover:bg-surface-2",
+            )}
+          >
+            {v}
+          </button>
+        ))}
+      </div>
       <Field label="Target total (400–1600)" htmlFor="goal-input" hint="The digital SAT is scored 400–1600.">
         <Input
           id="goal-input"
@@ -520,11 +469,9 @@ function DashboardSkeleton() {
     <div className="mx-auto flex max-w-6xl flex-col gap-6 pb-12">
       <Skeleton className="h-10 w-64" />
       <Skeleton className="h-40 w-full rounded-2xl" />
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {[0, 1, 2].map((i) => <Skeleton key={i} className="h-32 rounded-2xl" />)}
-      </div>
-      <div className="grid gap-4 lg:grid-cols-2">
-        {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-72 rounded-2xl" />)}
+      <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
+        <Skeleton className="h-96 rounded-2xl" />
+        <Skeleton className="h-96 rounded-2xl" />
       </div>
     </div>
   );
