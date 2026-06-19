@@ -1471,17 +1471,21 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
             validate_submission_upload(f)
 
         # Make a mutable copy of request.data with attachment_file removed so
-        # the serializer doesn't consume any uploaded file.
+        # the serializer doesn't consume any uploaded file. IMPORTANT: drop the file
+        # keys BEFORE copying — QueryDict.copy() deep-copies its values, and a large
+        # (temp-file-backed) upload is a BufferedRandom that is not picklable, so copying
+        # with files still present raises "cannot pickle 'BufferedRandom'". Files are
+        # handled manually below from request.FILES, so removing them here loses nothing.
         data = request.data
         if hasattr(data, "_mutable"):
             data._mutable = True
-        data_copy = data.copy() if hasattr(data, "copy") else dict(data)
         for key in ("attachment_file", "attachment_files", "attachment_file[]"):
             try:
-                if hasattr(data_copy, "pop"):
-                    data_copy.pop(key, None)
+                if hasattr(data, "pop"):
+                    data.pop(key, None)
             except Exception:
                 pass
+        data_copy = data.copy() if hasattr(data, "copy") else dict(data)
 
         serializer = self.get_serializer(data=data_copy)
         serializer.is_valid(raise_exception=True)
@@ -1562,17 +1566,20 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
 
         # Make a sanitized copy of request.data without attachment_file fields,
         # and temporarily swap it in so the super().update() serializer call
-        # doesn't see them.
+        # doesn't see them. Drop the file keys BEFORE copying — copying a QueryDict
+        # deep-copies its values and a large (temp-file-backed) upload is a non-picklable
+        # BufferedRandom, which would raise "cannot pickle 'BufferedRandom'". Files are
+        # handled manually below from request.FILES.
         original_data = request.data
         if hasattr(original_data, "_mutable"):
             original_data._mutable = True
-        sanitized = original_data.copy() if hasattr(original_data, "copy") else dict(original_data)
         for key in ("attachment_file", "attachment_files", "attachment_file[]"):
             try:
-                if hasattr(sanitized, "pop"):
-                    sanitized.pop(key, None)
+                if hasattr(original_data, "pop"):
+                    original_data.pop(key, None)
             except Exception:
                 pass
+        sanitized = original_data.copy() if hasattr(original_data, "copy") else dict(original_data)
         # Override request._full_data so DRF reads our sanitized version
         try:
             request._full_data = sanitized
