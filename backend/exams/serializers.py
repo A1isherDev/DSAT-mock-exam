@@ -3,7 +3,6 @@ import unicodedata
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import NON_FIELD_ERRORS, ValidationError as DjangoValidationError
-from django.db.models import Sum
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers
 from rest_framework.settings import api_settings
@@ -23,9 +22,6 @@ from .models import (
 )
 
 User = get_user_model()
-
-MIDTERM_ALLOWED_SCORES = frozenset({1, 2, 3, 5, 8, 10})
-MIDTERM_MAX_TOTAL_POINTS = 100
 
 
 def _normalize_platform_subject_value(raw):
@@ -751,22 +747,13 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
             if exam is None and pt.mock_exam_id:
                 exam = MockExam.objects.filter(pk=pt.mock_exam_id).first()
             if exam is not None and exam.kind == MockExam.KIND_MIDTERM:
-                if score not in MIDTERM_ALLOWED_SCORES:
+                # Midterms are graded as a percentage of the actual total (SCALE_100 =
+                # correct/total × 100, weight-independent; SCALE_800 = proportional), so
+                # there is no fixed total-points cap and per-question points are free —
+                # only require a positive score.
+                if score < 1:
                     raise serializers.ValidationError(
-                        {
-                            "score": "Midterm questions must use scores 1, 2, 3, 5, 8, or 10."
-                        }
-                    )
-
-                qs = Question.objects.filter(module__practice_test=pt)
-                if self.instance is not None:
-                    qs = qs.exclude(pk=self.instance.pk)
-                current_sum = qs.aggregate(s=Sum("score"))["s"] or 0
-                if current_sum + score > MIDTERM_MAX_TOTAL_POINTS:
-                    raise serializers.ValidationError(
-                        {
-                            "score": f"Total midterm points cannot exceed {MIDTERM_MAX_TOTAL_POINTS}."
-                        }
+                        {"score": "Score must be at least 1."}
                     )
 
             # ── SAT question-type enforcement ─────────────────────────────
