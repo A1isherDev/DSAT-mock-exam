@@ -563,7 +563,25 @@ function relativeDays(iso: string | null): string {
   return `in ${days} days`;
 }
 
+/** Where a schedule event opens, and the verb to use for it. */
+function eventHref(e: ScheduleEvent): string | null {
+  if (e.type === "assignment" && e.classroom_id && e.assignment_id != null)
+    return `/classes/${e.classroom_id}/assignments/${e.assignment_id}`;
+  if (e.type === "mock" || e.type === "midterm")
+    return e.mock_exam_id != null ? `/mock/${e.mock_exam_id}` : "/mock-exam";
+  if (e.classroom_id != null) return `/classes/${e.classroom_id}`;
+  return null;
+}
+
+function eventCta(e: ScheduleEvent): string {
+  if (e.type === "class") return "Join lesson";
+  if (e.type === "assignment") return "Open assignment";
+  if (e.type === "mock" || e.type === "midterm") return "Open test";
+  return "Open";
+}
+
 function NextLessonCard({ date, event }: { date: string | null; event: ScheduleEvent | null }) {
+  const router = useRouter();
   const cardStyle: React.CSSProperties = {
     background: "var(--dz-card)",
     border: "1px solid var(--dz-border)",
@@ -589,6 +607,8 @@ function NextLessonCard({ date, event }: { date: string | null; event: ScheduleE
   }
 
   const when = new Date(date + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  const href = eventHref(event);
+  const cta = eventCta(event);
   return (
     <div className="dz-lift4" style={cardStyle}>
       {labelRow}
@@ -601,6 +621,8 @@ function NextLessonCard({ date, event }: { date: string | null; event: ScheduleE
       <button
         type="button"
         className="dz-joinbtn"
+        disabled={!href}
+        onClick={() => { if (href) router.push(href); }}
         style={{
           marginTop: 16,
           width: "100%",
@@ -612,14 +634,15 @@ function NextLessonCard({ date, event }: { date: string | null; event: ScheduleE
           fontFamily: "inherit",
           fontSize: 15,
           fontWeight: 700,
-          cursor: "pointer",
+          cursor: href ? "pointer" : "not-allowed",
+          opacity: href ? 1 : 0.6,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           gap: 8,
         }}
       >
-        Join lesson · {relativeDays(date)} <ArrowRight size={18} />
+        {cta} · {relativeDays(date)} <ArrowRight size={18} />
       </button>
     </div>
   );
@@ -669,11 +692,17 @@ function lessonVisual(type: ScheduleEvent["type"]) {
 }
 
 function LessonRow({ event }: { event: ScheduleEvent }) {
+  const router = useRouter();
   const { Icon, bg, color } = lessonVisual(event.type);
+  const href = eventHref(event);
   return (
     <div
       className="dz-lessonrow"
-      style={{ display: "flex", gap: 13, alignItems: "flex-start", padding: 13, borderRadius: 14, background: "var(--dz-card)" }}
+      role={href ? "button" : undefined}
+      tabIndex={href ? 0 : undefined}
+      onClick={() => { if (href) router.push(href); }}
+      onKeyDown={(e) => { if (href && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); router.push(href); } }}
+      style={{ display: "flex", gap: 13, alignItems: "flex-start", padding: 13, borderRadius: 14, background: "var(--dz-card)", cursor: href ? "pointer" : "default" }}
     >
       <div style={{ width: 40, height: 40, flex: "none", borderRadius: 12, background: bg, color, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <Icon size={20} />
