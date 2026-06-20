@@ -403,7 +403,7 @@ function ScheduleSection() {
   const [viewM, setViewM] = useState(today.getMonth());
   const [selected, setSelected] = useState<string | null>(null);
 
-  const { byDate, nextLessonDate } = useStudentSchedule(viewY, viewM);
+  const { byDate, nextLessonDate, nextLesson } = useStudentSchedule(viewY, viewM);
 
   useEffect(() => {
     if (selected == null && nextLessonDate) setSelected(nextLessonDate);
@@ -435,7 +435,6 @@ function ScheduleSection() {
   const prevMonth = () => setViewM((m) => { if (m === 0) { setViewY((y) => y - 1); return 11; } return m - 1; });
   const nextMonth = () => setViewM((m) => { if (m === 11) { setViewY((y) => y + 1); return 0; } return m + 1; });
 
-  const nextEvents = nextLessonDate ? (byDate.get(nextLessonDate) ?? []) : [];
   const selEvents = selected ? (byDate.get(selected) ?? []) : [];
 
   return (
@@ -477,7 +476,7 @@ function ScheduleSection() {
 
       {/* Right column */}
       <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-        <NextLessonCard date={nextLessonDate} event={nextEvents[0] ?? null} />
+        <NextLessonCard date={nextLesson?.date ?? null} event={nextLesson} />
         <SelectedDayCard selected={selected} events={selEvents} />
       </div>
     </div>
