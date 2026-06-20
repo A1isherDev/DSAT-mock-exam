@@ -20,8 +20,8 @@ from questionbank.models import BankDomain, BankSkill, Subject
 # subject -> [(domain_name, [skill_name, ...]), ...]
 TAXONOMY: dict[str, list[tuple[str, list[str]]]] = {
     Subject.ENGLISH: [
-        ("Information and Ideas", ["Central Ideas and Details", "Command of Evidence", "Inferences"]),
-        ("Craft and Structure", ["Cross-Text Connections", "Text Structure and Purpose", "Words in Context"]),
+        ("Information and Ideas", ["Central Ideas and Details", "Inferences", "Command of Evidence"]),
+        ("Craft and Structure", ["Words in Context", "Text Structure and Purpose", "Cross-Text Connections"]),
         ("Expression of Ideas", ["Rhetorical Synthesis", "Transitions"]),
         ("Standard English Conventions", ["Boundaries", "Form, Structure, and Sense"]),
     ],
