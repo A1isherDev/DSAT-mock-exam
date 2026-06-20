@@ -1,62 +1,33 @@
 "use client";
 
 /**
- * /assessments — Student assessment workspace
- *
- * Pedagogical framing: "What am I learning and improving?"
- * Data source: GET /api/classes/my-assignments/ (single endpoint, no N+1)
+ * /assessments — Student assessment workspace, rebuilt as a 3-column board
+ * (To-do / In progress / Completed) to match the MasterSAT Assessments mockup.
+ * Uses the shared `.dzboard` design scope. Data: GET /api/classes/my-assignments/.
+ * Growth-oriented framing — no punishing "Overdue"/red labels (see memory).
  */
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { classesApi, assessmentsAdminApi } from "@/lib/api";
+import { useRouter } from "next/navigation";
+import {
+  BookOpen, Calculator, Clock, Calendar, CheckCircle2,
+  PlayCircle, RefreshCw, AlertTriangle, Hourglass,
+} from "lucide-react";
+import AuthGuard from "@/components/AuthGuard";
+import { classesApi } from "@/lib/api";
 import type { Assignment } from "@/lib/criticalApiContract";
 import {
-  AlertTriangle,
-  ArrowRight,
-  BookOpen,
-  CheckCircle2,
-  ClipboardCheck,
-  ClipboardList,
-  Clock,
-  ExternalLink,
-  PlayCircle,
-  Plus,
-  RefreshCw,
-  Settings2,
-  Timer,
-  Trophy,
-} from "lucide-react";
-import { cn } from "@/lib/cn";
-import AuthGuard from "@/components/AuthGuard";
-import { useMe } from "@/hooks/useMe";
-import {
-  Card, CardContent, Badge, Button, Stat, ProgressRing, EmptyState, Alert, Skeleton,
-  type BadgeVariant,
-} from "@/components/ui";
-import {
-  deriveAssignmentLifecycleState,
-  formatAssignmentDue,
-  formatAssignmentDueFull,
+  deriveAssignmentLifecycleState, formatAssignmentDue,
 } from "@/lib/assignmentLifecycle";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type AssessmentSet = {
-  id: number; subject: string; category: string; title: string; description: string;
-};
-
-type AssessmentHomework = {
-  homework_id: number; set?: AssessmentSet | null;
-};
-
+type AssessmentSet = { id: number; subject: string; category: string; title: string; description: string };
+type AssessmentHomework = { homework_id: number; set?: AssessmentSet | null };
 type AssignmentWithStatus = Assignment & {
   assessment_homework?: AssessmentHomework | null;
   workflow_status?: string | null;
   attempt_id?: number | null;
 };
-
-type AssessmentEntry = {
+type Entry = {
   assignment: AssignmentWithStatus;
   classroomId: number;
   classroomName: string;
@@ -64,381 +35,239 @@ type AssessmentEntry = {
   resumeHref?: string;
 };
 
-// ─── Student-facing assessment state (logic preserved) ───────────────────────
+type State = "IN_PROGRESS" | "SUBMITTED" | "COMPLETED" | "OVERDUE" | "DUE_SOON" | "NOT_STARTED";
 
-type AssessmentStudentState =
-  | "IN_PROGRESS" | "SUBMITTED" | "COMPLETED" | "OVERDUE" | "DUE_SOON" | "NOT_STARTED";
-
-function deriveStudentState(entry: AssessmentEntry): AssessmentStudentState {
-  const ws = entry.assignment.workflow_status;
+function deriveState(e: Entry): State {
+  const ws = e.assignment.workflow_status;
   if (ws === "graded" || ws === "completed") return "COMPLETED";
   if (ws === "submitted") return "SUBMITTED";
   if (ws === "in_progress") return "IN_PROGRESS";
-  const temporal = deriveAssignmentLifecycleState(entry.assignment);
-  if (temporal === "OVERDUE") return "OVERDUE";
-  if (temporal === "DUE_SOON") return "DUE_SOON";
+  const t = deriveAssignmentLifecycleState(e.assignment);
+  if (t === "OVERDUE") return "OVERDUE";
+  if (t === "DUE_SOON") return "DUE_SOON";
   return "NOT_STARTED";
 }
 
-// Growth-oriented labels + positive/neutral tones (no "Overdue"/red).
-const STUDENT_STATE_DISPLAY: Record<
-  AssessmentStudentState,
-  { label: string; variant: BadgeVariant; description: string; priority: number }
-> = {
-  IN_PROGRESS: { label: "In progress", variant: "warning", description: "Resume where you left off.", priority: 0 },
-  OVERDUE: { label: "Needs attention", variant: "warning", description: "Past the due date.", priority: 1 },
-  DUE_SOON: { label: "Due soon", variant: "info", description: "Due within 48 hours.", priority: 2 },
-  NOT_STARTED: { label: "Not started", variant: "neutral", description: "Not started yet.", priority: 3 },
-  SUBMITTED: { label: "Submitted", variant: "info", description: "Grading in progress.", priority: 4 },
-  COMPLETED: { label: "Completed", variant: "success", description: "Graded and reviewed.", priority: 5 },
-};
-
-function sortEntries(entries: AssessmentEntry[]): AssessmentEntry[] {
-  return [...entries].sort((a, b) => {
-    const pa = STUDENT_STATE_DISPLAY[deriveStudentState(a)].priority;
-    const pb = STUDENT_STATE_DISPLAY[deriveStudentState(b)].priority;
-    if (pa !== pb) return pa - pb;
-    const da = a.assignment.due_at ? new Date(a.assignment.due_at).getTime() : Infinity;
-    const db = b.assignment.due_at ? new Date(b.assignment.due_at).getTime() : Infinity;
-    return da - db;
-  });
+type ColKey = "todo" | "progress" | "done";
+function colOf(s: State): ColKey {
+  if (s === "IN_PROGRESS") return "progress";
+  if (s === "COMPLETED" || s === "SUBMITTED") return "done";
+  return "todo";
 }
 
-type FilterValue = "all" | "pending" | "in_progress" | "completed";
+const COLUMNS: { key: ColKey; name: string; dot: string; emptyHint: string }[] = [
+  { key: "todo", name: "To-do", dot: "var(--dz-indigo)", emptyHint: "New work from your teachers shows up here." },
+  { key: "progress", name: "In progress", dot: "var(--dz-amber)", emptyHint: "Anything you've started appears here." },
+  { key: "done", name: "Completed", dot: "#16a34a", emptyHint: "Finished work lands here." },
+];
 
-function subjectMeta(subject?: string): { label: string; variant: BadgeVariant } | null {
-  if (subject === "MATH") return { label: "Math", variant: "success" };
-  if (subject === "READING_WRITING" || subject === "ENGLISH") return { label: "Reading & Writing", variant: "info" };
-  return subject ? { label: subject, variant: "neutral" } : null;
+function subjectMeta(subject?: string): { label: string; isMath: boolean } {
+  if (subject === "MATH") return { label: "Math", isMath: true };
+  if (subject === "READING_WRITING" || subject === "ENGLISH") return { label: "R&W", isMath: false };
+  return { label: subject || "General", isMath: false };
 }
 
-// ─── Continue Learning ──────────────────────────────────────────────────────
-
-function ContinueLearningSection({ entries }: { entries: AssessmentEntry[] }) {
-  const inProgress = entries.filter((e) => deriveStudentState(e) === "IN_PROGRESS");
-  if (inProgress.length === 0) return null;
-
-  return (
-    <section aria-label="Continue learning">
-      <div className="mb-3 flex items-center gap-2">
-        <PlayCircle className="h-4 w-4 shrink-0 text-primary" />
-        <h2 className="ds-h4">Continue learning</h2>
-        <Badge variant="warning">{inProgress.length} in progress</Badge>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        {inProgress.map((entry) => {
-          const href = entry.resumeHref ?? `/assessments/${entry.assignment.id}`;
-          const set = entry.assignment.assessment_homework?.set;
-          const title = entry.assignment.title ?? set?.title ?? "Assignment";
-          const subj = subjectMeta(set?.subject ?? entry.subject);
-          const dueRelative = formatAssignmentDue(entry.assignment.due_at);
-
-          return (
-            <Link key={`resume-${entry.classroomId}-${entry.assignment.id}`} href={href} className="ds-ring block rounded-2xl">
-              <Card variant="interactive" className="h-full">
-                <CardContent className="flex h-full flex-col gap-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-bold text-foreground">{title}</p>
-                      <p className="mt-0.5 text-[12px] text-muted-foreground">{entry.classroomName}</p>
-                    </div>
-                    {subj ? <Badge variant={subj.variant}>{subj.label}</Badge> : null}
-                  </div>
-                  <div className="mt-auto flex items-center justify-between gap-2">
-                    <p className="text-[12px] font-bold text-muted-foreground">{dueRelative}</p>
-                    <Badge variant="primary"><PlayCircle className="h-3.5 w-3.5" /> Resume</Badge>
-                  </div>
-                </CardContent>
-              </Card>
-            </Link>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-// ─── Sub-components ─────────────────────────────────────────────────────────
-
-function StateChip({ state }: { state: AssessmentStudentState }) {
-  const spec = STUDENT_STATE_DISPLAY[state];
-  return <span title={spec.description}><Badge variant={spec.variant}>{spec.label}</Badge></span>;
-}
-
-function ActionButton({ entry, state }: { entry: AssessmentEntry; state: AssessmentStudentState }) {
-  const aid = entry.assignment.id;
-
-  if (state === "COMPLETED" || state === "SUBMITTED") {
-    return (
-      <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-        <Link href={`/assessments/result/${aid}`}><Button variant="secondary" size="sm" leftIcon={<CheckCircle2 />}>{state === "SUBMITTED" ? "View" : "Review"}</Button></Link>
-        {state === "COMPLETED" ? (
-          <Link href={`/assessments/${aid}`}><Button variant="ghost" size="sm" leftIcon={<RefreshCw />}>Retry</Button></Link>
-        ) : null}
-      </div>
-    );
-  }
-
-  const href = state === "IN_PROGRESS" && entry.resumeHref ? entry.resumeHref : `/assessments/${aid}`;
-  const config = {
-    IN_PROGRESS: { label: "Resume", icon: PlayCircle, primary: true },
-    NOT_STARTED: { label: "Start", icon: PlayCircle, primary: true },
-    OVERDUE: { label: "Submit now", icon: AlertTriangle, primary: true },
-    DUE_SOON: { label: "Start", icon: Timer, primary: true },
-    SUBMITTED: { label: "View", icon: ArrowRight, primary: false },
-    COMPLETED: { label: "Review", icon: CheckCircle2, primary: false },
-  }[state];
-
-  const Icon = config.icon;
-  return (
-    <Link href={href} className="shrink-0">
-      <Button variant={config.primary ? "primary" : "secondary"} size="sm" leftIcon={<Icon />}>{config.label}</Button>
-    </Link>
-  );
-}
-
-function AssessmentRow({ entry }: { entry: AssessmentEntry }) {
-  const state = deriveStudentState(entry);
-  const set = entry.assignment.assessment_homework?.set;
-  const title = entry.assignment.title ?? set?.title ?? "Assignment";
-  const category = set?.category;
-  const subj = subjectMeta(set?.subject ?? entry.subject);
-  const dueFull = formatAssignmentDueFull(entry.assignment.due_at);
-  const dueRelative = formatAssignmentDue(entry.assignment.due_at);
-  const attention = state === "OVERDUE" || state === "DUE_SOON";
-
-  return (
-    <Card>
-      <CardContent className="flex items-start gap-4">
-        <div className="min-w-0 flex-1 space-y-1.5">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="text-sm font-bold leading-snug text-foreground">{title}</p>
-            <StateChip state={state} />
-          </div>
-          <div className="flex flex-wrap items-center gap-2 text-[12px] text-muted-foreground">
-            <span className="inline-flex items-center gap-1"><BookOpen className="h-3 w-3 shrink-0" /><span className="font-semibold text-foreground/80">{entry.classroomName}</span></span>
-            {subj ? <Badge variant={subj.variant}>{subj.label}</Badge> : null}
-            {category ? <span className="rounded-md bg-surface-2 px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">{category}</span> : null}
-          </div>
-          {entry.assignment.due_at ? (
-            <p className={cn("text-[12px] font-semibold", attention ? "text-warning-foreground" : "text-muted-foreground")}>
-              {dueFull}
-              {attention ? <span className="ml-1.5 font-bold"> · {dueRelative}</span> : null}
-            </p>
-          ) : null}
-        </div>
-        <ActionButton entry={entry} state={state} />
-      </CardContent>
-    </Card>
-  );
-}
-
-// ─── Admin section ──────────────────────────────────────────────────────────
-
-type AdminSetRow = { id: number; title: string; subject: string; category: string; description: string; is_active: boolean; question_count?: number };
-
-function AdminAssessmentSection() {
-  const [sets, setSets] = useState<AdminSetRow[]>([]);
+function Board() {
+  const router = useRouter();
+  const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    assessmentsAdminApi
-      .adminListSets({ limit: 50 })
-      .then((data: { results?: AdminSetRow[] }) => {
-        setSets(Array.isArray(data.results) ? data.results : Array.isArray(data) ? data as unknown as AdminSetRow[] : []);
-      })
-      .catch(() => setSets([]))
-      .finally(() => setLoading(false));
-  }, []);
-
-  return (
-    <Card>
-      <CardContent className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <Settings2 className="h-4 w-4 shrink-0 text-primary" />
-            <h2 className="ds-h4">Assessment management</h2>
-            <Badge variant="primary">Admin</Badge>
-          </div>
-          <Link href="/ops/assessments" className="ds-ring inline-flex items-center gap-1 rounded-lg text-xs font-bold text-primary hover:underline">
-            Full builder <ExternalLink className="h-3 w-3" />
-          </Link>
-        </div>
-        {loading ? (
-          <Skeleton className="h-20 rounded-xl" />
-        ) : sets.length === 0 ? (
-          <EmptyState compact icon={ClipboardList} title="No assessment sets" description="Create your first assessment set to get started."
-            action={<Link href="/ops/assessments"><Button size="sm" leftIcon={<Plus />}>Create set</Button></Link>} />
-        ) : (
-          <div className="grid gap-2 sm:grid-cols-2">
-            {sets.map((s) => {
-              const subj = subjectMeta(s.subject === "math" ? "MATH" : s.subject === "english" ? "ENGLISH" : s.subject?.toUpperCase());
-              return (
-                <div key={s.id} className="flex items-start gap-3 rounded-xl border border-border bg-surface-1 p-4">
-                  <div className="min-w-0 flex-1 space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="truncate text-sm font-bold text-foreground">{s.title}</p>
-                      {!s.is_active ? <Badge variant="warning">Draft</Badge> : null}
-                    </div>
-                    <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                      {subj ? <Badge variant={subj.variant}>{subj.label === "Reading & Writing" ? "R&W" : subj.label}</Badge> : null}
-                      {s.category ? <span className="rounded-md bg-surface-2 px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">{s.category}</span> : null}
-                      {s.question_count != null ? <span className="font-semibold text-muted-foreground">{s.question_count}q</span> : null}
-                    </div>
-                  </div>
-                  <Link href={`/ops/assessments/${s.id}`} className="shrink-0">
-                    <Button variant="ghost" size="sm" rightIcon={<ExternalLink className="h-3 w-3" />}>Edit</Button>
-                  </Link>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-// ─── Main ───────────────────────────────────────────────────────────────────
-
-function AssessmentWorkspace() {
-  const { me } = useMe();
-  const roleRaw = String(me?.role ?? "").trim().toLowerCase();
-  const perms = Array.isArray((me as Record<string, unknown> | undefined)?.permissions)
-    ? ((me as Record<string, unknown>).permissions as string[]) : [];
-  const isStaff = perms.includes("*") || perms.includes("manage_users") || perms.includes("assign_access") || perms.includes("manage_tests") || roleRaw === "admin" || roleRaw === "teacher";
-
-  const [entries, setEntries] = useState<AssessmentEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<FilterValue>("all");
+  const [error, setError] = useState(false);
 
   const load = async () => {
-    setLoading(true); setError(null); setEntries([]);
+    setLoading(true); setError(false); setEntries([]);
     try {
       const { items } = await classesApi.myAssignments();
-      const collected: AssessmentEntry[] = [];
+      const collected: Entry[] = [];
       for (const a of items) {
         const rich = a as AssignmentWithStatus & { classroom_id?: number; classroom_name?: string };
         if (!rich.assessment_homework) continue;
         const classroomId = rich.classroom_id ?? 0;
         const classroomName = rich.classroom_name ?? `Class #${classroomId}`;
-        const resumeHref = rich.workflow_status === "in_progress" && rich.attempt_id ? `/assessments/attempt/${rich.attempt_id}` : undefined;
+        const resumeHref = rich.workflow_status === "in_progress" && rich.attempt_id
+          ? `/assessments/attempt/${rich.attempt_id}` : undefined;
         collected.push({ assignment: rich, classroomId, classroomName, subject: rich.assessment_homework?.set?.subject, resumeHref });
       }
-      setEntries(sortEntries(collected));
-    } catch (e: unknown) {
-      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      setError(typeof msg === "string" ? msg : "Could not load your assessments.");
+      setEntries(collected);
+    } catch {
+      setError(true);
     } finally {
       setLoading(false);
     }
   };
-
   useEffect(() => { void load(); }, []);
 
-  const filtered = useMemo(() => {
-    if (filter === "all") return entries;
-    if (filter === "pending") return entries.filter((e) => { const s = deriveStudentState(e); return s === "IN_PROGRESS" || s === "NOT_STARTED" || s === "OVERDUE" || s === "DUE_SOON"; });
-    if (filter === "in_progress") return entries.filter((e) => deriveStudentState(e) === "IN_PROGRESS");
-    if (filter === "completed") return entries.filter((e) => { const s = deriveStudentState(e); return s === "COMPLETED" || s === "SUBMITTED"; });
-    return entries;
-  }, [entries, filter]);
-
-  const counts = useMemo(() => ({
-    pending: entries.filter((e) => { const s = deriveStudentState(e); return s === "IN_PROGRESS" || s === "NOT_STARTED" || s === "OVERDUE" || s === "DUE_SOON"; }).length,
-    in_progress: entries.filter((e) => deriveStudentState(e) === "IN_PROGRESS").length,
-    completed: entries.filter((e) => { const s = deriveStudentState(e); return s === "COMPLETED" || s === "SUBMITTED"; }).length,
-    overdue: entries.filter((e) => deriveStudentState(e) === "OVERDUE").length,
-    dueSoon: entries.filter((e) => deriveStudentState(e) === "DUE_SOON").length,
-  }), [entries]);
-
-  const completionPct = entries.length > 0 ? Math.round((counts.completed / entries.length) * 100) : 0;
+  const byCol = useMemo(() => {
+    const m: Record<ColKey, Entry[]> = { todo: [], progress: [], done: [] };
+    for (const e of entries) m[colOf(deriveState(e))].push(e);
+    return m;
+  }, [entries]);
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-6 pb-12">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="ds-overline text-primary">Learn</p>
-          <h1 className="ds-h1 mt-1">My assessments</h1>
-          <p className="ds-small mt-1">Homework and assessments assigned by your teachers.</p>
+    <div className="dzboard" style={{ maxWidth: 1280, width: "100%", margin: "0 auto" }}>
+      <div className="dz-content">
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 24, flexWrap: "wrap", marginBottom: 22 }}>
+          <h1 style={{ flex: 1, minWidth: 280, margin: 0, fontSize: 38, lineHeight: 1.05, fontWeight: 800, letterSpacing: "-.03em", color: "var(--dz-ink)" }}>
+            My assessments
+          </h1>
+          <button type="button" onClick={() => void load()} className="dz-secbtn"
+            style={{ display: "flex", alignItems: "center", gap: 8, padding: "11px 16px", borderRadius: 12, border: "1px solid var(--dz-border)", background: "var(--dz-panel)", color: "var(--dz-mute)", fontFamily: "inherit", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+            <RefreshCw size={16} /> Refresh
+          </button>
         </div>
-        {!loading ? <Button variant="secondary" leftIcon={<RefreshCw />} onClick={() => void load()}>Refresh</Button> : null}
+
+        {error ? (
+          <AssessError onRetry={() => void load()} />
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 18 }} className="dz-board">
+            {COLUMNS.map((col) => (
+              <div key={col.key} style={{ background: "var(--dz-card)", border: "1px solid var(--dz-border)", borderRadius: 18, padding: 16, minHeight: 300 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "4px 6px 16px" }}>
+                  <span style={{ width: 10, height: 10, borderRadius: "50%", background: col.dot }} />
+                  <span style={{ fontSize: 15, fontWeight: 800, color: "var(--dz-ink)" }}>{col.name}</span>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: "var(--dz-faint)", background: "var(--dz-panel)", padding: "2px 9px", borderRadius: 8 }}>
+                    {loading ? "·" : byCol[col.key].length}
+                  </span>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  {loading ? (
+                    Array.from({ length: 2 }).map((_, i) => (
+                      <div key={i} className="dz-skel" style={{ height: 132, borderRadius: 16 }} />
+                    ))
+                  ) : byCol[col.key].length === 0 ? (
+                    <div style={{ border: "1.5px dashed var(--dz-border)", borderRadius: 13, padding: "26px 16px", textAlign: "center" }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: "var(--dz-mute)" }}>Nothing here</div>
+                      <div style={{ fontSize: 12, fontWeight: 500, color: "var(--dz-faint)", marginTop: 3 }}>{col.emptyHint}</div>
+                    </div>
+                  ) : (
+                    byCol[col.key].map((e) => (
+                      <AssessCard key={`${e.classroomId}-${e.assignment.id}`} entry={e} onGo={(href) => router.push(href)} />
+                    ))
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AssessCard({ entry, onGo }: { entry: Entry; onGo: (href: string) => void }) {
+  const state = deriveState(entry);
+  const set = entry.assignment.assessment_homework?.set;
+  const title = entry.assignment.title ?? set?.title ?? "Assignment";
+  const subj = subjectMeta(set?.subject ?? entry.subject);
+  const category = set?.category;
+  const aid = entry.assignment.id;
+  const dueRel = formatAssignmentDue(entry.assignment.due_at);
+  const col = colOf(state);
+
+  const accent = subj.isMath ? "#0d9488" : "var(--dz-indigo)";
+  const accentSoft = subj.isMath ? "rgba(13,148,136,.12)" : "var(--dz-indigo-soft)";
+
+  return (
+    <div className="dz-statecard" style={{ background: "var(--dz-panel)", border: "1px solid var(--dz-border)", borderRadius: 16, padding: 16, cursor: "default" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 12 }}>
+        <span style={{ width: 30, height: 30, borderRadius: 9, background: accentSoft, color: accent, display: "flex", alignItems: "center", justifyContent: "center", flex: "none" }}>
+          {subj.isMath ? <Calculator size={16} /> : <BookOpen size={16} />}
+        </span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 800, color: accent, background: accentSoft, padding: "3px 9px", borderRadius: 8 }}>
+          {subj.label}
+        </span>
+        <div style={{ flex: 1 }} />
+        {col === "done" ? <span style={{ color: "#16a34a", display: "flex" }}><CheckCircle2 size={20} /></span> : null}
+        {col === "progress" ? (
+          <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: 9, color: "var(--dz-amber)", background: "color-mix(in srgb, var(--dz-amber) 15%, transparent)" }}>
+            <Hourglass size={15} />
+          </span>
+        ) : null}
       </div>
 
-      {!loading && entries.length > 0 ? (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <Stat label="Total" value={entries.length} icon={ClipboardCheck} />
-          <Stat label="Pending" value={counts.pending} icon={Clock} />
-          <Stat label="Completed" value={counts.completed} icon={Trophy} />
-          <Card><CardContent className="flex items-center gap-4">
-            <ProgressRing value={completionPct} size={48} strokeWidth={5} color={completionPct >= 80 ? "text-success" : "text-primary"} />
-            <div><p className="ds-overline">Done</p><p className="ds-num text-xl font-extrabold text-foreground">{completionPct}%</p></div>
-          </CardContent></Card>
+      <div style={{ fontSize: 16, fontWeight: 800, color: "var(--dz-ink)", lineHeight: 1.3, marginBottom: 8 }}>{title}</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: "var(--dz-mute)", marginBottom: 12 }}>
+        <BookOpen size={13} /> {entry.classroomName}
+      </div>
+
+      {col === "todo" ? (
+        <>
+          {entry.assignment.due_at ? (
+            <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 800, color: "var(--dz-amber)", border: "1px solid color-mix(in srgb, var(--dz-amber) 35%, transparent)", background: "color-mix(in srgb, var(--dz-amber) 12%, transparent)", padding: "4px 10px", borderRadius: 8 }}>
+                <Calendar size={13} /> {state === "OVERDUE" ? `Catch up · ${dueRel}` : `Due ${dueRel}`}
+              </span>
+            </div>
+          ) : null}
+          {category ? (
+            <div style={{ display: "flex", gap: 7, marginBottom: 14, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: "var(--dz-mute)", background: "var(--dz-card)", padding: "4px 10px", borderRadius: 7 }}>{category}</span>
+            </div>
+          ) : null}
+        </>
+      ) : null}
+
+      {col === "progress" ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: "var(--dz-mute)", marginBottom: 14 }}>
+          <Clock size={13} /> Continue where you left off
         </div>
       ) : null}
 
-      {isStaff ? <AdminAssessmentSection /> : null}
-
-      {!loading ? <ContinueLearningSection entries={entries} /> : null}
-
-      {!loading && (counts.overdue > 0 || counts.dueSoon > 0) ? (
-        <Alert tone="warning" title="Work needs attention">
-          {counts.overdue > 0 ? <span className="font-bold">{counts.overdue} past due</span> : null}
-          {counts.overdue > 0 && counts.dueSoon > 0 ? <span> · </span> : null}
-          {counts.dueSoon > 0 ? <span className="font-bold">{counts.dueSoon} due within 48h</span> : null}
-        </Alert>
-      ) : null}
-
-      {!loading && entries.length > 0 ? (
-        <div className="flex flex-wrap gap-1.5">
-          {([
-            { value: "all" as FilterValue, label: `All (${entries.length})` },
-            { value: "pending" as FilterValue, label: `Pending (${counts.pending})` },
-            { value: "in_progress" as FilterValue, label: `In progress (${counts.in_progress})` },
-            { value: "completed" as FilterValue, label: `Completed (${counts.completed})` },
-          ]).map((f) => (
-            <button key={f.value} type="button" onClick={() => setFilter(f.value)}
-              className={cn("ds-ring rounded-lg border px-3 py-1.5 text-[13px] font-semibold transition-colors",
-                filter === f.value ? "border-primary/30 bg-primary-soft text-primary" : "border-border bg-card text-muted-foreground hover:bg-surface-2 hover:text-foreground")}>
-              {f.label}
-            </button>
-          ))}
+      {col === "done" ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: state === "SUBMITTED" ? "var(--dz-mute)" : "#16a34a", marginBottom: 14 }}>
+          <CheckCircle2 size={13} /> {state === "SUBMITTED" ? "Submitted — grading in progress" : "Completed & graded"}
         </div>
       ) : null}
 
-      {error ? <Alert tone="danger" title={error}>Please refresh to try again.</Alert> : null}
+      <div style={{ display: "flex", gap: 8 }}>
+        {col === "todo" ? (
+          <ActionBtn primary icon={<PlayCircle size={15} />} label="Start" onClick={() => onGo(`/assessments/${aid}`)} />
+        ) : col === "progress" ? (
+          <ActionBtn amber icon={<PlayCircle size={15} />} label="Resume" onClick={() => onGo(entry.resumeHref ?? `/assessments/${aid}`)} />
+        ) : (
+          <>
+            <ActionBtn icon={<CheckCircle2 size={15} />} label={state === "SUBMITTED" ? "View" : "Review"} onClick={() => onGo(`/assessments/result/${aid}`)} />
+            {state === "COMPLETED" ? (
+              <ActionBtn ghost icon={<RefreshCw size={15} />} label="Retry" onClick={() => onGo(`/assessments/${aid}`)} />
+            ) : null}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
-      {loading ? (
-        <div className="flex flex-col gap-3">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-24 rounded-2xl" />)}</div>
-      ) : null}
+function ActionBtn({ label, icon, onClick, primary, amber, ghost }: {
+  label: string; icon: React.ReactNode; onClick: () => void; primary?: boolean; amber?: boolean; ghost?: boolean;
+}) {
+  const bg = primary ? "var(--dz-indigo)" : amber ? "var(--dz-amber)" : ghost ? "transparent" : "var(--dz-card)";
+  const color = primary || amber ? "#fff" : "var(--dz-ink)";
+  const border = ghost ? "1px solid var(--dz-border)" : "none";
+  return (
+    <button type="button" onClick={onClick} className="dz-actionbtn"
+      style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, padding: "9px 12px", borderRadius: 11, border, background: bg, color, fontFamily: "inherit", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
+      {icon} {label}
+    </button>
+  );
+}
 
-      {!loading && !error && entries.length === 0 ? (
-        <EmptyState icon={ClipboardList} title="No assessments yet"
-          description="Your teacher will assign assessments to your classroom. Check back after your next lesson."
-          action={<Link href="/classes"><Button variant="secondary">View your classes</Button></Link>} />
-      ) : null}
-
-      {!loading && !error && entries.length > 0 && filtered.length === 0 ? (
-        <EmptyState compact title="Nothing here right now" description="No assessments match this filter." action={<Button variant="ghost" size="sm" onClick={() => setFilter("all")}>Show all</Button>} />
-      ) : null}
-
-      {!loading && filtered.length > 0 ? (
-        <div className="flex flex-col gap-2.5">
-          {filtered.map((entry) => <AssessmentRow key={`${entry.classroomId}-${entry.assignment.id}`} entry={entry} />)}
-        </div>
-      ) : null}
-
-      {!loading ? (
-        <Card variant="soft"><CardContent className="flex items-center justify-between gap-3 py-3">
-          <p className="text-[12px] text-muted-foreground"><span className="font-semibold text-foreground">Assessments</span> are classroom homework — not SAT simulation.</p>
-          <Link href="/mock-exam" className="ds-ring shrink-0 rounded-lg text-[12px] font-bold text-primary hover:underline">Go to mock exams</Link>
-        </CardContent></Card>
-      ) : null}
+function AssessError({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div style={{ border: "1.5px solid var(--dz-error-border)", borderRadius: 22, padding: "64px 40px", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", background: "var(--dz-error-bg)" }}>
+      <div style={{ width: 88, height: 88, borderRadius: 26, background: "var(--dz-error-soft)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--dz-error)", marginBottom: 22 }}>
+        <AlertTriangle size={40} />
+      </div>
+      <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-.01em", color: "var(--dz-ink)" }}>Couldn&apos;t load your assessments</div>
+      <div style={{ fontSize: 15, fontWeight: 500, color: "var(--dz-mute)", marginTop: 8, maxWidth: 440, lineHeight: 1.5 }}>
+        Something went wrong on our end. Check your connection and try again.
+      </div>
+      <button type="button" onClick={onRetry} className="dz-joinbtn2"
+        style={{ display: "flex", alignItems: "center", gap: 9, marginTop: 26, padding: "13px 22px", borderRadius: 13, border: "none", background: "var(--dz-indigo)", fontFamily: "inherit", fontSize: 15, fontWeight: 700, color: "#fff", cursor: "pointer" }}>
+        <RefreshCw size={18} /> Try again
+      </button>
     </div>
   );
 }
 
 export default function AssessmentsPage() {
-  return <AuthGuard><AssessmentWorkspace /></AuthGuard>;
+  return <AuthGuard><Board /></AuthGuard>;
 }

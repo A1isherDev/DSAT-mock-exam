@@ -1079,3 +1079,42 @@ mark.ts-annot {
 .dark .dzboard .dz-acc-2 { --acc:#2dd4bf; --acc-soft:rgba(45,212,191,.12); --acc-mid:rgba(45,212,191,.22); --acc-border:rgba(45,212,191,.32); }
 .dark .dzboard .dz-acc-3 { --acc:#fbbf24; --acc-soft:rgba(251,191,36,.12); --acc-mid:rgba(251,191,36,.22); --acc-border:rgba(251,191,36,.32); }
 .dark .dzboard .dz-acc-4 { --acc:#f472b6; --acc-soft:rgba(244,114,182,.13); --acc-mid:rgba(244,114,182,.24); --acc-border:rgba(244,114,182,.34); }
+
+/* ============================================================
+   Classes states + Assessments board + Past Papers — extends .dzboard
+   (mockups: MasterSAT Classes States / Assessments / Past Papers)
+   ============================================================ */
+.dzboard {
+  --dz-skel: #e9eef5;
+  --dz-error: #d6473a; --dz-error-soft: #fbe3df; --dz-error-border: #f3d2cd; --dz-error-bg: #fdf4f3;
+}
+.dark .dzboard {
+  --dz-skel: #1f2a3a;
+  --dz-error: #f87171; --dz-error-soft: rgba(248,113,113,.16); --dz-error-border: rgba(248,113,113,.30); --dz-error-bg: rgba(248,113,113,.07);
+}
+
+@keyframes dz-shimmer { 0% { background-position: -220px 0 } 100% { background-position: 220px 0 } }
+@keyframes dz-headIn { from { opacity: 0; transform: translateY(10px) } to { opacity: 1; transform: none } }
+@keyframes dz-edgePulse { 0%, 100% { opacity: 1 } 50% { opacity: .55 } }
+
+.dzboard .dz-skel {
+  background: var(--dz-skel);
+  background-image: linear-gradient(90deg, transparent, rgba(255,255,255,.55), transparent);
+  background-size: 560px 100%; background-repeat: no-repeat;
+  animation: dz-shimmer 1.3s infinite;
+}
+.dark .dzboard .dz-skel { background-image: linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent); }
+.dzboard .dz-headin { animation: dz-headIn .55s cubic-bezier(.22,1,.36,1) both; }
+.dzboard .dz-edge { animation: dz-edgePulse 3.5s ease-in-out infinite; }
+
+.dzboard .dz-statecard { transition: transform .2s cubic-bezier(.22,1,.36,1), box-shadow .2s, border-color .2s; }
+.dzboard .dz-statecard:hover { transform: translateY(-4px); box-shadow: 0 16px 32px rgba(15,23,41,.12); border-color: transparent; }
+.dzboard .dz-booklet { transition: transform .2s cubic-bezier(.22,1,.36,1), box-shadow .2s; }
+.dzboard .dz-booklet:hover { transform: translateY(-4px); box-shadow: 0 18px 38px rgba(15,23,41,.14); }
+.dzboard .dz-seg { transition: transform .14s, background .14s, color .14s; cursor: pointer; }
+.dzboard .dz-seg:hover { transform: translateY(-1px); }
+.dzboard .dz-seg:active { transform: scale(.95); }
+.dzboard .dz-secbtn { transition: border-color .18s, color .18s, transform .18s; }
+.dzboard .dz-secbtn:hover { border-color: var(--dz-indigo); color: var(--dz-indigo); }
+.dzboard .dz-actionbtn { transition: transform .15s, box-shadow .15s; }
+.dzboard .dz-actionbtn:active { transform: scale(.96); }

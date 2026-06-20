@@ -8,9 +8,9 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Users, ArrowRight, UserPlus, BookOpen, Calculator, GraduationCap } from "lucide-react";
+import { Users, ArrowRight, UserPlus, BookOpen, Calculator, GraduationCap, AlertTriangle, RefreshCw } from "lucide-react";
 import { normalizeApiError } from "@/lib/apiError";
-import { Button, Dialog, Field, Input, EmptyState, LoadingState, ErrorState } from "../ui";
+import { Button, Dialog, Field, Input } from "../ui";
 import { useClassrooms, useJoinClass } from "../hooks";
 import type { ClassroomWithRole } from "../types";
 
@@ -103,7 +103,8 @@ export function ClassesHome() {
           </button>
         </div>
 
-        {/* Filter pills */}
+        {/* Filter pills (loaded state only) */}
+        {!isLoading && !isError && classes.length > 0 ? (
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 22, flexWrap: "wrap" }}>
           {FILTERS.map((f) => {
             const active = filter === f.key;
@@ -125,23 +126,15 @@ export function ClassesHome() {
             );
           })}
         </div>
+        ) : null}
 
         {/* Body */}
         {isLoading ? (
-          <LoadingState label="Loading your classes…" />
+          <ClassesLoading />
         ) : isError ? (
-          <ErrorState message="We couldn't load your classes." onRetry={() => refetch()} />
+          <ClassesError onRetry={() => refetch()} />
         ) : classes.length === 0 ? (
-          <EmptyState
-            icon={GraduationCap}
-            title="No classes yet"
-            description="Join a class with the code your teacher shared."
-            action={
-              <Button variant="secondary" icon={UserPlus} onClick={() => setJoinOpen(true)}>
-                Join with code
-              </Button>
-            }
-          />
+          <ClassesEmpty onJoin={() => setJoinOpen(true)} />
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(312px, 1fr))", gap: 20 }}>
             {shown.map((c, i) => (
@@ -220,6 +213,83 @@ function ClassCard({ c, index, onOpen }: { c: ClassroomWithRole; index: number; 
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ── States (1:1 with MasterSAT Classes States mockup) ───────────────────── */
+const SKEL = "dz-skel" as const;
+
+function ClassesLoading() {
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 22 }}>
+        {[60, 92, 80].map((w, i) => (
+          <div key={i} className={SKEL} style={{ width: w, height: 38, borderRadius: 11 }} />
+        ))}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(312px, 1fr))", gap: 20 }}>
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} style={{ border: "1px solid var(--dz-border)", borderRadius: 20, overflow: "hidden", background: "var(--dz-panel)" }}>
+            <div className={SKEL} style={{ height: 92, display: "flex", alignItems: "center", padding: "0 20px" }}>
+              <div style={{ width: 50, height: 50, borderRadius: 15, background: "rgba(255,255,255,.5)" }} />
+            </div>
+            <div style={{ padding: "16px 18px 18px" }}>
+              <div className={SKEL} style={{ height: 15, width: "78%", borderRadius: 6 }} />
+              <div className={SKEL} style={{ height: 12, width: "55%", borderRadius: 6, marginTop: 11 }} />
+              <div style={{ height: 1, background: "var(--dz-border)", margin: "16px 0" }} />
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div className={SKEL} style={{ height: 12, width: 64, borderRadius: 6 }} />
+                <div className={SKEL} style={{ height: 30, width: 74, borderRadius: 10 }} />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ClassesEmpty({ onJoin }: { onJoin: () => void }) {
+  return (
+    <div style={{ border: "1.5px dashed var(--dz-border)", borderRadius: 22, padding: "64px 40px", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", background: "var(--dz-card)" }}>
+      <div style={{ width: 88, height: 88, borderRadius: 26, background: "var(--dz-indigo-soft)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--dz-indigo)", marginBottom: 22 }}>
+        <GraduationCap size={40} />
+      </div>
+      <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-.01em", color: "var(--dz-ink)" }}>No classes yet</div>
+      <div style={{ fontSize: 15, fontWeight: 500, color: "var(--dz-mute)", marginTop: 8, maxWidth: 420, lineHeight: 1.5 }}>
+        Have a class code? Join now to get started.
+      </div>
+      <button
+        type="button"
+        onClick={onJoin}
+        className="dz-joinbtn2"
+        style={{ display: "flex", alignItems: "center", gap: 9, marginTop: 26, padding: "13px 22px", borderRadius: 13, border: "none", background: "var(--dz-indigo)", fontFamily: "inherit", fontSize: 15, fontWeight: 700, color: "#fff", cursor: "pointer" }}
+      >
+        <UserPlus size={18} /> Join with a code
+      </button>
+    </div>
+  );
+}
+
+function ClassesError({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div style={{ border: "1.5px solid var(--dz-error-border)", borderRadius: 22, padding: "64px 40px", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", background: "var(--dz-error-bg)" }}>
+      <div style={{ width: 88, height: 88, borderRadius: 26, background: "var(--dz-error-soft)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--dz-error)", marginBottom: 22 }}>
+        <AlertTriangle size={40} />
+      </div>
+      <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-.01em", color: "var(--dz-ink)" }}>Couldn&apos;t load your classes</div>
+      <div style={{ fontSize: 15, fontWeight: 500, color: "var(--dz-mute)", marginTop: 8, maxWidth: 440, lineHeight: 1.5 }}>
+        Something went wrong on our end. Check your connection and try again.
+      </div>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="dz-joinbtn2"
+        style={{ display: "flex", alignItems: "center", gap: 9, marginTop: 26, padding: "13px 22px", borderRadius: 13, border: "none", background: "var(--dz-indigo)", fontFamily: "inherit", fontSize: 15, fontWeight: 700, color: "#fff", cursor: "pointer" }}
+      >
+        <RefreshCw size={18} /> Try again
+      </button>
     </div>
   );
 }
