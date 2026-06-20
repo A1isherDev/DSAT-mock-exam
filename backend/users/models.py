@@ -89,6 +89,8 @@ class User(AbstractUser):
     profile_image = models.ImageField(upload_to='profiles/', null=True, blank=True)
     sat_exam_date = models.DateField(null=True, blank=True, help_text='Planned SAT exam date')
     target_score = models.PositiveIntegerField(null=True, blank=True, help_text='Target total SAT score (400–1600)')
+    target_english = models.PositiveIntegerField(null=True, blank=True, help_text='Target English/Reading-Writing score (200–800)')
+    target_math = models.PositiveIntegerField(null=True, blank=True, help_text='Target Math score (200–800)')
     phone_number = models.CharField(
         max_length=20,
         null=True,

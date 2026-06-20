@@ -28,7 +28,6 @@ import type { ScheduleEvent } from "@/lib/api";
 import { useDashboardData, type DashboardModel } from "./useDashboardData";
 import { gridRange, isoDate, useStudentSchedule } from "./useStudentSchedule";
 
-const GOAL_OPTIONS = [1400, 1500, 1550, 1600];
 const WEEKDAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 
 export function StudentDashboard({ previewModel }: { previewModel?: DashboardModel }) {
@@ -73,9 +72,8 @@ function DashboardBody({
   live: ReturnType<typeof useDashboardData>;
   isPreview: boolean;
 }) {
-  const target = model.target ?? 1500;
-  const english = Math.round(target / 20) * 10;
-  const math = target - english;
+  const englishInit = model.englishTarget ?? 700;
+  const mathInit = model.mathTarget ?? 700;
 
   return (
     <div className="dzboard" style={{ maxWidth: 1280, width: "100%", margin: "0 auto" }}>
@@ -83,9 +81,10 @@ function DashboardBody({
         {/* Header row */}
         <HeaderRow
           name={model.firstName}
-          target={target}
+          englishInit={englishInit}
+          mathInit={mathInit}
           saving={live.savingGoal}
-          onSave={async (v) => { if (!isPreview) await live.saveGoal(v); }}
+          onSave={async (english, math) => { if (!isPreview) await live.saveGoal(english, math); }}
         />
 
         {/* Score + countdown */}
@@ -99,7 +98,7 @@ function DashboardBody({
           }}
           className="dz-scoregrid"
         >
-          <TargetScoresCard overall={model.target} english={model.target != null ? english : null} math={model.target != null ? math : null} />
+          <TargetScoresCard overall={model.target} english={model.englishTarget} math={model.mathTarget} />
           <CountdownCard daysToGo={model.examDaysLeft} examDate={model.examDate} />
         </div>
 
@@ -113,17 +112,26 @@ function DashboardBody({
 /* ── Header ──────────────────────────────────────────────────────────────── */
 function HeaderRow({
   name,
-  target,
+  englishInit,
+  mathInit,
   saving,
   onSave,
 }: {
   name: string;
-  target: number;
+  englishInit: number;
+  mathInit: number;
   saving: boolean;
-  onSave: (v: number) => void | Promise<void>;
+  onSave: (english: number, math: number) => void | Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
+  const [english, setEnglish] = useState(englishInit);
+  const [math, setMath] = useState(mathInit);
   const wrapRef = useRef<HTMLDivElement>(null);
+
+  // Re-sync the sliders to the latest saved values each time the popover opens.
+  useEffect(() => {
+    if (open) { setEnglish(englishInit); setMath(mathInit); }
+  }, [open, englishInit, mathInit]);
 
   useEffect(() => {
     if (!open) return;
@@ -203,37 +211,61 @@ function HeaderRow({
             <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: ".04em", color: "var(--dz-ink)", marginBottom: 4 }}>
               Set your target score
             </div>
-            <div style={{ fontSize: 13, color: "var(--dz-mute)", marginBottom: 14 }}>SAT total, out of 1600.</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              {GOAL_OPTIONS.map((g) => {
-                const active = g === target;
-                return (
-                  <button
-                    key={g}
-                    type="button"
-                    disabled={saving}
-                    onClick={async () => { await onSave(g); setOpen(false); }}
-                    className="dz-goalopt"
-                    style={{
-                      padding: "13px 0",
-                      borderRadius: 12,
-                      border: active ? "1px solid var(--dz-indigo)" : "1px solid var(--dz-border)",
-                      background: active ? "var(--dz-indigo-soft)" : "var(--dz-panel)",
-                      color: active ? "var(--dz-indigo)" : "var(--dz-ink)",
-                      fontFamily: "inherit",
-                      fontSize: 16,
-                      fontWeight: 800,
-                      cursor: "pointer",
-                    }}
-                  >
-                    {g}
-                  </button>
-                );
-              })}
+            <div style={{ fontSize: 13, color: "var(--dz-mute)", marginBottom: 16 }}>Each section is 200–800.</div>
+
+            <ScoreSlider label="Math Score" value={math} onChange={setMath} />
+            <div style={{ height: 16 }} />
+            <ScoreSlider label="English Score" value={english} onChange={setEnglish} />
+
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 18 }}>
+              <div style={{ fontSize: 13, color: "var(--dz-mute)", fontWeight: 600 }}>
+                Overall{" "}
+                <span style={{ fontSize: 16, fontWeight: 800, color: "var(--dz-indigo)" }}>{english + math}</span>
+              </div>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={async () => { await onSave(english, math); setOpen(false); }}
+                className="dz-goalopt"
+                style={{
+                  padding: "10px 18px",
+                  borderRadius: 12,
+                  border: "none",
+                  background: "var(--dz-indigo)",
+                  color: "#fff",
+                  fontFamily: "inherit",
+                  fontSize: 14,
+                  fontWeight: 800,
+                  cursor: saving ? "wait" : "pointer",
+                  opacity: saving ? 0.7 : 1,
+                }}
+              >
+                {saving ? "Saving…" : "Save goal"}
+              </button>
             </div>
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+/** A section-score slider (200–800, step 10) — matches the requested design. */
+function ScoreSlider({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
+  return (
+    <div>
+      <div style={{ fontSize: 14, fontWeight: 600, color: "var(--dz-ink)", marginBottom: 8 }}>
+        {label}: <span style={{ fontWeight: 800 }}>{value}</span>
+      </div>
+      <input
+        type="range"
+        min={200}
+        max={800}
+        step={10}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        style={{ width: "100%", accentColor: "var(--dz-indigo)", cursor: "pointer" }}
+      />
     </div>
   );
 }

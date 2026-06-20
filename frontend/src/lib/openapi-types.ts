@@ -2920,6 +2920,10 @@ export interface components {
              * @description Target total SAT score (400–1600)
              */
             target_score?: number | null;
+            /** @description Target English/Reading-Writing score (200–800) */
+            target_english?: number | null;
+            /** @description Target Math score (200–800) */
+            target_math?: number | null;
             readonly last_mock_result?: components["schemas"]["UserMeLastMockResult"] | null;
             clear_profile_image?: boolean;
             readonly role?: string;
@@ -3175,6 +3179,10 @@ export interface components {
              * @description Target total SAT score (400–1600)
              */
             target_score?: number | null;
+            /** @description Target English/Reading-Writing score (200–800) */
+            target_english?: number | null;
+            /** @description Target Math score (200–800) */
+            target_math?: number | null;
             readonly last_mock_result: components["schemas"]["UserMeLastMockResult"] | null;
             clear_profile_image?: boolean;
             readonly role: string;

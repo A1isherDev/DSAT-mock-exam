@@ -63,6 +63,8 @@ export const userMeResponseSchema = z
     profile_image_url: z.union([z.string(), z.null()]).optional(),
     sat_exam_date: z.union([z.string(), z.null()]).optional(),
     target_score: z.union([z.number(), z.null()]).optional(),
+    target_english: z.union([z.number(), z.null()]).optional(),
+    target_math: z.union([z.number(), z.null()]).optional(),
     last_mock_result: userMeLastMockSchema.nullable().optional(),
     role: z.string(),
     subject: z.union([z.literal("math"), z.literal("english"), z.null()]),

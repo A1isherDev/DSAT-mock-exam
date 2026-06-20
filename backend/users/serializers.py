@@ -93,6 +93,8 @@ class UserMeSerializer(serializers.ModelSerializer):
             "profile_image_url",
             "sat_exam_date",
             "target_score",
+            "target_english",
+            "target_math",
             "last_mock_result",
             "clear_profile_image",
             "role",
@@ -142,6 +144,19 @@ class UserMeSerializer(serializers.ModelSerializer):
         if value < 400 or value > 1600:
             raise serializers.ValidationError("Target score must be between 400 and 1600.")
         return value
+
+    def _validate_section_target(self, value):
+        if value is None:
+            return value
+        if value < 200 or value > 800:
+            raise serializers.ValidationError("Section target must be between 200 and 800.")
+        return value
+
+    def validate_target_english(self, value):
+        return self._validate_section_target(value)
+
+    def validate_target_math(self, value):
+        return self._validate_section_target(value)
 
     def validate_profile_image(self, value):
         if value is None:

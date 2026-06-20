@@ -50,7 +50,7 @@ class CustomUserAdmin(UserAdmin):
         (None, {"fields": ("email", "username", "password")}),
         (
             "Personal info",
-            {"fields": ("first_name", "last_name", "phone_number", "telegram_id", "profile_image", "sat_exam_date", "target_score")},
+            {"fields": ("first_name", "last_name", "phone_number", "telegram_id", "profile_image", "sat_exam_date", "target_score", "target_english", "target_math")},
         ),
         (
             "Permissions",

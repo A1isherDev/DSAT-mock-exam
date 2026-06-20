@@ -16,6 +16,8 @@ const SAMPLE: DashboardModel = {
   current: 1480,
   predicted: 1520,
   target: 1500,
+  englishTarget: 750,
+  mathTarget: 750,
   gap: 20,
   goalReached: false,
   readiness: 99,

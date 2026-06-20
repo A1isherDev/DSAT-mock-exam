@@ -49,6 +49,9 @@ export type DashboardModel = {
   /** Forward projection from recent scored attempts (estimate). */
   predicted: number | null;
   target: number | null;
+  /** Section targets (200–800). Stored when set; otherwise split from the total. */
+  englishTarget: number | null;
+  mathTarget: number | null;
   /** Points remaining to target (0 when reached). */
   gap: number | null;
   goalReached: boolean;
@@ -134,6 +137,12 @@ function buildModel(
   const current = lastMock ?? (scored.length ? (scored[scored.length - 1].score as number) : null);
   const predicted = projectScore(scored.map((a) => a.score as number));
   const target = me.target_score ?? null;
+  // Section targets: prefer the stored values; otherwise split the total evenly
+  // (English rounded to the nearest 10, Math takes the remainder).
+  const englishTarget =
+    me.target_english ?? (target != null ? Math.round(target / 20) * 10 : null);
+  const mathTarget =
+    me.target_math ?? (target != null && englishTarget != null ? target - englishTarget : null);
   const gap = target != null && current != null ? Math.max(0, target - current) : null;
   const goalReached = target != null && current != null && current >= target;
   const readinessVsTarget = target != null;
@@ -265,6 +274,8 @@ function buildModel(
     current,
     predicted,
     target,
+    englishTarget,
+    mathTarget,
     gap,
     goalReached,
     readiness,
@@ -292,7 +303,8 @@ export type DashboardData = {
   status: DashboardStatus;
   model: DashboardModel | null;
   me: UserMe | null;
-  saveGoal: (total: number) => Promise<void>;
+  /** Persist section targets; the total is stored as their sum. */
+  saveGoal: (english: number, math: number) => Promise<void>;
   savingGoal: boolean;
   refresh: () => void;
 };
@@ -334,11 +346,15 @@ export function useDashboardData(): DashboardData {
   }, [bootState, sessionMe, nonce]);
 
   const saveGoal = useCallback(
-    async (total: number) => {
+    async (english: number, math: number) => {
       if (me?.id == null) return;
       setSavingGoal(true);
       try {
-        const updated = await usersApi.patchMe({ target_score: total });
+        const updated = await usersApi.patchMe({
+          target_score: english + math,
+          target_english: english,
+          target_math: math,
+        });
         setMe((prev) => (prev ? { ...prev, ...updated } : prev));
       } finally {
         setSavingGoal(false);
