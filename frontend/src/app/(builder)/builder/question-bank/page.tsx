@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { Database, ListChecks, Upload, Search, RefreshCw } from "lucide-react";
+import { Database, ListChecks, Upload, Search, RefreshCw, Plus } from "lucide-react";
 
 import { useQbQuestions } from "@/domains/questionBank/hooks";
 import { QbStatusBadge } from "@/domains/questionBank/components/QbStatusBadge";
@@ -64,6 +64,13 @@ export default function QuestionBankListPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="/builder/question-bank/new"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-sm font-bold text-primary-foreground transition-colors hover:bg-primary/90"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            New question
+          </Link>
           <Link
             href="/builder/question-bank/triage"
             className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold text-foreground transition-colors hover:bg-surface-2"

@@ -3,14 +3,14 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
-import { ArrowLeft, Sparkles } from "lucide-react";
+import { Archive, ArrowLeft, Pencil, RotateCcw, Sparkles } from "lucide-react";
 
-import { useQbQuestion, useQbVersions } from "@/domains/questionBank/hooks";
+import { useQbArchive, useQbQuestion, useQbRestore, useQbVersions } from "@/domains/questionBank/hooks";
 import { QbStatusBadge } from "@/domains/questionBank/components/QbStatusBadge";
+import { BankQuestionEditor } from "@/domains/questionBank/components/BankQuestionEditor";
 import {
   difficultyLabel,
   formatCorrectAnswer,
-  QUESTION_TYPE_LABELS,
   resolveImageUrl,
 } from "@/domains/questionBank/utils";
 import type { QbQuestionDetail } from "@/domains/questionBank/types";
@@ -21,10 +21,15 @@ export default function QuestionBankDetailPage() {
   const params = useParams<{ id: string }>();
   const id = Number(params?.id);
   const [tab, setTab] = useState<Tab>("preview");
+  const [editing, setEditing] = useState(false);
   const { data: q, isLoading, error } = useQbQuestion(id);
+  const archive = useQbArchive();
+  const restore = useQbRestore();
 
   if (isLoading) return <Centered>Loading…</Centered>;
   if (error || !q) return <Centered tone="error">Failed to load this question.</Centered>;
+
+  const isArchived = q.status === "ARCHIVED";
 
   return (
     <div className="space-y-5">
@@ -40,32 +45,52 @@ export default function QuestionBankDetailPage() {
           <h1 className="font-mono text-lg font-bold text-foreground">{q.qb_id}</h1>
           <QbStatusBadge status={q.status} />
         </div>
-        <span className="text-sm text-muted-foreground">
-          {q.subject} · {QUESTION_TYPE_LABELS[q.question_type]} · {difficultyLabel(q.difficulty)}
-        </span>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex gap-1 border-b border-border">
-        {(["preview", "details", "versions"] as const).map((t) => (
+        <div className="flex items-center gap-2">
           <button
-            key={t}
             type="button"
-            onClick={() => setTab(t)}
-            className={
-              tab === t
-                ? "border-b-2 border-primary px-4 py-2 text-sm font-bold text-primary"
-                : "border-b-2 border-transparent px-4 py-2 text-sm font-bold text-muted-foreground hover:text-foreground"
-            }
+            onClick={() => setEditing((v) => !v)}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-sm font-bold text-foreground hover:bg-surface-2"
           >
-            {t === "preview" ? "Preview" : t === "details" ? "Details" : `Versions (${q.version_count})`}
+            <Pencil className="h-3.5 w-3.5" /> {editing ? "Close editor" : "Edit"}
           </button>
-        ))}
+          {isArchived ? (
+            <button type="button" disabled={restore.isPending} onClick={() => restore.mutate(id)} className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">
+              <RotateCcw className="h-3.5 w-3.5" /> Restore
+            </button>
+          ) : (
+            <button type="button" disabled={archive.isPending} onClick={() => archive.mutate(id)} className="inline-flex items-center gap-1.5 rounded-xl border border-rose-300 bg-rose-50 px-3 py-1.5 text-sm font-bold text-rose-700 hover:bg-rose-100 disabled:opacity-50">
+              <Archive className="h-3.5 w-3.5" /> Archive
+            </button>
+          )}
+        </div>
       </div>
 
-      {tab === "preview" && <PreviewTab q={q} />}
-      {tab === "details" && <DetailsTab q={q} />}
-      {tab === "versions" && <VersionsTab id={id} />}
+      {editing ? (
+        <BankQuestionEditor existing={q} onSaved={() => setEditing(false)} />
+      ) : (
+        <>
+          <div className="flex gap-1 border-b border-border">
+            {(["preview", "details", "versions"] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setTab(t)}
+                className={
+                  tab === t
+                    ? "border-b-2 border-primary px-4 py-2 text-sm font-bold text-primary"
+                    : "border-b-2 border-transparent px-4 py-2 text-sm font-bold text-muted-foreground hover:text-foreground"
+                }
+              >
+                {t === "preview" ? "Preview" : t === "details" ? "Details" : `Versions (${q.version_count})`}
+              </button>
+            ))}
+          </div>
+
+          {tab === "preview" && <PreviewTab q={q} />}
+          {tab === "details" && <DetailsTab q={q} />}
+          {tab === "versions" && <VersionsTab id={id} />}
+        </>
+      )}
     </div>
   );
 }

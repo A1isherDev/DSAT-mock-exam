@@ -4,7 +4,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { questionBankApi } from "./api";
 import { qbKeys } from "./queryKeys";
-import type { QbBulkInput, QbClassifyInput, QbQuestionFilters, QbValidation } from "./types";
+import type {
+  QbBulkInput,
+  QbClassifyInput,
+  QbClearImages,
+  QbImageFiles,
+  QbQuestionFilters,
+  QbValidation,
+  QbWritePayload,
+} from "./types";
 
 // ── Queries ───────────────────────────────────────────────────────────────────
 export function useQbQuestions(filters?: QbQuestionFilters) {
@@ -79,6 +87,44 @@ function useInvalidateQuestions() {
     qc.invalidateQueries({ queryKey: [...qbKeys.all, "questions"] });
     if (id) qc.invalidateQueries({ queryKey: qbKeys.question(id) });
   };
+}
+
+export function useQbCreateQuestion() {
+  const invalidate = useInvalidateQuestions();
+  return useMutation({
+    mutationFn: (vars: { payload: QbWritePayload; files?: QbImageFiles; clears?: QbClearImages }) =>
+      questionBankApi.createQuestion(vars.payload, vars.files, vars.clears),
+    onSuccess: () => invalidate(),
+  });
+}
+
+export function useQbUpdateQuestion() {
+  const invalidate = useInvalidateQuestions();
+  return useMutation({
+    mutationFn: (vars: {
+      id: number;
+      payload: QbWritePayload;
+      files?: QbImageFiles;
+      clears?: QbClearImages;
+    }) => questionBankApi.updateQuestion(vars.id, vars.payload, vars.files, vars.clears),
+    onSuccess: (_d, vars) => invalidate(vars.id),
+  });
+}
+
+export function useQbArchive() {
+  const invalidate = useInvalidateQuestions();
+  return useMutation({
+    mutationFn: (id: number) => questionBankApi.archiveQuestion(id),
+    onSuccess: (_d, id) => invalidate(id),
+  });
+}
+
+export function useQbRestore() {
+  const invalidate = useInvalidateQuestions();
+  return useMutation({
+    mutationFn: (id: number) => questionBankApi.restoreQuestion(id),
+    onSuccess: (_d, id) => invalidate(id),
+  });
 }
 
 export function useQbClassify() {

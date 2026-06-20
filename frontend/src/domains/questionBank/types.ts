@@ -44,6 +44,7 @@ export type QbSkill = {
 export type QbQuestionListItem = {
   id: number;
   qb_id: string;
+  external_id: string;
   subject: QbSubject;
   status: QbStatus;
   question_type: QbQuestionType;
@@ -80,6 +81,7 @@ export type QbPassage = {
 export type QbQuestionDetail = {
   id: number;
   qb_id: string;
+  external_id: string;
   subject: QbSubject;
   status: QbStatus;
   question_type: QbQuestionType;
@@ -99,6 +101,7 @@ export type QbQuestionDetail = {
   option_c_image: string | null;
   option_d_image: string | null;
   correct_answer: unknown;
+  student_answer: unknown;
   explanation: string;
   points: number;
   content_hash: string;
@@ -186,6 +189,29 @@ export type QbQuestionFilters = {
   limit?: number;
   offset?: number;
 };
+
+export type QbWritePayload = {
+  subject?: string;
+  question_type?: string;
+  difficulty?: string;
+  external_id?: string;
+  domain?: number | null;
+  skill?: number | null;
+  question_text?: string;
+  question_prompt?: string;
+  option_a?: string;
+  option_b?: string;
+  option_c?: string;
+  option_d?: string;
+  correct_answer?: string;
+  student_answer?: string;
+  explanation?: string;
+  points?: number;
+};
+
+export type QbImageKey = "question" | "a" | "b" | "c" | "d";
+export type QbImageFiles = Partial<Record<QbImageKey, File>>;
+export type QbClearImages = Partial<Record<QbImageKey, boolean>>;
 
 export type QbClassifyInput = { domain: number; skill: number; difficulty: string };
 export type QbBulkAction = "approve" | "reject" | "classify";

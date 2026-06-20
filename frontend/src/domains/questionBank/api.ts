@@ -7,7 +7,9 @@ import type {
   QbBulkInput,
   QbBulkResult,
   QbClassifyInput,
+  QbClearImages,
   QbDomain,
+  QbImageFiles,
   QbImportBatch,
   QbImportCandidate,
   QbPaginated,
@@ -17,7 +19,38 @@ import type {
   QbSkill,
   QbValidation,
   QbVersion,
+  QbWritePayload,
 } from "./types";
+
+const _IMG_FIELD: Record<string, string> = {
+  question: "question_image",
+  a: "option_a_image",
+  b: "option_b_image",
+  c: "option_c_image",
+  d: "option_d_image",
+};
+
+/** JSON body when there are no images; multipart FormData when images change. */
+function buildWriteBody(
+  payload: QbWritePayload,
+  files?: QbImageFiles,
+  clears?: QbClearImages,
+): QbWritePayload | FormData {
+  const hasFiles = !!files && Object.keys(files).length > 0;
+  const hasClears = !!clears && Object.values(clears).some(Boolean);
+  if (!hasFiles && !hasClears) return payload;
+  const fd = new FormData();
+  for (const [k, v] of Object.entries(payload)) {
+    if (v !== undefined && v !== null) fd.append(k, String(v));
+  }
+  for (const [key, file] of Object.entries(files ?? {})) {
+    if (file) fd.append(_IMG_FIELD[key], file);
+  }
+  for (const [key, on] of Object.entries(clears ?? {})) {
+    if (on) fd.append(`clear_${_IMG_FIELD[key]}`, "true");
+  }
+  return fd;
+}
 
 const BASE = "/questionbank";
 
@@ -53,6 +86,33 @@ export const questionBankApi = {
   },
   listSkills: async (params?: { domain?: number; subject?: string }): Promise<QbSkill[]> => {
     const r = await api.get(`${BASE}/skills/`, { params: clean(params as Record<string, unknown>) });
+    return r.data;
+  },
+
+  // ── Content authoring / edit / archive ────────────────────────────────────
+  createQuestion: async (
+    payload: QbWritePayload,
+    files?: QbImageFiles,
+    clears?: QbClearImages,
+  ): Promise<QbQuestionDetail> => {
+    const r = await api.post(`${BASE}/questions/`, buildWriteBody(payload, files, clears));
+    return r.data;
+  },
+  updateQuestion: async (
+    id: number,
+    payload: QbWritePayload,
+    files?: QbImageFiles,
+    clears?: QbClearImages,
+  ): Promise<QbQuestionDetail> => {
+    const r = await api.patch(`${BASE}/questions/${id}/`, buildWriteBody(payload, files, clears));
+    return r.data;
+  },
+  archiveQuestion: async (id: number): Promise<QbQuestionDetail> => {
+    const r = await api.post(`${BASE}/questions/${id}/archive/`);
+    return r.data;
+  },
+  restoreQuestion: async (id: number): Promise<QbQuestionDetail> => {
+    const r = await api.post(`${BASE}/questions/${id}/restore/`);
     return r.data;
   },
 
