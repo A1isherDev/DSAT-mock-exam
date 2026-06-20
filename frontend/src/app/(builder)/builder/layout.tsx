@@ -16,6 +16,9 @@ import {
   ClipboardCheck,
   FlaskConical,
   GraduationCap,
+  Database,
+  ListChecks,
+  Upload,
 } from "lucide-react";
 
 /**
@@ -41,7 +44,10 @@ type NavItem = {
 
 // Learning system (pedagogical / classroom)
 const LEARNING_NAV: NavItem[] = [
-  { href: "/builder/bank",       label: "Question Bank", icon: Library,        exact: false },
+  { href: "/builder/question-bank",         label: "Question Bank", icon: Database,       exact: true  },
+  { href: "/builder/question-bank/triage",  label: "Triage Queue",  icon: ListChecks,     exact: false },
+  { href: "/builder/question-bank/imports", label: "Imports",       icon: Upload,         exact: false },
+  { href: "/builder/bank",       label: "Sets bank (legacy)", icon: Library,   exact: false },
   { href: "/builder/sets",       label: "Assessments",   icon: LayoutGrid,     exact: false },
   { href: "/builder/midterms",   label: "Midterms",      icon: GraduationCap,  exact: false },
   { href: "/builder/vocabulary", label: "Vocabulary",    icon: BookMarked,     exact: false },
