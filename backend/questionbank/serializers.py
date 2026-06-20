@@ -109,7 +109,7 @@ class BankQuestionListSerializer(serializers.ModelSerializer):
     class Meta:
         model = BankQuestion
         fields = [
-            "id", "qb_id", "subject", "status", "question_type", "difficulty",
+            "id", "qb_id", "external_id", "subject", "status", "question_type", "difficulty",
             "domain", "domain_name", "skill", "skill_name",
             "question_text", "passage", "has_image",
             "source_type", "content_hash", "import_batch",
@@ -153,12 +153,12 @@ class BankQuestionDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = BankQuestion
         fields = [
-            "id", "qb_id", "subject", "status", "question_type", "difficulty",
+            "id", "qb_id", "external_id", "subject", "status", "question_type", "difficulty",
             "domain", "skill", "passage",
             "question_text", "question_prompt", "question_image",
             "option_a", "option_b", "option_c", "option_d",
             "option_a_image", "option_b_image", "option_c_image", "option_d_image",
-            "correct_answer", "explanation", "points",
+            "correct_answer", "student_answer", "explanation", "points",
             "content_hash", "source_type", "source_reference", "import_batch",
             "current_version_number", "version_count", "assessment_usage_count",
             "suggestion", "metadata", "created_at", "updated_at",
@@ -287,11 +287,12 @@ class ImportCandidateSerializer(serializers.ModelSerializer):
     class Meta:
         model = ImportCandidate
         fields = [
-            "id", "batch", "order", "subject",
+            "id", "batch", "order", "subject", "external_id",
             "raw_domain", "raw_skill", "raw_difficulty",
             "passage_text", "question_text",
             "option_a", "option_b", "option_c", "option_d",
-            "correct_answer", "explanation", "content_hash",
+            "correct_answer", "student_answer", "question_image",
+            "explanation", "content_hash",
             "page_start", "page_end",
             "validation_status", "validation_messages",
             "duplicate_of", "duplicate_of_qb_id",

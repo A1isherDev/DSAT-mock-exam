@@ -13,6 +13,7 @@ from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import generics, status as http_status
 from rest_framework.pagination import LimitOffsetPagination
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -87,7 +88,11 @@ class BankQuestionListView(generics.ListAPIView):
             qs = qs.filter(import_batch_id=batch_id)
         term = (p.get("search") or p.get("q") or "").strip()
         if term:
-            qs = qs.filter(Q(qb_id__icontains=term) | Q(question_text__icontains=term))
+            qs = qs.filter(
+                Q(qb_id__icontains=term)
+                | Q(external_id__icontains=term)
+                | Q(question_text__icontains=term)
+            )
         return qs.order_by("-created_at", "-id")
 
 
@@ -398,6 +403,50 @@ class ImportCandidateDetailView(generics.RetrieveAPIView):
     permission_classes = QB_PERMISSIONS
     serializer_class = qb.ImportCandidateSerializer
     queryset = ImportCandidate.objects.select_related("duplicate_of", "promoted_question")
+
+
+@extend_schema(tags=["questionbank"])
+class ImportBatchUploadView(APIView):
+    """POST /api/questionbank/import-batches/upload/ — upload a PDF → parsed candidates.
+
+    Text + best-effort page-level image extraction (PyMuPDF). Nothing is promoted
+    here; candidates land in the batch for human review.
+    """
+
+    permission_classes = QB_PERMISSIONS
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        import os
+        import tempfile
+
+        from .import_pipeline import create_batch_from_pdf
+
+        upload = request.FILES.get("file")
+        if upload is None:
+            return Response({"detail": "No file uploaded (field 'file')."}, status=http_status.HTTP_400_BAD_REQUEST)
+        if not str(upload.name).lower().endswith(".pdf"):
+            return Response({"detail": "Only PDF files are supported."}, status=http_status.HTTP_400_BAD_REQUEST)
+
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            for chunk in upload.chunks():
+                tmp.write(chunk)
+            tmp_path = tmp.name
+        try:
+            batch = create_batch_from_pdf(
+                tmp_path,
+                filename=upload.name,
+                source_reference=request.data.get("source_reference", ""),
+                uploaded_by=request.user if getattr(request.user, "is_authenticated", False) else None,
+            )
+        except RuntimeError as exc:
+            return Response({"detail": str(exc)}, status=http_status.HTTP_400_BAD_REQUEST)
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+        return Response(qb.ImportBatchSerializer(batch).data, status=http_status.HTTP_201_CREATED)
 
 
 @extend_schema(tags=["questionbank"])

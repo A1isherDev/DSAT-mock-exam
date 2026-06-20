@@ -41,12 +41,20 @@ import re
 from dataclasses import dataclass, field
 
 _HEADER_LABELS = ("assessment", "test", "domain", "skill", "difficulty")
-_QUESTION_RE = re.compile(r"^\s*question\b", re.IGNORECASE)
+# A bare "Question" line marks the stem. Exclude "Question ID ..." — that is the
+# source identifier (handled by _EXTERNAL_ID_RE), not a new question boundary.
+_QUESTION_RE = re.compile(r"^\s*question\b(?!\s*id\b)", re.IGNORECASE)
 _RATIONALE_RE = re.compile(r"^\s*rationale\b", re.IGNORECASE)
 # A "Passage" (or "Stimulus") block introduces shared Reading & Writing passage
 # text that applies to the following question(s) until the next Passage block.
 _PASSAGE_RE = re.compile(r"^\s*(passage|stimulus)\b", re.IGNORECASE)
 _CORRECT_RE = re.compile(r"^\s*correct\s*answer\s*[:\-]?\s*([A-D])\b", re.IGNORECASE)
+# "Student Answer: A" / "Student's answer - B" — kept SEPARATE from correct.
+_STUDENT_RE = re.compile(r"^\s*student'?s?\s*answer\s*[:\-]?\s*([A-D])\b", re.IGNORECASE)
+# "Question ID e1a2b3c4" / "External ID: 12345" — the official source identifier.
+_EXTERNAL_ID_RE = re.compile(
+    r"^\s*(?:question\s*id|external\s*id)\s*[:\-]?\s*([A-Za-z0-9][\w\-]*)\s*$", re.IGNORECASE
+)
 _OPTION_RE = re.compile(r"^\s*([A-D])[\.\)]\s+(.*\S)\s*$")
 _LABEL_RE = re.compile(r"^\s*(assessment|test|domain|skill|difficulty)\s*[:\-]?\s*(.*)$", re.IGNORECASE)
 _PAGE_NUM_RE = re.compile(r"^\s*(page\s+)?\d+\s*$", re.IGNORECASE)
@@ -55,6 +63,7 @@ _PAGE_NUM_RE = re.compile(r"^\s*(page\s+)?\d+\s*$", re.IGNORECASE)
 @dataclass
 class ParsedQuestion:
     subject: str = ""
+    external_id: str = ""
     raw_domain: str = ""
     raw_skill: str = ""
     raw_difficulty: str = ""
@@ -62,6 +71,7 @@ class ParsedQuestion:
     question_text: str = ""
     options: dict[str, str] = field(default_factory=lambda: {"A": "", "B": "", "C": "", "D": ""})
     correct_answer: str | None = None
+    student_answer: str | None = None
     explanation: str = ""
     page_start: int | None = None
     page_end: int | None = None
@@ -86,7 +96,7 @@ class _Parser:
         self.questions: list[ParsedQuestion] = []
         self.cur: ParsedQuestion | None = None
         self.mode = "idle"  # idle | header | passage | stem | options | post_answer | rationale
-        self.pending = {"subject": "", "domain": "", "skill": "", "difficulty": ""}
+        self.pending = {"subject": "", "domain": "", "skill": "", "difficulty": "", "external_id": ""}
         # Sticky passage: a "Passage" block applies to every following question
         # until the next "Passage" block — this is how Passage A → Q1..Q4 works.
         self.current_passage = ""
@@ -112,7 +122,7 @@ class _Parser:
         self._passage_buf = ""
 
     def _reset_pending(self) -> None:
-        self.pending = {"subject": "", "domain": "", "skill": "", "difficulty": ""}
+        self.pending = {"subject": "", "domain": "", "skill": "", "difficulty": "", "external_id": ""}
 
     def _commit(self) -> None:
         if self.cur is not None:
@@ -147,10 +157,20 @@ class _Parser:
                 self.cur.raw_domain = self.pending["domain"]
                 self.cur.raw_skill = self.pending["skill"]
                 self.cur.raw_difficulty = self.pending["difficulty"]
+                self.cur.external_id = self.pending["external_id"]
             # Attach the sticky passage (shared by every question in its group).
             self.cur.passage_text = self.current_passage
             self._reset_pending()
             self.mode = "stem"
+            return
+
+        # External/source id may appear in the header block or inside the record.
+        em = _EXTERNAL_ID_RE.match(line)
+        if em:
+            if self.cur is not None:
+                self.cur.external_id = em.group(1)
+            else:
+                self.pending["external_id"] = em.group(1)
             return
 
         label = _is_label_line(line)
@@ -189,6 +209,12 @@ class _Parser:
 
         if self.cur is None:
             return  # stray text outside any question
+
+        # "Student Answer" is recorded SEPARATELY and never touches correct_answer.
+        sm = _STUDENT_RE.match(line)
+        if sm:
+            self.cur.student_answer = sm.group(1).upper()
+            return
 
         cm = _CORRECT_RE.match(line)
         if cm:

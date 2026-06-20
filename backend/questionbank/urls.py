@@ -20,8 +20,9 @@ urlpatterns = [
     path("versions/", views.BankQuestionVersionListView.as_view(), name="version-list"),
     path("domains/", views.BankDomainListView.as_view(), name="domain-list"),
     path("skills/", views.BankSkillListView.as_view(), name="skill-list"),
-    # Import batch management (Phase B)
+    # Import batch management (Phase B + M5 upload)
     path("import-batches/", views.ImportBatchListView.as_view(), name="batch-list"),
+    path("import-batches/upload/", views.ImportBatchUploadView.as_view(), name="batch-upload"),
     path("import-batches/<int:pk>/", views.ImportBatchDetailView.as_view(), name="batch-detail"),
     path("import-batches/<int:batch_id>/candidates/", views.ImportCandidateListView.as_view(), name="batch-candidates"),
     path("import-batches/<int:pk>/promote/", views.ImportBatchPromoteView.as_view(), name="batch-promote"),

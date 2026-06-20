@@ -13,7 +13,7 @@ from __future__ import annotations
 from django.db import transaction
 
 from .content_hash import compute_passage_content_hash
-from .dedup import find_duplicate
+from .dedup import find_by_external_id, find_duplicate
 from .import_validation import candidate_content_hash, validate_parsed
 from .models import (
     BankPassage,
@@ -41,39 +41,87 @@ def create_batch_from_pages(
     )
     parsed = parse_pages(pages)
     seen_in_batch: dict[tuple[str, str], int] = {}  # (subject, hash) -> earlier candidate order
+    seen_ext: dict[str, int] = {}  # external_id -> earlier candidate order
     for order, q in enumerate(parsed):
         status, messages = validate_parsed(q)
         chash = candidate_content_hash(q)
         subject = q.subject if q.subject in Subject.values else Subject.ENGLISH
+        ext = (q.external_id or "").strip()
 
-        # Unified dedup: same (subject, content_hash) strategy as backfill.
-        dup = find_duplicate(subject=subject, content_hash=chash)
+        # Exact-only dedup: external_id collision OR (subject, content_hash) against
+        # the bank, then intra-batch by external_id and by hash.
+        dup = find_by_external_id(ext) or find_duplicate(subject=subject, content_hash=chash)
         if dup is not None:
             status = ImportCandidate.Validation.DUPLICATE
             messages = [f"Duplicate of existing bank question {dup.qb_id}."] + messages
+        elif ext and ext in seen_ext:
+            status = ImportCandidate.Validation.DUPLICATE
+            messages = [f"Duplicate external_id of candidate #{seen_ext[ext]} in this batch."] + messages
         elif (subject, chash) in seen_in_batch:
-            # Intra-batch dedup: an identical earlier candidate in THIS batch.
             status = ImportCandidate.Validation.DUPLICATE
             messages = [
                 f"Duplicate of candidate #{seen_in_batch[(subject, chash)]} in this batch."
             ] + messages
         else:
             seen_in_batch[(subject, chash)] = order
+            if ext:
+                seen_ext[ext] = order
 
         ImportCandidate.objects.create(
             batch=batch, order=order,
             subject=q.subject or "",
+            external_id=ext,
             raw_domain=q.raw_domain, raw_skill=q.raw_skill, raw_difficulty=q.raw_difficulty,
             passage_text=q.passage_text,
             question_text=q.question_text,
             option_a=q.options["A"], option_b=q.options["B"],
             option_c=q.options["C"], option_d=q.options["D"],
-            correct_answer=q.correct_answer, explanation=q.explanation,
+            correct_answer=q.correct_answer, student_answer=q.student_answer,
+            explanation=q.explanation,
             content_hash=chash, page_start=q.page_start, page_end=q.page_end,
             validation_status=status, validation_messages=messages, duplicate_of=dup,
         )
     batch.total_candidates = len(parsed)
     batch.save(update_fields=["total_candidates"])
+    return batch
+
+
+def _attach_page_images(batch: ImportBatch, images_by_page: dict[int, list[tuple[str, bytes]]]) -> int:
+    """Best-effort: stage the FIRST image found on a candidate's starting page onto
+    that candidate (saved to storage). Page-level association is approximate; a human
+    confirms/corrects during triage. Returns the number of candidates that got one."""
+    if not images_by_page:
+        return 0
+    from django.core.files.base import ContentFile
+    from django.core.files.storage import default_storage
+
+    attached = 0
+    for cand in batch.candidates.all():
+        imgs = images_by_page.get(cand.page_start) if cand.page_start else None
+        if not imgs:
+            continue
+        ext, data = imgs[0]
+        name = default_storage.save(
+            f"question_bank/imports/batch{batch.id}/cand{cand.id}.{ext}", ContentFile(data)
+        )
+        cand.question_image = name
+        cand.save(update_fields=["question_image"])
+        attached += 1
+    return attached
+
+
+def create_batch_from_pdf(
+    pdf_path: str, *, filename: str = "", source_reference: str = "", uploaded_by=None,
+) -> ImportBatch:
+    """End-to-end PDF ingestion: text → candidates, plus best-effort page-level image
+    extraction (PyMuPDF). Falls back to text-only when PyMuPDF is unavailable."""
+    from .pdf_text import extract_page_images, extract_pages
+
+    pages = extract_pages(pdf_path)
+    batch = create_batch_from_pages(
+        pages, filename=filename, source_reference=source_reference, uploaded_by=uploaded_by,
+    )
+    _attach_page_images(batch, extract_page_images(pdf_path))
     return batch
 
 
@@ -120,14 +168,19 @@ def promote_candidate(candidate: ImportCandidate, *, user=None) -> BankQuestion:
     # PDF candidates are multiple-choice; SPR/other types are authored manually.
     fields = dict(
         passage=passage,
+        external_id=candidate.external_id,
         option_a=candidate.option_a, option_b=candidate.option_b,
         option_c=candidate.option_c, option_d=candidate.option_d,
         correct_answer=candidate.correct_answer,
+        student_answer=candidate.student_answer,
         explanation=candidate.explanation,
         source_type=SourceType.PDF_IMPORT,
         source_reference=candidate.batch.source_reference or candidate.batch.filename,
         import_batch=candidate.batch,
     )
+    # Best-effort page-level diagram carried from the PDF (see extract_page_images).
+    if candidate.question_image:
+        fields["question_image"] = candidate.question_image
     bank = create_bank_question(
         subject=subject, question_type="MULTIPLE_CHOICE",
         question_text=candidate.question_text, status=QuestionStatus.TRIAGE,

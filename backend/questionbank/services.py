@@ -14,6 +14,7 @@ import hashlib
 import json
 from typing import Any
 
+from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from .models import (
@@ -162,6 +163,14 @@ def create_bank_question(
     """
     if subject not in Subject.values:
         raise ValueError(f"Unknown subject: {subject!r}")
+
+    # Cross-question external_id uniqueness (friendly error before the DB constraint).
+    external_id = (fields.get("external_id") or "").strip()
+    if external_id and BankQuestion.objects.filter(external_id=external_id).exists():
+        existing = BankQuestion.objects.filter(external_id=external_id).first()
+        raise ValidationError(
+            f"external_id {external_id!r} already exists in the bank ({existing.qb_id})."
+        )
 
     q = BankQuestion(
         qb_id=allocate_qb_id(subject),

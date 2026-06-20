@@ -36,3 +36,33 @@ def extract_pages(pdf_path: str) -> list[str]:
         "No PDF text backend available. Add 'PyMuPDF' (preferred) or 'pdfplumber' "
         "to requirements to enable PDF import (M3)."
     )
+
+
+def extract_page_images(pdf_path: str) -> dict[int, list[tuple[str, bytes]]]:
+    """Return ``{page_number(1-based): [(ext, image_bytes), ...]}`` for embedded images.
+
+    Image extraction requires PyMuPDF (pdfplumber is text-only). Returns an empty
+    dict when PyMuPDF is unavailable so TEXT import still works without it — Math
+    diagram import simply degrades to text-only until PyMuPDF is installed.
+    """
+    try:
+        import fitz  # PyMuPDF
+    except ImportError:
+        return {}
+
+    out: dict[int, list[tuple[str, bytes]]] = {}
+    with fitz.open(pdf_path) as doc:
+        for page_index, page in enumerate(doc, start=1):
+            images: list[tuple[str, bytes]] = []
+            for img in page.get_images(full=True):
+                xref = img[0]
+                try:
+                    info = doc.extract_image(xref)
+                except Exception:
+                    continue
+                data = info.get("image") if info else None
+                if data:
+                    images.append((info.get("ext", "png"), data))
+            if images:
+                out[page_index] = images
+    return out

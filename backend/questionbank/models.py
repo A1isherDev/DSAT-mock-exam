@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.db import models
+from django.db.models import Q
 from django.utils import timezone
 
 
@@ -211,6 +212,11 @@ class BankQuestion(TimestampedModel):
         max_length=32, unique=True, editable=False, db_index=True,
         help_text="Permanent identifier, e.g. QB-ENG-000001. Assigned once, never changes.",
     )
+    # Official source identifier (e.g. College Board question ID) carried in from
+    # the PDF. Unique ACROSS questions when set (a cross-question collision is a
+    # duplicate); preserved across the version chain and through publish. Blank is
+    # allowed (manually authored questions) and exempt from the uniqueness rule.
+    external_id = models.CharField(max_length=128, blank=True, default="", db_index=True)
     subject = models.CharField(max_length=16, choices=Subject.choices, db_index=True)
 
     # Taxonomy — NULL = UNCLASSIFIED (triage). Never auto-filled.
@@ -244,6 +250,10 @@ class BankQuestion(TimestampedModel):
     option_d_image = models.ImageField(upload_to="question_bank/options/", null=True, blank=True)
     # JSON to cover single letter, list of math variants, numeric, or boolean.
     correct_answer = models.JSONField(blank=True, default=None, null=True)
+    # The answer a STUDENT gave in the source material (PDFs may carry both
+    # "Student Answer: A" and "Correct Answer: B"). Kept SEPARATE so it can never
+    # overwrite the authoritative correct_answer.
+    student_answer = models.JSONField(blank=True, default=None, null=True)
     explanation = models.TextField(blank=True, default="")
     points = models.PositiveIntegerField(default=1)
 
@@ -285,6 +295,15 @@ class BankQuestion(TimestampedModel):
             models.Index(fields=["subject", "status"]),
             models.Index(fields=["status", "domain", "skill"]),
             models.Index(fields=["content_hash"]),
+        ]
+        constraints = [
+            # external_id is unique across questions WHEN SET; blank is exempt so
+            # manually authored questions (no source id) don't collide.
+            models.UniqueConstraint(
+                fields=["external_id"],
+                condition=Q(external_id__gt=""),
+                name="uniq_qb_external_id_when_set",
+            ),
         ]
 
     def __str__(self) -> str:
@@ -361,6 +380,7 @@ class ImportCandidate(TimestampedModel):
     # Parsed payload (mirrors the bank content fields; taxonomy is best-effort text
     # from the PDF header and is NEVER auto-applied — it is a hint for triage).
     subject = models.CharField(max_length=16, choices=Subject.choices, blank=True, default="")
+    external_id = models.CharField(max_length=128, blank=True, default="", db_index=True)
     raw_domain = models.CharField(max_length=255, blank=True, default="")
     raw_skill = models.CharField(max_length=255, blank=True, default="")
     raw_difficulty = models.CharField(max_length=64, blank=True, default="")
@@ -371,6 +391,10 @@ class ImportCandidate(TimestampedModel):
     option_c = models.TextField(blank=True, default="")
     option_d = models.TextField(blank=True, default="")
     correct_answer = models.JSONField(blank=True, default=None, null=True)
+    student_answer = models.JSONField(blank=True, default=None, null=True)
+    # Storage name of an image extracted from the PDF for this candidate
+    # (best-effort, page-level association). Copied to the bank question on promote.
+    question_image = models.CharField(max_length=512, blank=True, default="")
     explanation = models.TextField(blank=True, default="")
 
     content_hash = models.CharField(max_length=64, blank=True, default="", db_index=True)

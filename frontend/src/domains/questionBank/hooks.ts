@@ -123,6 +123,14 @@ export function useQbBulk() {
   });
 }
 
+export function useQbUploadBatch() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (file: File) => questionBankApi.uploadBatch(file),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [...qbKeys.all, "batches"] }),
+  });
+}
+
 export function useQbPromoteBatch() {
   const qc = useQueryClient();
   return useMutation({

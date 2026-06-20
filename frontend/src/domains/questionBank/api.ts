@@ -100,4 +100,12 @@ export const questionBankApi = {
     const r = await api.post(`${BASE}/import-batches/${id}/promote/`);
     return r.data;
   },
+  uploadBatch: async (file: File, sourceReference?: string): Promise<QbImportBatch> => {
+    const form = new FormData();
+    form.append("file", file);
+    if (sourceReference) form.append("source_reference", sourceReference);
+    // Let axios set the multipart boundary; don't override Content-Type.
+    const r = await api.post(`${BASE}/import-batches/upload/`, form);
+    return r.data;
+  },
 };

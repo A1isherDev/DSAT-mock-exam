@@ -35,3 +35,17 @@ def find_duplicate(*, subject: str, content_hash: str):
     if not content_hash:
         return None
     return BankQuestion.objects.filter(subject=subject, content_hash=content_hash).first()
+
+
+def find_by_external_id(external_id: str):
+    """Return an existing BankQuestion carrying this official source id, or None.
+
+    external_id collisions are EXACT duplicates (same source question), independent
+    of content_hash — used by the import pipeline to flag re-imports.
+    """
+    from .models import BankQuestion
+
+    external_id = (external_id or "").strip()
+    if not external_id:
+        return None
+    return BankQuestion.objects.filter(external_id=external_id).first()

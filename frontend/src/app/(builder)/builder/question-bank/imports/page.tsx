@@ -1,14 +1,32 @@
 "use client";
 
 import Link from "next/link";
+import { useRef, useState } from "react";
 import { ArrowLeft, RefreshCw, Upload } from "lucide-react";
 
-import { useQbBatches } from "@/domains/questionBank/hooks";
+import { useQbBatches, useQbUploadBatch } from "@/domains/questionBank/hooks";
 import { BatchStatusBadge } from "@/domains/questionBank/components/ImportStatusBadge";
+import { normalizeApiError } from "@/lib/apiError";
 
 export default function ImportsPage() {
   const { data, isLoading, error, refetch, isFetching } = useQbBatches();
   const batches = data?.results ?? [];
+
+  const fileRef = useRef<HTMLInputElement>(null);
+  const upload = useQbUploadBatch();
+  const [banner, setBanner] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
+
+  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file
+    if (!file) return;
+    try {
+      const batch = await upload.mutateAsync(file);
+      setBanner({ tone: "ok", text: `Parsed ${batch.total_candidates} candidate(s) from ${file.name}.` });
+    } catch (err) {
+      setBanner({ tone: "error", text: normalizeApiError(err).message || "Upload failed." });
+    }
+  }
 
   return (
     <div className="space-y-5">
@@ -29,14 +47,37 @@ export default function ImportsPage() {
             (content hash); similarity detection coming later.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void refetch()}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
-        >
-          <RefreshCw className={isFetching ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"} /> Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <input ref={fileRef} type="file" accept="application/pdf,.pdf" onChange={onFile} className="hidden" />
+          <button
+            type="button"
+            disabled={upload.isPending}
+            onClick={() => fileRef.current?.click()}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+          >
+            <Upload className="h-3.5 w-3.5" /> {upload.isPending ? "Uploading…" : "Upload PDF"}
+          </button>
+          <button
+            type="button"
+            onClick={() => void refetch()}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
+          >
+            <RefreshCw className={isFetching ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"} /> Refresh
+          </button>
+        </div>
       </div>
+
+      {banner ? (
+        <div
+          className={
+            banner.tone === "ok"
+              ? "rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-800"
+              : "rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700"
+          }
+        >
+          {banner.text}
+        </div>
+      ) : null}
 
       <div className="overflow-hidden rounded-2xl border border-border bg-card">
         <table className="w-full text-sm">
