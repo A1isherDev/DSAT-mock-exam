@@ -140,7 +140,7 @@ export function AppShell({
         >
           {brand.logoSrc ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={brand.logoSrc} alt={brand.name} className="h-10 w-10 shrink-0 object-contain" />
+            <img src={brand.logoSrc} alt={brand.name} className="h-12 w-12 shrink-0 object-contain" />
           ) : (
             <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-primary text-sm font-extrabold text-primary-foreground">
               {brand.name.slice(0, 1)}
