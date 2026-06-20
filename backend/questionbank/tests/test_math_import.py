@@ -190,6 +190,24 @@ def _make_pdf_with_image(path: str, text: str) -> None:
     doc.close()
 
 
+def _make_pdf_with_vector_chart(path: str, text: str) -> None:
+    """Page with a VECTOR-drawn figure (no embedded raster) in the body region."""
+    doc = fitz.open()
+    page = doc.new_page()
+    y = 72
+    for line in text.split("\n"):
+        page.insert_text((72, y), line)
+        y += 14
+    shape = page.new_shape()
+    shape.draw_rect(fitz.Rect(90, 240, 400, 480))     # 310×240 chart frame (below header band)
+    for gx in (150, 220, 290, 360):                   # "bars"
+        shape.draw_line(fitz.Point(gx, 480), fitz.Point(gx, 320))
+    shape.finish(color=(0, 0, 0), width=1.0)
+    shape.commit()
+    doc.save(path)
+    doc.close()
+
+
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp())
 class PdfImageExtractionTests(TestCase):
     def setUp(self):
@@ -206,6 +224,22 @@ class PdfImageExtractionTests(TestCase):
             images = extract_page_images(path)
             self.assertIn(1, images)
             self.assertTrue(images[1])  # at least one (ext, bytes)
+        finally:
+            os.unlink(path)
+
+    def test_vector_chart_is_rendered_as_figure(self):
+        """A vector-drawn chart (no embedded raster) is rendered to a PNG figure."""
+        from questionbank.pdf_text import extract_page_images
+
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            path = tmp.name
+        try:
+            _make_pdf_with_vector_chart(path, _MATH_PAGE)
+            images = extract_page_images(path)
+            self.assertIn(1, images)
+            ext, data = images[1][0]
+            self.assertEqual(ext, "png")
+            self.assertGreater(len(data), 500)  # a real raster render of the region
         finally:
             os.unlink(path)
 
