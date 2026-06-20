@@ -144,6 +144,10 @@ class BankQuestionDetailSerializer(serializers.ModelSerializer):
         source="current_version.version_number", read_only=True, default=None
     )
     version_count = serializers.IntegerField(source="versions.count", read_only=True)
+    # Reuse signal: how many assessment questions link back to this bank question.
+    assessment_usage_count = serializers.IntegerField(
+        source="assessment_questions.count", read_only=True
+    )
     suggestion = serializers.SerializerMethodField()
 
     class Meta:
@@ -156,7 +160,7 @@ class BankQuestionDetailSerializer(serializers.ModelSerializer):
             "option_a_image", "option_b_image", "option_c_image", "option_d_image",
             "correct_answer", "explanation", "points",
             "content_hash", "source_type", "source_reference", "import_batch",
-            "current_version_number", "version_count",
+            "current_version_number", "version_count", "assessment_usage_count",
             "suggestion", "metadata", "created_at", "updated_at",
         ]
 

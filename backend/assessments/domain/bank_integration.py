@@ -16,7 +16,7 @@ ARCHIVED are never selectable.
 from __future__ import annotations
 
 from django.core.exceptions import ValidationError
-from django.db.models import Max
+from django.db.models import Max, Q
 
 from questionbank.models import BankQuestion, QuestionStatus, QuestionType
 
@@ -28,6 +28,20 @@ _TYPE_MAP = {
     QuestionType.SHORT_TEXT: "short_text",
     QuestionType.BOOLEAN: "boolean",
 }
+
+# Bank ImageField -> AssessmentQuestion ImageField (same names on both models).
+_IMAGE_FIELDS = (
+    "question_image",
+    "option_a_image",
+    "option_b_image",
+    "option_c_image",
+    "option_d_image",
+)
+
+
+def _img_name(field) -> str | None:
+    """Storage key of an ImageField (references the same file), or None if unset."""
+    return field.name if field else None
 
 
 def _choices_from_bank(bank: BankQuestion) -> list[dict]:
@@ -69,6 +83,15 @@ def create_question_from_bank(assessment_set, bank_question: BankQuestion, *, or
         )
         order = int(mx) + 1
 
+    # FREEZE-SAFE IMAGE COPY: reference the bank's image files by storage name on
+    # the new (editable) AssessmentQuestion row. The frozen attempt/review delivery
+    # paths supplement images from the live row (_image_map_for in views.py), so the
+    # diagram survives publish. It is freeze-safe because (a) this row owns its own
+    # copy of the name — a later bank edit cuts a NEW bank version and never mutates
+    # this row, and (b) django-cleanup is absent so the referenced file is never
+    # deleted. Math diagrams therefore survive publish without being dropped.
+    image_fields = {f: _img_name(getattr(bank_question, f)) for f in _IMAGE_FIELDS}
+
     return AssessmentQuestion.objects.create(
         assessment_set=assessment_set,
         order=order,
@@ -82,6 +105,7 @@ def create_question_from_bank(assessment_set, bank_question: BankQuestion, *, or
         is_active=True,
         bank_question=bank_question,
         bank_version=bank_question.current_version,
+        **image_fields,
     )
 
 
@@ -98,5 +122,5 @@ def selectable_bank_questions(*, subject: str | None = None, domain_id=None, ski
     if difficulty:
         qs = qs.filter(difficulty=difficulty)
     if search:
-        qs = qs.filter(question_text__icontains=search)
+        qs = qs.filter(Q(question_text__icontains=search) | Q(qb_id__icontains=search))
     return qs

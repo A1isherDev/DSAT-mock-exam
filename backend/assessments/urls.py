@@ -9,6 +9,7 @@ from .views import (
     AdminAssessmentQuestionCreateView,
     AdminAssessmentQuestionDetailView,
     AdminQuestionBankSelectView,
+    AdminQuestionBankTaxonomyView,
     AdminAssessmentQuestionFromBankView,
     AssignAssessmentHomeworkView,
     StartAttemptView,
@@ -44,6 +45,7 @@ urlpatterns = [
     path("admin/questions/<int:pk>/", AdminAssessmentQuestionDetailView.as_view(), name="assessment-admin-question-detail"),
     # M4 — Question Bank picker (APPROVED-only) for the assessment builder
     path("admin/question-bank/select/", AdminQuestionBankSelectView.as_view(), name="assessment-admin-qb-select"),
+    path("admin/question-bank/taxonomy/", AdminQuestionBankTaxonomyView.as_view(), name="assessment-admin-qb-taxonomy"),
     # Admin grading controls / metrics
     path("admin/grading/metrics/", AdminGradingMetricsView.as_view(), name="assessment-admin-grading-metrics"),
     path(

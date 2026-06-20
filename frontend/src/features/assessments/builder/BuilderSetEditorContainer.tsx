@@ -11,6 +11,7 @@ import {
   useUpsertAssessmentSet,
 } from "@/features/assessments/hooks";
 import { assessmentsAdminApi as assessmentAuthoringApi } from "@/features/assessmentsAdmin/api";
+import { QuestionBankPickerModal } from "./QuestionBankPickerModal";
 import { AssessmentCategorySelect } from "@/features/assessments/components/AssessmentCategorySelect";
 import { AssessmentQuestionEditorFields } from "@/features/assessments/components/AssessmentQuestionEditorFields";
 import type {
@@ -55,6 +56,7 @@ import {
   Copy,
   Eye,
   GripVertical,
+  Database,
   Lock,
   Monitor,
   Plus,
@@ -456,6 +458,28 @@ export default function BuilderSetEditorContainer() {
     const qs = Array.isArray(view?.questions) ? (view!.questions as AssessmentQuestion[]) : [];
     return normalizeQuestionList(qs);
   }, [view]);
+
+  // ── Question Bank picker (M4) ──────────────────────────────────────────────
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerBusy, setPickerBusy] = useState(false);
+  const bankSubject = String(view?.subject || "").toLowerCase() === "english" ? "ENGLISH" : "MATH";
+
+  const addFromBank = useCallback(
+    async (bankQuestionId: number) => {
+      setPickerBusy(true);
+      try {
+        await assessmentAuthoringApi.addQuestionFromBank(setId, bankQuestionId);
+        await detail.refetch();
+        toast.push({ tone: "success", message: "Added from Question Bank." });
+        setPickerOpen(false);
+      } catch (e) {
+        toast.push({ tone: "error", message: normalizeApiError(e).message });
+      } finally {
+        setPickerBusy(false);
+      }
+    },
+    [setId, detail, toast],
+  );
 
   // ── Session continuity: persist last-edited set + question to localStorage ──
   useEffect(() => {
@@ -1059,8 +1083,8 @@ export default function BuilderSetEditorContainer() {
 
         {/* LEFT PANEL: Question list + set metadata */}
         <aside className="flex w-72 shrink-0 flex-col border-r border-border bg-card">
-          {/* Add question button */}
-          <div className="shrink-0 border-b border-border p-3">
+          {/* Add question buttons */}
+          <div className="shrink-0 space-y-2 border-b border-border p-3">
             <button
               type="button"
               onClick={newQuestion}
@@ -1069,7 +1093,23 @@ export default function BuilderSetEditorContainer() {
               <Plus className="h-4 w-4" />
               New question
             </button>
+            <button
+              type="button"
+              onClick={() => setPickerOpen(true)}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-bold text-foreground hover:bg-surface-2 transition-colors"
+            >
+              <Database className="h-4 w-4" />
+              Add from Question Bank
+            </button>
           </div>
+
+          <QuestionBankPickerModal
+            open={pickerOpen}
+            subject={bankSubject}
+            busy={pickerBusy}
+            onClose={() => setPickerOpen(false)}
+            onAdd={(bankQuestionId) => void addFromBank(bankQuestionId)}
+          />
 
           {/* Question list */}
           <div className="flex-1 overflow-y-auto p-3">

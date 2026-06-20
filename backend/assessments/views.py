@@ -412,6 +412,53 @@ class AdminAssessmentQuestionFromBankView(APIView):
         return Response(AssessmentQuestionAdminWriteSerializer(aq).data, status=status.HTTP_201_CREATED)
 
 
+class AdminQuestionBankTaxonomyView(APIView):
+    """
+    M4 — domains & skills actually used by APPROVED bank questions, for the builder
+    picker's filter dropdowns.
+
+    Lives here (not in questionbank's own API) because the questionbank taxonomy
+    endpoint is gated by CanManageQuestions (global staff only) and would 403 for
+    teachers — who CAN author assessments and therefore use the picker.
+    """
+
+    permission_classes = [IsAuthenticatedAndNotFrozen, CanAuthorAssessmentContent]
+
+    def get(self, request):
+        from questionbank.models import BankDomain, BankQuestion, BankSkill
+
+        approved = BankQuestion.objects.approved()
+        subject = request.query_params.get("subject") or None
+        if subject:
+            approved = approved.filter(subject=subject)
+        domain_ids = list(approved.values_list("domain_id", flat=True).distinct())
+        skill_ids = list(approved.values_list("skill_id", flat=True).distinct())
+        domains = BankDomain.objects.filter(id__in=domain_ids).order_by(
+            "subject", "display_order", "name"
+        )
+        skills = BankSkill.objects.filter(id__in=skill_ids).select_related("domain").order_by(
+            "display_order", "name"
+        )
+        return Response(
+            {
+                "domains": [
+                    {"id": d.id, "subject": d.subject, "name": d.name, "code": d.code}
+                    for d in domains
+                ],
+                "skills": [
+                    {
+                        "id": s.id,
+                        "domain": s.domain_id,
+                        "subject": s.domain.subject,
+                        "name": s.name,
+                        "code": s.code,
+                    }
+                    for s in skills
+                ],
+            }
+        )
+
+
 class AssignAssessmentHomeworkView(APIView):
     """
     Teacher assigns an AssessmentSet into a classroom.
