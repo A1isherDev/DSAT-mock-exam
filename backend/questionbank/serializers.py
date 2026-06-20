@@ -1,0 +1,191 @@
+"""Read-only serializers for the Question Bank admin API (Phase A).
+
+Pure exposure layer — no writes. The AI triage suggestion is surfaced as a nested
+``suggestion`` object that ALWAYS carries ``advisory: true`` and is never presented
+as applied taxonomy: human classification stays mandatory (see triage.py).
+
+Image fields are emitted as RELATIVE media URLs (e.g. ``/media/question_bank/...``)
+to match the assessments convention; the frontend prepends the origin.
+"""
+from __future__ import annotations
+
+from rest_framework import serializers
+
+from .models import (
+    BankDomain,
+    BankPassage,
+    BankQuestion,
+    BankQuestionVersion,
+    BankSkill,
+)
+
+
+def _image_url(field) -> str | None:
+    """Relative media URL for an ImageField, or None when unset/missing."""
+    try:
+        return field.url if field else None
+    except ValueError:
+        return None
+
+
+def _suggestion_payload(obj: BankQuestion, *, detail: bool) -> dict | None:
+    """Advisory triage suggestion. Returns None when nothing was suggested.
+
+    NEVER mirrors applied taxonomy — ``advisory: true`` is always present so the
+    UI cannot mistake a hint for a human-approved classification.
+    """
+    has_any = bool(
+        obj.suggested_domain_id
+        or obj.suggested_skill_id
+        or obj.suggested_difficulty
+        or obj.suggestion_rationale
+    )
+    if not has_any:
+        return None
+    data: dict = {
+        "advisory": True,
+        "domain": (
+            {"id": obj.suggested_domain_id, "name": obj.suggested_domain.name}
+            if obj.suggested_domain_id
+            else None
+        ),
+        "skill": (
+            {"id": obj.suggested_skill_id, "name": obj.suggested_skill.name}
+            if obj.suggested_skill_id
+            else None
+        ),
+        "difficulty": obj.suggested_difficulty or None,
+        "confidence": obj.suggestion_confidence,
+    }
+    if detail:
+        data["model"] = obj.suggestion_model or None
+        data["rationale"] = obj.suggestion_rationale or None
+    return data
+
+
+# ── Taxonomy ──────────────────────────────────────────────────────────────────
+class BankDomainSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BankDomain
+        fields = ["id", "subject", "name", "code", "display_order"]
+
+
+class BankSkillSerializer(serializers.ModelSerializer):
+    subject = serializers.CharField(source="domain.subject", read_only=True)
+    domain_name = serializers.CharField(source="domain.name", read_only=True)
+
+    class Meta:
+        model = BankSkill
+        fields = ["id", "domain", "domain_name", "subject", "name", "code", "display_order"]
+
+
+# ── Passage ───────────────────────────────────────────────────────────────────
+class BankPassageSerializer(serializers.ModelSerializer):
+    question_count = serializers.IntegerField(source="questions.count", read_only=True)
+
+    class Meta:
+        model = BankPassage
+        fields = [
+            "id", "subject", "passage_text", "content_hash",
+            "source_type", "source_reference", "import_batch",
+            "metadata", "question_count", "created_at", "updated_at",
+        ]
+
+
+# ── Questions ─────────────────────────────────────────────────────────────────
+class BankQuestionListSerializer(serializers.ModelSerializer):
+    """Compact row for the browsing/triage tables."""
+
+    domain_name = serializers.CharField(source="domain.name", read_only=True, default=None)
+    skill_name = serializers.CharField(source="skill.name", read_only=True, default=None)
+    has_image = serializers.SerializerMethodField()
+    suggestion = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BankQuestion
+        fields = [
+            "id", "qb_id", "subject", "status", "question_type", "difficulty",
+            "domain", "domain_name", "skill", "skill_name",
+            "question_text", "passage", "has_image",
+            "source_type", "content_hash", "import_batch",
+            "suggestion", "created_at", "updated_at",
+        ]
+
+    def get_has_image(self, obj) -> bool:
+        return bool(
+            obj.question_image
+            or obj.option_a_image
+            or obj.option_b_image
+            or obj.option_c_image
+            or obj.option_d_image
+        )
+
+    def get_suggestion(self, obj):
+        return _suggestion_payload(obj, detail=False)
+
+
+class BankQuestionDetailSerializer(serializers.ModelSerializer):
+    """Full question for the detail screen (Preview / Details tabs)."""
+
+    domain = BankDomainSerializer(read_only=True)
+    skill = BankSkillSerializer(read_only=True)
+    passage = BankPassageSerializer(read_only=True)
+    question_image = serializers.SerializerMethodField()
+    option_a_image = serializers.SerializerMethodField()
+    option_b_image = serializers.SerializerMethodField()
+    option_c_image = serializers.SerializerMethodField()
+    option_d_image = serializers.SerializerMethodField()
+    current_version_number = serializers.IntegerField(
+        source="current_version.version_number", read_only=True, default=None
+    )
+    version_count = serializers.IntegerField(source="versions.count", read_only=True)
+    suggestion = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BankQuestion
+        fields = [
+            "id", "qb_id", "subject", "status", "question_type", "difficulty",
+            "domain", "skill", "passage",
+            "question_text", "question_prompt", "question_image",
+            "option_a", "option_b", "option_c", "option_d",
+            "option_a_image", "option_b_image", "option_c_image", "option_d_image",
+            "correct_answer", "explanation", "points",
+            "content_hash", "source_type", "source_reference", "import_batch",
+            "current_version_number", "version_count",
+            "suggestion", "metadata", "created_at", "updated_at",
+        ]
+
+    def get_question_image(self, obj):
+        return _image_url(obj.question_image)
+
+    def get_option_a_image(self, obj):
+        return _image_url(obj.option_a_image)
+
+    def get_option_b_image(self, obj):
+        return _image_url(obj.option_b_image)
+
+    def get_option_c_image(self, obj):
+        return _image_url(obj.option_c_image)
+
+    def get_option_d_image(self, obj):
+        return _image_url(obj.option_d_image)
+
+    def get_suggestion(self, obj):
+        return _suggestion_payload(obj, detail=True)
+
+
+# ── Versions ──────────────────────────────────────────────────────────────────
+class BankQuestionVersionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BankQuestionVersion
+        fields = [
+            "id", "bank_question", "version_number", "snapshot_checksum",
+            "previous_version", "created_by", "created_at",
+        ]
+
+
+class BankQuestionVersionDetailSerializer(BankQuestionVersionSerializer):
+    """Adds the immutable snapshot payload (opt-in via ?include_snapshot=true)."""
+
+    class Meta(BankQuestionVersionSerializer.Meta):
+        fields = BankQuestionVersionSerializer.Meta.fields + ["snapshot_json"]
