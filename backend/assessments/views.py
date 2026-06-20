@@ -533,6 +533,45 @@ def _audit_attempt(attempt: AssessmentAttempt, *, actor, event_type: str, payloa
     )
 
 
+# AssessmentQuestion image fields exposed to the runner/review (relative media URLs,
+# matching AssessmentQuestionSerializer's output on the live path).
+_QUESTION_IMAGE_FIELDS = (
+    "question_image",
+    "option_a_image",
+    "option_b_image",
+    "option_c_image",
+    "option_d_image",
+)
+
+
+def _img_url(field) -> str | None:
+    """Relative URL for an ImageField value, or None when no file is set."""
+    if not field:
+        return None
+    try:
+        return field.url
+    except ValueError:
+        return None
+
+
+def _image_map_for(question_ids):
+    """
+    Resolve image URLs for a set of AssessmentQuestion ids → {id: {field: url}}.
+
+    Snapshots don't pin images, so the frozen delivery/review paths supplement
+    them from the live question rows. This is freeze-safe: django-cleanup is
+    absent, so published image files are never deleted. Text/choices/correct
+    answers still come from the snapshot, preserving the freeze guarantee.
+    """
+    rows = AssessmentQuestion.objects.filter(id__in=list(question_ids)).only(
+        "id", *_QUESTION_IMAGE_FIELDS
+    )
+    return {
+        q.id: {f: _img_url(getattr(q, f)) for f in _QUESTION_IMAGE_FIELDS}
+        for q in rows
+    }
+
+
 class StartAttemptView(APIView):
     permission_classes = [IsAuthenticatedAndNotFrozen]
 
@@ -696,6 +735,11 @@ class AttemptBundleView(APIView):
                     if order_ids else sorted(raw_qs, key=lambda q: (q.get("order", 0), q["id"]))
                 )
             ]
+            # Snapshots don't pin images — supplement them from the live rows so
+            # diagrams/figures render in the frozen runner (matches live path).
+            img_map = _image_map_for(s["id"] for s in sanitized)
+            for s in sanitized:
+                s.update(img_map.get(s["id"], {f: None for f in _QUESTION_IMAGE_FIELDS}))
             att = AssessmentAttempt.objects.filter(pk=att.pk).prefetch_related("answers").first()
             return Response(
                 {
@@ -837,6 +881,8 @@ class AttemptPedagogicalReviewView(APIView):
                     "id", "explanation", "question_prompt"
                 )
             }
+            # Snapshots don't pin images — supplement from live rows (freeze-safe).
+            img_map = _image_map_for(snap_ids)
 
             ordered = (
                 [raw_by_id[qid] for qid in order_ids if qid in raw_by_id]
@@ -860,6 +906,7 @@ class AttemptPedagogicalReviewView(APIView):
                         "points": q.get("points", 1),
                         "correct_answer": q.get("correct_answer"),
                         "explanation": live.explanation if live else "",
+                        **img_map.get(qid, {f: None for f in _QUESTION_IMAGE_FIELDS}),
                         # Student performance fields
                         "student_answer": ans.answer if ans else None,
                         "is_correct": ans.is_correct if ans else None,
@@ -900,6 +947,7 @@ class AttemptPedagogicalReviewView(APIView):
                     "points": q.points,
                     "correct_answer": q.correct_answer,
                     "explanation": q.explanation,
+                    **{f: _img_url(getattr(q, f)) for f in _QUESTION_IMAGE_FIELDS},
                     # Student performance fields
                     "student_answer": ans.answer if ans else None,
                     "is_correct": ans.is_correct if ans else None,
