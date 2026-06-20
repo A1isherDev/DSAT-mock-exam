@@ -72,7 +72,7 @@ function derive(pack: PastpaperPackPublic, byTest: Map<number, Att[]>): Derived 
 }
 
 type Region = "ALL" | "US" | "INTL";
-type StatusFilter = "ALL" | "new" | "progress" | "completed";
+type StatusFilter = "new" | "progress" | "completed";
 
 export default function PastpapersPage() {
   const router = useRouter();
@@ -83,7 +83,7 @@ export default function PastpapersPage() {
   const [error, setError] = useState(false);
   const [region, setRegion] = useState<Region>("ALL");
   const [year, setYear] = useState<string>("ALL");
-  const [status, setStatus] = useState<StatusFilter>("ALL");
+  const [status, setStatus] = useState<StatusFilter>("new");
   const [search, setSearch] = useState("");
 
   const load = useCallback(() => {
@@ -119,7 +119,7 @@ export default function PastpapersPage() {
         if (region === "US" && pack.form_type !== "US") return false;
         if (region === "INTL" && pack.form_type === "US") return false;
         if (year !== "ALL" && yearOf(pack.practice_date) !== year) return false;
-        if (status !== "ALL" && d.status !== status) return false;
+        if (d.status !== status) return false;
         if (q) {
           const blob = `${pack.title || ""} ${pack.label || ""} ${pack.form_type || ""} ${fmtMonth(pack.practice_date)}`.toLowerCase();
           if (!blob.includes(q)) return false;
@@ -128,7 +128,7 @@ export default function PastpapersPage() {
       });
   }, [packs, byTest, region, year, status, search]);
 
-  const hasFilter = region !== "ALL" || year !== "ALL" || status !== "ALL" || !!search.trim();
+  const hasFilter = region !== "ALL" || year !== "ALL" || !!search.trim();
 
   return (
     <div className="dzboard" style={{ maxWidth: 1280, width: "100%", margin: "0 auto" }}>
@@ -146,7 +146,7 @@ export default function PastpapersPage() {
               options={[{ v: "ALL", l: "All" }, ...years.map((y) => ({ v: y, l: y }))]} />
           ) : null}
           <Segmented label="STATUS" value={status} onChange={(v) => setStatus(v as StatusFilter)}
-            options={[{ v: "ALL", l: "All" }, { v: "new", l: "New" }, { v: "progress", l: "In progress" }, { v: "completed", l: "Completed" }]} />
+            options={[{ v: "new", l: "New" }, { v: "progress", l: "In progress" }, { v: "completed", l: "Completed" }]} />
         </div>
 
         <div className="dz-headin" style={{ position: "relative", marginBottom: 24, maxWidth: 560 }}>
