@@ -11,6 +11,8 @@ urlpatterns = [
     # Bulk + write actions must precede <int:pk> (they don't collide, but keep grouped).
     path("questions/bulk/", views.BankQuestionBulkView.as_view(), name="question-bulk"),
     path("questions/<int:pk>/", views.BankQuestionDetailView.as_view(), name="question-detail"),
+    path("questions/<int:pk>/archive/", views.BankQuestionArchiveView.as_view(), name="question-archive"),
+    path("questions/<int:pk>/restore/", views.BankQuestionRestoreView.as_view(), name="question-restore"),
     path("questions/<int:pk>/classify/", views.BankQuestionClassifyView.as_view(), name="question-classify"),
     path("questions/<int:pk>/approve/", views.BankQuestionApproveView.as_view(), name="question-approve"),
     path("questions/<int:pk>/reject/", views.BankQuestionRejectView.as_view(), name="question-reject"),

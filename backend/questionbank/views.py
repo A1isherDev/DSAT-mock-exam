@@ -7,13 +7,14 @@ project default but is listed explicitly for clarity.
 """
 from __future__ import annotations
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import generics, status as http_status
 from rest_framework.pagination import LimitOffsetPagination
-from rest_framework.parsers import FormParser, MultiPartParser
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -22,6 +23,9 @@ from users.permissions import IsAuthenticatedAndNotFrozen
 
 from . import audit, serializers as qb, triage
 from .import_pipeline import promote_batch
+
+# Parsers for content authoring (images via multipart; JSON also accepted).
+_WRITE_PARSERS = [MultiPartParser, FormParser, JSONParser]
 from .models import (
     BankDomain,
     BankPassage,
@@ -58,12 +62,30 @@ class QbPagination(LimitOffsetPagination):
 
 
 @extend_schema(tags=["questionbank"])
-class BankQuestionListView(generics.ListAPIView):
-    """GET /api/questionbank/questions/ — filter/search the bank."""
+class BankQuestionListView(generics.ListCreateAPIView):
+    """GET /api/questionbank/questions/ — filter/search; POST — author a new question."""
 
     permission_classes = QB_PERMISSIONS
-    serializer_class = qb.BankQuestionListSerializer
     pagination_class = QbPagination
+    parser_classes = _WRITE_PARSERS
+
+    def get_serializer_class(self):
+        if self.request.method == "POST":
+            return qb.BankQuestionWriteSerializer
+        return qb.BankQuestionListSerializer
+
+    def create(self, request, *args, **kwargs):
+        ser = self.get_serializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        try:
+            question = ser.save()
+        except DjangoValidationError as exc:
+            return Response({"detail": exc.messages}, status=http_status.HTTP_400_BAD_REQUEST)
+        audit.record_question_event(
+            event_type=audit.EVT_CREATE, question=question, actor=request.user,
+            previous_state="", new_state=question.status,
+        )
+        return Response(qb.BankQuestionDetailSerializer(question).data, status=http_status.HTTP_201_CREATED)
 
     def get_queryset(self):
         qs = BankQuestion.objects.select_related(
@@ -97,15 +119,71 @@ class BankQuestionListView(generics.ListAPIView):
 
 
 @extend_schema(tags=["questionbank"])
-class BankQuestionDetailView(generics.RetrieveAPIView):
-    """GET /api/questionbank/questions/<id>/."""
+class BankQuestionDetailView(generics.RetrieveUpdateAPIView):
+    """GET /api/questionbank/questions/<id>/ ; PATCH — edit (any status; cuts a version)."""
 
     permission_classes = QB_PERMISSIONS
-    serializer_class = qb.BankQuestionDetailSerializer
+    parser_classes = _WRITE_PARSERS
     queryset = BankQuestion.objects.select_related(
         "domain", "skill", "passage", "import_batch",
         "suggested_domain", "suggested_skill", "current_version",
     )
+
+    def get_serializer_class(self):
+        if self.request.method in ("PATCH", "PUT"):
+            return qb.BankQuestionWriteSerializer
+        return qb.BankQuestionDetailSerializer
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        prev = instance.status
+        ser = self.get_serializer(instance, data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        try:
+            question = ser.save()
+        except DjangoValidationError as exc:
+            return Response({"detail": exc.messages}, status=http_status.HTTP_400_BAD_REQUEST)
+        audit.record_question_event(
+            event_type=audit.EVT_UPDATE, question=question, actor=request.user,
+            previous_state=prev, new_state=question.status,
+        )
+        return Response(qb.BankQuestionDetailSerializer(question).data)
+
+
+@extend_schema(tags=["questionbank"])
+class BankQuestionArchiveView(APIView):
+    """POST /api/questionbank/questions/<id>/archive/ — soft-delete (reversible)."""
+
+    permission_classes = QB_PERMISSIONS
+
+    def post(self, request, pk):
+        question = get_object_or_404(BankQuestion, pk=pk)
+        prev = question.status
+        with transaction.atomic():
+            triage.archive_question(question, user=request.user)
+            audit.record_question_event(
+                event_type=audit.EVT_ARCHIVE, question=question, actor=request.user,
+                previous_state=prev, new_state=question.status,
+            )
+        return _question_response(question)
+
+
+@extend_schema(tags=["questionbank"])
+class BankQuestionRestoreView(APIView):
+    """POST /api/questionbank/questions/<id>/restore/ — un-archive."""
+
+    permission_classes = QB_PERMISSIONS
+
+    def post(self, request, pk):
+        question = get_object_or_404(BankQuestion, pk=pk)
+        prev = question.status
+        with transaction.atomic():
+            triage.restore_question(question, user=request.user)
+            audit.record_question_event(
+                event_type=audit.EVT_RESTORE, question=question, actor=request.user,
+                previous_state=prev, new_state=question.status,
+            )
+        return _question_response(question)
 
 
 @extend_schema(tags=["questionbank"])

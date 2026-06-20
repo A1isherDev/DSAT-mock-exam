@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
+import json
+
 from django.db.models import Count
 
 from .models import (
@@ -22,7 +24,9 @@ from .models import (
     Difficulty,
     ImportBatch,
     ImportCandidate,
+    QuestionStatus,
 )
+from .services import create_bank_question, update_bank_question
 
 
 def _image_url(field) -> str | None:
@@ -184,6 +188,107 @@ class BankQuestionDetailSerializer(serializers.ModelSerializer):
 
 
 # ── Versions ──────────────────────────────────────────────────────────────────
+class FlexibleJSONField(serializers.JSONField):
+    """Accepts a JSON value OR a bare string (multipart sends "C", not '"C"')."""
+
+    def to_internal_value(self, data):
+        if isinstance(data, str):
+            try:
+                return json.loads(data)
+            except (ValueError, TypeError):
+                return data  # plain answer like "C" or "2/3"
+        return data
+
+
+_CLEAR_IMAGE_MAP = {
+    "clear_question_image": "question_image",
+    "clear_option_a_image": "option_a_image",
+    "clear_option_b_image": "option_b_image",
+    "clear_option_c_image": "option_c_image",
+    "clear_option_d_image": "option_d_image",
+}
+
+
+class BankQuestionWriteSerializer(serializers.ModelSerializer):
+    """Create/edit a bank question (multipart for images). Delegates to services so
+    content_hash + versioning always move together. Status is NOT set here —
+    transitions go through the triage endpoints; create lands in TRIAGE."""
+
+    domain = serializers.PrimaryKeyRelatedField(
+        queryset=BankDomain.objects.all(), required=False, allow_null=True
+    )
+    skill = serializers.PrimaryKeyRelatedField(
+        queryset=BankSkill.objects.all(), required=False, allow_null=True
+    )
+    correct_answer = FlexibleJSONField(required=False, allow_null=True)
+    student_answer = FlexibleJSONField(required=False, allow_null=True)
+    clear_question_image = serializers.BooleanField(write_only=True, required=False, default=False)
+    clear_option_a_image = serializers.BooleanField(write_only=True, required=False, default=False)
+    clear_option_b_image = serializers.BooleanField(write_only=True, required=False, default=False)
+    clear_option_c_image = serializers.BooleanField(write_only=True, required=False, default=False)
+    clear_option_d_image = serializers.BooleanField(write_only=True, required=False, default=False)
+
+    class Meta:
+        model = BankQuestion
+        fields = [
+            "subject", "question_type", "difficulty", "external_id",
+            "domain", "skill",
+            "question_text", "question_prompt", "question_image",
+            "option_a", "option_b", "option_c", "option_d",
+            "option_a_image", "option_b_image", "option_c_image", "option_d_image",
+            "correct_answer", "student_answer", "explanation", "points",
+            *(_CLEAR_IMAGE_MAP.keys()),
+        ]
+        extra_kwargs = {
+            "subject": {"required": False},
+            "question_type": {"required": False},
+            "question_text": {"required": False, "allow_blank": True},
+        }
+
+    def validate(self, attrs):
+        inst = self.instance
+        subject = attrs.get("subject") or (inst.subject if inst else None)
+        domain = attrs.get("domain", inst.domain if inst else None)
+        skill = attrs.get("skill", inst.skill if inst else None)
+        if domain is not None and subject and domain.subject != subject:
+            raise serializers.ValidationError({"domain": f"Domain is not in subject {subject}."})
+        if skill is not None:
+            if domain is None:
+                raise serializers.ValidationError({"skill": "Choose a domain before a skill."})
+            if skill.domain_id != domain.id:
+                raise serializers.ValidationError({"skill": "Skill does not belong to the domain."})
+        return attrs
+
+    def _apply_clears(self, validated):
+        for flag, field in _CLEAR_IMAGE_MAP.items():
+            do_clear = validated.pop(flag, False)
+            if do_clear and field not in validated:  # a fresh upload wins over clear
+                validated[field] = None
+
+    @property
+    def _actor(self):
+        request = self.context.get("request")
+        return getattr(request, "user", None)
+
+    def create(self, validated):
+        self._apply_clears(validated)
+        subject = validated.pop("subject", None)
+        question_type = validated.pop("question_type", None)
+        question_text = validated.pop("question_text", "")
+        if not subject:
+            raise serializers.ValidationError({"subject": "Required."})
+        if not question_type:
+            raise serializers.ValidationError({"question_type": "Required."})
+        return create_bank_question(
+            subject=subject, question_type=question_type, question_text=question_text,
+            status=QuestionStatus.TRIAGE, user=self._actor, **validated,
+        )
+
+    def update(self, instance, validated):
+        self._apply_clears(validated)
+        return update_bank_question(instance, user=self._actor, **validated)
+
+
 class BankQuestionVersionSerializer(serializers.ModelSerializer):
     class Meta:
         model = BankQuestionVersion

@@ -186,3 +186,30 @@ def create_bank_question(
     if cut_initial_version:
         create_version(q, user=user)
     return q
+
+
+@transaction.atomic
+def update_bank_question(q: BankQuestion, *, user=None, cut_version: bool = True, **fields: Any) -> BankQuestion:
+    """
+    Apply edits to a live BankQuestion, recompute content_hash, and (by default)
+    cut a NEW immutable version. **Status is preserved** — editing an APPROVED
+    question keeps it APPROVED (published consumers froze a copy at add-time, so
+    they are unaffected). Status transitions go through triage.py, not here.
+    """
+    new_ext = fields.get("external_id")
+    if new_ext is not None:
+        new_ext = new_ext.strip()
+        if new_ext and BankQuestion.objects.filter(external_id=new_ext).exclude(pk=q.pk).exists():
+            existing = BankQuestion.objects.filter(external_id=new_ext).exclude(pk=q.pk).first()
+            raise ValidationError(
+                f"external_id {new_ext!r} already exists in the bank ({existing.qb_id})."
+            )
+        fields["external_id"] = new_ext
+
+    for field, value in fields.items():
+        setattr(q, field, value)
+    q.content_hash = compute_content_hash(q)
+    q.save()
+    if cut_version:
+        create_version(q, user=user)
+    return q
