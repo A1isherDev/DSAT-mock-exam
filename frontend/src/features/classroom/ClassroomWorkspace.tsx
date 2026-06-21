@@ -7,18 +7,14 @@ import { ClassroomShell } from "./shell/ClassroomShell";
 import { visibleTabs, type ClassroomTabId } from "./shell/tabs";
 import { capabilitiesFor } from "./capabilities";
 import { useClassroom } from "./hooks";
-import { ClassroomOverview } from "./pages/Overview";
 import { People } from "./pages/People";
 import { Assignments } from "./pages/Assignments";
 import { Settings } from "./pages/Settings";
-import { Attendance } from "./pages/Attendance";
 import { Rankings } from "./pages/Rankings";
-import { Analytics } from "./pages/Analytics";
 import { Gradebook } from "./pages/Gradebook";
 import { Materials } from "./pages/Materials";
 import { Midterms } from "./pages/Midterms";
 import { Results } from "./pages/Results";
-import { ComingSoon } from "./pages/ComingSoon";
 
 function isTabId(v: string | null): v is ClassroomTabId {
   return v != null && ["overview", "assignments", "materials", "midterms", "results", "stream", "people", "rankings", "grading", "attendance", "analytics", "settings"].includes(v);
@@ -71,17 +67,14 @@ export function ClassroomWorkspace({
 
   return (
     <ClassroomShell classroom={classroom} active={current} onTabChange={onTabChange} backHref={backHref} backLabel={backLabel}>
-      {current === "overview" && <ClassroomOverview classroom={classroom} onNavigate={onTabChange} />}
+      {/* Overview now hosts the class rankings. */}
+      {current === "overview" && <Rankings classroom={classroom} />}
       {current === "assignments" && <Assignments classroom={classroom} />}
       {current === "midterms" && caps.canManageAssignments && <Midterms classroom={classroom} />}
       {current === "materials" && caps.isMember && <Materials classroom={classroom} />}
       {current === "results" && caps.isStaff && <Results classroom={classroom} />}
       {current === "people" && <People classroom={classroom} />}
-      {current === "rankings" && <Rankings classroom={classroom} />}
       {current === "grading" && caps.canGrade && <Gradebook classroom={classroom} />}
-      {current === "stream" && <ComingSoon title="Class stream" description="Announcements and discussion are being rebuilt." />}
-      {current === "attendance" && caps.isMember && <Attendance classroom={classroom} />}
-      {current === "analytics" && caps.isMember && <Analytics classroom={classroom} />}
       {current === "settings" && caps.canManageClass && <Settings classroom={classroom} />}
     </ClassroomShell>
   );
