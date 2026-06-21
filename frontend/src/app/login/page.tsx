@@ -327,7 +327,7 @@ export default function LoginPage() {
                         </Field>
 
                         <div className="-mt-1 flex items-center justify-end">
-                            <button type="button" onClick={() => setForgotOpen((v) => !v)} className="ds-ring rounded-md text-[13px] font-bold text-primary hover:underline">
+                            <button type="button" onClick={() => setForgotOpen((v) => !v)} className="ds-ring rounded-md text-[13px] font-bold text-[#2a68c0] hover:underline">
                                 Forgot password?
                             </button>
                         </div>
@@ -394,7 +394,7 @@ export default function LoginPage() {
 
                     <p className="mt-6 text-center text-sm text-muted-foreground">
                         Don&apos;t have an account?{" "}
-                        <Link href="/register" className="font-bold text-primary hover:underline">
+                        <Link href="/register" className="font-bold text-[#2a68c0] hover:underline">
                             Register now
                         </Link>
                     </p>
