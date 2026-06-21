@@ -1,16 +1,27 @@
 "use client";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { authApi, usersApi } from "@/lib/api";
 import { useRouter } from "next/navigation";
-import { UserPlus, Sparkles, ShieldCheck, LineChart, User, Mail, Lock, Eye, EyeOff } from "lucide-react";
+import { UserPlus, Sparkles, ShieldCheck, LineChart, User, Mail, Lock, Eye, EyeOff, Send } from "lucide-react";
 import Link from "next/link";
-import TelegramLoginButton, { type TelegramOIDCResult } from "@/components/TelegramLoginButton";
+import { type TelegramOIDCResult } from "@/components/TelegramLoginButton";
 import { Button, Input, Field, Alert, Spinner } from "@/components/ui";
 
 declare global {
     interface Window {
         google?: any;
     }
+}
+
+function GoogleGlyph() {
+    return (
+        <svg className="h-4 w-4" viewBox="0 0 24 24" aria-hidden>
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.76h3.56c2.08-1.92 3.28-4.74 3.28-8.09Z" />
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.56-2.76c-.98.66-2.23 1.06-3.72 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23Z" />
+            <path fill="#FBBC05" d="M5.84 14.11a6.6 6.6 0 0 1 0-4.22V7.05H2.18a11 11 0 0 0 0 9.9l3.66-2.84Z" />
+            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.05l3.66 2.84C6.71 7.3 9.14 5.38 12 5.38Z" />
+        </svg>
+    );
 }
 
 export default function RegisterPage() {
@@ -22,7 +33,7 @@ export default function RegisterPage() {
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
     const [showPw, setShowPw] = useState(false);
-    const googleButtonRef = useRef<HTMLDivElement>(null);
+    const [googleReady, setGoogleReady] = useState(false);
     const router = useRouter();
     const [telegramCfg, setTelegramCfg] = useState<{ enabled: boolean; bot_username: string | null; client_id: string | null; start_url: string | null } | null>(null);
 
@@ -101,8 +112,7 @@ export default function RegisterPage() {
 
         const tryInit = () => {
             if (cancelled) return;
-            const el = googleButtonRef.current;
-            if (!window.google?.accounts?.id || !el) {
+            if (!window.google?.accounts?.id) {
                 pollTimer = window.setTimeout(tryInit, 200);
                 return;
             }
@@ -120,14 +130,7 @@ export default function RegisterPage() {
                         }
                     },
                 });
-                el.innerHTML = "";
-                window.google.accounts.id.renderButton(el, {
-                    theme: "outline",
-                    size: "large",
-                    shape: "pill",
-                    width: 360,
-                    text: "signup_with",
-                });
+                setGoogleReady(true);
             } catch (err) {
                 console.warn("Google Sign-Up init failed", err);
             }
@@ -161,16 +164,16 @@ export default function RegisterPage() {
                     <p className="text-xl font-extrabold tracking-tight">MasterSAT</p>
                 </div>
 
-                <div className="relative max-w-sm">
-                    <h2 className="text-4xl font-extrabold leading-[1.1] tracking-tight">Start your climb to a higher score.</h2>
-                    <p className="mt-4 text-[15px] leading-relaxed opacity-90">
-                        Set a goal, build a streak, and watch your readiness rise with every practice set.
+                <div className="relative max-w-md">
+                    <h2 className="text-[44px] font-extrabold leading-[1.05] tracking-tight">Real past papers. Real scores. Real progress.</h2>
+                    <p className="mt-[18px] max-w-[440px] text-[16px] font-medium leading-relaxed opacity-[0.82]">
+                        Take a full-length diagnostic, get your predicted score, and focus on the exact domains where you&apos;re losing points.
                     </p>
-                    <ul className="mt-8 flex flex-col gap-4">
+                    <ul className="mt-[34px] flex flex-col gap-4">
                         {[
-                            { icon: LineChart, text: "Track progress toward your target score" },
-                            { icon: Sparkles, text: "A plan that adapts as you improve" },
-                            { icon: ShieldCheck, text: "Full-length, test-day-realistic mocks" },
+                            { icon: LineChart, text: "Live readiness and score trends" },
+                            { icon: Sparkles, text: "Classroom assessments and monthly midterm exams" },
+                            { icon: ShieldCheck, text: "Real Exam environment" },
                         ].map(({ icon: Icon, text }) => (
                             <li key={text} className="flex items-center gap-3 text-[15px] font-medium">
                                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/15">
@@ -247,22 +250,28 @@ export default function RegisterPage() {
                             <span className="h-px flex-1 bg-border" />
                         </div>
 
-                        <div className="flex flex-col items-center gap-4">
-                            <div className="mx-auto w-fit rounded-full bg-white p-1">
-                                <div ref={googleButtonRef} />
-                            </div>
-                            <div className="flex w-full flex-col items-center gap-2">
-                                <span className="ds-overline">Sign up with Telegram</span>
-                                {telegramCfg === null ? (
-                                    <Spinner className="h-6 w-6 text-muted-foreground" />
-                                ) : telegramCfg.enabled && telegramCfg.start_url ? (
-                                    <TelegramLoginButton startUrl={telegramCfg.start_url} next="/" />
-                                ) : (
-                                    <p className="max-w-sm px-2 text-center text-xs text-muted-foreground">
-                                        Telegram signup is not configured yet.
-                                    </p>
-                                )}
-                            </div>
+                        <div className="flex gap-3">
+                            {googleReady ? (
+                                <button
+                                    type="button"
+                                    onClick={() => { try { window.google?.accounts?.id?.prompt(); } catch { /* ignore */ } }}
+                                    disabled={loading}
+                                    className="ds-ring flex flex-1 items-center justify-center gap-2.5 rounded-xl border border-border bg-card px-3 py-3 text-sm font-bold text-foreground transition-all hover:-translate-y-0.5 hover:border-border-strong hover:shadow-card active:scale-[0.98] disabled:opacity-60"
+                                >
+                                    <GoogleGlyph /> Google
+                                </button>
+                            ) : null}
+                            {telegramCfg?.enabled && telegramCfg.start_url ? (
+                                <a
+                                    href={`${telegramCfg.start_url}?next=${encodeURIComponent("/")}`}
+                                    className="ds-ring flex flex-1 items-center justify-center gap-2.5 rounded-xl px-3 py-3 text-sm font-extrabold text-white transition-all hover:-translate-y-0.5 hover:shadow-[0_8px_20px_rgba(42,171,238,.4)] active:scale-[0.98]"
+                                    style={{ background: "#2aabee" }}
+                                >
+                                    <Send className="h-4 w-4" /> Telegram
+                                </a>
+                            ) : telegramCfg === null ? (
+                                <span className="flex flex-1 items-center justify-center py-3"><Spinner className="h-5 w-5 text-muted-foreground" /></span>
+                            ) : null}
                         </div>
                     </form>
 
