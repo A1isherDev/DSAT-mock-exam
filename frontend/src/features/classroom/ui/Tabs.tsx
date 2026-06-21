@@ -9,7 +9,7 @@ export interface TabItem {
   count?: number;
 }
 
-/** Underline tab bar. Horizontally scrollable on mobile. */
+/** Pill tab bar (1:1 with the Classroom mockup). Horizontally scrollable on mobile. */
 export function Tabs({
   items,
   active,
@@ -22,7 +22,7 @@ export function Tabs({
   className?: string;
 }) {
   return (
-    <div className={cn("flex gap-1 overflow-x-auto border-b border-border", className)} role="tablist">
+    <div className={cn("flex gap-2.5 overflow-x-auto pb-0.5", className)} role="tablist">
       {items.map((t) => {
         const selected = t.id === active;
         const Icon = t.icon;
@@ -33,10 +33,10 @@ export function Tabs({
             aria-selected={selected}
             onClick={() => onChange(t.id)}
             className={cn(
-              "relative -mb-px flex items-center gap-2 whitespace-nowrap px-3.5 py-2.5 text-sm font-medium transition-colors",
+              "flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl border-[1.5px] px-4 py-2.5 text-sm font-extrabold transition-all active:scale-95",
               selected
-                ? "text-foreground border-b-2 border-primary"
-                : "text-muted-foreground border-b-2 border-transparent hover:text-foreground",
+                ? "border-primary bg-primary-soft text-primary"
+                : "border-border bg-card text-muted-foreground hover:-translate-y-0.5 hover:border-primary hover:bg-primary-soft hover:text-primary",
             )}
           >
             {Icon && <Icon className="h-4 w-4" aria-hidden />}
@@ -44,8 +44,8 @@ export function Tabs({
             {typeof t.count === "number" && (
               <span
                 className={cn(
-                  "rounded-full px-1.5 py-0.5 text-[11px] font-semibold leading-none",
-                  selected ? "bg-primary/10 text-primary" : "bg-surface-2 text-muted-foreground",
+                  "rounded-full px-1.5 py-0.5 text-[11px] font-extrabold leading-none",
+                  selected ? "bg-primary/15 text-primary" : "bg-surface-2 text-muted-foreground",
                 )}
               >
                 {t.count}
