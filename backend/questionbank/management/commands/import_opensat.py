@@ -39,6 +39,7 @@ from django.db import transaction
 
 from questionbank.dedup import find_duplicate, question_content_hash
 from questionbank.content_hash import compute_passage_content_hash
+from questionbank.latex_normalize import latexify
 from questionbank.models import (
     BankDomain,
     BankPassage,
@@ -214,12 +215,12 @@ class Command(BaseCommand):
     def _import_one(self, row, section, subject, skill_mode, batch, dry_run,
                     domain_cache, skill_cache, sec):
         q = (row or {}).get("question") or {}
-        stem = _clean(q.get("question"))
+        stem = latexify(_clean(q.get("question")))
         choices = q.get("choices") or {}
-        opts = {k: _clean(choices.get(k)) for k in ("A", "B", "C", "D")}
+        opts = {k: latexify(_clean(choices.get(k))) for k in ("A", "B", "C", "D")}
         correct = _clean(q.get("correct_answer")).upper()
-        explanation = _clean(q.get("explanation"))
-        passage_text = "" if _is_nullish(q.get("paragraph")) else _clean(q.get("paragraph"))
+        explanation = latexify(_clean(q.get("explanation")))
+        passage_text = "" if _is_nullish(q.get("paragraph")) else latexify(_clean(q.get("paragraph")))
         ext_id = _clean(row.get("id"))
         source_reference = f"{SOURCE_REF_ROOT} — {section}/{ext_id}" if ext_id else f"{SOURCE_REF_ROOT} — {section}"
 
