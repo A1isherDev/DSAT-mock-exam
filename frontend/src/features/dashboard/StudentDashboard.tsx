@@ -17,6 +17,7 @@ import {
   CalendarRange,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   ArrowRight,
   GraduationCap,
   Users,
@@ -25,7 +26,7 @@ import {
 } from "lucide-react";
 import { Button, Card, CardContent, Skeleton } from "@/components/ui";
 import type { ScheduleEvent } from "@/lib/api";
-import { useDashboardData, type DashboardModel } from "./useDashboardData";
+import { useDashboardData, type DashboardModel, type ExamDateOption } from "./useDashboardData";
 import { gridRange, isoDate, useStudentSchedule } from "./useStudentSchedule";
 
 const WEEKDAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
@@ -99,7 +100,14 @@ function DashboardBody({
           className="dz-scoregrid"
         >
           <TargetScoresCard overall={model.target} english={model.englishTarget} math={model.mathTarget} />
-          <CountdownCard examDate={model.examDate} />
+          <CountdownCard
+            examDate={model.examDate}
+            options={model.examDateOptions}
+            saving={live.savingExamDate}
+            onSelect={async (date) => {
+              if (!isPreview) await live.saveExamDate(date);
+            }}
+          />
         </div>
 
         {/* Calendar + right column */}
@@ -415,16 +423,101 @@ function CountdownSegment({ value, label, pad }: { value: number; label: string;
   );
 }
 
-function CountdownCard({ examDate }: { examDate: string | null }) {
+function formatExamDate(iso: string): string {
+  return new Date(examTargetTime(iso) ?? Date.now()).toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+/** Exam-date selector styled to sit inside the dark countdown card. */
+function ExamDatePicker({
+  examDate,
+  options,
+  saving,
+  onSelect,
+}: {
+  examDate: string | null;
+  options: ExamDateOption[];
+  saving: boolean;
+  onSelect: (date: string | null) => void;
+}) {
+  // Surface the current selection even if it's no longer in the upcoming list
+  // (e.g. it just passed) so the control never renders blank.
+  const currentMissing = !!examDate && !options.some((o) => o.exam_date === examDate);
+
+  if (options.length === 0 && !examDate) {
+    return (
+      <div style={{ fontSize: 13, fontWeight: 600, opacity: 0.7, marginTop: 16 }}>
+        No exam dates available yet — check back soon.
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ position: "relative", marginTop: 16 }}>
+      <CalendarDays
+        size={15}
+        style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)", opacity: 0.8, pointerEvents: "none" }}
+      />
+      <ChevronDown
+        size={16}
+        style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", opacity: 0.8, pointerEvents: "none" }}
+      />
+      <select
+        aria-label="Choose your exam date"
+        value={examDate ?? ""}
+        disabled={saving}
+        onChange={(e) => onSelect(e.target.value || null)}
+        style={{
+          appearance: "none",
+          WebkitAppearance: "none",
+          MozAppearance: "none",
+          width: "100%",
+          background: "rgba(255,255,255,.12)",
+          color: "#fff",
+          border: "1px solid rgba(255,255,255,.28)",
+          borderRadius: 12,
+          padding: "11px 36px 11px 36px",
+          fontSize: 14,
+          fontWeight: 700,
+          cursor: saving ? "default" : "pointer",
+          outline: "none",
+          opacity: saving ? 0.6 : 1,
+        }}
+      >
+        <option value="" style={{ color: "#111827" }}>
+          Choose your exam date…
+        </option>
+        {currentMissing && examDate && (
+          <option value={examDate} style={{ color: "#111827" }}>
+            {formatExamDate(examDate)} (current)
+          </option>
+        )}
+        {options.map((o) => (
+          <option key={o.id} value={o.exam_date} style={{ color: "#111827" }}>
+            {o.label ? `${o.label} · ${formatExamDate(o.exam_date)}` : formatExamDate(o.exam_date)}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function CountdownCard({
+  examDate,
+  options,
+  saving,
+  onSelect,
+}: {
+  examDate: string | null;
+  options: ExamDateOption[];
+  saving: boolean;
+  onSelect: (date: string | null) => void;
+}) {
   const remaining = useCountdown(examDate);
-  const dateLabel = examDate
-    ? new Date(examTargetTime(examDate) ?? Date.now()).toLocaleDateString("en-US", {
-        weekday: "long",
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      })
-    : "Set your exam date in your profile";
 
   return (
     <div
@@ -470,7 +563,7 @@ function CountdownCard({ examDate }: { examDate: string | null }) {
             <CountdownSegment value={remaining.seconds} label="sec" pad />
           </div>
         )}
-        <div style={{ fontSize: 14, fontWeight: 600, opacity: 0.65, marginTop: 16 }}>{dateLabel}</div>
+        <ExamDatePicker examDate={examDate} options={options} saving={saving} onSelect={onSelect} />
       </div>
     </div>
   );

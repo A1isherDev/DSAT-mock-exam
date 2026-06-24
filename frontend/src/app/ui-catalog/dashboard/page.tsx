@@ -24,6 +24,11 @@ const SAMPLE: DashboardModel = {
   readinessVsTarget: true,
   examDate: "2026-07-17",
   examDaysLeft: 34,
+  examDateOptions: [
+    { id: 1, exam_date: "2026-07-17", label: "July SAT" },
+    { id: 2, exam_date: "2026-08-22", label: "August SAT" },
+    { id: 3, exam_date: "2026-10-03", label: "October SAT" },
+  ],
   totalCompleted: 18,
   classCount: 2,
   streak: 12,

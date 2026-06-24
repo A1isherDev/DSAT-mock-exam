@@ -37,6 +37,7 @@ from .serializers import (
 from .permissions import IsAuthenticatedAndNotFrozen
 from django.conf import settings
 from django.http import HttpResponseRedirect
+from django.utils import timezone
 import re
 import time
 from datetime import timedelta
@@ -775,7 +776,12 @@ class ExamDateOptionListView(generics.ListAPIView):
     serializer_class = ExamDateOptionPublicSerializer
 
     def get_queryset(self):
-        return ExamDateOption.objects.filter(is_active=True).order_by("sort_order", "exam_date")
+        # Only upcoming dates are offered to students — past exams are filtered out.
+        today = timezone.localdate()
+        return (
+            ExamDateOption.objects.filter(is_active=True, exam_date__gte=today)
+            .order_by("sort_order", "exam_date")
+        )
 
 
 class ExamDateOptionAdminListCreateView(generics.ListCreateAPIView):

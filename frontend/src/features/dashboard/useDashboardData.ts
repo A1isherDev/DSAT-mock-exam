@@ -37,6 +37,9 @@ type AssignmentLite = {
 
 export type DashboardStatus = "booting" | "unauthenticated" | "ready";
 
+/** Admin-defined SAT date a student may select (active + upcoming only). */
+export type ExamDateOption = { id: number; exam_date: string; label: string };
+
 export type MilestoneItem = { id: string; label: string; done: boolean };
 export type ActionItem = { id: string; title: string; detail: string; href: string };
 export type RecentItem = { id: number; title: string; meta: string; time: string; isMath: boolean };
@@ -60,6 +63,8 @@ export type DashboardModel = {
   readinessVsTarget: boolean;
   examDate: string | null;
   examDaysLeft: number | null;
+  /** Upcoming admin-defined dates a student can choose from (past ones excluded). */
+  examDateOptions: ExamDateOption[];
   totalCompleted: number;
   classCount: number;
   streak: number;
@@ -117,11 +122,19 @@ function projectScore(scores: number[]): number | null {
   return clamp(Math.round(last + avg), Math.min(...scores), 1600);
 }
 
+/** Local-midnight timestamp for a date-only ("YYYY-MM-DD") exam date. */
+function examDayStart(iso: string): number {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  const d = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date(iso);
+  return d.getTime();
+}
+
 function buildModel(
   me: UserMe,
   attempts: Attempt[],
   classCount: number,
   assignments: AssignmentLite[],
+  examDateOptions: ExamDateOption[],
 ): DashboardModel {
   const firstName = me.first_name?.trim() || "there";
   const completed = attempts.filter((a) => a.is_completed);
@@ -282,6 +295,11 @@ function buildModel(
     readinessVsTarget,
     examDate: me.sat_exam_date ?? null,
     examDaysLeft: daysUntil(me.sat_exam_date),
+    // Defensive client-side guard so past dates never reach the picker even if
+    // the API returns them; the backend already filters to upcoming dates.
+    examDateOptions: examDateOptions
+      .filter((o) => examDayStart(o.exam_date) >= startOfDay(new Date()))
+      .sort((a, b) => examDayStart(a.exam_date) - examDayStart(b.exam_date)),
     totalCompleted: completed.length,
     classCount,
     streak,
@@ -306,6 +324,9 @@ export type DashboardData = {
   /** Persist section targets; the total is stored as their sum. */
   saveGoal: (english: number, math: number) => Promise<void>;
   savingGoal: boolean;
+  /** Persist the student's chosen SAT date (or clear it with null). */
+  saveExamDate: (date: string | null) => Promise<void>;
+  savingExamDate: boolean;
   refresh: () => void;
 };
 
@@ -315,8 +336,10 @@ export function useDashboardData(): DashboardData {
   const [attempts, setAttempts] = useState<Attempt[]>([]);
   const [classCount, setClassCount] = useState(0);
   const [assignments, setAssignments] = useState<AssignmentLite[]>([]);
+  const [examDateOptions, setExamDateOptions] = useState<ExamDateOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingGoal, setSavingGoal] = useState(false);
+  const [savingExamDate, setSavingExamDate] = useState(false);
   const [nonce, setNonce] = useState(0);
 
   useEffect(() => {
@@ -329,15 +352,17 @@ export function useDashboardData(): DashboardData {
     let cancelled = false;
     setLoading(true);
     (async () => {
-      const [attemptsRes, classesRes, assignmentsRes] = await Promise.all([
+      const [attemptsRes, classesRes, assignmentsRes, examDatesRes] = await Promise.all([
         examsStudentApi.getAttempts().catch(() => emptyNormalizedExamList<Attempt>()),
         classesApi.list().catch(() => emptyNormalizedList()),
         classesApi.myAssignments().catch(() => ({ count: 0, items: [] as AssignmentLite[] })),
+        usersApi.listExamDates().catch(() => [] as ExamDateOption[]),
       ]);
       if (cancelled) return;
       setAttempts((attemptsRes.items ?? []) as Attempt[]);
       setClassCount(classesRes.items.length);
       setAssignments((assignmentsRes.items ?? []) as AssignmentLite[]);
+      setExamDateOptions(Array.isArray(examDatesRes) ? (examDatesRes as ExamDateOption[]) : []);
       setLoading(false);
     })();
     return () => {
@@ -363,6 +388,20 @@ export function useDashboardData(): DashboardData {
     [me?.id],
   );
 
+  const saveExamDate = useCallback(
+    async (date: string | null) => {
+      if (me?.id == null) return;
+      setSavingExamDate(true);
+      try {
+        const updated = await usersApi.patchMe({ sat_exam_date: date });
+        setMe((prev) => (prev ? { ...prev, ...updated } : prev));
+      } finally {
+        setSavingExamDate(false);
+      }
+    },
+    [me?.id],
+  );
+
   const status: DashboardStatus =
     bootState === "BOOTING" || (bootState === "AUTHENTICATED" && loading)
       ? "booting"
@@ -371,8 +410,11 @@ export function useDashboardData(): DashboardData {
         : "ready";
 
   const model = useMemo(
-    () => (status === "ready" && me ? buildModel(me, attempts, classCount, assignments) : null),
-    [status, me, attempts, classCount, assignments],
+    () =>
+      status === "ready" && me
+        ? buildModel(me, attempts, classCount, assignments, examDateOptions)
+        : null,
+    [status, me, attempts, classCount, assignments, examDateOptions],
   );
 
   return {
@@ -381,6 +423,8 @@ export function useDashboardData(): DashboardData {
     me,
     saveGoal,
     savingGoal,
+    saveExamDate,
+    savingExamDate,
     refresh: () => setNonce((n) => n + 1),
   };
 }
