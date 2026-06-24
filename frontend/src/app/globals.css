@@ -90,9 +90,9 @@
   --border: var(--border-subtle);
 
   /* Brand */
-  --primary: #1828b1;
-  --primary-hover: #142296;
-  --primary-soft: rgba(24, 40, 177, 0.10);
+  --primary: #2a68c0;
+  --primary-hover: #21539e;
+  --primary-soft: rgba(42, 104, 192, 0.10);
   --primary-foreground: #ffffff;
 
   --accent: #0ea5e9;
@@ -117,10 +117,10 @@
   --info-foreground: #0369a1;
 
   --muted: var(--text-secondary);
-  --ring: rgba(24, 40, 177, 0.40);
+  --ring: rgba(42, 104, 192, 0.40);
 
   /* Chart ramp */
-  --chart-1: #1828b1;
+  --chart-1: #2a68c0;
   --chart-2: #0ea5e9;
   --chart-3: #059669;
   --chart-4: #d97706;
@@ -363,7 +363,7 @@ optgroup {
 }
 
 .ui-card:hover {
-  border-color: rgba(24, 40, 177, 0.25);
+  border-color: rgba(42, 104, 192, 0.25);
   box-shadow: var(--ds-shadow-md);
 }
 
@@ -466,7 +466,7 @@ optgroup {
   color: #fff;
   background: var(--primary);
   border: 1px solid transparent;
-  box-shadow: 0 1px 3px rgba(24, 40, 177, 0.3);
+  box-shadow: 0 1px 3px rgba(42, 104, 192, 0.3);
 }
 .ms-cta-fill:hover,
 .btn-primary:hover {
@@ -548,7 +548,7 @@ optgroup {
 }
 
 .metric-tile:hover {
-  border-color: rgba(24, 40, 177, 0.2);
+  border-color: rgba(42, 104, 192, 0.2);
   box-shadow: var(--ds-shadow-md);
 }
 
@@ -577,8 +577,8 @@ optgroup {
   align-items: center;
   gap: 0.5rem;
   border-radius: 9999px;
-  border: 1px solid rgba(24, 40, 177, 0.2);
-  background: rgba(24, 40, 177, 0.06);
+  border: 1px solid rgba(42, 104, 192, 0.2);
+  background: rgba(42, 104, 192, 0.06);
   padding: 0.25rem 0.75rem;
   font-size: 0.75rem;
   line-height: 1rem;
