@@ -13,6 +13,7 @@ from drf_spectacular.utils import extend_schema
 from drf_spectacular.types import OpenApiTypes
 from django.http import HttpResponse
 
+import logging
 import secrets
 from time import monotonic
 
@@ -318,6 +319,24 @@ class AdminAssessmentSetDetailView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+_bank_sync_logger = logging.getLogger(__name__)
+
+
+def _sync_question_to_bank(q) -> None:
+    """Best-effort mirror of an authored assessment question into the Question Bank.
+    Runs after commit; a failure is logged but never blocks assessment authoring."""
+    def _run():
+        try:
+            from .domain.bank_sync import sync_assessment_question_to_bank
+            sync_assessment_question_to_bank(q)
+        except Exception:  # noqa: BLE001
+            _bank_sync_logger.exception(
+                "assessment→bank sync failed for question %s", getattr(q, "pk", None)
+            )
+
+    transaction.on_commit(_run)
+
+
 class AdminAssessmentQuestionCreateView(APIView):
     permission_classes = [IsAuthenticatedAndNotFrozen, CanAuthorAssessmentContent]
 
@@ -333,6 +352,7 @@ class AdminAssessmentQuestionCreateView(APIView):
             )
             s.validated_data["order"] = int(mx) + 1
         q = s.save(assessment_set=aset)
+        _sync_question_to_bank(q)
         return Response(AssessmentQuestionAdminWriteSerializer(q).data, status=status.HTTP_201_CREATED)
 
 
@@ -344,6 +364,7 @@ class AdminAssessmentQuestionDetailView(APIView):
         s = AssessmentQuestionAdminWriteSerializer(q, data=request.data, partial=True)
         s.is_valid(raise_exception=True)
         q = s.save()
+        _sync_question_to_bank(q)
         return Response(AssessmentQuestionAdminWriteSerializer(q).data)
 
     def delete(self, request, pk: int):
