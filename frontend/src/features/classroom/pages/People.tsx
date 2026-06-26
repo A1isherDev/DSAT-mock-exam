@@ -159,7 +159,7 @@ export function People({ classroom }: { classroom: ClassroomWithRole }) {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="cr-section space-y-8">
       {/* Teaching team */}
       <section>
         <div className="mb-3 flex items-center gap-2">
@@ -170,12 +170,12 @@ export function People({ classroom }: { classroom: ClassroomWithRole }) {
         {staff.length === 0 ? (
           <EmptyState icon={Users} title="No staff yet" />
         ) : (
-          <div className="divide-y divide-primary/10 overflow-hidden rounded-2xl border border-primary/15 bg-[var(--primary-soft)]">
+          <div className="cr-rise divide-y divide-primary/10 overflow-hidden rounded-2xl border border-primary/15 bg-[var(--primary-soft)]">
             {staff.map((m) => {
               const role = normalizeRole(m.role);
               return (
                 <div key={m.id} className="group flex items-center gap-3 px-4 py-3.5">
-                  <Avatar u={m.user} className="bg-white text-primary shadow-sm dark:bg-white/90" />
+                  <Avatar u={m.user} className="cr-pulse bg-white text-primary shadow-sm dark:bg-white/90" />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-bold text-foreground">{fullName(m.user)}</p>
                     <p className="truncate text-xs text-muted-foreground">{m.user.email}</p>
@@ -223,8 +223,12 @@ export function People({ classroom }: { classroom: ClassroomWithRole }) {
           </p>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredStudents.map((m) => (
-              <div key={m.id} className="group flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 transition-colors hover:bg-surface-2">
+            {filteredStudents.map((m, i) => (
+              <div
+                key={m.id}
+                style={{ animationDelay: `${Math.min(i, 14) * 40}ms` }}
+                className="cr-card group flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 hover:bg-surface-2"
+              >
                 <Avatar u={m.user} />
                 <p className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">{fullName(m.user)}</p>
                 <Actions m={m} />

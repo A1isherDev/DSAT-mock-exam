@@ -7,6 +7,7 @@ import { normalizeApiError } from "@/lib/apiError";
 import { pushGlobalToast } from "@/lib/toastBus";
 import { Card, Button, TextField, Dialog, LoadingState, EmptyState, ConfirmDialog } from "../ui";
 import { capabilitiesFor } from "../capabilities";
+import { spawnRipple } from "../ui/ripple";
 import { useMaterials, useUploadMaterial, useDeleteMaterial, type ClassroomMaterial } from "../hooks";
 import type { ClassroomWithRole } from "../types";
 import { materialMeta, orderedCategories, formatBytes, formatShortDate, type MaterialCategory } from "./materialMeta";
@@ -85,7 +86,7 @@ export function Materials({ classroom }: { classroom: ClassroomWithRole }) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="cr-section space-y-6">
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -93,7 +94,7 @@ export function Materials({ classroom }: { classroom: ClassroomWithRole }) {
           <p className="mt-1 text-sm text-muted-foreground">Downloadable resources for this class</p>
         </div>
         {caps.canManageAssignments && (
-          <Button icon={Upload} onClick={() => { resetForm(); setUploadOpen(true); }}>
+          <Button className="cr-ripple" onPointerDown={spawnRipple} icon={Upload} onClick={() => { resetForm(); setUploadOpen(true); }}>
             Upload
           </Button>
         )}
@@ -120,10 +121,11 @@ export function Materials({ classroom }: { classroom: ClassroomWithRole }) {
         />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {visible.map((m) => (
+          {visible.map((m, i) => (
             <MaterialCard
               key={m.id}
               material={m}
+              index={i}
               canManage={caps.canManageAssignments}
               onDelete={() => setPendingDelete({ id: m.id, title: m.title })}
               deleting={del.isPending}
@@ -181,8 +183,9 @@ function FilterPill({ label, count, active, onClick }: { label: string; count: n
     <button
       type="button"
       onClick={onClick}
+      onPointerDown={spawnRipple}
       className={cn(
-        "inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-bold transition-colors",
+        "cr-pill cr-ripple inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-bold",
         active
           ? "border-primary/30 bg-primary/10 text-primary"
           : "border-border bg-card text-muted-foreground hover:bg-surface-2",
@@ -203,11 +206,13 @@ function FilterPill({ label, count, active, onClick }: { label: string; count: n
 
 function MaterialCard({
   material: m,
+  index,
   canManage,
   onDelete,
   deleting,
 }: {
   material: ClassroomMaterial;
+  index: number;
   canManage: boolean;
   onDelete: () => void;
   deleting: boolean;
@@ -218,9 +223,9 @@ function MaterialCard({
   const metaLine = [size, date].filter(Boolean).join(" · ");
 
   return (
-    <Card pad="none" className="flex flex-col p-5">
+    <Card pad="none" className="cr-card flex flex-col p-5" style={{ animationDelay: `${Math.min(index, 12) * 45}ms` }}>
       <div className="flex items-start justify-between">
-        <div className={cn("flex h-11 w-11 items-center justify-center rounded-xl", meta.iconWrap)}>
+        <div className={cn("cr-iconpop flex h-11 w-11 items-center justify-center rounded-xl", meta.iconWrap)}>
           <meta.Icon className="h-5 w-5" aria-hidden />
         </div>
         <div className="flex items-center gap-1.5">
@@ -251,7 +256,8 @@ function MaterialCard({
             href={m.file_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-primary text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[var(--primary-hover)]"
+            onPointerDown={spawnRipple}
+            className="cr-ripple cr-press mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-primary text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[var(--primary-hover)]"
           >
             <Download className="h-4 w-4" /> Download
           </a>

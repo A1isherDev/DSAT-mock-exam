@@ -1136,3 +1136,57 @@ mark.ts-annot {
 @media (max-width: 860px) {
   .dzboard .dz-paper { grid-template-columns: 1fr !important; }
 }
+
+/* ============================================================
+   Classroom Materials & People — motion ported 1:1 from the
+   MasterSAT Materials/People mockups. Reuses the dz-* keyframes
+   defined above; the .cr-* classes add ONLY motion (no colour
+   tokens), so they layer onto the existing classroom design system.
+   Easing + timings + transforms match the mockup exactly.
+   ============================================================ */
+.cr-section { animation: dz-sectionIn .42s cubic-bezier(.22,1,.36,1) both; }
+
+/* Entry */
+.cr-rise { animation: dz-riseIn .5s cubic-bezier(.22,1,.36,1) both; }
+.cr-pop  { animation: dz-popIn .45s cubic-bezier(.22,1,.36,1) both; }
+
+/* Cards: stagger-in (delay set inline per index) + hover lift */
+.cr-card { animation: dz-cardIn .5s cubic-bezier(.22,1,.36,1) both;
+  transition: transform .2s cubic-bezier(.22,1,.36,1), box-shadow .2s, border-color .2s, background-color .2s; }
+.cr-card:hover { transform: translateY(-2px); box-shadow: var(--ds-shadow-md); }
+
+/* Lighter lift for rows that shouldn't re-enter */
+.cr-lift { transition: transform .18s cubic-bezier(.22,1,.36,1), box-shadow .18s, border-color .18s; }
+.cr-lift:hover { transform: translateY(-2px); box-shadow: var(--ds-shadow-md); }
+
+/* Buttons / clickable controls */
+.cr-press { transition: transform .15s, box-shadow .15s; }
+.cr-press:hover { transform: translateY(-1px); }
+.cr-press:active { transform: translateY(0) scale(.97); }
+
+/* Filter pills */
+.cr-pill { transition: transform .14s, background .14s, border-color .14s, color .14s; }
+.cr-pill:hover { transform: translateY(-2px); }
+.cr-pill:active { transform: scale(.95); }
+
+/* Icon tile tilt on card hover (mockup: rotate + scale) */
+.cr-iconpop { transition: transform .2s cubic-bezier(.22,1,.36,1); }
+.cr-card:hover .cr-iconpop { transform: scale(1.08) rotate(-4deg); }
+
+/* Ambient */
+.cr-pulse { animation: dz-pulseRing 2s ease-out infinite; }
+.cr-float { animation: dz-floatY 5s ease-in-out infinite; }
+
+/* Tab activation pop (shell) */
+.cr-tabpop { animation: dz-navPop .32s ease; }
+
+/* Click ripple — host needs .cr-ripple (relative + clipped); dot is spawned by ui/ripple.ts */
+.cr-ripple { position: relative; overflow: hidden; }
+.cr-ripple-dot { position: absolute; border-radius: 9999px; background: currentColor;
+  opacity: .35; pointer-events: none; transform: translate(-50%, -50%) scale(0);
+  animation: dz-rippleExpand .6s ease-out forwards; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cr-section, .cr-rise, .cr-pop, .cr-card, .cr-pulse, .cr-float, .cr-tabpop, .cr-ripple-dot { animation: none !important; }
+  .cr-card, .cr-lift, .cr-press, .cr-pill, .cr-iconpop { transition: none !important; }
+}

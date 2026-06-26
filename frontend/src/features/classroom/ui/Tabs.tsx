@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/cn";
+import { spawnRipple } from "./ripple";
 
 export interface TabItem {
   id: string;
@@ -28,14 +29,16 @@ export function Tabs({
         const Icon = t.icon;
         return (
           <button
-            key={t.id}
+            // Key flips on selection so the newly-active tab remounts and replays the pop.
+            key={selected ? `${t.id}-on` : t.id}
             role="tab"
             aria-selected={selected}
             onClick={() => onChange(t.id)}
+            onPointerDown={spawnRipple}
             className={cn(
-              "flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl border-[1.5px] px-4 py-2.5 text-sm font-extrabold transition-all active:scale-95",
+              "cr-ripple flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl border-[1.5px] px-4 py-2.5 text-sm font-extrabold transition-all active:scale-95",
               selected
-                ? "border-primary bg-primary-soft text-primary"
+                ? "cr-tabpop border-primary bg-primary-soft text-primary"
                 : "border-border bg-card text-muted-foreground hover:-translate-y-0.5 hover:border-primary hover:bg-primary-soft hover:text-primary",
             )}
           >
