@@ -363,7 +363,7 @@ export function AssessmentQuestionEditorFields({
               disabled={disabled}
               type="text"
               inputMode="decimal"
-              placeholder="e.g. 42 or 3.14"
+              placeholder="e.g. 42, 3.14, or 1/2"
               value={(() => {
                 try {
                   const parsed = JSON.parse(draft.correctAnswerText);

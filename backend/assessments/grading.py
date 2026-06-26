@@ -18,8 +18,17 @@ def _norm_text(x: object) -> str:
 def _as_decimal(x: object) -> Decimal | None:
     if x is None or x == "":
         return None
+    s = str(x).strip()
+    # Support simple fractions (SAT grid-in style), e.g. "1/2" == 0.5.
+    if "/" in s:
+        num, _, den = s.partition("/")
+        try:
+            denom = Decimal(num.strip()) / Decimal(den.strip())
+            return denom
+        except Exception:
+            return None
     try:
-        return Decimal(str(x).strip())
+        return Decimal(s)
     except Exception:
         return None
 

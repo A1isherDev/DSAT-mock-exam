@@ -1523,7 +1523,10 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
                 .order_by("-_given_at", "-id")
             )
         include_archived = str(self.request.query_params.get("include_archived", "")).lower() in ("1", "true")
-        return qs if include_archived else qs.exclude(status=Assignment.STATUS_ARCHIVED)
+        staff_qs = qs if include_archived else qs.exclude(status=Assignment.STATUS_ARCHIVED)
+        # Newest-GIVEN first (published_at, falling back to created_at) — mirrors the
+        # student branch so a freshly published old draft floats to the top.
+        return staff_qs.annotate(_given_at=Coalesce("published_at", "created_at")).order_by("-_given_at", "-id")
 
     def _manage_or_404(self, request, pk):
         """Fetch the assignment for lifecycle actions, bypassing the visibility filter,

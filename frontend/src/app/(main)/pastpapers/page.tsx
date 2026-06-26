@@ -77,7 +77,7 @@ function derive(section: PastpaperSection, list: Att[]): Derived {
 }
 
 type Region = "ALL" | "US" | "INTL";
-type StatusFilter = "new" | "progress" | "completed";
+type StatusFilter = "ALL" | "new" | "progress" | "completed";
 
 export default function PastpapersPage() {
   const router = useRouter();
@@ -89,7 +89,7 @@ export default function PastpapersPage() {
   const [error, setError] = useState(false);
   const [region, setRegion] = useState<Region>("ALL");
   const [year, setYear] = useState<string>("ALL");
-  const [status, setStatus] = useState<StatusFilter>("new");
+  const [status, setStatus] = useState<StatusFilter>("ALL");
   const [search, setSearch] = useState("");
   const [starting, setStarting] = useState<number | null>(null);
   const [startError, setStartError] = useState<{ sectionId: number; msg: string } | null>(null);
@@ -127,7 +127,7 @@ export default function PastpapersPage() {
         if (region === "US" && section.form_type !== "US") return false;
         if (region === "INTL" && section.form_type === "US") return false;
         if (year !== "ALL" && yearOf(section.practice_date) !== year) return false;
-        if (d.status !== status) return false;
+        if (status !== "ALL" && d.status !== status) return false;
         if (q) {
           const blob = `${sectionTitle(section)} ${collectionLabel(section)} ${section.label || ""} ${section.form_type || ""} ${subjectLabel(section.subject)} ${fmtMonth(section.practice_date)}`.toLowerCase();
           if (!blob.includes(q)) return false;
@@ -148,7 +148,7 @@ export default function PastpapersPage() {
     return order.map((name) => ({ name, items: map.get(name)! }));
   }, [rows]);
 
-  const hasFilter = region !== "ALL" || year !== "ALL" || !!search.trim();
+  const hasFilter = region !== "ALL" || year !== "ALL" || status !== "ALL" || !!search.trim();
 
   const handleOpen = async (section: PastpaperSection, d: Derived) => {
     // Completed: review the finished attempt. Otherwise start/resume an attempt.
@@ -199,7 +199,7 @@ export default function PastpapersPage() {
               options={[{ v: "ALL", l: "All" }, ...years.map((y) => ({ v: y, l: y }))]} />
           ) : null}
           <Segmented label="STATUS" value={status} onChange={(v) => setStatus(v as StatusFilter)}
-            options={[{ v: "new", l: "New" }, { v: "progress", l: "In progress" }, { v: "completed", l: "Completed" }]} />
+            options={[{ v: "ALL", l: "All" }, { v: "new", l: "New" }, { v: "progress", l: "In progress" }, { v: "completed", l: "Completed" }]} />
         </div>
 
         <div className="dz-headin" style={{ position: "relative", marginBottom: 24, maxWidth: 560 }}>

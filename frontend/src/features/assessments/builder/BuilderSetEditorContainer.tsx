@@ -744,29 +744,39 @@ export default function BuilderSetEditorContainer() {
         }
         payload.correct_answer = cStr;
       } else if (payload.question_type === "numeric") {
-        // Coerce raw string ("5", "3.14") to a number so the backend stores
-        // it as a JSON number instead of a string. Empty/invalid stays null
-        // and the user sees the validation error from the server.
+        // A numeric answer is either a plain number ("5", "3.14") — stored as a JSON
+        // number — or a simple fraction ("1/2") — stored as a string and graded as a
+        // decimal on the backend. Empty/invalid is rejected.
         const ca = payload.correct_answer;
         if (ca === null || ca === undefined || ca === "") {
           toast.push({ tone: "error", message: "Enter a correct value for the numeric question." });
           return;
         }
-        const asNumber = Number(ca);
-        if (!Number.isFinite(asNumber)) {
-          toast.push({ tone: "error", message: "Correct value must be a number." });
+        const raw = String(ca).trim();
+        const isFraction = /^-?\d+(?:\.\d+)?\/-?\d+(?:\.\d+)?$/.test(raw);
+        const asNumber = Number(raw);
+        if (isFraction) {
+          payload.correct_answer = raw;
+        } else if (Number.isFinite(asNumber) && raw !== "") {
+          payload.correct_answer = asNumber;
+        } else {
+          toast.push({ tone: "error", message: "Correct value must be a number or a fraction like 1/2." });
           return;
         }
-        payload.correct_answer = asNumber;
       }
       // Use FormData when any image is attached or cleared
       const hasImages = Object.keys(imageFiles).length > 0 || Object.values(imageClears).some(Boolean);
       let finalPayload: any = payload;
       if (hasImages) {
         const fd = new FormData();
+        // These map to JSONField columns on the backend — they must be sent as JSON,
+        // even when the value is a bare string/number (e.g. correct_answer "A" or "1/2"),
+        // otherwise DRF rejects them with "Value must be valid JSON".
+        const JSON_FIELDS = new Set(["choices", "correct_answer", "grading_config"]);
         Object.entries(payload).forEach(([k, v]) => {
           if (v !== null && v !== undefined) {
-            fd.append(k, typeof v === "object" && !(v instanceof File) ? JSON.stringify(v) : String(v));
+            const encode = JSON_FIELDS.has(k) || (typeof v === "object" && !(v instanceof File));
+            fd.append(k, encode ? JSON.stringify(v) : String(v));
           }
         });
         const imgFieldMap: Record<ImgKey, string> = {
