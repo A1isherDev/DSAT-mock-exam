@@ -1295,9 +1295,13 @@ export const assessmentsAdminApi = {
             grading_config?: Record<string, unknown>;
             points?: number;
             is_active?: boolean;
-        },
+            question_image?: File | null;
+        } | FormData,
     ) => {
-        const r = await api.post(`/assessments/admin/sets/${setId}/questions/`, payload);
+        // When images are attached the builder sends multipart FormData; let axios
+        // set the multipart boundary (a forced Content-Type breaks file uploads).
+        const isFormData = payload instanceof FormData;
+        const r = await api.post(`/assessments/admin/sets/${setId}/questions/`, payload, isFormData ? {} : {});
         return r.data;
     },
     adminUpdateQuestion: async (

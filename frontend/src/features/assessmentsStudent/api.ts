@@ -19,6 +19,12 @@ export type PedagogicalReviewQuestion = {
   points: number;
   correct_answer: unknown;
   explanation: string;
+  // Figures (relative media paths; resolve against API origin before rendering)
+  question_image?: string | null;
+  option_a_image?: string | null;
+  option_b_image?: string | null;
+  option_c_image?: string | null;
+  option_d_image?: string | null;
   // Student performance
   student_answer: unknown | null;
   is_correct: boolean | null;

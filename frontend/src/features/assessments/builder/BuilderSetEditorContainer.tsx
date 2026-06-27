@@ -77,6 +77,12 @@ const INPUT =
 
 const LABEL = "text-[11px] font-bold text-muted-foreground uppercase tracking-widest";
 
+// Reject oversized images client-side with a friendly message before they hit
+// nginx's 60M hard cap (which returns an opaque 413). 10 MB is generous for a
+// question figure.
+const MAX_QUESTION_IMAGE_MB = 10;
+const MAX_QUESTION_IMAGE_BYTES = MAX_QUESTION_IMAGE_MB * 1024 * 1024;
+
 const TYPE_SHORT: Record<string, string> = {
   multiple_choice: "MC",
   numeric: "Num",
@@ -702,6 +708,11 @@ export default function BuilderSetEditorContainer() {
   };
 
   const saveQuestion = async () => {
+    // Freeze the image selection up-front so the multipart body is built from a
+    // stable snapshot that a concurrent re-render or the [selected.id] reset
+    // effect cannot mutate mid-save.
+    const capturedImageFiles = imageFiles;
+    const capturedImageClears = imageClears;
     try {
       const payload: any = {
         order: Number(editing.order || 0),
@@ -764,8 +775,8 @@ export default function BuilderSetEditorContainer() {
           return;
         }
       }
-      // Use FormData when any image is attached or cleared
-      const hasImages = Object.keys(imageFiles).length > 0 || Object.values(imageClears).some(Boolean);
+      // Use FormData when any image is attached or cleared (read from the frozen snapshot)
+      const hasImages = Object.keys(capturedImageFiles).length > 0 || Object.values(capturedImageClears).some(Boolean);
       let finalPayload: any = payload;
       if (hasImages) {
         const fd = new FormData();
@@ -787,8 +798,8 @@ export default function BuilderSetEditorContainer() {
           d: "option_d_image",
         };
         (Object.entries(imgFieldMap) as [ImgKey, string][]).forEach(([key, field]) => {
-          if (imageFiles[key]) fd.append(field, imageFiles[key]!);
-          if (imageClears[key]) fd.append(`clear_${field}`, "true");
+          if (capturedImageFiles[key]) fd.append(field, capturedImageFiles[key]!);
+          if (capturedImageClears[key]) fd.append(`clear_${field}`, "true");
         });
         finalPayload = fd;
       }
@@ -948,6 +959,20 @@ export default function BuilderSetEditorContainer() {
 
   const handleSetImage = useCallback((key: ImgKey, file: File | null, clear: boolean) => {
     if (file) {
+      // Validate before staging so a bad file fails fast with a clear message,
+      // instead of silently breaking the multipart save (the "image sometimes
+      // doesn't upload" symptom for oversized/non-image files).
+      if (!file.type.startsWith("image/")) {
+        toast.push({ tone: "error", message: "That file isn't an image. Pick a PNG, JPG, or SVG." });
+        return;
+      }
+      if (file.size > MAX_QUESTION_IMAGE_BYTES) {
+        toast.push({
+          tone: "error",
+          message: `Image is too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max ${MAX_QUESTION_IMAGE_MB} MB.`,
+        });
+        return;
+      }
       setImageFiles((prev) => ({ ...prev, [key]: file }));
       setImageClears((prev) => ({ ...prev, [key]: false }));
     } else if (clear) {
@@ -957,7 +982,7 @@ export default function BuilderSetEditorContainer() {
       setImageFiles((prev) => { const n = { ...prev }; delete n[key]; return n; });
       setImageClears((prev) => ({ ...prev, [key]: false }));
     }
-  }, []);
+  }, [toast]);
 
   // Reset image state when selected question changes
   useEffect(() => {

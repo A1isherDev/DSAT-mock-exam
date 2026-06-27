@@ -59,6 +59,15 @@ function ImageUpload({
   const showExisting = existingUrl && !cleared && !file;
   const showPreview = !!file;
 
+  // Memoize + revoke the object URL so the local preview doesn't leak a blob URL
+  // on every render (createObjectURL allocates each call).
+  const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
+
   return (
     <div className="space-y-1.5">
       <p className={LABEL}>{label}</p>
@@ -78,7 +87,7 @@ function ImageUpload({
         )}
         {showPreview && (
           <>
-            <img src={URL.createObjectURL(file)} alt="Preview" className="max-h-24 rounded-xl border border-border object-contain" />
+            {previewUrl && <img src={previewUrl} alt="Preview" className="max-h-24 rounded-xl border border-border object-contain" />}
             <button
               type="button"
               disabled={disabled}

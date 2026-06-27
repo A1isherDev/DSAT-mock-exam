@@ -14,7 +14,6 @@ from drf_spectacular.types import OpenApiTypes
 from django.http import HttpResponse
 
 import logging
-import secrets
 from time import monotonic
 
 from django.conf import settings as dj_settings
@@ -776,7 +775,9 @@ class StartAttemptView(APIView):
                         status=status.HTTP_400_BAD_REQUEST,
                     )
 
-            secrets.SystemRandom().shuffle(qids)
+            # Question order is the canonical builder order (order, id) — identical
+            # for every student on this assignment. Do NOT shuffle: order must be
+            # deterministic and the same for everyone (mirrors the printed exam).
             att = AssessmentAttempt.objects.create(
                 homework=hw,
                 student=request.user,
@@ -809,7 +810,8 @@ class StartAttemptView(APIView):
 class AttemptBundleView(APIView):
     """
     Student-facing attempt bootstrap: return attempt + sanitized question list
-    (no correct answers), ordered by the per-attempt shuffle.
+    (no correct answers), in the canonical builder order — identical for every
+    student on the assignment.
     """
 
     permission_classes = [IsAuthenticatedAndNotFrozen]
@@ -863,11 +865,20 @@ class AttemptBundleView(APIView):
                     if order_ids else sorted(raw_qs, key=lambda q: (q.get("order", 0), q["id"]))
                 )
             ]
-            # Snapshots don't pin images — supplement them from the live rows so
-            # diagrams/figures render in the frozen runner (matches live path).
-            img_map = _image_map_for(s["id"] for s in sanitized)
+            # Snapshots pin neither images nor the stimulus/passage text —
+            # supplement both from the live rows so diagrams/figures and passages
+            # render in the frozen runner (matches the live + review paths).
+            # Text/choices/answers still come from the snapshot, preserving freeze.
+            sanitized_ids = [s["id"] for s in sanitized]
+            img_map = _image_map_for(sanitized_ids)
+            prompt_map = dict(
+                AssessmentQuestion.objects.filter(id__in=sanitized_ids).values_list(
+                    "id", "question_prompt"
+                )
+            )
             for s in sanitized:
                 s.update(img_map.get(s["id"], {f: None for f in _QUESTION_IMAGE_FIELDS}))
+                s["question_prompt"] = prompt_map.get(s["id"], "")
             att = AssessmentAttempt.objects.filter(pk=att.pk).prefetch_related("answers").first()
             return Response(
                 {
@@ -1363,7 +1374,7 @@ class SaveAnswerView(APIView):
         now = timezone.now()
         answered_at = now
 
-        # Ensure the question is part of the shuffled attempt order (defense-in-depth).
+        # Ensure the question is part of the attempt's question_order (defense-in-depth).
         order_ids = set((att.question_order or []) or [])
         if order_ids and q.id not in order_ids:
             return Response({"detail": "Question is not part of this attempt."}, status=status.HTTP_400_BAD_REQUEST)
@@ -1493,7 +1504,7 @@ class SubmitAttemptView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
 
-        # Use per-attempt shuffle order when present; otherwise fall back to canonical order.
+        # Use the attempt's stored question_order when present; otherwise canonical order.
         order_ids = [int(x) for x in (att.question_order or []) if isinstance(x, (int, str)) and str(x).isdigit()]
         questions = [q_by_id[qid] for qid in order_ids if qid in q_by_id] if order_ids else base_questions
 

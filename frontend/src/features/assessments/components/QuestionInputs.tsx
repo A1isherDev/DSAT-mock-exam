@@ -4,8 +4,19 @@ import type { AssessmentChoice, AssessmentQuestionType } from "@/features/assess
 import { MathText } from "@/components/MathText";
 import { processInstructionalText, sanitizeHighlightHtml } from "@/lib/assessmentText";
 import { renderMath } from "@/lib/mathRender";
+import { resolveImageUrl } from "@/features/testing-simulation/utils/image";
 import { MinusCircle, Undo2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+
+/** Per-choice answer images, keyed by choice id (case-insensitive: "A"/"a"). */
+export type OptionImageMap = Partial<Record<string, string | null>>;
+
+/** Look up a choice's answer image (relative or absolute), resolved to a full URL. */
+function optionImageSrc(images: OptionImageMap | undefined, choiceId: string): string | undefined {
+  if (!images) return undefined;
+  const raw = images[choiceId] ?? images[choiceId?.toLowerCase?.()] ?? images[choiceId?.toUpperCase?.()];
+  return resolveImageUrl(raw);
+}
 
 // Mark-preserving HTML renderer for answer-choice text, mirroring the runner's
 // MathHtml. Used only when the highlighter is wired in (onOptionMouseUp present):
@@ -47,6 +58,7 @@ export function MultipleChoiceInput({
   onToggleElim,
   highlighterActive = false,
   optionHighlights,
+  optionImages,
   onOptionMouseUp,
 }: {
   choices: AssessmentChoice[];
@@ -58,6 +70,8 @@ export function MultipleChoiceInput({
    *  becomes selectable + highlightable (mirrors the pastpaper simulation). */
   highlighterActive?: boolean;
   optionHighlights?: Record<string, string>;
+  /** Optional answer-choice images (diagram options), keyed by choice id. */
+  optionImages?: OptionImageMap;
   onOptionMouseUp?: (choiceId: string, e: React.MouseEvent<HTMLDivElement>) => void;
 }) {
   const elim = eliminated ?? new Set<string>();
@@ -67,6 +81,7 @@ export function MultipleChoiceInput({
       {choices.map((c) => {
         const checked = value === c.id;
         const isEliminated = elim.has(c.id);
+        const imgSrc = optionImageSrc(optionImages, c.id);
         return (
           <div
             key={c.id}
@@ -125,6 +140,13 @@ export function MultipleChoiceInput({
                       className={`text-base text-slate-900 leading-snug ${
                         isEliminated ? "line-through decoration-2 decoration-slate-500" : ""
                       }`}
+                    />
+                  )}
+                  {imgSrc && (
+                    <img
+                      src={imgSrc}
+                      alt={`Option ${c.id}`}
+                      className="mt-2 max-h-[220px] max-w-full rounded-lg border border-slate-100 object-contain"
                     />
                   )}
                 </div>
@@ -240,6 +262,7 @@ export function AnswerInput({
   onToggleElim,
   highlighterActive,
   optionHighlights,
+  optionImages,
   onOptionMouseUp,
 }: {
   type: AssessmentQuestionType;
@@ -250,6 +273,7 @@ export function AnswerInput({
   onToggleElim?: (id: string) => void;
   highlighterActive?: boolean;
   optionHighlights?: Record<string, string>;
+  optionImages?: OptionImageMap;
   onOptionMouseUp?: (choiceId: string, e: React.MouseEvent<HTMLDivElement>) => void;
 }) {
   if (type === "multiple_choice") {
@@ -262,6 +286,7 @@ export function AnswerInput({
         onToggleElim={onToggleElim}
         highlighterActive={highlighterActive}
         optionHighlights={optionHighlights}
+        optionImages={optionImages}
         onOptionMouseUp={onOptionMouseUp}
       />
     );

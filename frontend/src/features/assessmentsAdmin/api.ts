@@ -82,7 +82,7 @@ export const assessmentsAdminApi = {
   },
   createQuestion: async (
     setId: number,
-    payload: Partial<AssessmentQuestion> & { prompt: string; question_type: string },
+    payload: (Partial<AssessmentQuestion> & { prompt: string; question_type: string }) | FormData,
   ) => {
     return (await assessmentsAdminClient.adminCreateQuestion(setId, payload as any)) as AssessmentQuestion;
   },

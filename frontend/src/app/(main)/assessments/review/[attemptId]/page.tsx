@@ -19,6 +19,7 @@ import {
   ArrowLeft, BookOpen, CheckCircle2, ChevronLeft, ChevronRight, Circle, Filter, Lightbulb, MessageSquare, RefreshCw, XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { resolveImageUrl } from "@/features/testing-simulation/utils/image";
 import { AssessmentText, HighlightedText } from "@/lib/assessmentText";
 import { readHighlightStore, type HighlightStore } from "@/features/assessments/attemptHighlightStorage";
 import { useState, useEffect, useRef } from "react";
@@ -34,6 +35,17 @@ function choiceLabel(key: unknown): string {
   if (typeof key === "string") return key.toUpperCase();
   if (typeof key === "number") return String.fromCharCode(65 + key);
   return String(key ?? "");
+}
+
+/** Map a choice key (A–D, case-insensitive) to its answer-figure path on the question. */
+function optionImageForKey(q: PedagogicalReviewQuestion, key: string): string | null | undefined {
+  switch (String(key).toLowerCase()) {
+    case "a": return q.option_a_image;
+    case "b": return q.option_b_image;
+    case "c": return q.option_c_image;
+    case "d": return q.option_d_image;
+    default: return undefined;
+  }
 }
 
 function normalizeAnswer(val: unknown): string | null {
@@ -91,12 +103,14 @@ function TeacherFeedbackCard({ feedback }: { feedback: TeacherFeedback }) {
 type Choice = { key: string; text: string } | string;
 
 function ChoiceRow({
-  choice, choiceKey, isSelected, isCorrect: isCorrectChoice, reviewMode,
+  choice, choiceKey, isSelected, isCorrect: isCorrectChoice, reviewMode, optionImage,
 }: {
   choice: Choice; choiceKey: string; isSelected: boolean; isCorrect: boolean; reviewMode: boolean;
+  optionImage?: string | null;
 }) {
   const text = typeof choice === "object" && "text" in choice ? choice.text : String(choice);
   const label = choiceLabel(choiceKey);
+  const imgSrc = resolveImageUrl(optionImage);
 
   let ring = "border-border bg-card text-foreground";
   if (reviewMode) {
@@ -114,7 +128,12 @@ function ChoiceRow({
             : isSelected ? "bg-primary text-primary-foreground" : "bg-surface-2 text-muted-foreground")}>
         {label}
       </span>
-      <AssessmentText text={text} className="text-sm leading-relaxed" />
+      <div className="min-w-0 flex-1">
+        <AssessmentText text={text} className="text-sm leading-relaxed" />
+        {imgSrc ? (
+          <img src={imgSrc} alt={`Option ${label}`} className="mt-2 max-h-[200px] max-w-full rounded-lg border border-border object-contain" />
+        ) : null}
+      </div>
       {reviewMode && isCorrectChoice ? <CheckCircle2 className="ml-auto mt-0.5 h-4 w-4 shrink-0 text-success" /> : null}
       {reviewMode && isSelected && !isCorrectChoice ? <XCircle className="ml-auto mt-0.5 h-4 w-4 shrink-0 text-danger" /> : null}
     </div>
@@ -163,13 +182,17 @@ function QuestionCard({
           <AssessmentText text={q.prompt} block className="text-sm font-medium leading-relaxed text-foreground" />
         )}
 
+        {resolveImageUrl(q.question_image) ? (
+          <img src={resolveImageUrl(q.question_image)} alt="Question figure" className="max-h-[360px] max-w-full rounded-xl border border-border object-contain" />
+        ) : null}
+
         {isMCQ && choices.length > 0 ? (
           <div className="space-y-2">
             {choices.map((choice, ci) => {
               const key = typeof choice === "object" && "key" in choice ? choice.key : String.fromCharCode(65 + ci);
               const isSelected = key === studentKey || String(ci) === studentKey;
               const isCorrectChoice = key === correctKey || String(ci) === correctKey;
-              return <ChoiceRow key={key} choice={choice} choiceKey={key} isSelected={isSelected} isCorrect={isCorrectChoice} reviewMode />;
+              return <ChoiceRow key={key} choice={choice} choiceKey={key} isSelected={isSelected} isCorrect={isCorrectChoice} reviewMode optionImage={optionImageForKey(q, key)} />;
             })}
           </div>
         ) : null}
