@@ -5,6 +5,8 @@ import { SatColorRule } from "./SatColorRule";
 interface WelcomeScreenProps {
   /** e.g. "Section 1, Module 1: Reading and Writing". */
   moduleTitle: string;
+  /** Eyebrow label for the content kind, e.g. "Past Paper" | "Practice Test". */
+  kindLabel?: string;
   /** "Reading and Writing" | "Math" — used in the prose line. */
   subjectLabel: string;
   /** Whole minutes available for this module (0/undefined hides the line). */
@@ -26,6 +28,7 @@ interface WelcomeScreenProps {
  */
 export function WelcomeScreen({
   moduleTitle,
+  kindLabel = "Past Paper",
   subjectLabel,
   minutes,
   questionCount,
@@ -38,7 +41,7 @@ export function WelcomeScreen({
       <SatColorRule />
       <div className="flex flex-1 items-center justify-center px-6">
         <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-10 text-center shadow-sm">
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-blue-700">Practice Test</p>
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-blue-700">{kindLabel}</p>
           <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-900">{moduleTitle}</h1>
           <p className="mt-2 text-sm font-medium text-slate-500">
             When you’re ready, start the {subjectLabel} module below.
