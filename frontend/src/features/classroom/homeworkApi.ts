@@ -112,6 +112,12 @@ export interface ContentAction {
   /** Generic verb label (e.g. "Open Past Paper") — fallback when no title exists. */
   label: string;
   href: string;
+  /**
+   * Past papers have no detail page — the library starts the attempt and jumps
+   * straight to the exam welcome. When set, the launcher should start this section
+   * (POST attempt) and route to /exam/{attemptId}?welcome=1 instead of following `href`.
+   */
+  startTestId?: number;
 }
 
 /**
@@ -155,11 +161,13 @@ export function contentActions(a: AssignmentDetail): ContentAction[] {
       for (const t of bundle) {
         const base = t.name?.trim() || t.collection_name?.trim() || t.title?.trim() || "Past Paper";
         const name = multi ? `${base} · ${subjectShort(t.subject)}` : base;
-        out.push({ kind: "PASTPAPER", name, label: "Open Past Paper", href: `/practice-test/${t.id}` });
+        out.push({ kind: "PASTPAPER", name, label: "Open Past Paper", href: `/practice-test/${t.id}`, startTestId: t.id });
       }
     } else {
       const single = singleSectionId(a);
-      if (single != null) add(out, "PASTPAPER", "Open Past Paper", `/practice-test/${single}`);
+      if (single != null) {
+        out.push({ kind: "PASTPAPER", name: titleFor("PASTPAPER", "Past Paper"), label: "Open Past Paper", href: `/practice-test/${single}`, startTestId: single });
+      }
     }
   }
   if (a.module != null) {

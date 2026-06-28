@@ -15,6 +15,7 @@ import { capabilitiesFor } from "../capabilities";
 import { useAssignment, useMySubmission, useSubmitHomework } from "../homeworkHooks";
 import { assignmentKind, contentActions, KIND_LABEL, type AssignmentDetail, type AssignmentKind, type MySubmission } from "../homeworkApi";
 import { spawnRipple } from "../ui/ripple";
+import { examsStudentApi } from "@/features/examsStudent/api";
 import { SubmissionStatusPill } from "./statusPill";
 
 /** Short, friendly date — "Jun 30" — matching the design's meta tiles. */
@@ -100,6 +101,24 @@ function StudentView({ classId, assignment }: { classId: number; assignment: Ass
   const status = my?.workflow_status ?? my?.status ?? null;
   const done = status === "REVIEWED";
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [startingId, setStartingId] = useState<number | null>(null);
+
+  // Past papers have no detail page: start (or resume) the section's attempt and
+  // jump straight to the exam welcome — exactly like the /pastpapers library does,
+  // so a pastpaper homework never lands on the practice-test page.
+  async function startPastpaper(testId: number) {
+    setStartingId(testId);
+    try {
+      const attempt = await examsStudentApi.startTest(testId);
+      try {
+        sessionStorage.setItem(`mastersat.attempt.bootstrap.${attempt.id}`, JSON.stringify(attempt));
+      } catch {}
+      router.push(`/exam/${attempt.id}?welcome=1`);
+    } catch (e) {
+      console.error("[homework] start pastpaper failed", e);
+      setStartingId(null);
+    }
+  }
 
   const action = resolveAction(kind, status);
   const actions = contentActions(assignment);
@@ -191,8 +210,9 @@ function StudentView({ classId, assignment }: { classId: number; assignment: Ass
               <Button
                 className="cr-press cr-ripple"
                 icon={Play}
+                loading={c.startTestId != null && startingId === c.startTestId}
                 onPointerDown={spawnRipple}
-                onClick={() => router.push(c.href)}
+                onClick={() => (c.startTestId != null ? void startPastpaper(c.startTestId) : router.push(c.href))}
               >
                 Start
               </Button>
