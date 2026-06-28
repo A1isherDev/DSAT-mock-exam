@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/cn";
-import { Button, ProgressRing } from "@/components/ui";
+import { Button } from "@/components/ui";
 import { spawnRipple } from "@/features/classroom/ui/ripple";
 import type { AnswerConflict } from "@/features/assessments/attemptSync";
 import { formatReceiptTime, readSubmitReceipt } from "@/features/assessments/attemptDraftStorage";
@@ -201,56 +201,43 @@ export function SubmitConfirmScreen({
   const pct = totalCount ? Math.round((answeredCount / totalCount) * 100) : 0;
 
   return (
-    <div className="w-full">
-      <div className="cr-celebpop grid w-full overflow-hidden rounded-3xl border border-border bg-card shadow-xl sm:grid-cols-[260px_1fr]">
-        {/* Left progress rail */}
-        <div className="relative overflow-hidden bg-primary p-8 text-primary-foreground">
-          {/* soft decorative bloom */}
+    <div className="w-full" style={{ fontFamily: "var(--font-plus-jakarta), system-ui, sans-serif" }}>
+      <div className="cr-celebpop mx-auto grid w-full max-w-[720px] overflow-hidden rounded-3xl border border-border bg-card shadow-xl sm:grid-cols-[260px_1fr]">
+        {/* Left progress rail — gradient, big count + meter (no ring; 1:1 with mockup) */}
+        <div className="relative overflow-hidden bg-gradient-to-br from-primary to-primary-hover px-[30px] py-[38px] text-primary-foreground">
+          {/* soft decorative blooms (bottom-right) */}
           <div
-            className="pointer-events-none absolute -bottom-10 -right-10 h-40 w-40 rounded-full bg-primary-foreground/10"
+            className="pointer-events-none absolute -bottom-10 -right-10 h-40 w-40 rounded-full bg-primary-foreground/[0.06]"
             aria-hidden
           />
 
           {/* Send badge */}
-          <div className="relative mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-foreground/15">
+          <div className="relative mb-[26px] flex h-[54px] w-[54px] items-center justify-center rounded-[15px] bg-primary-foreground/[0.16]">
             <Send className="h-6 w-6 text-primary-foreground" />
           </div>
 
-          <p className="relative text-xs font-extrabold uppercase tracking-[0.08em] text-primary-foreground/80">
+          <p className="relative text-xs font-extrabold uppercase tracking-[0.08em] text-primary-foreground/70">
             Progress
           </p>
 
-          {/* Progress ring: big {answered} over / {total} */}
-          <div className="relative mt-4 flex items-center gap-4">
-            <ProgressRing
-              value={pct}
-              size={72}
-              strokeWidth={6}
-              color="text-primary-foreground"
-              className="text-primary-foreground/25"
-            >
-              <span className="text-sm font-black tabular-nums text-primary-foreground">
-                {pct}%
-              </span>
-            </ProgressRing>
-            <div className="flex items-baseline gap-1">
-              <span className="text-[46px] font-extrabold leading-none tracking-tight tabular-nums">
-                {answeredCount}
-              </span>
-              <span className="text-[22px] font-bold text-primary-foreground/70 tabular-nums">
-                / {totalCount}
-              </span>
-            </div>
+          {/* Big {answered} / {total} */}
+          <div className="relative mt-2 flex items-baseline gap-1">
+            <span className="text-[46px] font-extrabold leading-none tracking-tight tabular-nums">
+              {answeredCount}
+            </span>
+            <span className="text-[22px] font-bold text-primary-foreground/60 tabular-nums">
+              / {totalCount}
+            </span>
           </div>
 
-          <p className="relative mt-2 text-[13px] font-semibold text-primary-foreground/80">
+          <p className="relative mt-[3px] text-[13px] font-semibold text-primary-foreground/80">
             questions answered
           </p>
 
           {/* Thin meter bar that grows to {pct}% */}
-          <div className="relative mt-5 h-2 overflow-hidden rounded-full bg-primary-foreground/20">
+          <div className="relative mt-[22px] h-2 overflow-hidden rounded-[5px] bg-primary-foreground/20">
             <div
-              className="cr-bar h-full rounded-full bg-primary-foreground"
+              className="cr-bar h-full rounded-[5px] bg-primary-foreground"
               style={{ width: `${pct}%` }}
             />
           </div>
@@ -261,8 +248,8 @@ export function SubmitConfirmScreen({
         </div>
 
         {/* Right decision column */}
-        <div className="p-8">
-          <h2 className="text-2xl font-extrabold tracking-tight text-foreground">
+        <div className="px-9 py-[38px]">
+          <h2 className="text-[26px] font-extrabold tracking-tight text-foreground">
             Ready to submit?
           </h2>
           <p className="mt-1.5 text-sm font-medium text-muted-foreground">{title}</p>

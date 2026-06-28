@@ -351,7 +351,7 @@ export default function ReviewPage() {
 
     return (
         <AuthGuard>
-            <div className="min-h-screen bg-background relative pb-20">
+            <div className="min-h-screen bg-background relative pb-20" style={{ fontFamily: "var(--font-plus-jakarta), system-ui, sans-serif" }}>
                 <header className="bg-card border-b border-border px-8 py-4 flex justify-between items-center sticky top-0 z-40 shadow-sm">
                     <div className="flex items-center">
                         <button onPointerDown={spawnRipple} onClick={() => router.push(backTarget)} className="cr-ripple cr-press mr-6 p-2 rounded-xl hover:bg-surface-2 transition-all border border-border shadow-sm">
@@ -552,7 +552,7 @@ export default function ReviewPage() {
                                                 <p className="mt-1 text-[11px] font-bold uppercase tracking-wider text-primary-foreground/60">Omitted</p>
                                             </div>
                                             <div className="flex flex-col items-center">
-                                                <p className="text-3xl font-black tabular-nums text-amber-300">{Math.round(review.score_percentage || 0)}%</p>
+                                                <p className="text-3xl font-black tabular-nums text-sky-300">{Math.round(review.score_percentage || 0)}%</p>
                                                 <p className="mt-1 text-[11px] font-bold uppercase tracking-wider text-primary-foreground/60">Accuracy</p>
                                             </div>
                                         </div>
@@ -610,68 +610,62 @@ export default function ReviewPage() {
                                 </div>
 
                                 <div className="overflow-x-auto">
-                                    <table className="w-full border-collapse text-left">
-                                        <thead>
-                                            <tr className="border-b border-border">
-                                                <th className="px-4 py-3 text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Question</th>
-                                                <th className="px-4 py-3 text-center text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Your Answer</th>
-                                                <th className="px-4 py-3 text-center text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Correct</th>
-                                                <th className="px-4 py-3 text-center text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Outcome</th>
-                                                <th className="px-4 py-3 text-right text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Action</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody key={`mod-${activeModule}`}>
+                                    <div className="min-w-[680px]">
+                                        {/* header — light pill row */}
+                                        <div className="grid grid-cols-[120px_110px_110px_1fr_96px] gap-3 rounded-[10px] bg-surface-2 px-4 py-[11px] text-[11px] font-extrabold uppercase tracking-[0.05em] text-label-foreground">
+                                            <div>Question</div>
+                                            <div>Your Answer</div>
+                                            <div>Correct</div>
+                                            <div>Outcome</div>
+                                            <div className="text-right">Action</div>
+                                        </div>
+                                        <div key={`mod-${activeModule}`}>
                                             {active.questions.map((q: any, i: number) => {
                                                 const isOmitted = !q.student_answer || String(q.student_answer).trim() === "";
-                                                const outcomeTag = isOmitted
-                                                    ? "bg-amber-50 text-amber-700 border-amber-200"
+                                                const outcomeBar = isOmitted
+                                                    ? "bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"
                                                     : q.is_correct
-                                                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                                    : "bg-rose-50 text-rose-700 border-rose-200";
+                                                    ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
+                                                    : "bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300";
                                                 // On tab change, slide rows in (parity-based direction);
                                                 // otherwise use the staggered entry animation.
                                                 const animClass = animRows ? rowAnim : "cr-rowin2";
                                                 return (
-                                                    <tr
+                                                    <div
                                                         key={q.id}
-                                                        className={`${animClass} cursor-pointer border-b border-border/60 last:border-0 transition-colors hover:bg-surface-2/60`}
+                                                        className={`${animClass} grid cursor-pointer grid-cols-[120px_110px_110px_1fr_96px] items-center gap-3 border-b border-border/60 px-4 py-3.5 transition-colors last:border-0 hover:bg-surface-2/60`}
                                                         style={{ animationDelay: `${i * 0.06}s` }}
                                                         onClick={() => setSelectedQuestion({ ...q, index_in_module: i + 1 })}
                                                     >
-                                                        <td className="px-4 py-4">
-                                                            <span className="whitespace-nowrap text-sm font-extrabold text-foreground">Question {i + 1}</span>
-                                                        </td>
-                                                        <td className="px-4 py-4 text-center font-bold">
+                                                        <span className="whitespace-nowrap text-[15px] font-extrabold text-foreground">Question {i + 1}</span>
+                                                        <span className="text-[15px] font-bold">
                                                             {isOmitted ? (
                                                                 <span className="italic text-muted-foreground">Omitted</span>
                                                             ) : (
-                                                                <span className={q.is_correct ? "text-foreground" : "text-rose-600"}>{q.student_answer}</span>
+                                                                <span className={q.is_correct ? "text-foreground" : "text-rose-600 dark:text-rose-400"}>{q.student_answer}</span>
                                                             )}
-                                                        </td>
-                                                        <td className="px-4 py-4 text-center font-extrabold text-emerald-700">
+                                                        </span>
+                                                        <span className="text-[15px] font-extrabold text-emerald-700 dark:text-emerald-400">
                                                             {showCorrectAnswers ? q.correct_answers : "—"}
-                                                        </td>
-                                                        <td className="px-4 py-4">
-                                                            <div className="flex justify-center">
-                                                                <span className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11px] font-extrabold ${outcomeTag}`}>
-                                                                    {isOmitted ? "Omitted" : q.is_correct ? "Correct" : "Incorrect"}
-                                                                </span>
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-4 py-4 text-right">
+                                                        </span>
+                                                        {/* OUTCOME — full-width bar spanning the column */}
+                                                        <div className={`flex w-full items-center justify-center rounded-md py-2 text-[11px] font-extrabold ${outcomeBar}`}>
+                                                            {isOmitted ? "Omitted" : q.is_correct ? "Correct" : "Incorrect"}
+                                                        </div>
+                                                        <div className="text-right">
                                                             <button
                                                                 onPointerDown={spawnRipple}
-                                                                className="cr-ripple cr-press inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3.5 py-2 text-sm font-extrabold text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
+                                                                className="cr-ripple cr-press inline-flex items-center gap-1.5 rounded-[10px] border border-border bg-card px-3.5 py-2 text-[13px] font-extrabold text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
                                                                 onClick={(e) => { e.stopPropagation(); setSelectedQuestion({ ...q, index_in_module: i + 1 }); }}
                                                             >
                                                                 <Eye className="h-3.5 w-3.5" /> Explore
                                                             </button>
-                                                        </td>
-                                                    </tr>
+                                                        </div>
+                                                    </div>
                                                 );
                                             })}
-                                        </tbody>
-                                    </table>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         );

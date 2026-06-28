@@ -130,41 +130,41 @@ function StudentView({ classId, assignment }: { classId: number; assignment: Ass
   }
 
   return (
-    <div className="mt-4 space-y-5">
-      {/* HERO — type badge, title, meta tiles. */}
+    <div className="mt-4 space-y-5" style={{ fontFamily: "var(--font-plus-jakarta), system-ui, sans-serif" }}>
+      {/* HERO — type badge, title, meta tiles. (1:1 with homework.design.png) */}
       <Card pad="none" className="cr-card overflow-hidden">
-        <div className="relative overflow-hidden bg-primary px-6 py-7 text-primary-foreground sm:px-8">
-          <div aria-hidden className="pointer-events-none absolute -bottom-12 -right-8 h-48 w-48 rounded-full bg-white/10" />
+        <div className="relative overflow-hidden bg-gradient-to-br from-primary to-primary-hover px-[34px] py-[30px] text-primary-foreground">
+          <div aria-hidden className="pointer-events-none absolute -bottom-12 -right-8 h-52 w-52 rounded-full bg-white/[0.06]" />
           <div className="relative flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center rounded-full bg-white/20 px-3 py-1 text-xs font-extrabold">{badgeLabel}</span>
+            <span className="inline-flex items-center rounded-[20px] bg-white/20 px-[13px] py-[5px] text-xs font-extrabold">{badgeLabel}</span>
             <SubmissionStatusPill status={status} />
           </div>
-          <h1 className="relative mt-3 text-2xl font-extrabold tracking-tight sm:text-3xl">{assignment.title}</h1>
-          <div className="relative mt-5 flex flex-wrap gap-x-8 gap-y-4">
+          <h1 className="relative my-[14px] text-[34px] font-extrabold leading-none tracking-[-0.025em]">{assignment.title}</h1>
+          <div className="relative flex flex-wrap gap-x-[34px] gap-y-4">
             {tiles.map((t, i) => (
               <div key={t.label} className="cr-pillin" style={{ animationDelay: `${i * 60}ms` }}>
-                <div className="text-[11px] font-extrabold uppercase tracking-wider opacity-75">{t.label}</div>
+                <div className="text-[11px] font-extrabold uppercase tracking-[0.06em] opacity-[0.72]">{t.label}</div>
                 {t.countdown ? (
-                  <div className="cr-daypop mt-1 inline-flex items-center gap-1.5 rounded-lg bg-white/15 px-2.5 py-0.5 text-sm font-extrabold">
+                  <div className="cr-daypop mt-[5px] inline-flex items-center gap-1.5 rounded-lg bg-white/[0.16] px-[11px] py-[3px] text-[15px] font-extrabold">
                     <Clock className="h-3.5 w-3.5" aria-hidden /> {t.value}
                   </div>
                 ) : (
-                  <div className="mt-0.5 text-[17px] font-extrabold">{t.value}</div>
+                  <div className="mt-[3px] text-[17px] font-extrabold">{t.value}</div>
                 )}
               </div>
             ))}
           </div>
         </div>
 
-        {/* INSTRUCTIONS — numbered steps. */}
+        {/* INSTRUCTIONS — numbered steps (2-column). */}
         {steps.length > 0 && (
-          <div className="px-6 py-6 sm:px-8">
+          <div className="px-[34px] pb-[30px] pt-[26px]">
             <h2 className="mb-4 text-base font-extrabold text-foreground">Instructions</h2>
             <ol className="grid gap-x-10 gap-y-3.5 sm:grid-cols-2">
               {steps.map((line, i) => (
-                <li key={i} className="cr-rowin flex items-start gap-3.5" style={{ animationDelay: `${i * 60}ms` }}>
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-sm font-extrabold text-primary">{i + 1}</span>
-                  <span className="pt-0.5 text-[15px] font-medium text-foreground">{line}</span>
+                <li key={i} className="cr-rowin flex items-start gap-[15px]" style={{ animationDelay: `${i * 60}ms` }}>
+                  <span className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] bg-primary/10 text-sm font-extrabold text-primary">{i + 1}</span>
+                  <span className="pt-1 text-[16px] font-medium text-foreground">{line}</span>
                 </li>
               ))}
             </ol>
