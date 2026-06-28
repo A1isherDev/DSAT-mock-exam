@@ -20,6 +20,14 @@ export interface AssignmentDetail {
   attachment_file_url?: string | null;
   attachment_urls?: { url: string; file_name?: string }[];
   practice_bundle_tests?: { id: number; title?: string; subject?: string }[];
+  // New backend metadata (present on list, detail, and my-assignments payloads).
+  content_type?: string;
+  contents?: { kind: AssignmentKind; title: string; item_count: number | null }[];
+  item_count?: number | null;
+  subject?: string | null;
+  assigned_at?: string | null;
+  created_at?: string | null;
+  published_at?: string | null;
 }
 
 export interface MySubmission {
@@ -91,6 +99,9 @@ export const KIND_LABEL: Record<AssignmentKind, string> = {
  */
 export interface ContentAction {
   kind: AssignmentKind;
+  /** The content's own title (from `a.contents`), shown in the launcher. */
+  name: string;
+  /** Generic verb label (e.g. "Open Past Paper") — fallback when no title exists. */
   label: string;
   href: string;
 }
@@ -102,19 +113,37 @@ export interface ContentAction {
  * module). Length > 1 → the assignment is a multi-content bundle.
  */
 export function contentActions(a: AssignmentDetail): ContentAction[] {
+  // Resolve the human title for each action from `a.contents`. Both lists are built
+  // in the same kind order (assessment, mock, practice pack, pastpaper), so we walk
+  // the contents in order and hand the next matching title to each action.
+  const contents = a.contents ?? [];
+  const cursor: Record<string, number> = {};
+  const titleFor = (kind: AssignmentKind, fallback: string): string => {
+    const start = cursor[kind] ?? 0;
+    for (let i = start; i < contents.length; i++) {
+      if (contents[i].kind === kind) {
+        cursor[kind] = i + 1;
+        return contents[i].title?.trim() || fallback;
+      }
+    }
+    return fallback;
+  };
+  const add = (out: ContentAction[], kind: AssignmentKind, label: string, href: string) =>
+    out.push({ kind, name: titleFor(kind, label || KIND_LABEL[kind]), label, href });
+
   const out: ContentAction[] = [];
-  if (a.assessment_homework != null) out.push({ kind: "QUIZ", label: "Start assessment", href: `/assessments/${a.id}` });
-  if (a.mock_exam != null) out.push({ kind: "MOCK", label: "Open Mock Exam", href: `/mock/${a.mock_exam}` });
+  if (a.assessment_homework != null) add(out, "QUIZ", "Start assessment", `/assessments/${a.id}`);
+  if (a.mock_exam != null) add(out, "MOCK", "Open Mock Exam", `/mock/${a.mock_exam}`);
   if (a.practice_test_pack != null) {
-    out.push({ kind: "PRACTICE", label: "Open Practice Test", href: `/practice-tests/${a.practice_test_pack}` });
+    add(out, "PRACTICE", "Open Practice Test", `/practice-tests/${a.practice_test_pack}`);
   } else if (a.practice_test != null || (a.practice_test_ids && a.practice_test_ids.length)) {
     // Standalone pastpaper section(s): open one directly, or the listing to choose from several.
     const single = singleSectionId(a);
-    out.push({ kind: "PASTPAPER", label: "Open Past Paper", href: single != null ? `/practice-test/${single}` : `/pastpapers` });
+    add(out, "PASTPAPER", "Open Past Paper", single != null ? `/practice-test/${single}` : `/pastpapers`);
   }
   if (a.module != null) {
     const tid = a.practice_test ?? a.practice_test_ids?.[0];
-    if (tid != null) out.push({ kind: "MODULE", label: "Open Module Test", href: `/practice-test/${tid}` });
+    if (tid != null) add(out, "MODULE", "Open Module Test", `/practice-test/${tid}`);
   }
   return out;
 }

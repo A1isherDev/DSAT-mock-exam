@@ -3,8 +3,9 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { examsStudentApi } from "@/features/examsStudent/api";
 import AuthGuard from '@/components/AuthGuard';
-import { CheckCircle2, XCircle, ArrowLeft, BarChart3, Eye, EyeOff, X, ChevronRight, BookOpen, AlertCircle, Lock } from 'lucide-react';
+import { CheckCircle2, XCircle, ArrowLeft, BarChart3, Eye, EyeOff, X, ChevronRight, BookOpen, AlertCircle, Lock, ArrowUp, ArrowDown, Trophy } from 'lucide-react';
 import { MathText } from '@/components/MathText';
+import { spawnRipple } from "@/features/classroom/ui/ripple";
 
 const examsPublicApi = examsStudentApi;
 
@@ -219,18 +220,65 @@ export default function ReviewPage() {
     const [selectedQuestion, setSelectedQuestion] = useState<any>(null);
     const [showCorrectAnswers, setShowCorrectAnswers] = useState(true);
     const [showCelebration, setShowCelebration] = useState(false);
-    const confetti = useMemo(
-        () =>
-            Array.from({ length: 100 }).map((_, i) => ({
-                id: i,
+    // Active module tab + whether to replay the row slide-in on tab change.
+    const [activeModule, setActiveModule] = useState(0);
+    const [animRows, setAnimRows] = useState(false);
+
+    // 3-cannon popper burst + falling confetti rain, ported 1:1 from the
+    // Results mockup. Math.random() is fine here — this is page runtime, not a
+    // deterministic workflow script. Colours are decorative confetti pigment,
+    // not UI chrome, so literal hex is acceptable for the pieces themselves.
+    const celebration = useMemo(() => {
+        const poppers: any[] = [];
+        const confetti: any[] = [];
+        const cols = ['#2563eb', '#16a34a', '#eab308', '#ef4444', '#a855f7', '#ec4899', '#14b8a6'];
+        // three cannons: bottom-left, bottom-right, bottom-center
+        const cannons = [
+            { x: 6, y: 96, ang: -62 },
+            { x: 94, y: 96, ang: -118 },
+            { x: 50, y: 100, ang: -90 },
+        ];
+        const waves = [0, 0.7, 1.4, 2.1];
+        let idx = 0;
+        cannons.forEach((cn) => {
+            waves.forEach((wd) => {
+                for (let i = 0; i < 14; i++) {
+                    const spread = (Math.random() - 0.5) * 70;
+                    const ang = ((cn.ang + spread) * Math.PI) / 180;
+                    const power = 240 + Math.random() * 230;
+                    const fx = Math.cos(ang) * power;
+                    const fy = Math.sin(ang) * power + (160 + Math.random() * 220);
+                    poppers.push({
+                        id: `p${idx}`,
+                        left: cn.x,
+                        top: cn.y,
+                        width: 6 + Math.floor(Math.random() * 5),
+                        height: 8 + Math.floor(Math.random() * 8),
+                        color: cols[idx % cols.length],
+                        fx: `${fx.toFixed(0)}px`,
+                        fy: `${fy.toFixed(0)}px`,
+                        rot: `${(Math.random() * 1080 - 540).toFixed(0)}deg`,
+                        duration: 1.4 + Math.random() * 1.0,
+                        delay: wd + Math.random() * 0.25,
+                    });
+                    idx++;
+                }
+            });
+        });
+        // falling confetti rain from above
+        for (let i = 0; i < 80; i++) {
+            confetti.push({
+                id: `c${i}`,
                 left: Math.random() * 100,
-                delay: Math.random() * 1.2,
-                duration: 2.6 + Math.random() * 1.8,
-                color: ['#2563eb', '#22c55e', '#eab308', '#ef4444', '#a855f7'][i % 5],
-                size: 6 + Math.round(Math.random() * 6),
-            })),
-        []
-    );
+                delay: Math.random() * 1.4,
+                duration: 2.0 + Math.random() * 1.3,
+                color: cols[i % cols.length],
+                width: 6 + Math.round(Math.random() * 5),
+                height: 8 + Math.round(Math.random() * 8),
+            });
+        }
+        return { poppers, confetti };
+    }, []);
 
     const searchParams = useSearchParams();
     // Where the back button returns to. Callers (e.g. /pastpapers) pass ?back=…;
@@ -270,6 +318,12 @@ export default function ReviewPage() {
         }
     }, [review, qParam]);
 
+    // Keep the active module tab in range whenever the result set changes.
+    useEffect(() => {
+        if (!review?.module_results?.length) return;
+        setActiveModule((prev) => (prev < review.module_results.length ? prev : 0));
+    }, [review]);
+
     useEffect(() => {
         if (!attemptId) return;
         const key = `celebration_seen_attempt_${attemptId}`;
@@ -300,7 +354,7 @@ export default function ReviewPage() {
             <div className="min-h-screen bg-background relative pb-20">
                 <header className="bg-card border-b border-border px-8 py-4 flex justify-between items-center sticky top-0 z-40 shadow-sm">
                     <div className="flex items-center">
-                        <button onClick={() => router.push(backTarget)} className="mr-6 p-2 rounded-xl hover:bg-surface-2 transition-all border border-border shadow-sm">
+                        <button onPointerDown={spawnRipple} onClick={() => router.push(backTarget)} className="cr-ripple cr-press mr-6 p-2 rounded-xl hover:bg-surface-2 transition-all border border-border shadow-sm">
                             <ArrowLeft className="w-4 h-4 text-muted-foreground" />
                         </button>
                         <div className="flex items-center gap-3 border-l border-border pl-6 ml-1">
@@ -310,18 +364,20 @@ export default function ReviewPage() {
                     </div>
                     <div className="flex items-center gap-2">
                         <button
+                            onPointerDown={spawnRipple}
                             onClick={() => setShowCorrectAnswers(!showCorrectAnswers)}
-                            className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all border shadow-sm font-bold text-xs uppercase tracking-wider ${showCorrectAnswers ? 'bg-surface-2 text-muted-foreground border-border hover:bg-muted' : 'bg-foreground text-background border-foreground shadow-md hover:opacity-90'}`}
+                            className={`cr-ripple cr-press flex items-center gap-2 px-4 py-2 rounded-xl transition-all border shadow-sm font-bold text-xs uppercase tracking-wider ${showCorrectAnswers ? 'bg-surface-2 text-muted-foreground border-border hover:bg-muted' : 'bg-foreground text-background border-foreground shadow-md hover:opacity-90'}`}
                         >
                             {showCorrectAnswers ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                             {showCorrectAnswers ? 'Hide Answers' : 'Show Answers'}
                         </button>
                         <button
+                            onPointerDown={spawnRipple}
                             onClick={() => {
                                 setShowCelebration(true);
                                 setTimeout(() => setShowCelebration(false), 5000);
                             }}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl transition-all border shadow-sm font-bold text-xs uppercase tracking-wider bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-200"
+                            className="cr-ripple cr-press flex items-center gap-2 px-4 py-2 rounded-xl transition-all border shadow-sm font-bold text-xs uppercase tracking-wider bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-200"
                         >
                             Celebration
                         </button>
@@ -330,17 +386,38 @@ export default function ReviewPage() {
 
                 {showCelebration && (
                     <div className="pointer-events-none fixed inset-0 z-[120] overflow-hidden">
-                        {confetti.map((p) => (
+                        {/* 3-cannon popper burst (bottom-left / bottom-right / bottom-center) */}
+                        {celebration.poppers.map((p) => (
                             <span
                                 key={p.id}
-                                className="absolute rounded-sm"
+                                className="cr-popper"
                                 style={{
                                     left: `${p.left}%`,
-                                    top: `-8%`,
-                                    width: `${p.size}px`,
-                                    height: `${p.size * 0.55}px`,
+                                    top: `${p.top}%`,
+                                    width: `${p.width}px`,
+                                    height: `${p.height}px`,
                                     backgroundColor: p.color,
-                                    animation: `confetti-fall ${p.duration}s linear ${p.delay}s forwards`,
+                                    animationDuration: `${p.duration}s`,
+                                    animationDelay: `${p.delay}s`,
+                                    '--fx': p.fx,
+                                    '--fy': p.fy,
+                                    '--rot': p.rot,
+                                } as React.CSSProperties}
+                            />
+                        ))}
+                        {/* Falling confetti rain */}
+                        {celebration.confetti.map((c) => (
+                            <span
+                                key={c.id}
+                                className="cr-confetti"
+                                style={{
+                                    left: `${c.left}%`,
+                                    top: `-4%`,
+                                    width: `${c.width}px`,
+                                    height: `${c.height}px`,
+                                    backgroundColor: c.color,
+                                    animationDuration: `${c.duration}s`,
+                                    animationDelay: `${c.delay}s`,
                                 }}
                             />
                         ))}
@@ -385,164 +462,220 @@ export default function ReviewPage() {
                         </div>
                     </div>
 
-                    {/* Hero Summary */}
-                    <div className="bg-card rounded-3xl p-10 border border-border mb-10 overflow-hidden relative shadow-sm">
-                        <div className="absolute top-0 right-0 p-8 opacity-5 scale-[2] rotate-12 pointer-events-none text-foreground">
-                            <BarChart3 className="w-64 h-64" />
-                        </div>
-
-                        <div className="relative z-10 flex flex-col items-center w-full text-center">
-                            <div className="mb-6">
-                                <span className="text-[10px] font-bold text-primary uppercase tracking-[0.2em] mb-3 block">
-                                    Examination Completed · Historical Record
-                                </span>
-                                <h2 className="text-4xl font-black tracking-tight text-foreground mb-2">Congratulations! 🎉</h2>
-                                <p className="text-muted-foreground font-medium">You have successfully completed the test.</p>
-                            </div>
-
-                            <div className="bg-foreground text-background rounded-[32px] px-12 py-8 shadow-xl flex flex-col items-center border-4 border-foreground/80 mb-8">
-                                <p className="text-[11px] font-bold uppercase tracking-[0.3em] opacity-60 mb-2">
-                                  {review.mock_kind === "MOCK_SAT" && review.subject === "READING_WRITING"
-                                    ? "Reading & Writing Score"
-                                    : review.mock_kind === "MOCK_SAT" && review.subject === "MATH"
-                                    ? "Math Score"
-                                    : "Score"}
-                                </p>
-                                <p className="text-7xl font-black tabular-nums">{review.total_score}</p>
-                                <p className="text-[11px] font-bold opacity-40 mt-1 italic">
-                                  {review.mock_kind === "MOCK_SAT"
-                                    ? "/ 800 Max"
-                                    : review.score_only
-                                    ? (review.scoring_scale === "SCALE_800" ? "/ 800 Max" : "/ 100")
-                                    : `/ ${review.total_questions} questions`}
-                                </p>
-                            </div>
-
-                            {/* Midterm students see ONLY their score — never the
-                                per-question correctness. The teacher gets the full
-                                breakdown from the admin results section. */}
-                            {review.score_only && (
-                                <p className="max-w-md text-center text-sm font-medium text-muted-foreground">
-                                    Your teacher can review the full breakdown of your answers.
-                                </p>
-                            )}
-
-                            {!review.score_only && (
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-3xl">
-                                <div className="bg-surface-2 rounded-2xl p-5 border border-border flex flex-col items-center">
-                                    <p className="text-2xl font-bold text-emerald-600">{review.total_correct}</p>
-                                    <p className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground">Correct</p>
+                    {/* Hero Summary — gradient score banner */}
+                    {(() => {
+                        const subjectLabel =
+                            review.subject === "READING_WRITING"
+                                ? "Reading & Writing"
+                                : review.subject === "MATH"
+                                ? "Math"
+                                : "Score";
+                        const scoreLabel =
+                            review.mock_kind === "MOCK_SAT" && review.subject === "READING_WRITING"
+                                ? "Reading & Writing Score"
+                                : review.mock_kind === "MOCK_SAT" && review.subject === "MATH"
+                                ? "Math Score"
+                                : "Score";
+                        const scoreMax =
+                            review.mock_kind === "MOCK_SAT"
+                                ? "/ 800 Max"
+                                : review.score_only
+                                ? (review.scoring_scale === "SCALE_800" ? "/ 800 Max" : "/ 100")
+                                : `/ ${review.total_questions} questions`;
+                        const delta = review.score_delta;
+                        return (
+                            <div className="cr-celebpop relative mb-10 overflow-hidden rounded-3xl bg-gradient-to-br from-primary to-primary-hover p-10 text-primary-foreground shadow-xl">
+                                {/* soft glow + watermark trophy */}
+                                <div className="pointer-events-none absolute -right-10 -top-10 h-52 w-52 rounded-full bg-white/5" />
+                                <div className="pointer-events-none absolute right-8 top-8 opacity-10">
+                                    <Trophy className="cr-trophy h-32 w-32" />
                                 </div>
-                                <div className="bg-surface-2 rounded-2xl p-5 border border-border flex flex-col items-center">
-                                    <p className="text-2xl font-bold text-red-500">{review.total_incorrect}</p>
-                                    <p className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground">Incorrect</p>
-                                </div>
-                                <div className="bg-surface-2 rounded-2xl p-5 border border-border flex flex-col items-center">
-                                    <p className="text-2xl font-bold text-foreground">{review.total_skipped}</p>
-                                    <p className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground">Omitted</p>
-                                </div>
-                                <div className="bg-surface-2 rounded-2xl p-5 border border-border flex flex-col items-center">
-                                    <p className="text-2xl font-bold text-primary">{Math.round(review.score_percentage || 0)}%</p>
-                                    <p className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground">Accuracy</p>
-                                </div>
-                            </div>
-                            )}
-                        </div>
-                    </div>
 
-                    {/* Modular Analysis Sections */}
-                    {review.module_results && review.module_results.map((module: any) => (
-                        <div key={module.module_id} className="mb-10 animate-in slide-in-from-bottom-4 duration-500">
-                            <div className="flex items-center gap-4 mb-4">
-                                <div className="bg-foreground text-background w-10 h-10 rounded-xl flex items-center justify-center font-bold shadow-lg">
-                                    {module.module_order}
-                                </div>
-                                <div>
-                                    <h3 className="text-xl font-bold text-foreground">Module {module.module_order} Results</h3>
-                                    <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
-                                        Earned: <span className="text-foreground">{module.module_earned}</span>
-                                        {module.capped_earned !== module.module_earned && <span className="text-primary ml-1"> (Capped: {module.capped_earned})</span>}
+                                <div className="relative z-10 flex flex-col items-center text-center">
+                                    <span className="mb-2 block text-[11px] font-extrabold uppercase tracking-[0.16em] text-primary-foreground/70">
+                                        {subjectLabel} · Section Score
+                                    </span>
+
+                                    <div className="flex items-end justify-center gap-4">
+                                        <p className="text-7xl font-black leading-[0.95] tracking-tight tabular-nums">
+                                            {review.total_score}
+                                        </p>
+                                        {delta != null && (
+                                            <span
+                                                className={`mb-4 inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-extrabold ${
+                                                    delta > 0
+                                                        ? "bg-emerald-500/90 text-white"
+                                                        : delta < 0
+                                                        ? "bg-rose-500/90 text-white"
+                                                        : "bg-white/20 text-primary-foreground"
+                                                }`}
+                                            >
+                                                {delta > 0 ? (
+                                                    <>
+                                                        <ArrowUp className="h-3.5 w-3.5" /> +{delta} pts
+                                                    </>
+                                                ) : delta < 0 ? (
+                                                    <>
+                                                        <ArrowDown className="h-3.5 w-3.5" /> {delta} pts
+                                                    </>
+                                                ) : (
+                                                    <>±0</>
+                                                )}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <p className="mt-1 text-[11px] font-bold uppercase tracking-[0.2em] text-primary-foreground/60">
+                                        {scoreLabel} · {scoreMax}
                                     </p>
-                                </div>
-                                <div className="ml-auto flex items-center gap-3 bg-card px-5 py-2.5 rounded-2xl border border-border shadow-sm">
-                                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Points Contributed</span>
-                                    <span className="text-lg font-black text-foreground">+{module.capped_earned}</span>
+
+                                    {/* Midterm students see ONLY their score — never the
+                                        per-question correctness. The teacher gets the full
+                                        breakdown from the admin results section. */}
+                                    {review.score_only && (
+                                        <p className="mt-6 max-w-md text-center text-sm font-medium text-primary-foreground/80">
+                                            Your teacher can review the full breakdown of your answers.
+                                        </p>
+                                    )}
+
+                                    {!review.score_only && (
+                                        <div className="mt-8 grid w-full max-w-3xl grid-cols-2 gap-6 md:grid-cols-4">
+                                            <div className="flex flex-col items-center">
+                                                <p className="text-3xl font-black tabular-nums text-emerald-300">{review.total_correct}</p>
+                                                <p className="mt-1 text-[11px] font-bold uppercase tracking-wider text-primary-foreground/60">Correct</p>
+                                            </div>
+                                            <div className="flex flex-col items-center">
+                                                <p className="text-3xl font-black tabular-nums text-rose-300">{review.total_incorrect}</p>
+                                                <p className="mt-1 text-[11px] font-bold uppercase tracking-wider text-primary-foreground/60">Incorrect</p>
+                                            </div>
+                                            <div className="flex flex-col items-center">
+                                                <p className="text-3xl font-black tabular-nums text-primary-foreground">{review.total_skipped}</p>
+                                                <p className="mt-1 text-[11px] font-bold uppercase tracking-wider text-primary-foreground/60">Omitted</p>
+                                            </div>
+                                            <div className="flex flex-col items-center">
+                                                <p className="text-3xl font-black tabular-nums text-amber-300">{Math.round(review.score_percentage || 0)}%</p>
+                                                <p className="mt-1 text-[11px] font-bold uppercase tracking-wider text-primary-foreground/60">Accuracy</p>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
+                        );
+                    })()}
 
-                            <div className="bg-card rounded-[24px] shadow-sm border border-border overflow-hidden">
+                    {/* Answer review — module tabs + active module table.
+                        Midterm (score_only) hides the per-question breakdown. */}
+                    {!review.score_only && review.module_results && review.module_results.length > 0 && (() => {
+                        const modules = review.module_results;
+                        const active = modules[activeModule] || modules[0];
+                        const rowAnim = (active?.module_order || 1) % 2 ? "cr-rowslide-a" : "cr-rowslide-b";
+                        return (
+                            <div className="rounded-3xl border border-border bg-card p-6 shadow-sm sm:p-7">
+                                <div className="mb-5 flex flex-wrap items-center gap-4">
+                                    <h2 className="text-xl font-extrabold tracking-tight text-foreground">Answer review</h2>
+                                    <div className="flex-1" />
+                                    {/* Module tabs */}
+                                    <div className="flex gap-1 rounded-2xl bg-surface-2 p-1">
+                                        {modules.map((m: any, mi: number) => {
+                                            const isActive = mi === activeModule;
+                                            return (
+                                                <button
+                                                    key={m.module_id}
+                                                    onPointerDown={spawnRipple}
+                                                    onClick={() => { setActiveModule(mi); setAnimRows(true); }}
+                                                    className={`cr-ripple cr-press rounded-xl px-4 py-2 text-sm font-bold transition-colors ${
+                                                        isActive
+                                                            ? "bg-card text-primary shadow-sm"
+                                                            : "bg-transparent text-muted-foreground hover:text-foreground"
+                                                    }`}
+                                                >
+                                                    Module {m.module_order}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
+                                {/* Per-module points summary */}
+                                <div className="mb-4 flex flex-wrap items-center gap-3 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                                    <span>
+                                        Earned: <span className="text-foreground">{active.module_earned}</span>
+                                        {active.capped_earned !== active.module_earned && (
+                                            <span className="ml-1 text-primary">(Capped: {active.capped_earned})</span>
+                                        )}
+                                    </span>
+                                    <span className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface-2 px-3.5 py-1.5">
+                                        <span>Points Contributed</span>
+                                        <span className="text-base font-black text-foreground">+{active.capped_earned}</span>
+                                    </span>
+                                </div>
+
                                 <div className="overflow-x-auto">
-                                    <table className="w-full text-left border-collapse">
+                                    <table className="w-full border-collapse text-left">
                                         <thead>
-                                            <tr className="border-b border-border bg-surface-2/30">
-                                                <th className="px-8 py-4 text-[10px] font-bold uppercase tracking-widest text-muted-foreground w-20">#</th>
-                                                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-muted-foreground text-center">Your Answer</th>
-                                                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-muted-foreground text-center">Correct Answer</th>
-                                                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-muted-foreground w-28 text-center">Outcome</th>
-                                                <th className="px-8 py-4 text-[10px] font-bold uppercase tracking-widest text-muted-foreground w-36 text-right">Actions</th>
+                                            <tr className="border-b border-border">
+                                                <th className="px-4 py-3 text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Question</th>
+                                                <th className="px-4 py-3 text-center text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Your Answer</th>
+                                                <th className="px-4 py-3 text-center text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Correct</th>
+                                                <th className="px-4 py-3 text-center text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Outcome</th>
+                                                <th className="px-4 py-3 text-right text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Action</th>
                                             </tr>
                                         </thead>
-                                        <tbody>
-                                            {module.questions.map((q: any, i: number) => {
+                                        <tbody key={`mod-${activeModule}`}>
+                                            {active.questions.map((q: any, i: number) => {
                                                 const isOmitted = !q.student_answer || String(q.student_answer).trim() === "";
-                                                const badge = isOmitted
-                                                    ? "bg-slate-100 text-slate-600 border-slate-200"
+                                                const outcomeTag = isOmitted
+                                                    ? "bg-amber-50 text-amber-700 border-amber-200"
                                                     : q.is_correct
-                                                    ? "bg-emerald-50 text-emerald-700 border-emerald-100"
-                                                    : "bg-red-50 text-red-700 border-red-100";
+                                                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                                    : "bg-rose-50 text-rose-700 border-rose-200";
+                                                // On tab change, slide rows in (parity-based direction);
+                                                // otherwise use the staggered entry animation.
+                                                const animClass = animRows ? rowAnim : "cr-rowin2";
                                                 return (
-                                                <tr key={q.id} className="group hover:bg-surface-2/50 transition-colors border-b border-border/50 last:border-0 cursor-pointer" onClick={() => setSelectedQuestion({ ...q, index_in_module: i + 1 })}>
-                                                    <td className="px-8 py-5">
-                                                        <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border font-bold text-xs uppercase tracking-wider ${badge}`}>
-                                                            <span>Q{i + 1}</span>
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-4 py-5 text-center font-bold">
-                                                        {isOmitted ? (
-                                                            <span className="text-slate-500 italic">Omitted</span>
-                                                        ) : (
-                                                            <span className={q.is_correct ? "text-emerald-700" : "text-red-700"}>
-                                                                {q.student_answer}
-                                                            </span>
-                                                        )}
-                                                    </td>
-                                                    <td className="px-4 py-5 text-center font-bold text-emerald-700">
-                                                        {showCorrectAnswers ? q.correct_answers : '---'}
-                                                    </td>
-                                                    <td className="px-4 py-5">
-                                                        <div className="flex justify-center">
+                                                    <tr
+                                                        key={q.id}
+                                                        className={`${animClass} cursor-pointer border-b border-border/60 last:border-0 transition-colors hover:bg-surface-2/60`}
+                                                        style={{ animationDelay: `${i * 0.06}s` }}
+                                                        onClick={() => setSelectedQuestion({ ...q, index_in_module: i + 1 })}
+                                                    >
+                                                        <td className="px-4 py-4">
+                                                            <span className="whitespace-nowrap text-sm font-extrabold text-foreground">Question {i + 1}</span>
+                                                        </td>
+                                                        <td className="px-4 py-4 text-center font-bold">
                                                             {isOmitted ? (
-                                                                <div className="w-6 h-6 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center" title="Skipped">
-                                                                    <span className="text-xs font-bold">−</span>
-                                                                </div>
-                                                            ) : q.is_correct ? (
-                                                                <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
-                                                                    <CheckCircle2 className="w-3.5 h-3.5" />
-                                                                </div>
+                                                                <span className="italic text-muted-foreground">Omitted</span>
                                                             ) : (
-                                                                <div className="w-6 h-6 rounded-full bg-red-100 text-red-500 flex items-center justify-center">
-                                                                    <XCircle className="w-3.5 h-3.5" />
-                                                                </div>
+                                                                <span className={q.is_correct ? "text-foreground" : "text-rose-600"}>{q.student_answer}</span>
                                                             )}
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-8 py-5 text-right">
-                                                        <button
-                                                            className="inline-flex items-center gap-1.5 bg-surface-2 text-foreground border border-border font-bold uppercase tracking-wider text-[9px] px-4 py-2 rounded-lg hover:border-foreground transition-all active:scale-95"
-                                                            onClick={(e) => { e.stopPropagation(); setSelectedQuestion({ ...q, index_in_module: i + 1 }); }}
-                                                        >
-                                                            <Eye className="w-3 h-3" /> Explore
-                                                        </button>
-                                                    </td>
-                                                </tr>
+                                                        </td>
+                                                        <td className="px-4 py-4 text-center font-extrabold text-emerald-700">
+                                                            {showCorrectAnswers ? q.correct_answers : "—"}
+                                                        </td>
+                                                        <td className="px-4 py-4">
+                                                            <div className="flex justify-center">
+                                                                <span className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11px] font-extrabold ${outcomeTag}`}>
+                                                                    {isOmitted ? "Omitted" : q.is_correct ? "Correct" : "Incorrect"}
+                                                                </span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-4 py-4 text-right">
+                                                            <button
+                                                                onPointerDown={spawnRipple}
+                                                                className="cr-ripple cr-press inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3.5 py-2 text-sm font-extrabold text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
+                                                                onClick={(e) => { e.stopPropagation(); setSelectedQuestion({ ...q, index_in_module: i + 1 }); }}
+                                                            >
+                                                                <Eye className="h-3.5 w-3.5" /> Explore
+                                                            </button>
+                                                        </td>
+                                                    </tr>
                                                 );
                                             })}
                                         </tbody>
                                     </table>
                                 </div>
                             </div>
-                        </div>
-                    ))}
+                        );
+                    })()}
                 </main>
 
                 {/* Modal Overlay */}

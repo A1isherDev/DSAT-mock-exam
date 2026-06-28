@@ -8,8 +8,18 @@
  * via props and own no attempt logic.
  */
 
-import { CheckCircle2, ChevronLeft, ChevronRight, Send } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
+  CheckCircle2,
+  ChevronRight,
+  Send,
+} from "lucide-react";
+import Link from "next/link";
 import { cn } from "@/lib/cn";
+import { Button, ProgressRing } from "@/components/ui";
+import { spawnRipple } from "@/features/classroom/ui/ripple";
 import type { AnswerConflict } from "@/features/assessments/attemptSync";
 import { formatReceiptTime, readSubmitReceipt } from "@/features/assessments/attemptDraftStorage";
 
@@ -188,72 +198,109 @@ export function SubmitConfirmScreen({
   onBack: () => void;
 }) {
   const unanswered = totalCount - answeredCount;
+  const pct = totalCount ? Math.round((answeredCount / totalCount) * 100) : 0;
+
   return (
-    <div className="mx-auto w-full max-w-lg space-y-5">
-      <div className="rounded-2xl border border-border bg-card p-8 text-center space-y-4">
-        <div className="rounded-full bg-primary/10 p-4 w-16 h-16 mx-auto flex items-center justify-center">
-          <Send className="h-7 w-7 text-primary" />
-        </div>
-        <div>
-          <h2 className="text-xl font-extrabold text-foreground">Ready to submit?</h2>
-          <p className="text-sm text-muted-foreground mt-1">{title}</p>
-        </div>
+    <div className="mx-auto flex w-full max-w-2xl items-center justify-center py-5">
+      <div className="cr-celebpop grid w-full overflow-hidden rounded-3xl border border-border bg-card shadow-xl sm:grid-cols-[260px_1fr]">
+        {/* Left progress rail */}
+        <div className="relative overflow-hidden bg-primary p-8 text-primary-foreground">
+          {/* soft decorative bloom */}
+          <div
+            className="pointer-events-none absolute -bottom-10 -right-10 h-40 w-40 rounded-full bg-primary-foreground/10"
+            aria-hidden
+          />
 
-        <div className="grid grid-cols-2 gap-3 text-center">
-          <div className="rounded-xl bg-surface-2 px-4 py-3">
-            <p className="text-2xl font-extrabold text-emerald-700 tabular-nums">
-              {answeredCount}
-            </p>
-            <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mt-0.5">
-              Answered
-            </p>
+          {/* Send badge */}
+          <div className="relative mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-foreground/15">
+            <Send className="h-6 w-6 text-primary-foreground" />
           </div>
-          <div className="rounded-xl bg-surface-2 px-4 py-3">
-            <p
-              className={cn(
-                "text-2xl font-extrabold tabular-nums",
-                unanswered > 0 ? "text-amber-600" : "text-foreground",
-              )}
-            >
-              {unanswered}
-            </p>
-            <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mt-0.5">
-              Unanswered
-            </p>
-          </div>
-        </div>
 
-        {unanswered > 0 && (
-          <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5">
-            You have {unanswered} unanswered question
-            {unanswered !== 1 ? "s" : ""}. You can go back and answer them, or
-            submit now.
+          <p className="relative text-xs font-extrabold uppercase tracking-[0.08em] text-primary-foreground/80">
+            Progress
           </p>
-        )}
 
-        {/* Trust signal — reassure before submitting */}
-        <p className="text-xs text-muted-foreground flex items-center justify-center gap-1.5">
-          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-          Your answers are saved and will not be lost.
-        </p>
+          {/* Progress ring: big {answered} over / {total} */}
+          <div className="relative mt-4 flex items-center gap-4">
+            <ProgressRing
+              value={pct}
+              size={72}
+              strokeWidth={6}
+              color="text-primary-foreground"
+              className="text-primary-foreground/25"
+            >
+              <span className="text-sm font-black tabular-nums text-primary-foreground">
+                {pct}%
+              </span>
+            </ProgressRing>
+            <div className="flex items-baseline gap-1">
+              <span className="text-[46px] font-extrabold leading-none tracking-tight tabular-nums">
+                {answeredCount}
+              </span>
+              <span className="text-[22px] font-bold text-primary-foreground/70 tabular-nums">
+                / {totalCount}
+              </span>
+            </div>
+          </div>
 
-        <div className="flex gap-3">
-          <button
-            type="button"
-            onClick={onBack}
-            className="flex-1 rounded-xl border border-border bg-card px-4 py-3 text-sm font-bold text-foreground hover:bg-surface-2 transition-colors"
-          >
-            <ChevronLeft className="h-4 w-4 inline mr-1" />
-            Go back
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className="flex-1 rounded-xl bg-primary px-4 py-3 text-sm font-extrabold text-primary-foreground hover:bg-primary/90 transition-colors"
-          >
-            Submit
-            <ChevronRight className="h-4 w-4 inline ml-1" />
-          </button>
+          <p className="relative mt-2 text-[13px] font-semibold text-primary-foreground/80">
+            questions answered
+          </p>
+
+          {/* Thin meter bar that grows to {pct}% */}
+          <div className="relative mt-5 h-2 overflow-hidden rounded-full bg-primary-foreground/20">
+            <div
+              className="cr-bar h-full rounded-full bg-primary-foreground"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+
+          <p className="relative mt-2.5 text-xs font-bold text-primary-foreground/80">
+            {pct}% complete
+          </p>
+        </div>
+
+        {/* Right decision column */}
+        <div className="p-8">
+          <h2 className="text-2xl font-extrabold tracking-tight text-foreground">
+            Ready to submit?
+          </h2>
+          <p className="mt-1.5 text-sm font-medium text-muted-foreground">{title}</p>
+
+          {unanswered > 0 && (
+            <div className="mt-6 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3.5">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <p className="text-[13px] font-semibold leading-relaxed text-amber-700">
+                <span className="font-bold">{unanswered} unanswered</span> questions
+                will be marked incorrect if you submit now.
+              </p>
+            </div>
+          )}
+
+          <div className={cn("flex gap-3", unanswered > 0 ? "mt-7" : "mt-8")}>
+            <Button
+              variant="secondary"
+              size="lg"
+              fullWidth
+              onClick={onBack}
+              onPointerDown={spawnRipple}
+              leftIcon={<ArrowLeft />}
+              className="cr-ripple font-extrabold"
+            >
+              Go back
+            </Button>
+            <Button
+              variant="primary"
+              size="lg"
+              fullWidth
+              onClick={onConfirm}
+              onPointerDown={spawnRipple}
+              rightIcon={<ArrowRight />}
+              className="cr-ripple font-extrabold"
+            >
+              Submit
+            </Button>
+          </div>
         </div>
       </div>
     </div>
@@ -332,20 +379,20 @@ export function ReviewScreen({
       {/* Navigation */}
       <div className="flex justify-center gap-3">
         {assignmentId ? (
-          <a
+          <Link
             href={`/assessments/result/${assignmentId}`}
             className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-extrabold text-primary-foreground hover:bg-primary/90 transition-colors"
           >
             View results
             <ChevronRight className="h-4 w-4" />
-          </a>
+          </Link>
         ) : (
-          <a
+          <Link
             href="/classes"
             className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-6 py-3 text-sm font-extrabold text-foreground hover:bg-surface-2 transition-colors"
           >
             Back to classes
-          </a>
+          </Link>
         )}
       </div>
     </div>
@@ -382,20 +429,20 @@ export function CompleteScreen({
           }
         </p>
         {assignmentId ? (
-          <a
+          <Link
             href={`/assessments/result/${assignmentId}`}
             className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-extrabold text-primary-foreground hover:bg-primary/90 transition-colors"
           >
             View results
             <ChevronRight className="h-4 w-4" />
-          </a>
+          </Link>
         ) : (
-          <a
+          <Link
             href="/classes"
             className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-6 py-3 text-sm font-extrabold text-foreground hover:bg-surface-2 transition-colors"
           >
             Back to classes
-          </a>
+          </Link>
         )}
       </div>
     </div>

@@ -1,16 +1,15 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
-import Link from "next/link";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import AuthGuard from "@/components/AuthGuard";
 import { useMyAssessmentResult } from "@/features/assessments/hooks";
-import { assessmentsStudentApi } from "@/features/assessmentsStudent/api";
-import {
-  ArrowLeft, BookOpen, CheckCircle2, ChevronRight, Clock, Eye, Lightbulb, Loader2, RefreshCw, Target, TrendingUp, XCircle,
-} from "lucide-react";
+import { assessmentsStudentApi, type PedagogicalReviewQuestion } from "@/features/assessmentsStudent/api";
+import { spawnRipple } from "@/features/classroom/ui/ripple";
+import { ArrowLeft, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { Card, CardContent, Badge, Button, ProgressRing, Alert, EmptyState, Spinner, type BadgeVariant } from "@/components/ui";
+import { Card, CardContent, Button, ProgressRing, Switch, EmptyState, Spinner } from "@/components/ui";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -36,118 +35,39 @@ type MyResultData = {
   meta?: HwMeta;
 };
 
-// ─── Helpers (business logic preserved verbatim) ─────────────────────────────
+type RowStatus = "correct" | "incorrect" | "omitted";
+type FilterKey = "all" | "wrong" | "correct";
+type PerPage = 10 | 30 | "all";
 
-function formatTime(seconds: number | null | undefined): string {
-  if (!seconds || seconds <= 0) return "—";
-  if (seconds < 60) return `${seconds}s`;
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return s > 0 ? `${m}m ${s}s` : `${m}m`;
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+/** s>=60 → "Xm Ys" else "Xs". */
+function fmtSec(s: number): string {
+  if (!s || s <= 0) return "0s";
+  return s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`;
 }
 
-function formatGradedAt(iso: string | null | undefined): string {
-  if (!iso) return "";
-  try {
-    return new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-  } catch {
-    return iso;
-  }
+function statusOf(q: PedagogicalReviewQuestion): RowStatus {
+  if (q.is_correct === true) return "correct";
+  const sa = q.student_answer;
+  const empty = sa === null || sa === undefined || (typeof sa === "string" && sa.trim() === "");
+  if (empty) return "omitted";
+  return "incorrect";
 }
 
-function getPerformanceTier(percent: number): { label: string } {
-  if (percent >= 90) return { label: "Excellent" };
-  if (percent >= 75) return { label: "Good" };
-  if (percent >= 60) return { label: "Needs review" };
-  return { label: "Keep building" };
+function answerToDisplay(value: unknown): string {
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "string") return value.trim() === "" ? "—" : value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) return value.map((v) => answerToDisplay(v)).join(", ");
+  return String(value);
 }
 
-// Score-band tone — positive/neutral (no punishing red for the overall band).
-function tierVariant(percent: number): BadgeVariant {
-  if (percent >= 75) return "success";
-  if (percent >= 60) return "info";
-  return "warning";
-}
-function ringColor(percent: number): string {
-  if (percent >= 75) return "text-success";
-  if (percent >= 50) return "text-primary";
-  return "text-warning";
-}
-
-type LearningInsight = { headline: string; body: string; cta?: string; tone: "success" | "neutral" | "encourage" };
-type AnswerRow = { question_id: number; answer: string | null; is_correct: boolean | null; points_awarded?: number | null };
-
-function incorrectQuestionNumbers(answers: AnswerRow[] | undefined): number[] {
-  if (!answers?.length) return [];
-  const nums: number[] = [];
-  answers.forEach((a, i) => { if (a.is_correct === false) nums.push(i + 1); });
-  return nums.length <= 10 ? nums : [];
-}
-function formatQuestionList(nums: number[]): string {
-  if (!nums.length) return "";
-  if (nums.length === 1) return `question ${nums[0]}`;
-  const last = nums[nums.length - 1];
-  return `questions ${nums.slice(0, -1).join(", ")} and ${last}`;
-}
-function longestIncorrectStreak(answers: AnswerRow[] | undefined): number {
-  if (!answers?.length) return 0;
-  let max = 0, cur = 0;
-  for (const a of answers) {
-    if (a.is_correct === false) { cur++; if (cur > max) max = cur; } else { cur = 0; }
-  }
-  return max;
-}
-
-function getLearningInsight(
-  percent: number, correctCount: number, totalQuestions: number,
-  timeSeconds: number | null | undefined, answers?: AnswerRow[],
-): LearningInsight {
-  const incorrect = totalQuestions - correctCount;
-  const streak = longestIncorrectStreak(answers);
-  const streakHint = streak >= 3 ? ` You hit a run of ${streak} consecutive questions you found difficult — that cluster is worth revisiting specifically.` : "";
-  const wrongNums = incorrectQuestionNumbers(answers);
-  const specificHint = wrongNums.length > 0 ? ` You missed ${formatQuestionList(wrongNums)}.` : "";
-  void timeSeconds;
-
-  if (percent >= 90) {
-    return { headline: "Outstanding work.", body: `You answered ${correctCount} out of ${totalQuestions} correctly.${specificHint} At this level, focus on consistency — try another set to confirm this score holds under fresh material.`, cta: "Keep up the momentum", tone: "success" };
-  }
-  if (percent >= 75) {
-    return { headline: "Solid performance.", body: `You got ${correctCount} right and missed ${incorrect}.${specificHint}${streakHint} At this score, targeted practice on a small number of weak spots is the fastest path to a top result.`, cta: "Focus on missed questions", tone: "neutral" };
-  }
-  if (percent >= 60) {
-    return { headline: "You're making real progress.", body: `${correctCount} correct, ${incorrect} to work on.${specificHint}${streakHint} Students at this level typically close the gap by identifying two or three recurring mistake patterns rather than re-doing the whole set.`, cta: "Find your mistake patterns", tone: "encourage" };
-  }
-  if (percent >= 40) {
-    return { headline: "Solid foundation to build from.", body: `${correctCount} out of ${totalQuestions} right — you're already past the harder half.${specificHint}${streakHint} The most effective move now is to understand the reasoning behind each question you missed, not just mark the correct answer.`, cta: "Review each missed question", tone: "encourage" };
-  }
-  return { headline: "This is where learning starts.", body: `Every attempt on a hard paper teaches you something the next one builds on.${specificHint} ${incorrect} questions to revisit — go through them slowly, one at a time, and ask why each answer is right. That process is the study.${streakHint}`, cta: "Go through missed questions", tone: "encourage" };
-}
-
-type NextStep = { action: string; rationale: string; primaryLabel: string; preferRetry: boolean };
-
-function getNextStep(percent: number, incorrectCount: number, wrongNums: number[]): NextStep {
-  if (percent >= 90) {
-    return { action: "Push the ceiling with a harder set", rationale: "You've mastered this difficulty level. Repeating it won't move your score — a harder paper will expose the gaps that are left.", primaryLabel: "Browse assessments", preferRetry: false };
-  }
-  if (percent >= 75) {
-    const qRef = wrongNums.length > 0 ? `the ${wrongNums.length} question${wrongNums.length === 1 ? "" : "s"} you missed` : `your ${incorrectCount} missed question${incorrectCount === 1 ? "" : "s"}`;
-    return { action: `Understand ${qRef}, then re-attempt`, rationale: "At this score, one focused re-attempt after reviewing your mistakes typically adds 5–10%. Don't skip straight to a new set — reuse this one.", primaryLabel: "Re-attempt this set", preferRetry: true };
-  }
-  if (percent >= 50) {
-    return { action: "Review each wrong answer, then do a fresh attempt", rationale: "Before you start anything new, scroll up and understand why each incorrect answer was wrong. That process — not more volume — is what moves scores at this level.", primaryLabel: "Re-attempt this set", preferRetry: true };
-  }
-  return { action: "Start with just your 3 hardest questions", rationale: "Don't review everything at once. Pick the 3 questions above that felt most unfamiliar and understand them fully. That's enough for one session — come back to the rest tomorrow.", primaryLabel: "Re-attempt this set", preferRetry: true };
-}
-
-function getPacingInsight(timeSeconds: number | null | undefined, totalQuestions: number): string | null {
-  if (!timeSeconds || totalQuestions === 0) return null;
-  const secPerQ = timeSeconds / totalQuestions;
-  if (secPerQ < 45) return `You averaged about ${Math.round(secPerQ)}s per question — very quick. Make sure speed isn't costing you accuracy.`;
-  if (secPerQ < 90) return `Your pace was steady at around ${Math.round(secPerQ)}s per question — a comfortable rhythm.`;
-  if (secPerQ < 150) return `You spent about ${Math.round(secPerQ / 60 * 10) / 10} minutes per question. That's thoughtful — watch the clock on timed exams.`;
-  return `You took a careful ${Math.round(secPerQ / 60 * 10) / 10} minutes per question on average. Practice moving a little faster on questions you're confident about.`;
-}
+const STATUS_META: Record<RowStatus, { label: string; tone: string }> = {
+  correct: { label: "Correct", tone: "text-emerald-500" },
+  incorrect: { label: "Incorrect", tone: "text-rose-500" },
+  omitted: { label: "Omitted", tone: "text-slate-400" },
+};
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -157,50 +77,96 @@ export default function AssessmentResultPage() {
   const aid = Number(assignmentId);
   const { data, isLoading, error, refetch } = useMyAssessmentResult(aid);
 
-  const [retryLoading, setRetryLoading] = useState(false);
-  const [retryError, setRetryError] = useState<string | null>(null);
-
   const richData = data as MyResultData | undefined;
   const attempt = richData?.attempt ?? null;
   const result = richData?.result ?? null;
   const meta = richData?.meta ?? null;
 
-  const displayTitle = meta?.assignment_title?.trim() || meta?.set_title?.trim() || "Assessment";
-  const percent = result ? Number(result.percent) : 0;
-  const tier = result ? getPerformanceTier(percent) : null;
-  const timeStr = formatTime(attempt?.total_time_seconds);
-  const gradedAtStr = formatGradedAt(result?.graded_at);
-  const answers = attempt?.answers ?? [];
-  const hasBreakdown = answers.length > 0;
+  const graded = !!result;
+  const attemptId = attempt?.id ?? 0;
 
-  const handleRetryIncorrect = async () => {
-    const incorrectIds = answers.filter((a) => a.is_correct === false).map((a) => a.question_id);
-    if (!incorrectIds.length || !aid) return;
-    setRetryLoading(true);
-    setRetryError(null);
-    try {
-      const newAttempt = await assessmentsStudentApi.start({ assignment_id: aid, focus_question_ids: incorrectIds });
-      router.push(`/assessments/attempt/${newAttempt.id}`);
-    } catch {
-      setRetryError("Could not start retry. Please try again.");
-      setRetryLoading(false);
+  // Pedagogical review — the per-question breakdown (with correct answers + student answers).
+  const reviewQuery = useQuery({
+    queryKey: ["assessmentPedagogicalReview", attemptId],
+    queryFn: () => assessmentsStudentApi.pedagogicalReview(attemptId),
+    enabled: graded && Number.isFinite(attemptId) && attemptId > 0,
+  });
+  const review = reviewQuery.data ?? null;
+
+  // ── Derived top-level values ──
+  const displayTitle = meta?.set_title?.trim() || meta?.assignment_title?.trim() || "Assessment";
+  const percent = result ? Math.round(Number(result.percent)) : 0;
+  const totalQuestions = result?.total_questions ?? 0;
+  const correctCount = result?.correct_count ?? 0;
+  const totalTime = attempt?.total_time_seconds ?? 0;
+  const avgPerQuestion = totalQuestions > 0 ? Math.round(totalTime / totalQuestions) : 0;
+
+  const ringColor = percent >= 70 ? "text-emerald-500" : percent >= 40 ? "text-amber-500" : "text-rose-500";
+  const band =
+    percent >= 70
+      ? { label: "On track", cls: "border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" }
+      : percent >= 40
+      ? { label: "Getting there", cls: "border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-400" }
+      : { label: "Keep building", cls: "border-rose-500/20 bg-rose-500/10 text-rose-600 dark:text-rose-400" };
+
+  // ── Breakdown state ──
+  const [showAnswers, setShowAnswers] = useState(false);
+  const [filter, setFilter] = useState<FilterKey>("all");
+  const [perPage, setPerPage] = useState<PerPage>(10);
+  const [page, setPage] = useState(1);
+
+  const allRows = useMemo(() => {
+    const qs = review?.questions ?? [];
+    return [...qs]
+      .sort((a, b) => a.order - b.order)
+      .map((q) => ({ q, status: statusOf(q) }));
+  }, [review]);
+
+  const counts = useMemo(() => {
+    let correct = 0, wrong = 0;
+    for (const r of allRows) {
+      if (r.status === "correct") correct += 1;
+      else wrong += 1; // incorrect + omitted
     }
-  };
+    return { all: allRows.length, wrong, correct };
+  }, [allRows]);
 
-  const insight = result ? getLearningInsight(percent, result.correct_count, result.total_questions, attempt?.total_time_seconds, attempt?.answers ?? undefined) : null;
-  const pacingInsight = result ? getPacingInsight(attempt?.total_time_seconds, result.total_questions) : null;
-  const wrongNums = result ? incorrectQuestionNumbers(attempt?.answers ?? undefined) : [];
-  const incorrectCount = result ? result.total_questions - result.correct_count : 0;
-  const nextStep = result ? getNextStep(percent, incorrectCount, wrongNums) : null;
+  const filteredRows = useMemo(() => {
+    if (filter === "all") return allRows;
+    if (filter === "correct") return allRows.filter((r) => r.status === "correct");
+    return allRows.filter((r) => r.status === "incorrect" || r.status === "omitted");
+  }, [allRows, filter]);
 
-  const insightTone = insight?.tone === "success" ? "success" : insight?.tone === "encourage" ? "warning" : "neutral";
-  const InsightIcon = insight?.tone === "success" ? TrendingUp : insight?.tone === "encourage" ? Lightbulb : Target;
+  const effectivePerPage = perPage === "all" ? Math.max(1, filteredRows.length) : perPage;
+  const pageCount = Math.max(1, Math.ceil(filteredRows.length / effectivePerPage));
+  const safePage = Math.min(Math.max(1, page), pageCount);
+  const pageRows = filteredRows.slice((safePage - 1) * effectivePerPage, (safePage - 1) * effectivePerPage + effectivePerPage);
+
+  const questionTimes = attempt?.question_times ?? null;
+  const timeForQuestion = (qid: number): number => (questionTimes ? Number(questionTimes[String(qid)] || 0) : 0);
+
+  const filterDefs: { key: FilterKey; label: string; count: number }[] = [
+    { key: "all", label: "All", count: counts.all },
+    { key: "wrong", label: "Incorrect & Omitted", count: counts.wrong },
+    { key: "correct", label: "Correct", count: counts.correct },
+  ];
+  const viewDefs: { key: PerPage; label: string }[] = [
+    { key: 10, label: "10" },
+    { key: 30, label: "30" },
+    { key: "all", label: "All" },
+  ];
+
+  const pager = useMemo(() => pageWindow(safePage, pageCount), [safePage, pageCount]);
 
   return (
     <AuthGuard>
-      <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 pb-12">
-        <button type="button" onClick={() => router.push(`/assessments/${aid}`)} className="ds-ring inline-flex w-fit items-center gap-1.5 rounded-lg text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" /> Back to assignment
+      <div className="cr-section mx-auto flex w-full max-w-4xl flex-col gap-4 pb-12">
+        <button
+          type="button"
+          onClick={() => router.push(`/assessments/${aid}`)}
+          className="ds-ring inline-flex w-fit items-center gap-2 rounded-lg text-sm font-bold text-muted-foreground transition-colors hover:text-primary"
+        >
+          <ArrowLeft className="h-[17px] w-[17px]" /> Back to assignment
         </button>
 
         {isLoading ? (
@@ -208,7 +174,11 @@ export default function AssessmentResultPage() {
         ) : null}
 
         {error && !isLoading ? (
-          <EmptyState title="Could not load result" description={String((error as { message?: string })?.message || "Unknown error")} action={<Button variant="secondary" leftIcon={<RefreshCw />} onClick={() => void refetch()}>Retry</Button>} />
+          <EmptyState
+            title="Could not load result"
+            description={String((error as { message?: string })?.message || "Unknown error")}
+            action={<Button variant="secondary" leftIcon={<RefreshCw />} onClick={() => void refetch()}>Retry</Button>}
+          />
         ) : null}
 
         {!isLoading && !error && !result && attempt ? (
@@ -221,141 +191,247 @@ export default function AssessmentResultPage() {
         ) : null}
 
         {!isLoading && !error && !attempt ? (
-          <EmptyState title="No attempt yet" description="You haven't started this assignment yet." action={<Button rightIcon={<ChevronRight />} onClick={() => router.push(`/assessments/${aid}`)}>Go to assignment</Button>} />
+          <EmptyState
+            title="No attempt yet"
+            description="You haven't started this assignment yet."
+            action={<Button onClick={() => router.push(`/assessments/${aid}`)}>Go to assignment</Button>}
+          />
         ) : null}
 
         {!isLoading && !error && result ? (
           <>
-            {/* Header + score */}
-            <Card>
-              <div className="border-b border-border px-6 py-5">
-                <div className="mb-1.5 flex flex-wrap items-center gap-2">
-                  <span className="ds-overline text-primary">Results</span>
-                  {meta?.classroom_name ? <Badge variant="neutral"><BookOpen className="h-3 w-3" /> {meta.classroom_name}</Badge> : null}
-                </div>
-                <h1 className="ds-h2">{displayTitle}</h1>
-                {meta?.set_category ? <p className="mt-0.5 flex items-center gap-1.5 text-sm text-muted-foreground"><BookOpen className="h-3.5 w-3.5" /> {meta.set_category}</p> : null}
-              </div>
-
-              <div className="flex items-center gap-6 px-6 py-6">
-                <ProgressRing value={percent} size={108} strokeWidth={8} color={ringColor(percent)} showLabel={false}>
-                  <span className={cn("ds-num text-xl font-extrabold", ringColor(percent))}>{Math.round(percent)}%</span>
+            {/* ── HERO: score ring + stat strip ── */}
+            <Card className="cr-cardrise overflow-hidden">
+              <div className="flex flex-col items-center gap-5 px-6 py-9 sm:flex-row sm:gap-8 sm:px-10">
+                <ProgressRing value={percent} size={150} strokeWidth={11} color={ringColor} showLabel={false} className="shrink-0">
+                  <span className={cn("ds-num text-4xl font-extrabold", ringColor)}>{percent}%</span>
                 </ProgressRing>
-                <div className="min-w-0 flex-1">
-                  {tier ? <span className="mb-2 inline-block"><Badge variant={tierVariant(percent)}>{tier.label}</Badge></span> : null}
-                  <p className="ds-num text-3xl font-extrabold leading-none text-foreground">
-                    {result.correct_count}<span className="text-lg font-bold text-muted-foreground"> / {result.total_questions}</span>
+                <div className="min-w-0 flex-1 text-center sm:text-left">
+                  <p className="ds-overline text-primary">Score</p>
+                  <h1 className="mt-1 ds-h2 leading-tight text-foreground">{displayTitle}</h1>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    {correctCount} of {totalQuestions} correct · {fmtSec(totalTime)}
                   </p>
-                  <p className="mt-1 text-sm text-muted-foreground">correct answers</p>
+                  <span className={cn("cr-pillin mt-3 inline-flex items-center rounded-full border px-3 py-1 text-xs font-bold", band.cls)}>
+                    {band.label}
+                  </span>
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 divide-x divide-border border-t border-border">
-                {[{ v: result.score_points, l: "Points" }, { v: result.max_points, l: "Max" }, { v: timeStr, l: "Time" }].map((s) => (
-                  <div key={s.l} className="px-4 py-3 text-center">
-                    <p className="ds-num text-lg font-extrabold text-foreground">{s.v}</p>
-                    <p className="ds-overline mt-0.5">{s.l}</p>
-                  </div>
-                ))}
+              {/* stat strip */}
+              <div className="grid grid-cols-2 border-t border-border sm:grid-cols-4">
+                <StatCell label="POINTS" value={result.score_points} />
+                <StatCell label="MAX POINTS" value={result.max_points} />
+                <StatCell label="TOTAL TIME" value={fmtSec(totalTime)} />
+                <StatCell label="AVG PER QUESTION" value={`${avgPerQuestion} sec`} accent />
               </div>
-
-              {gradedAtStr ? <div className="flex items-center gap-1.5 border-t border-border px-5 py-2.5 text-xs text-muted-foreground"><Clock className="h-3 w-3" /> Graded {gradedAtStr}</div> : null}
             </Card>
 
-            {/* Learning interpretation */}
-            {insight ? (
-              <Card variant={insightTone === "neutral" ? "default" : "soft"} className={insightTone === "success" ? "border border-success/25 bg-success-soft" : insightTone === "warning" ? "border border-warning/25 bg-warning-soft" : undefined}>
-                <CardContent className="space-y-3">
-                  <div className="flex items-start gap-3">
-                    <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-xl", insightTone === "success" ? "bg-success/15 text-success-foreground" : insightTone === "warning" ? "bg-warning/15 text-warning-foreground" : "bg-surface-2 text-foreground")}>
-                      <InsightIcon className="h-4 w-4" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-extrabold text-foreground">{insight.headline}</p>
-                      <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{insight.body}</p>
-                    </div>
-                  </div>
-                  {pacingInsight ? (
-                    <div className="flex items-start gap-2 border-t border-border pt-3">
-                      <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      <p className="text-xs leading-relaxed text-muted-foreground">{pacingInsight}</p>
-                    </div>
-                  ) : null}
-                </CardContent>
-              </Card>
-            ) : null}
-
-            {/* Per-question breakdown */}
-            {hasBreakdown && attempt ? (
-              <Card>
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-5 py-3">
-                  <p className="ds-h4">Question breakdown</p>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {answers.some((a) => a.is_correct === false) ? (
-                      <Button variant="secondary" size="sm" loading={retryLoading} leftIcon={<RefreshCw />} onClick={handleRetryIncorrect}>Retry incorrect</Button>
-                    ) : null}
-                    <Button variant="secondary" size="sm" leftIcon={<Eye />} onClick={() => router.push(`/assessments/review/${attempt.id}`)}>Review all</Button>
-                  </div>
-                </div>
-                {retryError ? <p className="px-5 py-2 text-xs text-danger-foreground">{retryError}</p> : null}
-                <div className="divide-y divide-border">
-                  {answers.map((ans, i) => {
-                    const qt = attempt?.question_times ?? null;
-                    const sec = qt ? Number(qt[String(ans.question_id)] || 0) : 0;
-                    return (
-                      <button key={ans.question_id} type="button" onClick={() => router.push(`/assessments/review/${attempt.id}?q=${i + 1}`)} className="ds-ring flex w-full items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-surface-2">
-                        <span className="w-6 shrink-0 text-right text-xs font-bold text-muted-foreground">{i + 1}</span>
-                        {ans.is_correct === true ? <CheckCircle2 className="h-4 w-4 shrink-0 text-success" /> : ans.is_correct === false ? <XCircle className="h-4 w-4 shrink-0 text-danger" /> : <div className="h-4 w-4 shrink-0 rounded-full border-2 border-border" />}
-                        <span className={cn("flex-1 text-sm font-semibold", ans.is_correct === true ? "text-success-foreground" : ans.is_correct === false ? "text-danger-foreground" : "text-muted-foreground")}>
-                          {ans.is_correct === true ? "Correct" : ans.is_correct === false ? "Incorrect" : "Not answered"}
+            {/* ── Question breakdown ── */}
+            <Card className="cr-cardrise">
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border px-6 py-5">
+                <p className="ds-h4">Question breakdown</p>
+                <div className="flex flex-wrap items-center gap-5">
+                  <Switch checked={showAnswers} onCheckedChange={setShowAnswers} label="Show correct answers" />
+                  <div className="inline-flex items-center gap-2.5">
+                    <span className="text-sm font-bold text-label-foreground">View:</span>
+                    {viewDefs.map((v, i) => {
+                      const on = perPage === v.key;
+                      return (
+                        <span key={String(v.key)} className="inline-flex items-center gap-2.5">
+                          <button
+                            type="button"
+                            onClick={() => { setPerPage(v.key); setPage(1); }}
+                            className={cn(
+                              "ds-ring rounded text-sm font-extrabold transition-colors",
+                              on ? "text-foreground" : "text-primary underline decoration-1 underline-offset-[3px] hover:text-primary-hover",
+                            )}
+                          >
+                            {v.label}
+                          </button>
+                          {i < viewDefs.length - 1 ? <span className="font-semibold text-label-foreground">|</span> : null}
                         </span>
-                        {sec > 0 ? <span className="ds-num inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground"><Clock className="h-3 w-3" /> {formatTime(sec)}</span> : null}
-                        {ans.points_awarded != null ? <span className="text-xs font-bold text-muted-foreground">+{ans.points_awarded} pts</span> : null}
-                        <ChevronRight className="h-3.5 w-3.5 shrink-0 text-label-foreground" />
-                      </button>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
-              </Card>
-            ) : null}
+              </div>
 
-            {/* What to do next */}
-            {nextStep && result ? (
-              <Card>
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-5 py-3">
-                  <div className="flex items-center gap-2"><Target className="h-4 w-4 shrink-0 text-primary" /><p className="ds-h4">What to do next</p></div>
-                  {percent < 90 ? (
-                    <Badge variant="primary">Next aim: {Math.min(100, Math.ceil(percent / 10) * 10 + (percent % 10 === 0 ? 10 : 0))}%+</Badge>
+              {/* filter pills */}
+              <div className="flex flex-wrap items-center gap-2.5 px-6 pb-2 pt-4">
+                {filterDefs.map((f) => {
+                  const on = filter === f.key;
+                  return (
+                    <button
+                      key={f.key}
+                      type="button"
+                      onPointerDown={spawnRipple}
+                      onClick={() => { setFilter(f.key); setPage(1); }}
+                      className={cn(
+                        "cr-pillin cr-press cr-ripple inline-flex items-center gap-2 rounded-full border px-4 py-2 text-[13px] font-bold transition-colors",
+                        on
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border bg-card text-foreground hover:bg-surface-2",
+                      )}
+                    >
+                      {f.label}
+                      <span
+                        className={cn(
+                          "ds-num rounded-full px-2 py-0.5 text-[12px] font-extrabold",
+                          on ? "bg-white/20 text-primary-foreground" : "bg-surface-2 text-label-foreground",
+                        )}
+                      >
+                        {f.count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* table */}
+              <div className="px-6 pb-6 pt-3">
+                <div className="overflow-hidden rounded-xl border border-border">
+                  <div className="grid grid-cols-[64px_1.1fr_1.1fr_92px_84px] bg-surface-3">
+                    {["Question", "Correct Answer", "Your Answer", "Time", "Actions"].map((h, i) => (
+                      <div
+                        key={h}
+                        className={cn("px-4 py-3.5 text-[13px] font-extrabold text-foreground", i === 4 && "text-right")}
+                      >
+                        {h}
+                      </div>
+                    ))}
+                  </div>
+
+                  {pageRows.length === 0 ? (
+                    <div className="border-t border-border px-4 py-10 text-center text-sm text-muted-foreground">
+                      No questions match this filter.
+                    </div>
                   ) : (
-                    <Badge variant="success">Target: maintain 90%+</Badge>
+                    pageRows.map(({ q, status }, i) => {
+                      const sm = STATUS_META[status];
+                      const sec = timeForQuestion(q.id);
+                      const slow = sec > 15;
+                      return (
+                        <div
+                          key={q.id}
+                          className="cr-rowin2 grid grid-cols-[64px_1.1fr_1.1fr_92px_84px] items-center border-t border-border transition-colors hover:bg-surface-2"
+                          style={{ animationDelay: `${i * 45}ms` }}
+                        >
+                          <div className="px-4 py-4 text-sm font-bold text-foreground">Q{q.order + 1}</div>
+                          <div className="bg-surface-2/60 px-4 py-4 text-sm font-bold text-foreground">
+                            {showAnswers ? answerToDisplay(q.correct_answer) : "—"}
+                          </div>
+                          <div className={cn("px-4 py-4 text-sm font-extrabold", sm.tone)}>{sm.label}</div>
+                          <div className={cn("ds-num px-4 py-4 text-sm font-semibold", slow ? "text-rose-500" : "text-foreground")}>
+                            {sec > 0 ? fmtSec(sec) : "—"}
+                          </div>
+                          <div className="px-4 py-4 text-right">
+                            <button
+                              type="button"
+                              onClick={() => router.push(`/assessments/review/${attemptId}`)}
+                              className="ds-ring rounded text-sm font-extrabold text-primary transition-colors hover:text-primary-hover hover:underline underline-offset-[3px]"
+                            >
+                              Review
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })
                   )}
                 </div>
-                <CardContent className="space-y-3">
-                  <p className="text-sm font-extrabold text-foreground">{nextStep.action}</p>
-                  <p className="text-sm leading-relaxed text-muted-foreground">{nextStep.rationale}</p>
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    {nextStep.preferRetry ? (
-                      <>
-                        <Button leftIcon={<RefreshCw />} onClick={() => router.push(`/assessments/${aid}`)}>{nextStep.primaryLabel}</Button>
-                        <Link href="/assessments"><Button variant="secondary" leftIcon={<BookOpen />}>Browse assessments</Button></Link>
-                      </>
-                    ) : (
-                      <>
-                        <Link href="/assessments"><Button leftIcon={<BookOpen />}>{nextStep.primaryLabel}</Button></Link>
-                        <Button variant="secondary" leftIcon={<RefreshCw />} onClick={() => router.push(`/assessments/${aid}`)}>Re-attempt this set</Button>
-                      </>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            ) : null}
 
-            <div className="flex justify-end">
-              <Button variant="secondary" leftIcon={<ArrowLeft />} onClick={() => router.push(`/assessments/${aid}`)}>Back to assignment</Button>
-            </div>
+                {/* pagination */}
+                {pageCount > 1 ? (
+                  <div className="mt-6 flex items-center justify-center gap-1.5">
+                    <PagerButton
+                      ariaLabel="Previous page"
+                      disabled={safePage <= 1}
+                      onClick={() => setPage(Math.max(1, safePage - 1))}
+                    >
+                      <ArrowLeft className="h-4 w-4" />
+                    </PagerButton>
+                    {pager.map((p, i) =>
+                      p === "…" ? (
+                        <span key={`gap-${i}`} className="inline-flex h-10 min-w-10 items-center justify-center text-sm font-extrabold text-label-foreground">
+                          …
+                        </span>
+                      ) : (
+                        <PagerButton key={p} active={p === safePage} onClick={() => setPage(p)}>
+                          {p}
+                        </PagerButton>
+                      ),
+                    )}
+                    <PagerButton
+                      ariaLabel="Next page"
+                      disabled={safePage >= pageCount}
+                      onClick={() => setPage(Math.min(pageCount, safePage + 1))}
+                    >
+                      <ArrowLeft className="h-4 w-4 rotate-180" />
+                    </PagerButton>
+                  </div>
+                ) : null}
+              </div>
+            </Card>
           </>
         ) : null}
       </div>
     </AuthGuard>
   );
+}
+
+// ─── Sub-components ─────────────────────────────────────────────────────────
+
+function StatCell({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+  return (
+    <div className="border-border px-5 py-5 text-center [&:not(:last-child)]:border-r">
+      <p className={cn("ds-num text-[22px] font-extrabold leading-tight", accent ? "text-primary" : "text-foreground")}>{value}</p>
+      <p className="mt-1 text-[11px] font-extrabold tracking-[0.06em] text-label-foreground">{label}</p>
+    </div>
+  );
+}
+
+function PagerButton({
+  children,
+  active,
+  disabled,
+  ariaLabel,
+  onClick,
+}: {
+  children: React.ReactNode;
+  active?: boolean;
+  disabled?: boolean;
+  ariaLabel?: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      aria-current={active ? "page" : undefined}
+      disabled={disabled}
+      onPointerDown={spawnRipple}
+      onClick={onClick}
+      className={cn(
+        "cr-ripple cr-press ds-ring inline-flex h-10 min-w-10 items-center justify-center rounded-xl border px-3 text-sm font-extrabold transition-colors disabled:pointer-events-none disabled:opacity-40",
+        active
+          ? "border-primary bg-primary text-primary-foreground"
+          : "border-border bg-card text-foreground hover:bg-surface-2",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** 1-based windowed pager: always shows 1, last, and current ±1 with ellipses. */
+function pageWindow(page: number, count: number): (number | "…")[] {
+  if (count <= 7) return Array.from({ length: count }, (_, i) => i + 1);
+  const out: (number | "…")[] = [1];
+  const start = Math.max(2, page - 1);
+  const end = Math.min(count - 1, page + 1);
+  if (start > 2) out.push("…");
+  for (let i = start; i <= end; i++) out.push(i);
+  if (end < count - 1) out.push("…");
+  out.push(count);
+  return out;
 }

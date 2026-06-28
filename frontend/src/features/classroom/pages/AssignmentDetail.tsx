@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft, CalendarClock, Upload, Play, RotateCcw, MessageSquare, CheckCircle2,
+  ArrowLeft, Clock, Upload, Play, RotateCcw, MessageSquare, CheckCircle2,
   FileText, ExternalLink, Paperclip, GraduationCap, X,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -13,26 +13,37 @@ import { Card, CardHeader, Button, Pill, LoadingState, ErrorState } from "../ui"
 import { useClassroom } from "../hooks";
 import { capabilitiesFor } from "../capabilities";
 import { useAssignment, useMySubmission, useSubmitHomework } from "../homeworkHooks";
-import { assignmentKind, contentActions, KIND_LABEL, startHref, type AssignmentDetail, type AssignmentKind, type MySubmission } from "../homeworkApi";
+import { assignmentKind, contentActions, KIND_LABEL, type AssignmentDetail, type AssignmentKind, type MySubmission } from "../homeworkApi";
+import { spawnRipple } from "../ui/ripple";
 import { SubmissionStatusPill } from "./statusPill";
 
-function dueLine(due: string | null, done: boolean): { text: string; tone: "neutral" | "warning" | "info" } {
-  if (!due) return { text: "No deadline", tone: "neutral" };
-  const d = new Date(due);
-  if (Number.isNaN(d.getTime())) return { text: "No deadline", tone: "neutral" };
-  const dateStr = d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-  const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
-  const days = Math.round((d.getTime() - startOfToday.getTime()) / 86_400_000);
-  if (done) return { text: `Due ${dateStr}`, tone: "neutral" };
-  if (days < 0) return { text: `Past due · was ${dateStr}`, tone: "warning" };
-  if (days === 0) return { text: "Due today", tone: "info" };
-  if (days === 1) return { text: "Due tomorrow", tone: "info" };
-  return { text: `Due ${dateStr} · in ${days} days`, tone: "neutral" };
+/** Short, friendly date — "Jun 30" — matching the design's meta tiles. */
+function shortDate(iso?: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-function whatToSubmit(kind: AssignmentKind): string {
-  if (kind === "FILE") return "Upload your work as a file. Your teacher will review and grade it.";
-  return `Complete the ${KIND_LABEL[kind].toLowerCase()}. Your score is recorded automatically when you finish — no upload needed.`;
+/** Human section label from the raw backend subject code. */
+function sectionLabel(subject?: string | null): string {
+  if (!subject) return "—";
+  const s = subject.toUpperCase();
+  if (s === "READING_WRITING" || s === "ENGLISH" || s === "RW") return "Reading & Writing";
+  if (s === "MATH") return "Math";
+  return subject;
+}
+
+/** Countdown text derived from the due date (Past due / Due today / N days left). */
+function countdown(due?: string | null): string {
+  if (!due) return "No deadline";
+  const d = new Date(due);
+  if (Number.isNaN(d.getTime())) return "No deadline";
+  const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
+  const days = Math.round((d.getTime() - startOfToday.getTime()) / 86_400_000);
+  if (days < 0) return "Past due";
+  if (days === 0) return "Due today";
+  if (days === 1) return "1 day left";
+  return `${days} days left`;
 }
 
 export function AssignmentDetailPage({ classId, assignmentId }: { classId: number; assignmentId: number }) {
@@ -59,7 +70,7 @@ function TeacherView({ classId, assignment }: { classId: number; assignment: Ass
   const router = useRouter();
   const kind = assignmentKind(assignment);
   return (
-    <div className="mt-4 space-y-5">
+    <div className="cr-section mt-4 space-y-5">
       <header>
         <div className="flex items-center gap-2">
           <Pill tone="primary">{KIND_LABEL[kind]}</Pill>
@@ -69,9 +80,9 @@ function TeacherView({ classId, assignment }: { classId: number; assignment: Ass
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">{assignment.title}</h1>
       </header>
       {assignment.instructions && (
-        <Card><CardHeader title="Instructions" /><p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{assignment.instructions}</p></Card>
+        <Card className="cr-card"><CardHeader title="Instructions" /><p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{assignment.instructions}</p></Card>
       )}
-      <Card>
+      <Card className="cr-card">
         <CardHeader title="Grading" description={assignment.category === "HOMEWORK" || kind === "FILE" ? "Manual grading" : "Auto-graded"} />
         <Button className="mt-4" icon={GraduationCap} onClick={() => router.push(`/classes/${classId}?tab=grading`)}>
           Open in gradebook
@@ -88,17 +99,31 @@ function StudentView({ classId, assignment }: { classId: number; assignment: Ass
   const my = sub.data ?? null;
   const status = my?.workflow_status ?? my?.status ?? null;
   const done = status === "REVIEWED";
-  const due = dueLine(assignment.due_at, done);
   const [uploadOpen, setUploadOpen] = useState(false);
 
   const action = resolveAction(kind, status);
-  const href = startHref(classId, assignment);
   const actions = contentActions(assignment);
-  const multi = actions.length > 1;
+  const isFile = kind === "FILE" || actions.length === 0;
+  const badgeLabel = actions.length > 1 ? "Bundle" : KIND_LABEL[kind];
 
+  // Meta tiles (design's hero row): label + value, animated with stagger.
+  const tiles: { label: string; value: string; countdown?: boolean }[] = [
+    { label: "Assigned", value: shortDate(assignment.assigned_at ?? assignment.created_at ?? assignment.published_at) },
+    { label: "Due", value: assignment.due_at ? shortDate(assignment.due_at) : "No deadline" },
+    { label: "Tasks", value: assignment.item_count != null ? `${assignment.item_count} items` : "—" },
+    { label: "Section", value: sectionLabel(assignment.subject) },
+    { label: "Countdown", value: countdown(assignment.due_at), countdown: true },
+  ];
+
+  // Numbered instruction steps (split on newlines, drop blanks).
+  const steps = (assignment.instructions ?? "")
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  function startUpload() { setUploadOpen(true); }
   function runAction() {
     if (action.mode === "upload") { setUploadOpen(true); return; }
-    if (action.mode === "start" && href) { router.push(href); return; }
     if (action.mode === "feedback") {
       document.getElementById("feedback-card")?.scrollIntoView({ behavior: "smooth", block: "center" });
     }
@@ -106,45 +131,79 @@ function StudentView({ classId, assignment }: { classId: number; assignment: Ass
 
   return (
     <div className="mt-4 space-y-5">
-      {/* 1. What is this? */}
-      <header>
-        <div className="flex flex-wrap items-center gap-2">
-          <Pill tone="primary">{multi ? "Bundle" : KIND_LABEL[kind]}</Pill>
-          <SubmissionStatusPill status={status} />
-        </div>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">{assignment.title}</h1>
-        {/* 2. When is it due? */}
-        <p className={cn("mt-1.5 inline-flex items-center gap-1.5 text-sm",
-          due.tone === "warning" ? "text-amber-600" : due.tone === "info" ? "text-sky-600" : "text-muted-foreground")}>
-          <CalendarClock className="h-4 w-4" /> {due.text}
-        </p>
-      </header>
-
-      {/* 5. What should I do next? */}
-      {multi ? (
-        /* Multi-content bundle: open each attached activity separately. */
-        <Card>
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Activities</p>
-          <p className="mt-2 text-sm text-muted-foreground">
-            This assignment includes several activities. Open each one — your score for each is recorded automatically.
-          </p>
-          <div className="mt-4 space-y-2">
-            {actions.map((c) => (
-              <Link
-                key={`${c.kind}-${c.href}`}
-                href={c.href}
-                className="flex items-center justify-between gap-3 rounded-xl border border-border px-4 py-3 transition-colors hover:bg-surface-2"
-              >
-                <span className="flex items-center gap-2 text-sm font-medium text-foreground">
-                  <Play className="h-4 w-4 text-primary" /> {c.label}
-                </span>
-                <Pill tone="neutral">{KIND_LABEL[c.kind]}</Pill>
-              </Link>
+      {/* HERO — type badge, title, meta tiles. */}
+      <Card pad="none" className="cr-card overflow-hidden">
+        <div className="relative overflow-hidden bg-primary px-6 py-7 text-primary-foreground sm:px-8">
+          <div aria-hidden className="pointer-events-none absolute -bottom-12 -right-8 h-48 w-48 rounded-full bg-white/10" />
+          <div className="relative flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center rounded-full bg-white/20 px-3 py-1 text-xs font-extrabold">{badgeLabel}</span>
+            <SubmissionStatusPill status={status} />
+          </div>
+          <h1 className="relative mt-3 text-2xl font-extrabold tracking-tight sm:text-3xl">{assignment.title}</h1>
+          <div className="relative mt-5 flex flex-wrap gap-x-8 gap-y-4">
+            {tiles.map((t, i) => (
+              <div key={t.label} className="cr-pillin" style={{ animationDelay: `${i * 60}ms` }}>
+                <div className="text-[11px] font-extrabold uppercase tracking-wider opacity-75">{t.label}</div>
+                {t.countdown ? (
+                  <div className="cr-daypop mt-1 inline-flex items-center gap-1.5 rounded-lg bg-white/15 px-2.5 py-0.5 text-sm font-extrabold">
+                    <Clock className="h-3.5 w-3.5" aria-hidden /> {t.value}
+                  </div>
+                ) : (
+                  <div className="mt-0.5 text-[17px] font-extrabold">{t.value}</div>
+                )}
+              </div>
             ))}
           </div>
-        </Card>
-      ) : done ? (
-        <Card className="border-emerald-500/30 bg-emerald-500/5">
+        </div>
+
+        {/* INSTRUCTIONS — numbered steps. */}
+        {steps.length > 0 && (
+          <div className="px-6 py-6 sm:px-8">
+            <h2 className="mb-4 text-base font-extrabold text-foreground">Instructions</h2>
+            <ol className="grid gap-x-10 gap-y-3.5 sm:grid-cols-2">
+              {steps.map((line, i) => (
+                <li key={i} className="cr-rowin flex items-start gap-3.5" style={{ animationDelay: `${i * 60}ms` }}>
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-sm font-extrabold text-primary">{i + 1}</span>
+                  <span className="pt-0.5 text-[15px] font-medium text-foreground">{line}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
+      </Card>
+
+      {/* CONTENT LAUNCHER — one card per openable content (replaces the old "Next step"). */}
+      {!isFile && (
+        <div
+          className={cn(
+            "grid gap-3",
+            actions.length === 2 ? "grid-cols-1 sm:grid-cols-2"
+              : actions.length > 2 ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+              : "grid-cols-1",
+          )}
+        >
+          {actions.map((c) => (
+            <Card key={`${c.kind}-${c.href}`} className="cr-card cr-lift flex flex-col gap-3">
+              <div className="flex items-center gap-2">
+                <Pill tone="primary">{KIND_LABEL[c.kind]}</Pill>
+              </div>
+              <p className="flex-1 text-[15px] font-bold text-foreground">{c.name}</p>
+              <Button
+                className="cr-press cr-ripple"
+                icon={Play}
+                onPointerDown={spawnRipple}
+                onClick={() => router.push(c.href)}
+              >
+                Start
+              </Button>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* FILE kind — completed banner / upload next-step, plus the upload panel. */}
+      {isFile && (done ? (
+        <Card className="cr-card border-emerald-500/30 bg-emerald-500/5">
           <div className="flex items-center gap-3">
             <CheckCircle2 className="h-5 w-5 text-emerald-600" />
             <div className="flex-1">
@@ -155,30 +214,33 @@ function StudentView({ classId, assignment }: { classId: number; assignment: Ass
           </div>
         </Card>
       ) : (
-        <Card>
+        <Card className="cr-card">
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Next step</p>
           <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-foreground">{whatToSubmit(kind)}</p>
-            <Button size="lg" icon={action.icon} onClick={runAction} disabled={action.mode === "start" && !href}>
+            <p className="text-sm text-foreground">Upload your work as a file. Your teacher will review and grade it.</p>
+            <Button
+              size="lg"
+              className="cr-press cr-ripple"
+              icon={action.icon}
+              onPointerDown={spawnRipple}
+              onClick={action.mode === "feedback" ? runAction : startUpload}
+            >
               {action.label}
             </Button>
           </div>
-          {action.mode === "start" && !href && (
-            <p className="mt-2 text-xs text-amber-600">This activity isn't linked yet — ask your teacher.</p>
-          )}
         </Card>
-      )}
+      ))}
 
       {/* File upload panel (FILE kind) */}
-      {uploadOpen && kind === "FILE" && !multi && (
+      {uploadOpen && isFile && (
         <UploadPanel classId={classId} assignmentId={assignment.id} my={my} onClose={() => setUploadOpen(false)} />
       )}
 
-      {/* 3. What is this / what to submit — details + teacher materials */}
-      {(assignment.instructions || assignment.attachment_file_url || (assignment.attachment_urls?.length) || assignment.external_url) && (
-        <Card>
-          <CardHeader title="Details" />
-          {assignment.instructions && <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{assignment.instructions}</p>}
+      {/* Teacher materials — links + attachments. (Instructions render as numbered
+          steps in the hero above, so they're not repeated here.) */}
+      {(assignment.attachment_file_url || (assignment.attachment_urls?.length) || assignment.external_url) && (
+        <Card className="cr-card">
+          <CardHeader title="Materials" />
           <div className="mt-3 space-y-2">
             {assignment.external_url && (
               <a href={assignment.external_url} target="_blank" rel="noreferrer"

@@ -18,7 +18,8 @@ import {
   ClassroomModal,
   crInputClass,
 } from "@/components/classroom";
-import { BookOpen, ClipboardList, FileText, FlaskConical, Loader2, Paperclip, Trash2, X } from "lucide-react";
+import { spawnRipple } from "@/features/classroom/ui/ripple";
+import { BookOpen, ClipboardList, FileText, FlaskConical, Loader2, Paperclip, X } from "lucide-react";
 
 type PastpaperRow = Record<string, unknown> & {
   id: number;
@@ -346,9 +347,9 @@ export default function CreateAssignmentModal({
   const dueDatePresetsData = dueDatePresets();
   const isEditing = editingAssignment != null;
 
-  const cardBase = "text-left rounded-xl border px-4 py-3 transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900";
-  const cardUnsel = "border-slate-200/90 bg-white/80 hover:border-indigo-200/60 hover:bg-slate-50/90 dark:border-slate-600 dark:bg-slate-900/40 dark:hover:border-indigo-500/30";
-  const cardSel = "border-indigo-400 bg-indigo-50/90 ring-2 ring-indigo-500/25 shadow-sm dark:border-indigo-500 dark:bg-indigo-950/40 dark:ring-indigo-400/20";
+  const cardBase = "cr-press text-left rounded-xl border px-4 py-3 transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/90 focus-visible:ring-offset-2 focus-visible:ring-offset-background";
+  const cardUnsel = "border-border bg-card hover:border-primary/35 hover:bg-surface-2";
+  const cardSel = "border-primary bg-primary/10 ring-2 ring-primary/25 shadow-sm";
 
   const handleCardSelect = (c: CardPastpaperPack | CardSingle) => {
     setPastSel(selectFromCard(c));
@@ -385,12 +386,12 @@ export default function CreateAssignmentModal({
       description="Choose assignment type, add content, set due date, and attach files."
       size="lg"
     >
-      <div className="space-y-5">
+      <div className="cr-section space-y-6">
         {formError ? <ClassroomAlert tone="error">{formError}</ClassroomAlert> : null}
 
         {asgOptionsLoading ? (
-          <div className="flex items-center gap-2 py-3 text-sm text-slate-500 dark:text-slate-400">
-            <Loader2 className="h-5 w-5 animate-spin text-indigo-600 dark:text-indigo-400" />
+          <div className="flex items-center gap-2 py-3 text-sm text-muted-foreground">
+            <Loader2 className="h-5 w-5 animate-spin text-primary" />
             Loading options…
           </div>
         ) : null}
@@ -398,8 +399,9 @@ export default function CreateAssignmentModal({
 
         {/* ─── Step 1: Content Types (multi-select) ─── */}
         {!isEditing && (
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">Include content (select one or more)</p>
+          <section className="cr-pop rounded-2xl border border-border bg-surface-2/40 p-4">
+            <p className="ds-section-title mb-1 text-muted-foreground">Content</p>
+            <p className="ds-caption mb-3 text-muted-foreground">Bundle one or more — students get a launcher for each.</p>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {([
                 { key: "pastpaper" as const, icon: BookOpen, label: "Pastpaper", desc: "Official SAT test" },
@@ -434,83 +436,88 @@ export default function CreateAssignmentModal({
                     }}
                     className={`${cardBase} ${active ? cardSel : cardUnsel}`}
                   >
-                    <Icon className={`h-4 w-4 mb-1 ${active ? "text-indigo-600 dark:text-indigo-400" : "text-slate-400"}`} />
-                    <p className="text-sm font-bold text-slate-800 dark:text-slate-100">{label}</p>
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400">{desc}</p>
+                    <Icon className={`h-4 w-4 mb-1 ${active ? "text-primary" : "text-muted-foreground"}`} />
+                    <p className="text-sm font-bold text-foreground">{label}</p>
+                    <p className="text-[10px] text-muted-foreground">{desc}</p>
                   </button>
                 );
               })}
             </div>
-          </div>
+          </section>
         )}
 
-        {/* ─── Title ─── */}
-        <ClassroomField label="Title *" htmlFor="asg-title">
-          <input
-            id="asg-title"
-            value={newAsg.title}
-            onChange={(e) => setNewAsg((p) => ({ ...p, title: e.target.value }))}
-            placeholder="e.g. May SAT Reading practice"
-            className={`${crInputClass} font-semibold`}
-          />
-        </ClassroomField>
+        {/* ─── Details: title / instructions / due date ─── */}
+        <section className="cr-pop space-y-5 rounded-2xl border border-border bg-card p-4">
+          <p className="ds-section-title text-muted-foreground">Details</p>
 
-        {/* ─── Instructions ─── */}
-        {showInstructions ? (
-          <ClassroomField label="Instructions" htmlFor="asg-inst">
-            <textarea
-              id="asg-inst"
-              autoFocus
-              value={newAsg.instructions}
-              onChange={(e) => setNewAsg((p) => ({ ...p, instructions: e.target.value }))}
-              placeholder="Short directions for students (optional)"
-              rows={3}
-              className={crInputClass}
+          {/* Title */}
+          <ClassroomField label="Title *" htmlFor="asg-title">
+            <input
+              id="asg-title"
+              value={newAsg.title}
+              onChange={(e) => setNewAsg((p) => ({ ...p, title: e.target.value }))}
+              placeholder="e.g. May SAT Reading practice"
+              className={`${crInputClass} font-semibold`}
             />
           </ClassroomField>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setShowInstructions(true)}
-            className="text-xs font-bold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 transition-colors"
-          >
-            + Add instructions
-          </button>
-        )}
 
-        {/* ─── Due date ─── */}
-        <ClassroomField label="Due date & time" htmlFor="asg-due" hint="Leave empty for no deadline.">
-          <div className="flex flex-wrap gap-1.5 mb-2">
-            {dueDatePresetsData.map((p) => (
-              <button
-                key={p.label}
-                type="button"
-                onClick={() => setDueLocal(p.value)}
-                className={`rounded-lg border px-2.5 py-1 text-xs font-bold transition-colors ${
-                  dueLocal === p.value
-                    ? "border-indigo-400 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300"
-                    : "border-slate-200 bg-white text-slate-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
-                }`}
-              >
-                {p.label}
-              </button>
-            ))}
-            {dueLocal && (
-              <button
-                type="button"
-                onClick={() => setDueLocal("")}
-                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-400 hover:text-red-600 transition-colors dark:border-slate-600 dark:bg-slate-800"
-              >
-                Clear
-              </button>
-            )}
-          </div>
-          <input id="asg-due" type="datetime-local" value={dueLocal} onChange={(e) => setDueLocal(e.target.value)} className={crInputClass} />
-        </ClassroomField>
+          {/* Instructions */}
+          {showInstructions ? (
+            <ClassroomField label="Instructions" htmlFor="asg-inst">
+              <textarea
+                id="asg-inst"
+                autoFocus
+                value={newAsg.instructions}
+                onChange={(e) => setNewAsg((p) => ({ ...p, instructions: e.target.value }))}
+                placeholder="Short directions for students (optional)"
+                rows={3}
+                className={crInputClass}
+              />
+            </ClassroomField>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowInstructions(true)}
+              className="text-xs font-bold text-primary transition-colors hover:text-primary/80"
+            >
+              + Add instructions
+            </button>
+          )}
+
+          {/* Due date */}
+          <ClassroomField label="Due date & time" htmlFor="asg-due" hint="Leave empty for no deadline.">
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {dueDatePresetsData.map((p) => (
+                <button
+                  key={p.label}
+                  type="button"
+                  onClick={() => setDueLocal(p.value)}
+                  className={`cr-pill rounded-lg border px-2.5 py-1 text-xs font-bold transition-colors ${
+                    dueLocal === p.value
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-primary"
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+              {dueLocal && (
+                <button
+                  type="button"
+                  onClick={() => setDueLocal("")}
+                  className="cr-pill rounded-lg border border-border bg-card px-2.5 py-1 text-xs font-bold text-muted-foreground transition-colors hover:text-red-600"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            <input id="asg-due" type="datetime-local" value={dueLocal} onChange={(e) => setDueLocal(e.target.value)} className={crInputClass} />
+          </ClassroomField>
+        </section>
 
         {/* ─── Step 2: Content Selection ─── */}
         {(isEditing ? assignmentType === "pastpaper" : includePastpaper) && (
-          <>
+          <section className="cr-pop space-y-5 rounded-2xl border border-border bg-card p-4">
             <ClassroomField label="Pastpaper (full exam card)" hint="One card can combine R&W and Math.">
               <div className="grid max-h-[320px] grid-cols-1 gap-3 overflow-y-auto pr-1 sm:grid-cols-2">
                 <button
@@ -519,8 +526,8 @@ export default function CreateAssignmentModal({
                   className={`${cardBase} ${pastSel.mode === "none" ? cardSel : cardUnsel}`}
                 >
                   <p className="text-[10px] font-bold uppercase tracking-wider text-primary">Pastpaper</p>
-                  <p className="mt-1 text-sm font-bold text-slate-800 dark:text-slate-100">No practice test</p>
-                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">File/link only homework</p>
+                  <p className="mt-1 text-sm font-bold text-foreground">No practice test</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">File/link only homework</p>
                 </button>
                 {pastpaperCards.map((c) => {
                   const selected = selectionMatchesCard(pastSel, c);
@@ -540,8 +547,8 @@ export default function CreateAssignmentModal({
                       className={`${cardBase} ${selected ? cardSel : cardUnsel}`}
                     >
                       <p className="text-[10px] font-bold uppercase tracking-wider text-primary">Practice test</p>
-                      <p className="mt-1 text-xs font-bold text-slate-400">{formatLineDate(lineDate)}</p>
-                      <p className="mt-2 line-clamp-2 text-sm font-bold leading-snug text-slate-900 dark:text-slate-50">{heading}</p>
+                      <p className="mt-1 text-xs font-bold text-muted-foreground">{formatLineDate(lineDate)}</p>
+                      <p className="mt-2 line-clamp-2 text-sm font-bold leading-snug text-foreground">{heading}</p>
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {sectionRows.map((t) => (
                           <span key={t.id} className="rounded-md bg-primary/12 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary">
@@ -569,24 +576,25 @@ export default function CreateAssignmentModal({
                       onClick={() => setPracticeScope(opt.value)}
                       className={`${cardBase} text-left ${practiceScope === opt.value ? cardSel : cardUnsel}`}
                     >
-                      <p className="text-sm font-bold text-slate-800 dark:text-slate-100">{opt.title}</p>
-                      <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{opt.sub}</p>
+                      <p className="text-sm font-bold text-foreground">{opt.title}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">{opt.sub}</p>
                     </button>
                   ))}
                 </div>
               </ClassroomField>
             )}
-          </>
+          </section>
         )}
 
         {/* ─── Practice Test Pack Selection ─── */}
         {(isEditing ? assignmentType === "practice_test" : includePracticeTest) && (
+          <section className="cr-pop rounded-2xl border border-border bg-card p-4">
           <ClassroomField label="Practice test pack" hint="Select a custom practice test to assign.">
             {assignmentOptions.practice_test_packs.length === 0 ? (
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-center dark:border-slate-700 dark:bg-slate-800/50">
-                <FlaskConical className="mx-auto h-8 w-8 text-slate-300 dark:text-slate-600" />
-                <p className="mt-2 text-sm font-semibold text-slate-500 dark:text-slate-400">No practice test packs available</p>
-                <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">Create and publish one in the Builder console first.</p>
+              <div className="rounded-xl border border-border bg-surface-2 px-4 py-6 text-center">
+                <FlaskConical className="mx-auto h-8 w-8 text-muted-foreground/60" />
+                <p className="mt-2 text-sm font-semibold text-muted-foreground">No practice test packs available</p>
+                <p className="mt-1 text-xs text-muted-foreground/80">Create and publish one in the Builder console first.</p>
               </div>
             ) : (
               <div className="grid max-h-[280px] grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
@@ -604,26 +612,28 @@ export default function CreateAssignmentModal({
                       }}
                       className={`${cardBase} ${selected ? cardSel : cardUnsel}`}
                     >
-                      <p className="text-sm font-bold text-slate-800 dark:text-slate-100 line-clamp-2">{ptp.title || `Pack #${ptp.id}`}</p>
+                      <p className="text-sm font-bold text-foreground line-clamp-2">{ptp.title || `Pack #${ptp.id}`}</p>
                       {ptp.description && (
-                        <p className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400 line-clamp-2">{ptp.description}</p>
+                        <p className="mt-0.5 text-[10px] text-muted-foreground line-clamp-2">{ptp.description}</p>
                       )}
-                      <p className="mt-1 text-[10px] font-semibold text-slate-400">{ptp.section_count} section{ptp.section_count !== 1 ? "s" : ""}</p>
+                      <p className="mt-1 text-[10px] font-semibold text-muted-foreground">{ptp.section_count} section{ptp.section_count !== 1 ? "s" : ""}</p>
                     </button>
                   );
                 })}
               </div>
             )}
           </ClassroomField>
+          </section>
         )}
 
         {(isEditing ? assignmentType === "assessment" : includeAssessment) && (
+          <section className="cr-pop rounded-2xl border border-border bg-card p-4">
           <ClassroomField label="Assessment set" hint="Select a quiz/test to assign to students.">
             {assignmentOptions.assessment_sets.length === 0 ? (
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-center dark:border-slate-700 dark:bg-slate-800/50">
-                <ClipboardList className="mx-auto h-8 w-8 text-slate-300 dark:text-slate-600" />
-                <p className="mt-2 text-sm font-semibold text-slate-500 dark:text-slate-400">No assessment sets available</p>
-                <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">Create one in the Builder console first.</p>
+              <div className="rounded-xl border border-border bg-surface-2 px-4 py-6 text-center">
+                <ClipboardList className="mx-auto h-8 w-8 text-muted-foreground/60" />
+                <p className="mt-2 text-sm font-semibold text-muted-foreground">No assessment sets available</p>
+                <p className="mt-1 text-xs text-muted-foreground/80">Create one in the Builder console first.</p>
               </div>
             ) : (
               <div className="grid max-h-[280px] grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
@@ -643,131 +653,137 @@ export default function CreateAssignmentModal({
                           {aset.subject}
                         </span>
                         {aset.category && (
-                          <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold text-slate-500 dark:bg-slate-700 dark:text-slate-400">
+                          <span className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[9px] font-bold text-muted-foreground">
                             {aset.category}
                           </span>
                         )}
                       </div>
-                      <p className="text-sm font-bold text-slate-800 dark:text-slate-100 line-clamp-2">{aset.title}</p>
-                      <p className="mt-1 text-[10px] font-semibold text-slate-400">{aset.question_count} questions</p>
+                      <p className="text-sm font-bold text-foreground line-clamp-2">{aset.title}</p>
+                      <p className="mt-1 text-[10px] font-semibold text-muted-foreground">{aset.question_count} questions</p>
                     </button>
                   );
                 })}
               </div>
             )}
           </ClassroomField>
+          </section>
         )}
 
-        {/* ─── External link ─── */}
-        {(isEditing ? (assignmentType === "file_only" || assignmentType === "pastpaper") : true) && (
-          <ClassroomField label="External link (optional)" htmlFor="asg-url">
-            <input
-              id="asg-url"
-              value={newAsg.external_url}
-              onChange={(e) => setNewAsg((p) => ({ ...p, external_url: e.target.value }))}
-              placeholder="https://…"
-              className={crInputClass}
-            />
-          </ClassroomField>
-        )}
+        {/* ─── Resources: external link + attachments ─── */}
+        <section className="cr-pop space-y-5 rounded-2xl border border-border bg-card p-4">
+          <p className="ds-section-title text-muted-foreground">Resources</p>
 
-        {/* ─── Files ─── */}
-        <ClassroomField
-          label={isEditing ? "Teacher attachments" : "Files (optional)"}
-          hint="Select multiple files at once. Files will be available for students to download."
-        >
-          {isEditing ? (
-            <div className="space-y-3">
-              <p className="rounded-xl border border-slate-200/90 bg-slate-50/90 px-3 py-2 text-xs text-slate-600 dark:border-slate-600 dark:bg-slate-800/50 dark:text-slate-300">
-                {Array.isArray(editingAssignment?.attachment_urls) && (editingAssignment?.attachment_urls as string[]).length > 0
-                  ? `${(editingAssignment?.attachment_urls as string[]).length} file(s) attached.`
-                  : "No files on this assignment yet."}
-              </p>
-              {/* Show existing file links */}
-              {Array.isArray(editingAssignment?.attachment_urls) && (editingAssignment?.attachment_urls as string[]).length > 0 && (
-                <div className="space-y-1">
-                  {(editingAssignment?.attachment_urls as string[]).map((url, i) => {
-                    const name = url.split("/").pop() || `File ${i + 1}`;
-                    return (
-                      <a key={i} href={url} target="_blank" rel="noopener noreferrer"
-                        className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-indigo-400 dark:hover:bg-slate-700"
-                      >
-                        <Paperclip className="h-3 w-3 shrink-0" />
-                        <span className="truncate">{decodeURIComponent(name)}</span>
-                      </a>
-                    );
-                  })}
-                </div>
-              )}
-              <label className="flex cursor-pointer items-start gap-2 text-sm text-slate-700 dark:text-slate-200">
-                <input type="checkbox" className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                  checked={replaceAttachments} onChange={(e) => setReplaceAttachments(e.target.checked)} />
-                <span>
-                  <span className="font-semibold">Replace all existing attachments</span>
-                  <span className="block text-xs font-normal text-slate-500 dark:text-slate-400">
-                    Check this before uploading to replace current files.
-                  </span>
-                </span>
-              </label>
-              <input id="asg-files-edit" name="attachment_file" type="file" multiple
-                onChange={(e) => setEditAsgFiles((prev) => [...prev, ...Array.from(e.target.files || [])])}
-                className="w-full text-sm text-slate-600 file:mr-3 file:rounded-xl file:border-0 file:bg-indigo-500/10 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-indigo-700 hover:file:bg-indigo-500/15 dark:text-slate-400 dark:file:bg-indigo-500/20 dark:file:text-indigo-200"
+          {/* External link */}
+          {(isEditing ? (assignmentType === "file_only" || assignmentType === "pastpaper") : true) && (
+            <ClassroomField label="External link (optional)" htmlFor="asg-url">
+              <input
+                id="asg-url"
+                value={newAsg.external_url}
+                onChange={(e) => setNewAsg((p) => ({ ...p, external_url: e.target.value }))}
+                placeholder="https://…"
+                className={crInputClass}
               />
-              {editAsgFiles.length > 0 && (
-                <div className="space-y-1">
-                  {editAsgFiles.map((f, i) => (
-                    <div key={`${f.name}-${f.size}-${i}`} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 dark:border-slate-700 dark:bg-slate-800">
-                      <Paperclip className="h-3 w-3 shrink-0 text-slate-400" />
-                      <span className="flex-1 truncate text-xs font-medium text-slate-700 dark:text-slate-300">{f.name}</span>
-                      <button type="button" onClick={() => removeEditFile(i)} className="text-slate-400 hover:text-red-500">
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : (
-            <>
-              <input id="asg-files" name="attachment_file" type="file" multiple
-                onChange={(e) => {
-                  const incoming = Array.from(e.target.files || []);
-                  setAsgFiles((prev) => {
-                    const combined = [...prev, ...incoming];
-                    if (combined.length > 10) {
-                      setFormError("Maximum 10 files allowed.");
-                      return prev;
-                    }
-                    setFormError(null);
-                    return combined;
-                  });
-                  e.target.value = "";
-                }}
-                className="w-full text-sm text-slate-600 file:mr-3 file:rounded-xl file:border-0 file:bg-indigo-500/10 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-indigo-700 hover:file:bg-indigo-500/15 dark:text-slate-400 dark:file:bg-indigo-500/20 dark:file:text-indigo-200"
-              />
-              {asgFiles.length > 0 && (
-                <p className="text-[10px] font-semibold text-slate-400 mt-1">{asgFiles.length}/10 files</p>
-              )}
-              {asgFiles.length > 0 && (
-                <div className="mt-2 space-y-1">
-                  {asgFiles.map((f, i) => (
-                    <div key={`${f.name}-${f.size}-${i}`} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 dark:border-slate-700 dark:bg-slate-800">
-                      <Paperclip className="h-3 w-3 shrink-0 text-slate-400" />
-                      <span className="flex-1 truncate text-xs font-medium text-slate-700 dark:text-slate-300">{f.name}</span>
-                      <span className="text-[10px] text-slate-400 shrink-0">{(f.size / 1024).toFixed(0)} KB</span>
-                      <button type="button" onClick={() => removeFile(i)} className="text-slate-400 hover:text-red-500">
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </>
+            </ClassroomField>
           )}
-        </ClassroomField>
+
+          {/* Files */}
+          <ClassroomField
+            label={isEditing ? "Teacher attachments" : "Files (optional)"}
+            hint="Select multiple files at once. Files will be available for students to download."
+          >
+            {isEditing ? (
+              <div className="space-y-3">
+                <p className="rounded-xl border border-border bg-surface-2 px-3 py-2 text-xs text-muted-foreground">
+                  {Array.isArray(editingAssignment?.attachment_urls) && (editingAssignment?.attachment_urls as string[]).length > 0
+                    ? `${(editingAssignment?.attachment_urls as string[]).length} file(s) attached.`
+                    : "No files on this assignment yet."}
+                </p>
+                {/* Show existing file links */}
+                {Array.isArray(editingAssignment?.attachment_urls) && (editingAssignment?.attachment_urls as string[]).length > 0 && (
+                  <div className="space-y-1">
+                    {(editingAssignment?.attachment_urls as string[]).map((url, i) => {
+                      const name = url.split("/").pop() || `File ${i + 1}`;
+                      return (
+                        <a key={i} href={url} target="_blank" rel="noopener noreferrer"
+                          className="cr-press flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold text-primary hover:bg-surface-2"
+                        >
+                          <Paperclip className="h-3 w-3 shrink-0" />
+                          <span className="truncate">{decodeURIComponent(name)}</span>
+                        </a>
+                      );
+                    })}
+                  </div>
+                )}
+                <label className="flex cursor-pointer items-start gap-2 text-sm text-foreground">
+                  <input type="checkbox" className="mt-0.5 rounded border-border text-primary focus:ring-primary"
+                    checked={replaceAttachments} onChange={(e) => setReplaceAttachments(e.target.checked)} />
+                  <span>
+                    <span className="font-semibold">Replace all existing attachments</span>
+                    <span className="block text-xs font-normal text-muted-foreground">
+                      Check this before uploading to replace current files.
+                    </span>
+                  </span>
+                </label>
+                <input id="asg-files-edit" name="attachment_file" type="file" multiple
+                  onChange={(e) => setEditAsgFiles((prev) => [...prev, ...Array.from(e.target.files || [])])}
+                  className="w-full text-sm text-muted-foreground file:mr-3 file:rounded-xl file:border-0 file:bg-primary/10 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-primary hover:file:bg-primary/15"
+                />
+                {editAsgFiles.length > 0 && (
+                  <div className="space-y-1">
+                    {editAsgFiles.map((f, i) => (
+                      <div key={`${f.name}-${f.size}-${i}`} className="flex items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-1.5">
+                        <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" />
+                        <span className="flex-1 truncate text-xs font-medium text-foreground">{f.name}</span>
+                        <button type="button" onClick={() => removeEditFile(i)} className="text-muted-foreground hover:text-red-500">
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <>
+                <input id="asg-files" name="attachment_file" type="file" multiple
+                  onChange={(e) => {
+                    const incoming = Array.from(e.target.files || []);
+                    setAsgFiles((prev) => {
+                      const combined = [...prev, ...incoming];
+                      if (combined.length > 10) {
+                        setFormError("Maximum 10 files allowed.");
+                        return prev;
+                      }
+                      setFormError(null);
+                      return combined;
+                    });
+                    e.target.value = "";
+                  }}
+                  className="w-full text-sm text-muted-foreground file:mr-3 file:rounded-xl file:border-0 file:bg-primary/10 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-primary hover:file:bg-primary/15"
+                />
+                {asgFiles.length > 0 && (
+                  <p className="text-[10px] font-semibold text-muted-foreground mt-1">{asgFiles.length}/10 files</p>
+                )}
+                {asgFiles.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {asgFiles.map((f, i) => (
+                      <div key={`${f.name}-${f.size}-${i}`} className="flex items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-1.5">
+                        <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" />
+                        <span className="flex-1 truncate text-xs font-medium text-foreground">{f.name}</span>
+                        <span className="text-[10px] text-muted-foreground shrink-0">{(f.size / 1024).toFixed(0)} KB</span>
+                        <button type="button" onClick={() => removeFile(i)} className="text-muted-foreground hover:text-red-500">
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </ClassroomField>
+        </section>
 
         {/* ─── Actions ─── */}
-        <div className="flex flex-col-reverse gap-2 border-t border-slate-200/70 pt-4 dark:border-slate-700/70 sm:flex-row">
+        <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row">
           <ClassroomButton type="button" variant="secondary" className="flex-1" onClick={() => { resetForm(); onClose(); }}>
             Cancel
           </ClassroomButton>
@@ -775,7 +791,8 @@ export default function CreateAssignmentModal({
             <ClassroomButton
               type="button"
               variant="secondary"
-              className="flex-1"
+              className="cr-press cr-ripple flex-1"
+              onPointerDown={spawnRipple}
               onClick={() => handleSubmit("DRAFT")}
               disabled={!newAsg.title.trim() || creatingAsg || (includeAssessment && !selectedAssessmentId)}
             >
@@ -785,7 +802,8 @@ export default function CreateAssignmentModal({
           <ClassroomButton
             type="button"
             variant="primary"
-            className="flex-1"
+            className="cr-press cr-ripple flex-1"
+            onPointerDown={spawnRipple}
             onClick={() => handleSubmit("PUBLISHED")}
             disabled={!newAsg.title.trim() || creatingAsg || (includeAssessment && !selectedAssessmentId)}
           >
