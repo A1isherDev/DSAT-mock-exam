@@ -19,7 +19,7 @@ export interface AssignmentDetail {
   external_url?: string | null;
   attachment_file_url?: string | null;
   attachment_urls?: { url: string; file_name?: string }[];
-  practice_bundle_tests?: { id: number; title?: string; subject?: string }[];
+  practice_bundle_tests?: { id: number; title?: string; collection_name?: string; name?: string; subject?: string }[];
   // New backend metadata (present on list, detail, and my-assignments payloads).
   content_type?: string;
   contents?: { kind: AssignmentKind; title: string; item_count: number | null }[];
@@ -93,6 +93,14 @@ export const KIND_LABEL: Record<AssignmentKind, string> = {
   FILE: "Homework",
 };
 
+/** Short subject label for disambiguating the sections of a multi-section past paper. */
+function subjectShort(s?: string): string {
+  const v = (s || "").toUpperCase();
+  if (v.includes("READING") || v === "ENGLISH" || v === "RW") return "Reading & Writing";
+  if (v.includes("MATH")) return "Math";
+  return s || "";
+}
+
 /**
  * A single openable content within an assignment. An assignment can bundle several
  * (a past paper + an assessment + a practice test), each opened independently by the student.
@@ -137,9 +145,22 @@ export function contentActions(a: AssignmentDetail): ContentAction[] {
   if (a.practice_test_pack != null) {
     add(out, "PRACTICE", "Open Practice Test", `/practice-tests/${a.practice_test_pack}`);
   } else if (a.practice_test != null || (a.practice_test_ids && a.practice_test_ids.length)) {
-    // Standalone pastpaper section(s): open one directly, or the listing to choose from several.
-    const single = singleSectionId(a);
-    add(out, "PASTPAPER", "Open Past Paper", single != null ? `/practice-test/${single}` : `/pastpapers`);
+    // Standalone pastpaper section(s). The authoritative, scope-resolved list is
+    // `practice_bundle_tests` — expand it into one launcher card per section, each
+    // opening THAT section's welcome page (never the generic /pastpapers listing).
+    // Section titles are blank; the real label is collection_name.
+    const bundle = a.practice_bundle_tests ?? [];
+    if (bundle.length) {
+      const multi = bundle.length > 1;
+      for (const t of bundle) {
+        const base = t.name?.trim() || t.collection_name?.trim() || t.title?.trim() || "Past Paper";
+        const name = multi ? `${base} · ${subjectShort(t.subject)}` : base;
+        out.push({ kind: "PASTPAPER", name, label: "Open Past Paper", href: `/practice-test/${t.id}` });
+      }
+    } else {
+      const single = singleSectionId(a);
+      if (single != null) add(out, "PASTPAPER", "Open Past Paper", `/practice-test/${single}`);
+    }
   }
   if (a.module != null) {
     const tid = a.practice_test ?? a.practice_test_ids?.[0];
@@ -154,8 +175,13 @@ export function startHref(classId: number, a: AssignmentDetail): string | null {
   if (kind === "QUIZ") return `/assessments/${a.id}`;
   if (kind === "MOCK") return `/mock/${a.mock_exam}`;
   if (kind === "PASTPAPER") {
+    // Prefer the scope-resolved sections: one section → straight to its welcome page;
+    // several → null so the caller opens the detail (which lists each section's card).
+    const bundle = a.practice_bundle_tests ?? [];
+    if (bundle.length === 1) return `/practice-test/${bundle[0].id}`;
+    if (bundle.length > 1) return null;
     const single = singleSectionId(a);
-    return single != null ? `/practice-test/${single}` : `/pastpapers`;
+    return single != null ? `/practice-test/${single}` : null;
   }
   if (kind === "PRACTICE") {
     if (a.practice_test_pack != null) return `/practice-tests/${a.practice_test_pack}`;

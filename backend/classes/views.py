@@ -321,8 +321,11 @@ class ClassroomViewSet(ModelViewSet):
         pt_meta: dict[int, dict] = {}
         if all_pt_ids:
             for pt in PracticeTest.objects.filter(id__in=all_pt_ids).prefetch_related("modules__questions"):
+                # Sections are labelled by collection_name (title is usually blank).
+                _name = (getattr(pt, "collection_name", "") or "").strip() or (pt.title or "").strip()
                 pt_meta[pt.id] = {
                     "title": (pt.title or "").strip(),
+                    "name": _name,
                     "subject": getattr(pt, "subject", None),
                     "qcount": sum(m.questions.count() for m in pt.modules.all()),
                 }
@@ -442,13 +445,16 @@ class ClassroomViewSet(ModelViewSet):
                 pack = a.practice_test_pack
                 contents.append({"kind": "PRACTICE", "title": (getattr(pack, "title", None) or getattr(pack, "name", None) or "Practice Test"), "item_count": _practice_qcount(a.id)})
             elif a.practice_test_id or a.practice_test_ids:
-                secs = [pt_meta[i]["title"] for i in pt_ids if i in pt_meta and pt_meta[i]["title"]]
+                secs = [pt_meta[i]["name"] for i in pt_ids if i in pt_meta and pt_meta[i].get("name")]
+                uniq = list(dict.fromkeys(secs))
                 if len(secs) == 1:
                     pp_title = secs[0]
-                elif len(pt_ids) > 1:
-                    pp_title = f"Past Paper · {len(pt_ids)} sections"
+                elif len(uniq) == 1:
+                    pp_title = uniq[0]  # full paper: sections share one collection_name
+                elif len(secs) > 1:
+                    pp_title = f"Past Paper · {len(secs)} sections"
                 else:
-                    pp_title = (secs[0] if secs else "Past Paper")
+                    pp_title = "Past Paper"
                 contents.append({"kind": "PASTPAPER", "title": pp_title, "item_count": _practice_qcount(a.id)})
 
             # Dominant section subject for the SECTION tile.

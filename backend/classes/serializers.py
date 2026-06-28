@@ -392,9 +392,27 @@ class AssignmentSerializer(serializers.ModelSerializer):
         pts = list(PracticeTest.objects.filter(id__in=ids))
         pts.sort(key=lambda p: (order.get(p.subject, 9), p.id))
         return [
-            {"id": p.id, "title": (p.title or "").strip(), "subject": p.subject}
+            {
+                "id": p.id,
+                "title": (p.title or "").strip(),
+                # Standalone pastpaper sections are labelled by collection_name (title
+                # is usually blank), so expose it + a ready display name for the launcher.
+                "collection_name": (getattr(p, "collection_name", "") or "").strip(),
+                "name": self._section_name(p),
+                "subject": p.subject,
+            }
             for p in pts
         ]
+
+    @staticmethod
+    def _section_name(pt) -> str:
+        """Display name for a standalone pastpaper section: collection_name first
+        (sections are labelled by it; title is usually blank), then title."""
+        return (
+            (getattr(pt, "collection_name", "") or "").strip()
+            or (getattr(pt, "title", "") or "").strip()
+            or "Past Paper"
+        )
 
     # ---- Redesigned-homework helpers -------------------------------------
 
@@ -471,8 +489,13 @@ class AssignmentSerializer(serializers.ModelSerializer):
         elif obj.practice_test_id or obj.practice_test_ids:
             ids = assignment_target_practice_test_ids(obj)
             sections = list(PracticeTest.objects.filter(id__in=ids)) if ids else []
+            names = {self._section_name(s) for s in sections}
+            names.discard("Past Paper")
             if len(sections) == 1:
-                title = (sections[0].title or "").strip() or "Past Paper"
+                title = self._section_name(sections[0])
+            elif len(names) == 1:
+                # A full paper (e.g. R&W + Math sections sharing one collection_name).
+                title = next(iter(names))
             elif len(sections) > 1:
                 title = f"Past Paper · {len(sections)} sections"
             else:

@@ -60,6 +60,32 @@ class HomeworkMetadataTests(TestCase):
         self.assertEqual(data["contents"][0]["item_count"], 6)
         self.assertIsNotNone(data["assigned_at"])
 
+    def test_pastpaper_named_by_collection_name_and_resolvable_section(self):
+        """Sections are labelled by collection_name (title blank). The launcher must
+        show that name and be able to route to the section's welcome page, so the
+        serializer must expose collection_name + id on practice_bundle_tests and use it
+        for the content title."""
+        section = PracticeTest.objects.create(
+            subject="READING_WRITING", title="", collection_name="December 2025 US A",
+            form_type="INTERNATIONAL", skip_default_modules=True,
+        )
+        Module.objects.create(practice_test=section, module_order=1, time_limit_minutes=1)
+        seed_mc_questions_for_practice_test(section, questions_per_module=2)
+        a = Assignment.objects.create(
+            classroom=self.classroom, created_by=self.owner, title="Homework",
+            category=Assignment.CATEGORY_HOMEWORK, status=Assignment.STATUS_PUBLISHED,
+            practice_test_ids=[section.id],
+        )
+        self.client.force_authenticate(self.student)
+        data = self._detail(a)
+        self.assertEqual(data["content_type"], "pastpaper")
+        self.assertEqual(data["contents"][0]["title"], "December 2025 US A")
+        bundle = data["practice_bundle_tests"]
+        self.assertEqual(len(bundle), 1)
+        self.assertEqual(bundle[0]["id"], section.id)
+        self.assertEqual(bundle[0]["name"], "December 2025 US A")
+        self.assertEqual(bundle[0]["collection_name"], "December 2025 US A")
+
     def test_file_assignment_content_type(self):
         a = Assignment.objects.create(
             classroom=self.classroom, created_by=self.owner, title="Upload essay",

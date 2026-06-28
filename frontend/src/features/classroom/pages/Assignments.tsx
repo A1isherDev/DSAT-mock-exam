@@ -37,6 +37,7 @@ interface AsgRow {
   practice_test?: number | null;
   practice_test_pack?: number | null;
   practice_test_ids?: number[] | null;
+  practice_bundle_tests?: { id: number; title?: string; collection_name?: string; name?: string; subject?: string }[];
 }
 
 function shortDate(iso?: string | null): string {
@@ -100,10 +101,14 @@ function directHref(a: AsgRow): string | null {
   if (kind === "MOCK") return a.mock_exam != null ? `/mock/${a.mock_exam}` : null;
   if (kind === "PRACTICE") return a.practice_test_pack != null ? `/practice-tests/${a.practice_test_pack}` : null;
   if (kind === "PASTPAPER") {
+    // Scope-resolved sections win: one → its welcome page; several → null so the
+    // card opens the detail (which lists each section's Start). Never /pastpapers.
+    const bundle = a.practice_bundle_tests ?? [];
+    if (bundle.length === 1) return `/practice-test/${bundle[0].id}`;
+    if (bundle.length > 1) return null;
     if (a.practice_test != null) return `/practice-test/${a.practice_test}`;
     const ids = a.practice_test_ids ?? [];
     if (ids.length === 1) return `/practice-test/${ids[0]}`;
-    if (ids.length > 1) return `/pastpapers`;
     return null;
   }
   return null; // FILE / unknown → no direct start
