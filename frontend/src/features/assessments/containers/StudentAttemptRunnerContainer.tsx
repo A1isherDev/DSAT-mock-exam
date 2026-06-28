@@ -37,7 +37,6 @@ import {
   QuestionMap,
   ConflictDialog,
   SubmitConfirmScreen,
-  ReviewScreen,
   CompleteScreen,
   fmtElapsed,
   type SaveState,
@@ -85,7 +84,7 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Stage = "exam" | "confirm-submit" | "submitting" | "complete" | "review";
+type Stage = "exam" | "confirm-submit" | "submitting" | "complete";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -257,7 +256,7 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
   // Leave full screen on the way out (submit complete / unmount) so students
   // aren't stuck full screen on the results screen.
   useEffect(() => {
-    if (stage === "complete" || stage === "review") void fsExit();
+    if (stage === "complete") void fsExit();
   }, [stage, fsExit]);
 
   // Track per-question time when switching questions
@@ -789,11 +788,13 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
       clearAttemptDraftStorage(attemptId);
       clearDraftMirror(attemptId);
       writeSubmitReceipt(attemptId, assignmentId ?? null, serverSubmittedAt);
-      setStage("review");
       // Notify parent page (backward compat for any listeners)
       window.dispatchEvent(
         new CustomEvent("assessment:submitted", { detail: { attemptId } }),
       );
+      // Skip the post-submit time-summary screen — go straight to the results
+      // page. A full navigation also drops the runner's full-screen takeover.
+      window.location.assign(assignmentId ? `/assessments/result/${assignmentId}` : "/classes");
       // submitInflightRef intentionally stays true — successful submit should
       // never be re-fired even if the user navigates back to this surface.
     } catch (e) {
@@ -1039,19 +1040,6 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
   const totalCount = ordered.length;
   const answeredCount = answeredIds.size;
   const answerValue = currentQuestionId ? draftById[currentQuestionId] : null;
-
-  // ── Stage: review (time summary after submit) ──────────────────────────────
-  if (stage === "review") {
-    return (
-      <ReviewScreen
-        title={setTitle}
-        assignmentId={assignmentId ?? null}
-        questionIds={questionIds}
-        questionTimes={{ ...questionTimesRef.current }}
-        totalElapsed={elapsedSec}
-      />
-    );
-  }
 
   // ── Stage: complete ─────────────────────────────────────────────────────────
   if (stage === "complete") {
