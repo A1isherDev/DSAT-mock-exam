@@ -3,32 +3,39 @@
 /**
  * Pedagogical Review — /assessments/review/[attemptId]
  *
- * A structurally separate review experience for classroom assessment attempts.
- * Purpose: help students understand their mistakes and consolidate learning.
+ * Per-question review for classroom assessment attempts: helps students
+ * understand their mistakes and consolidate learning. Visual language matches
+ * the redesigned exam review (/review/[attemptId]) and result summary —
+ * gradient score hero, stat grid, emerald/rose answer analysis, cr-* motion.
  *
- * DOMAIN BOUNDARY: This route lives under /assessments/* (classroom domain).
- * Language guide: "improve", "understand", "learn from".
+ * DOMAIN BOUNDARY: lives under /assessments/* (classroom domain) and renders
+ * inside the student app shell. Language guide: "improve", "understand".
  */
 
 import { useParams, useSearchParams, useRouter } from "next/navigation";
+import { useState, useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import AuthGuard from "@/components/AuthGuard";
 import { assessmentsStudentApi } from "@/features/assessmentsStudent/api";
 import type { PedagogicalReviewQuestion, TeacherFeedback } from "@/features/assessmentsStudent/api";
 import {
-  ArrowLeft, BookOpen, CheckCircle2, ChevronLeft, ChevronRight, Circle, Filter, Lightbulb, MessageSquare, RefreshCw, XCircle,
+  ArrowLeft, BookOpen, CheckCircle2, ChevronRight, GraduationCap,
+  Lightbulb, MessageSquare, RefreshCw, XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { resolveImageUrl } from "@/features/testing-simulation/utils/image";
 import { AssessmentText } from "@/lib/assessmentText";
-import { useState, useEffect, useRef } from "react";
-import { Card, CardContent, Badge, Button, IconButton, ProgressRing, EmptyState, Spinner } from "@/components/ui";
+import { spawnRipple } from "@/features/classroom/ui/ripple";
+import { Spinner } from "@/components/ui";
+
+const JAKARTA = "var(--font-plus-jakarta), system-ui, sans-serif";
 
 // ─── Filter mode ──────────────────────────────────────────────────────────────
 
 type FilterMode = "all" | "incorrect" | "correct" | "unanswered";
+type Outcome = "correct" | "incorrect" | "unanswered";
 
-// ─── Helpers (business logic preserved verbatim) ─────────────────────────────
+// ─── Business-logic helpers (preserved verbatim) ─────────────────────────────
 
 function choiceLabel(key: unknown): string {
   if (typeof key === "string") return key.toUpperCase();
@@ -36,7 +43,7 @@ function choiceLabel(key: unknown): string {
   return String(key ?? "");
 }
 
-/** Map a choice key (A–D, case-insensitive) to its answer-figure path on the question. */
+/** Map a choice key (A–D, case-insensitive) to its answer-figure path. */
 function optionImageForKey(q: PedagogicalReviewQuestion, key: string): string | null | undefined {
   switch (String(key).toLowerCase()) {
     case "a": return q.option_a_image;
@@ -60,7 +67,7 @@ function isAnswerMatch(student: unknown, correct: unknown): boolean {
   return s.toLowerCase() === c.toLowerCase();
 }
 
-function getQuestionOutcome(q: PedagogicalReviewQuestion): "correct" | "incorrect" | "unanswered" {
+function getQuestionOutcome(q: PedagogicalReviewQuestion): Outcome {
   if (q.student_answer === null || q.student_answer === undefined) return "unanswered";
   if (q.is_correct === true) return "correct";
   if (q.is_correct === false) return "incorrect";
@@ -69,152 +76,205 @@ function getQuestionOutcome(q: PedagogicalReviewQuestion): "correct" | "incorrec
 
 function filterQuestions(questions: PedagogicalReviewQuestion[], mode: FilterMode): PedagogicalReviewQuestion[] {
   if (mode === "all") return questions;
-  return questions.filter((q) => {
-    const outcome = getQuestionOutcome(q);
-    if (mode === "incorrect") return outcome === "incorrect";
-    if (mode === "correct") return outcome === "correct";
-    if (mode === "unanswered") return outcome === "unanswered";
-    return true;
-  });
+  return questions.filter((q) => getQuestionOutcome(q) === mode);
 }
+
+const OUTCOME_META: Record<Outcome, { label: string; badge: string; dot: string }> = {
+  correct: {
+    label: "Correct",
+    badge: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300",
+    dot: "bg-emerald-500",
+  },
+  incorrect: {
+    label: "Incorrect",
+    badge: "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/15 dark:text-rose-300",
+    dot: "bg-rose-500",
+  },
+  unanswered: {
+    label: "Not answered",
+    badge: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/15 dark:text-amber-300",
+    dot: "bg-amber-400",
+  },
+};
 
 // ─── Teacher feedback ────────────────────────────────────────────────────────
 
 function TeacherFeedbackCard({ feedback }: { feedback: TeacherFeedback }) {
   return (
-    <Card className="border-primary/20 bg-primary-soft">
-      <CardContent className="flex gap-3">
-        <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+    <div className="rounded-3xl border border-primary/20 bg-primary/5 p-6 shadow-sm">
+      <div className="flex gap-3.5">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-card text-primary">
+          <MessageSquare className="h-4 w-4" />
+        </div>
         <div className="min-w-0 flex-1">
-          <div className="mb-1 flex items-center justify-between gap-2">
-            <p className="ds-overline text-primary">{feedback.teacher_name ? `Feedback from ${feedback.teacher_name}` : "Teacher feedback"}</p>
-            <span className="shrink-0 text-[10px] text-muted-foreground">{new Date(feedback.updated_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <p className="text-[11px] font-extrabold uppercase tracking-widest text-primary">
+              {feedback.teacher_name ? `Feedback from ${feedback.teacher_name}` : "Teacher feedback"}
+            </p>
+            <span className="shrink-0 text-[10px] font-semibold text-muted-foreground">
+              {new Date(feedback.updated_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+            </span>
           </div>
           <p className="whitespace-pre-line text-sm leading-relaxed text-foreground">{feedback.body}</p>
         </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-// ─── Choice row ───────────────────────────────────────────────────────────────
-
-type Choice = { key: string; text: string } | string;
-
-function ChoiceRow({
-  choice, choiceKey, isSelected, isCorrect: isCorrectChoice, reviewMode, optionImage,
-}: {
-  choice: Choice; choiceKey: string; isSelected: boolean; isCorrect: boolean; reviewMode: boolean;
-  optionImage?: string | null;
-}) {
-  const text = typeof choice === "object" && "text" in choice ? choice.text : String(choice);
-  const label = choiceLabel(choiceKey);
-  const imgSrc = resolveImageUrl(optionImage);
-
-  let ring = "border-border bg-card text-foreground";
-  if (reviewMode) {
-    if (isCorrectChoice) ring = "border-success/50 bg-success-soft text-success-foreground";
-    else if (isSelected && !isCorrectChoice) ring = "border-danger/50 bg-danger-soft text-danger-foreground";
-  } else if (isSelected) {
-    ring = "border-primary bg-primary-soft text-foreground";
-  }
-
-  return (
-    <div className={cn("flex items-start gap-3 rounded-xl border px-4 py-3 transition-colors", ring)}>
-      <span className={cn("mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold",
-        reviewMode && isCorrectChoice ? "bg-success text-white"
-          : reviewMode && isSelected && !isCorrectChoice ? "bg-danger text-white"
-            : isSelected ? "bg-primary text-primary-foreground" : "bg-surface-2 text-muted-foreground")}>
-        {label}
-      </span>
-      <div className="min-w-0 flex-1">
-        <AssessmentText text={text} className="text-sm leading-relaxed" />
-        {imgSrc ? (
-          <img src={imgSrc} alt={`Option ${label}`} className="mt-2 max-h-[200px] max-w-full rounded-lg border border-border object-contain" />
-        ) : null}
       </div>
-      {reviewMode && isCorrectChoice ? <CheckCircle2 className="ml-auto mt-0.5 h-4 w-4 shrink-0 text-success" /> : null}
-      {reviewMode && isSelected && !isCorrectChoice ? <XCircle className="ml-auto mt-0.5 h-4 w-4 shrink-0 text-danger" /> : null}
     </div>
   );
 }
 
-// ─── Question card ────────────────────────────────────────────────────────────
+// ─── Choice row (mirrors the exam review modal's option styling) ─────────────
 
-function QuestionCard({
-  q, index, total,
+function ChoiceRow({
+  choiceKey, text, isSelected, isCorrect, optionImage,
 }: {
-  q: PedagogicalReviewQuestion; index: number; total: number;
+  choiceKey: string; text: string; isSelected: boolean; isCorrect: boolean; optionImage?: string | null;
 }) {
+  const label = choiceLabel(choiceKey);
+  const imgSrc = resolveImageUrl(optionImage);
+
+  let box = "border-border bg-card text-foreground";
+  let badge = "border-border text-muted-foreground";
+  let icon: React.ReactNode = null;
+  if (isCorrect) {
+    box = "border-emerald-500 bg-emerald-50 text-emerald-900 font-bold dark:bg-emerald-500/10 dark:text-emerald-200";
+    badge = "bg-emerald-500 border-emerald-500 text-white";
+    icon = <CheckCircle2 className="ml-auto h-4 w-4 shrink-0 text-emerald-600" />;
+  } else if (isSelected) {
+    box = "border-rose-400 bg-rose-50 text-rose-900 font-bold dark:bg-rose-500/10 dark:text-rose-200";
+    badge = "bg-rose-500 border-rose-500 text-white";
+    icon = <XCircle className="ml-auto h-4 w-4 shrink-0 text-rose-600" />;
+  }
+
+  return (
+    <div className={cn("flex items-center gap-4 rounded-xl border-2 p-4 transition-all", box)}>
+      <div className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border-2 text-xs font-bold", badge)}>
+        {label}
+      </div>
+      <div className="min-w-0 flex-1 font-[Georgia]">
+        {imgSrc ? (
+          <img src={imgSrc} alt={`Option ${label}`} className="max-h-[160px] max-w-full rounded-lg border border-border bg-card object-contain" />
+        ) : (
+          <AssessmentText text={text} className="text-sm leading-relaxed" />
+        )}
+      </div>
+      {icon}
+    </div>
+  );
+}
+
+// ─── Question deep-dive ──────────────────────────────────────────────────────
+
+function QuestionDeepDive({ q, index, total }: { q: PedagogicalReviewQuestion; index: number; total: number }) {
   const outcome = getQuestionOutcome(q);
-  const choices: Choice[] = Array.isArray(q.choices) ? q.choices : [];
+  const meta = OUTCOME_META[outcome];
+  const choices = Array.isArray(q.choices) ? q.choices : [];
   const correctKey = normalizeAnswer(q.correct_answer);
   const studentKey = normalizeAnswer(q.student_answer);
   const isMCQ = q.question_type === "multiple_choice";
-
-  const outcomeVariant = outcome === "correct" ? "success" : outcome === "incorrect" ? "danger" : "neutral";
-  const headerTint = outcome === "correct" ? "bg-success-soft" : outcome === "incorrect" ? "bg-danger-soft" : "bg-surface-2";
+  const figure = resolveImageUrl(q.question_image);
 
   return (
-    <Card>
-      <div className={cn("flex items-center justify-between gap-3 border-b border-border px-5 py-3", headerTint)}>
-        <div className="flex items-center gap-2">
-          {outcome === "correct" ? <CheckCircle2 className="h-4 w-4 shrink-0 text-success" /> : outcome === "incorrect" ? <XCircle className="h-4 w-4 shrink-0 text-danger" /> : <Circle className="h-4 w-4 shrink-0 text-muted-foreground" />}
-          <span className="ds-overline">Question {index + 1} of {total}</span>
+    <div className="cr-rowin2 overflow-hidden rounded-3xl border border-border bg-card shadow-sm">
+      {/* header */}
+      <div className="flex items-center justify-between gap-3 border-b border-border px-6 py-4">
+        <div className="flex items-center gap-2.5">
+          {outcome === "correct" ? <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+            : outcome === "incorrect" ? <XCircle className="h-5 w-5 text-rose-500" />
+              : <BookOpen className="h-5 w-5 text-amber-500" />}
+          <span className="text-sm font-extrabold text-foreground">Question {index + 1}</span>
+          <span className="text-xs font-semibold text-muted-foreground">of {total}</span>
         </div>
-        <Badge variant={outcomeVariant}>{outcome === "correct" ? "Correct" : outcome === "incorrect" ? "Incorrect" : "Not answered"}</Badge>
+        <span className={cn("inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider", meta.badge)}>
+          {meta.label}
+        </span>
       </div>
 
-      <CardContent className="space-y-4">
+      <div className="space-y-5 p-6 sm:p-7">
+        {/* passage / stimulus */}
         {q.question_prompt && q.question_prompt.trim().length > 0 ? (
-          <AssessmentText text={q.question_prompt} block className="max-h-40 overflow-y-auto rounded-xl border-l-4 border-primary/40 bg-surface-2 py-3 pl-4 pr-4 text-sm leading-relaxed text-foreground sm:max-h-none sm:overflow-visible" />
+          <AssessmentText
+            text={q.question_prompt}
+            block
+            className="border-l-4 border-primary/50 bg-surface-2/50 py-2 pl-5 pr-4 font-[Georgia] text-base font-medium leading-relaxed text-foreground"
+          />
         ) : null}
 
-        {resolveImageUrl(q.question_image) ? (
-          <img src={resolveImageUrl(q.question_image)} alt="Question figure" className="max-h-[360px] max-w-full rounded-xl border border-border object-contain" />
-        ) : null}
-
-        <AssessmentText text={q.prompt} block className="text-sm font-medium leading-relaxed text-foreground" />
-
-        {isMCQ && choices.length > 0 ? (
-          <div className="space-y-2">
-            {choices.map((choice, ci) => {
-              const key = typeof choice === "object" && "key" in choice ? choice.key : String.fromCharCode(65 + ci);
-              const isSelected = key === studentKey || String(ci) === studentKey;
-              const isCorrectChoice = key === correctKey || String(ci) === correctKey;
-              return <ChoiceRow key={key} choice={choice} choiceKey={key} isSelected={isSelected} isCorrect={isCorrectChoice} reviewMode optionImage={optionImageForKey(q, key)} />;
-            })}
+        {/* figure (above the stem) */}
+        {figure ? (
+          <div className="flex justify-center overflow-hidden rounded-2xl border border-border bg-surface-2">
+            <img src={figure} alt="Question figure" className="max-h-[420px] max-w-full object-contain p-4" />
           </div>
         ) : null}
 
-        {!isMCQ ? (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="rounded-xl border border-border bg-surface-2 px-4 py-3">
-              <p className="ds-overline mb-1">Your answer</p>
-              {studentKey ? (
-                <AssessmentText text={studentKey} className={cn("text-sm font-medium", outcome === "correct" ? "text-success-foreground" : "text-danger-foreground")} />
-              ) : (
-                <p className="text-sm font-medium"><span className="italic text-muted-foreground">No answer</span></p>
-              )}
-            </div>
-            <div className="rounded-xl border border-success/30 bg-success-soft px-4 py-3">
-              <p className="ds-overline mb-1 text-success-foreground">Correct answer</p>
-              {correctKey ? <AssessmentText text={correctKey} className="text-sm font-medium text-success-foreground" /> : <p className="text-sm font-medium text-success-foreground">—</p>}
-            </div>
-          </div>
-        ) : null}
+        {/* question stem */}
+        <AssessmentText
+          text={q.prompt}
+          block
+          className="rounded-2xl border border-border bg-surface-2 p-6 font-[Georgia] text-base font-medium leading-relaxed text-foreground"
+        />
 
+        {/* answer analysis */}
+        <div>
+          <h3 className="mb-3 text-[11px] font-extrabold uppercase tracking-widest text-muted-foreground">Answer analysis</h3>
+
+          {isMCQ && choices.length > 0 ? (
+            <div className="space-y-2.5">
+              {choices.map((choice: unknown, ci: number) => {
+                const key = typeof choice === "object" && choice !== null && "key" in choice
+                  ? String((choice as { key: unknown }).key)
+                  : String.fromCharCode(65 + ci);
+                const text = typeof choice === "object" && choice !== null && "text" in choice
+                  ? String((choice as { text: unknown }).text)
+                  : String(choice);
+                const isSelected = key === studentKey || String(ci) === studentKey;
+                const isCorrectChoice = key === correctKey || String(ci) === correctKey;
+                return (
+                  <ChoiceRow
+                    key={key}
+                    choiceKey={key}
+                    text={text}
+                    isSelected={isSelected}
+                    isCorrect={isCorrectChoice}
+                    optionImage={optionImageForKey(q, key)}
+                  />
+                );
+              })}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className={cn(
+                "rounded-xl border-2 p-5",
+                outcome === "correct" ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10"
+                  : outcome === "incorrect" ? "border-rose-400 bg-rose-50 dark:bg-rose-500/10"
+                    : "border-border bg-surface-2",
+              )}>
+                <p className="mb-1 text-[10px] font-extrabold uppercase tracking-wider text-muted-foreground">Your answer</p>
+                {studentKey ? (
+                  <AssessmentText text={studentKey} className={cn("text-lg font-bold",
+                    outcome === "correct" ? "text-emerald-700 dark:text-emerald-300" : outcome === "incorrect" ? "text-rose-700 dark:text-rose-300" : "text-foreground")} />
+                ) : (
+                  <p className="text-lg font-bold italic text-muted-foreground">Omitted</p>
+                )}
+              </div>
+              <div className="rounded-xl border-2 border-foreground bg-foreground p-5 text-background shadow-lg">
+                <p className="mb-1 text-[10px] font-extrabold uppercase tracking-wider opacity-70">Correct answer</p>
+                {correctKey ? <AssessmentText text={correctKey} className="text-lg font-bold" /> : <p className="text-lg font-bold">—</p>}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* explanation */}
         {q.explanation && q.explanation.trim().length > 0 ? (
-          <div className="flex gap-3 rounded-xl border border-warning/25 bg-warning-soft px-4 py-3">
-            <Lightbulb className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
-            <div>
-              <p className="ds-overline mb-1 text-warning-foreground">Why this answer works</p>
-              <AssessmentText text={q.explanation} block className="text-sm leading-relaxed text-warning-foreground" />
-            </div>
+          <div className="rounded-2xl border border-primary/15 bg-primary/5 p-6">
+            <h4 className="mb-3 flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-widest text-primary">
+              <Lightbulb className="h-3.5 w-3.5" /> Why this answer works
+            </h4>
+            <AssessmentText text={q.explanation} block className="font-[Georgia] text-sm leading-relaxed text-foreground" />
           </div>
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
@@ -248,8 +308,7 @@ function PedagogicalReviewContent() {
       if (!assignmentId) throw new Error("Assignment not found");
       const payload: Parameters<typeof assessmentsStudentApi.start>[0] = { assignment_id: assignmentId };
       if (focusIds && focusIds.length > 0) payload.focus_question_ids = focusIds;
-      const attempt = await assessmentsStudentApi.start(payload);
-      return attempt;
+      return assessmentsStudentApi.start(payload);
     },
     onSuccess: (attempt) => {
       queryClient.invalidateQueries({ queryKey: ["my-assignments"] });
@@ -271,17 +330,27 @@ function PedagogicalReviewContent() {
   }, [data]);
 
   if (isLoading) {
-    return <div className="flex h-dvh items-center justify-center"><Spinner className="h-6 w-6 text-muted-foreground" /></div>;
+    return <div className="flex min-h-[60vh] items-center justify-center"><Spinner className="h-7 w-7 text-primary" /></div>;
   }
 
   if (isError || !data) {
     return (
-      <div className="flex h-dvh items-center justify-center px-6">
-        <EmptyState
-          title="Review not available"
-          description="This review is only accessible after submitting your work. If you believe this is an error, please contact your teacher."
-          action={<Button leftIcon={<ArrowLeft />} onClick={() => router.push("/assessments")}>Back to assignments</Button>}
-        />
+      <div className="mx-auto flex min-h-[60vh] max-w-lg flex-col items-center justify-center px-6 text-center" style={{ fontFamily: JAKARTA }}>
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-border bg-surface-2 text-muted-foreground">
+          <GraduationCap className="h-7 w-7" />
+        </div>
+        <h2 className="mt-4 text-xl font-extrabold text-foreground">Review not available</h2>
+        <p className="mt-1.5 text-sm text-muted-foreground">
+          This review is only accessible after submitting your work. If you believe this is an error, please contact your teacher.
+        </p>
+        <button
+          type="button"
+          onPointerDown={spawnRipple}
+          onClick={() => router.push("/assessments")}
+          className="cr-ripple cr-press ds-ring mt-6 inline-flex items-center gap-2 rounded-full bg-primary px-6 py-2.5 text-sm font-extrabold text-primary-foreground transition-colors hover:bg-primary-hover"
+        >
+          <ArrowLeft className="h-4 w-4" /> Back to assignments
+        </button>
       </div>
     );
   }
@@ -294,9 +363,9 @@ function PedagogicalReviewContent() {
   const incorrectCount = questions.filter((q) => getQuestionOutcome(q) === "incorrect").length;
   const correctCount = questions.filter((q) => getQuestionOutcome(q) === "correct").length;
   const unansweredCount = questions.filter((q) => getQuestionOutcome(q) === "unanswered").length;
+  const pct = result ? Math.round(Number(result.percent)) : 0;
 
   const handleFilterChange = (mode: FilterMode) => { setFilter(mode); setCurrentIndex(0); };
-
   const navigate = (delta: number) => {
     setCurrentIndex((prev) => {
       const next = prev + delta;
@@ -306,138 +375,220 @@ function PedagogicalReviewContent() {
     cardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  const pct = result ? Number(result.percent) : 0;
-  const ringColor = pct >= 75 ? "text-success" : pct >= 50 ? "text-primary" : "text-warning";
+  const displayTitle = meta.set_title?.trim() || meta.assignment_title?.trim() || "Assessment";
+  const assignmentId = meta.assignment_id;
+
+  const filterDefs: { key: FilterMode; label: string; count: number }[] = [
+    { key: "all", label: "All", count: questions.length },
+    { key: "incorrect", label: "To improve", count: incorrectCount },
+    { key: "correct", label: "Correct", count: correctCount },
+    { key: "unanswered", label: "Skipped", count: unansweredCount },
+  ];
 
   return (
-    <div className="ds-app min-h-dvh bg-background">
-      {/* Header */}
-      <header className="sticky top-0 z-20 border-b border-border bg-card/80 backdrop-blur">
-        <div className="mx-auto flex max-w-2xl items-center gap-3 px-4 py-3">
-          <IconButton variant="default" size="sm" aria-label="Go back" onClick={() => router.back()}><ArrowLeft className="h-4 w-4" /></IconButton>
-          <div className="min-w-0 flex-1">
-            {meta.classroom_name ? <p className="ds-overline truncate">{meta.classroom_name}</p> : null}
-            <p className="truncate text-sm font-bold leading-tight text-foreground">{meta.assignment_title ?? meta.set_title ?? "Assignment review"}</p>
+    <div className="mx-auto flex w-full max-w-4xl flex-col gap-[18px] pb-12" style={{ fontFamily: JAKARTA }}>
+      {/* back */}
+      <button
+        type="button"
+        onClick={() => (assignmentId ? router.push(`/assessments/result/${assignmentId}`) : router.push("/assessments"))}
+        className="ds-ring group inline-flex w-fit items-center gap-2 rounded-lg text-sm font-bold text-muted-foreground transition-colors hover:text-primary"
+      >
+        <ArrowLeft className="h-[17px] w-[17px]" /> Back to results
+      </button>
+
+      {/* HERO — gradient score banner + stat grid */}
+      {result ? (
+        <div className="cr-celebpop relative overflow-hidden rounded-3xl bg-gradient-to-br from-primary to-primary-hover p-8 text-primary-foreground shadow-xl sm:p-10">
+          <div aria-hidden className="pointer-events-none absolute -right-10 -top-10 h-52 w-52 rounded-full bg-white/[0.06]" />
+          <div aria-hidden className="pointer-events-none absolute right-8 top-8 opacity-10"><GraduationCap className="h-28 w-28" /></div>
+          <div className="relative z-10 flex flex-col items-center text-center">
+            {meta.classroom_name ? (
+              <span className="mb-2 block text-[11px] font-extrabold uppercase tracking-[0.16em] text-primary-foreground/70">{meta.classroom_name}</span>
+            ) : null}
+            <span className="block text-base font-extrabold uppercase tracking-[0.1em] text-primary-foreground/90">{displayTitle}</span>
+            <p className="mb-1 mt-3 text-6xl font-black leading-none tracking-tight tabular-nums">{pct}%</p>
+            <p className="text-[13px] font-semibold text-primary-foreground/80">
+              {result.correct_count} of {result.total_questions} correct · {result.score_points} of {result.max_points} pts
+            </p>
+
+            <div className="mt-8 grid w-full max-w-2xl grid-cols-3 gap-5">
+              <HeroStat value={correctCount} label="Correct" tone="text-emerald-300" />
+              <HeroStat value={incorrectCount} label="To improve" tone="text-rose-300" />
+              <HeroStat value={unansweredCount} label="Skipped" tone="text-sky-200" />
+            </div>
           </div>
-          {meta.set_category ? <span className="hidden shrink-0 sm:inline-flex"><Badge variant="neutral"><BookOpen className="h-3 w-3" /> {meta.set_category}</Badge></span> : null}
         </div>
-      </header>
-
-      <div className="mx-auto flex max-w-2xl flex-col gap-6 px-4 py-6">
-        {/* Summary */}
-        {result ? (
-          <Card>
-            <CardContent>
-              <div className="flex items-center gap-5">
-                <ProgressRing value={pct} size={96} strokeWidth={8} color={ringColor} showLabel={false}>
-                  <span className={cn("ds-num text-lg font-extrabold", ringColor)}>{Math.round(pct)}%</span>
-                </ProgressRing>
-                <div className="min-w-0 flex-1 space-y-1">
-                  <p className="ds-overline">Your results</p>
-                  <p className="ds-num text-2xl font-extrabold leading-none text-foreground">
-                    {result.correct_count}<span className="text-base font-semibold text-muted-foreground">/{result.total_questions}</span>
-                    <span className="ml-2 text-sm font-semibold text-muted-foreground">correct</span>
-                  </p>
-                  <p className="text-xs text-muted-foreground">{result.score_points} of {result.max_points} points</p>
-                </div>
-              </div>
-
-              <div className="mt-4 flex flex-wrap gap-2">
-                {correctCount > 0 ? <Badge variant="success"><CheckCircle2 className="h-3.5 w-3.5" /> {correctCount} correct</Badge> : null}
-                {incorrectCount > 0 ? <Badge variant="danger"><XCircle className="h-3.5 w-3.5" /> {incorrectCount} to improve</Badge> : null}
-                {unansweredCount > 0 ? <Badge variant="neutral"><Circle className="h-3.5 w-3.5" /> {unansweredCount} unanswered</Badge> : null}
-              </div>
-
-              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                {incorrectCount > 0 ? (
-                  <Button
-                    variant="secondary" fullWidth loading={retryMutation.isPending} leftIcon={<RefreshCw />}
-                    onClick={() => {
-                      const incorrectIds = questions.filter((q) => getQuestionOutcome(q) === "incorrect").map((q) => q.id);
-                      retryMutation.mutate({ focusIds: incorrectIds });
-                    }}
-                  >
-                    Try the {incorrectCount} missed question{incorrectCount !== 1 ? "s" : ""} again
-                  </Button>
-                ) : null}
-                {data?.meta?.assignment_id ? (
-                  <Button variant="secondary" fullWidth leftIcon={<RefreshCw />} disabled={retryMutation.isPending} onClick={() => retryMutation.mutate({})}>Try all questions again</Button>
-                ) : null}
-              </div>
-              {retryError ? <p className="mt-2 text-xs text-danger-foreground">{retryError}</p> : null}
-            </CardContent>
-          </Card>
-        ) : (
-          <Card><CardContent className="flex items-center gap-3"><Spinner className="h-4 w-4 text-muted-foreground" /><p className="text-sm text-muted-foreground">Grading in progress — check back shortly.</p></CardContent></Card>
-        )}
-
-        {data?.teacher_feedback ? <TeacherFeedbackCard feedback={data.teacher_feedback} /> : null}
-
-        {/* Filter bar */}
-        <div className="-mx-1 flex items-center gap-2 overflow-x-auto px-1 pb-1">
-          <Filter className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          {([
-            { mode: "all" as FilterMode, label: `All (${questions.length})` },
-            { mode: "incorrect" as FilterMode, label: `Improve (${incorrectCount})`, disabled: incorrectCount === 0 },
-            { mode: "correct" as FilterMode, label: `Correct (${correctCount})`, disabled: correctCount === 0 },
-            { mode: "unanswered" as FilterMode, label: `Skipped (${unansweredCount})`, disabled: unansweredCount === 0 },
-          ] as { mode: FilterMode; label: string; disabled?: boolean }[]).map(({ mode, label, disabled }) => (
-            <button key={mode} type="button" disabled={disabled} onClick={() => handleFilterChange(mode)}
-              className={cn("ds-ring shrink-0 whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors",
-                filter === mode ? "border-primary/30 bg-primary-soft text-primary" : "border-border bg-card text-muted-foreground hover:bg-surface-2 disabled:opacity-40")}>
-              {label}
-            </button>
-          ))}
+      ) : (
+        <div className="flex items-center gap-3 rounded-3xl border border-border bg-card p-6 shadow-sm">
+          <Spinner className="h-5 w-5 text-primary" />
+          <p className="text-sm font-medium text-muted-foreground">Grading in progress — check back shortly.</p>
         </div>
+      )}
 
-        {/* Dot navigator */}
-        {filteredQuestions.length > 0 ? (
-          <div className="flex items-center gap-1 overflow-x-auto pb-1">
-            {filteredQuestions.map((q, i) => {
-              const outcome = getQuestionOutcome(q);
-              const active = i === safeIndex;
-              return (
-                <button key={q.id} type="button" aria-label={`Go to question ${i + 1}`}
-                  onClick={() => { setCurrentIndex(i); cardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }}
-                  className={cn("ds-ring shrink-0 rounded-full transition-all", active ? "h-6 w-6" : "h-5 w-5",
-                    outcome === "correct" ? (active ? "bg-success" : "bg-success/40 hover:bg-success/60")
-                      : outcome === "incorrect" ? (active ? "bg-danger" : "bg-danger/40 hover:bg-danger/60")
-                        : (active ? "bg-muted-foreground" : "bg-border hover:bg-muted-foreground/40"))}
-                />
-              );
-            })}
-          </div>
-        ) : null}
-
-        {/* Question card */}
-        <div ref={cardRef}>
-          {filteredQuestions.length === 0 ? (
-            <EmptyState compact title="No questions in this view" action={<Button variant="ghost" size="sm" onClick={() => handleFilterChange("all")}>Show all questions</Button>} />
-          ) : current ? (
-            <QuestionCard q={current} index={safeIndex} total={filteredQuestions.length} />
+      {/* retry actions */}
+      {result && (incorrectCount > 0 || assignmentId) ? (
+        <div className="flex flex-col gap-2.5 sm:flex-row">
+          {incorrectCount > 0 ? (
+            <RetryButton
+              primary
+              loading={retryMutation.isPending}
+              onClick={() => retryMutation.mutate({ focusIds: questions.filter((q) => getQuestionOutcome(q) === "incorrect").map((q) => q.id) })}
+            >
+              Try the {incorrectCount} missed question{incorrectCount !== 1 ? "s" : ""} again
+            </RetryButton>
+          ) : null}
+          {assignmentId ? (
+            <RetryButton loading={retryMutation.isPending} onClick={() => retryMutation.mutate({})}>
+              Try all questions again
+            </RetryButton>
           ) : null}
         </div>
+      ) : null}
+      {retryError ? <p className="text-xs font-semibold text-rose-600">{retryError}</p> : null}
 
-        {/* Prev / Next */}
-        {filteredQuestions.length > 1 ? (
-          <div className="flex items-center justify-between gap-3">
-            <Button variant="secondary" leftIcon={<ChevronLeft />} disabled={safeIndex === 0} onClick={() => navigate(-1)}>Previous</Button>
-            <span className="ds-num text-xs text-muted-foreground">{safeIndex + 1} / {filteredQuestions.length}</span>
-            <Button variant="secondary" rightIcon={<ChevronRight />} disabled={safeIndex === filteredQuestions.length - 1} onClick={() => navigate(1)}>Next</Button>
+      {data.teacher_feedback ? <TeacherFeedbackCard feedback={data.teacher_feedback} /> : null}
+
+      {/* filter pills */}
+      <div className="flex flex-wrap items-center gap-2.5">
+        {filterDefs.map((f) => {
+          const on = filter === f.key;
+          const disabled = f.key !== "all" && f.count === 0;
+          return (
+            <button
+              key={f.key}
+              type="button"
+              disabled={disabled}
+              onPointerDown={spawnRipple}
+              onClick={() => handleFilterChange(f.key)}
+              className={cn(
+                "cr-pillin cr-press cr-ripple inline-flex items-center gap-2 rounded-full border-[1.5px] px-[15px] py-2 text-[13.5px] font-bold transition-colors disabled:pointer-events-none disabled:opacity-40",
+                on
+                  ? "border-slate-800 bg-slate-800 text-white dark:border-slate-200 dark:bg-slate-200 dark:text-slate-900"
+                  : "border-border bg-card text-foreground hover:bg-surface-2",
+              )}
+            >
+              {f.label}
+              <span className={cn("ds-num rounded-full px-2 py-px text-[12px] font-extrabold", on ? "bg-white/20 text-current" : "bg-surface-2 text-label-foreground")}>
+                {f.count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* question dot navigator */}
+      {filteredQuestions.length > 1 ? (
+        <div className="flex flex-wrap gap-2">
+          {filteredQuestions.map((q, i) => {
+            const outcome = getQuestionOutcome(q);
+            const active = i === safeIndex;
+            return (
+              <button
+                key={q.id}
+                type="button"
+                aria-label={`Go to question ${i + 1}`}
+                onClick={() => { setCurrentIndex(i); cardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }}
+                className={cn(
+                  "ds-ring flex h-9 w-9 items-center justify-center rounded-xl text-[13px] font-extrabold transition-all",
+                  active
+                    ? cn("text-white shadow-sm scale-105", OUTCOME_META[outcome].dot)
+                    : "border border-border bg-card text-muted-foreground hover:bg-surface-2",
+                )}
+              >
+                {i + 1}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+
+      {/* question deep-dive */}
+      <div ref={cardRef}>
+        {filteredQuestions.length === 0 ? (
+          <div className="rounded-3xl border border-border bg-card px-6 py-12 text-center shadow-sm">
+            <p className="text-sm font-semibold text-muted-foreground">No questions in this view.</p>
+            <button type="button" onClick={() => handleFilterChange("all")} className="ds-ring mt-3 rounded text-sm font-extrabold text-primary hover:text-primary-hover hover:underline">
+              Show all questions
+            </button>
           </div>
+        ) : current ? (
+          <QuestionDeepDive q={current} index={safeIndex} total={filteredQuestions.length} />
         ) : null}
+      </div>
 
-        {/* Bottom CTA */}
-        <Card variant="soft">
-          <CardContent className="flex flex-col items-center justify-between gap-3 sm:flex-row">
-            <p className="text-center text-sm text-muted-foreground sm:text-left">Ready to move on? Head back to your assignments.</p>
-            <Button className="shrink-0" leftIcon={<ArrowLeft />} onClick={() => router.push("/assessments")}>My assignments</Button>
-          </CardContent>
-        </Card>
+      {/* prev / next */}
+      {filteredQuestions.length > 1 ? (
+        <div className="flex items-center justify-between gap-3">
+          <NavButton onClick={() => navigate(-1)} disabled={safeIndex === 0}>
+            <ArrowLeft className="h-4 w-4" /> Previous
+          </NavButton>
+          <span className="ds-num text-sm font-bold text-muted-foreground">{safeIndex + 1} / {filteredQuestions.length}</span>
+          <NavButton primary onClick={() => navigate(1)} disabled={safeIndex >= filteredQuestions.length - 1}>
+            Next <ChevronRight className="h-4 w-4" />
+          </NavButton>
+        </div>
+      ) : null}
 
-        <div className="h-8 sm:hidden" />
+      {/* bottom CTA */}
+      <div className="flex flex-col items-center justify-between gap-3 rounded-3xl border border-border bg-surface-2/50 p-6 sm:flex-row">
+        <p className="text-center text-sm font-medium text-muted-foreground sm:text-left">Ready to move on? Head back to your assignments.</p>
+        <button
+          type="button"
+          onPointerDown={spawnRipple}
+          onClick={() => router.push("/assessments")}
+          className="cr-ripple cr-press ds-ring inline-flex shrink-0 items-center gap-2 rounded-full border border-border bg-card px-5 py-2.5 text-sm font-extrabold text-foreground transition-colors hover:bg-surface-2"
+        >
+          <BookOpen className="h-4 w-4" /> My assignments
+        </button>
       </div>
     </div>
+  );
+}
+
+function HeroStat({ value, label, tone }: { value: number; label: string; tone: string }) {
+  return (
+    <div className="flex flex-col items-center">
+      <p className={cn("text-3xl font-black tabular-nums", tone)}>{value}</p>
+      <p className="mt-1 text-[11px] font-bold uppercase tracking-wider text-primary-foreground/60">{label}</p>
+    </div>
+  );
+}
+
+function RetryButton({ children, onClick, loading, primary }: { children: React.ReactNode; onClick: () => void; loading?: boolean; primary?: boolean }) {
+  return (
+    <button
+      type="button"
+      onPointerDown={spawnRipple}
+      onClick={onClick}
+      disabled={loading}
+      className={cn(
+        "cr-ripple cr-press ds-ring inline-flex flex-1 items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-extrabold transition-colors disabled:opacity-60",
+        primary
+          ? "bg-primary text-primary-foreground hover:bg-primary-hover"
+          : "border border-border bg-card text-foreground hover:bg-surface-2",
+      )}
+    >
+      <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} /> {children}
+    </button>
+  );
+}
+
+function NavButton({ children, onClick, disabled, primary }: { children: React.ReactNode; onClick: () => void; disabled?: boolean; primary?: boolean }) {
+  return (
+    <button
+      type="button"
+      onPointerDown={spawnRipple}
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        "cr-ripple cr-press ds-ring inline-flex items-center gap-2 rounded-full px-6 py-2.5 text-sm font-extrabold transition-all disabled:pointer-events-none disabled:opacity-40",
+        primary
+          ? "bg-primary text-primary-foreground shadow-md hover:bg-primary-hover"
+          : "border-2 border-foreground bg-card text-foreground hover:bg-surface-2",
+      )}
+    >
+      {children}
+    </button>
   );
 }
 
