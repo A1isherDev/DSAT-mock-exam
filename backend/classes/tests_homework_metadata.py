@@ -1,0 +1,86 @@
+"""Homework metadata for the redesigned homework cards/launcher:
+`content_type`, `contents` (kind/title/item_count), `item_count`, `subject`.
+"""
+
+from __future__ import annotations
+
+from django.contrib.auth import get_user_model
+from django.test import TestCase
+from rest_framework.test import APIClient
+
+from classes.models import Assignment, Classroom, ClassroomMembership
+from exams.models import Module, PracticeTest
+from exams.tests.support import seed_mc_questions_for_practice_test
+
+User = get_user_model()
+
+
+class HomeworkMetadataTests(TestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user("hwm_owner@t.com", "secret123")
+        self.classroom = Classroom.objects.create(
+            name="HWM", subject=Classroom.SUBJECT_ENGLISH,
+            lesson_days=Classroom.DAYS_ODD, created_by=self.owner,
+        )
+        ClassroomMembership.objects.create(
+            classroom=self.classroom, user=self.owner, role=ClassroomMembership.ROLE_ADMIN
+        )
+        self.student = User.objects.create_user("hwm_student@t.com", "secret123")
+        ClassroomMembership.objects.create(
+            classroom=self.classroom, user=self.student, role=ClassroomMembership.ROLE_STUDENT
+        )
+        # A pastpaper section with 2 modules × 3 questions = 6 items.
+        self.section = PracticeTest.objects.create(
+            subject="READING_WRITING", title="March 2026 Int. B",
+            form_type="INTERNATIONAL", skip_default_modules=True,
+        )
+        Module.objects.create(practice_test=self.section, module_order=1, time_limit_minutes=1)
+        Module.objects.create(practice_test=self.section, module_order=2, time_limit_minutes=1)
+        seed_mc_questions_for_practice_test(self.section, questions_per_module=3)
+
+        self.client = APIClient()
+
+    def _detail(self, a):
+        return self.client.get(f"/api/classes/{self.classroom.id}/assignments/{a.id}/").json()
+
+    def test_pastpaper_assignment_metadata(self):
+        a = Assignment.objects.create(
+            classroom=self.classroom, created_by=self.owner, title="Read homework",
+            category=Assignment.CATEGORY_HOMEWORK, status=Assignment.STATUS_PUBLISHED,
+            practice_test=self.section,
+        )
+        self.client.force_authenticate(self.student)
+        data = self._detail(a)
+        self.assertEqual(data["content_type"], "pastpaper")
+        self.assertEqual(data["item_count"], 6)
+        self.assertEqual(data["subject"], "READING_WRITING")
+        self.assertEqual(len(data["contents"]), 1)
+        self.assertEqual(data["contents"][0]["kind"], "PASTPAPER")
+        self.assertEqual(data["contents"][0]["title"], "March 2026 Int. B")
+        self.assertEqual(data["contents"][0]["item_count"], 6)
+        self.assertIsNotNone(data["assigned_at"])
+
+    def test_file_assignment_content_type(self):
+        a = Assignment.objects.create(
+            classroom=self.classroom, created_by=self.owner, title="Upload essay",
+            category=Assignment.CATEGORY_HOMEWORK, status=Assignment.STATUS_PUBLISHED,
+        )
+        self.client.force_authenticate(self.student)
+        data = self._detail(a)
+        self.assertEqual(data["content_type"], "file")
+        self.assertEqual(data["contents"], [])
+
+    def test_my_assignments_includes_content_metadata(self):
+        Assignment.objects.create(
+            classroom=self.classroom, created_by=self.owner, title="Read homework",
+            category=Assignment.CATEGORY_HOMEWORK, status=Assignment.STATUS_PUBLISHED,
+            practice_test=self.section,
+        )
+        self.client.force_authenticate(self.student)
+        data = self.client.get("/api/classes/my-assignments/").json()
+        item = next(i for i in data["items"] if i["title"] == "Read homework")
+        self.assertEqual(item["content_type"], "pastpaper")
+        self.assertEqual(item["item_count"], 6)
+        self.assertEqual(item["contents"][0]["kind"], "PASTPAPER")
+        self.assertEqual(item["contents"][0]["title"], "March 2026 Int. B")
+        self.assertIsNotNone(item["assigned_at"])
