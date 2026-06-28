@@ -1191,3 +1191,51 @@ mark.ts-annot {
   .cr-section, .cr-rise, .cr-pop, .cr-rowin, .cr-card, .cr-pulse, .cr-float, .cr-tabpop, .cr-ripple-dot { animation: none !important; }
   .cr-card, .cr-lift, .cr-press, .cr-pill, .cr-iconpop { transition: none !important; }
 }
+
+/* ============================================================
+   Student results / submit / homework redesign — motion ported
+   1:1 from the MasterSAT Submit / Result Summary / Results /
+   Homework mockups. Reuses the dz-* keyframes above; adds the
+   keyframes those four mockups need that weren't defined yet,
+   plus .cr-* helper classes (motion only — colours stay on the
+   app's standard tokens, per "use our colours").
+   ============================================================ */
+@keyframes dz-cardInB { 0% { opacity: 0; transform: translateY(26px) scale(.94) } 100% { opacity: 1; transform: none } }
+@keyframes dz-cardRise { 0% { opacity: 0; transform: translateY(20px) scale(.98) } 100% { opacity: 1; transform: translateY(0) scale(1) } }
+@keyframes dz-barGrow { 0% { width: 0 } }
+@keyframes dz-pillIn { 0% { opacity: 0; transform: translateY(10px) scale(.9) } 60% { transform: translateY(0) scale(1.04) } 100% { opacity: 1; transform: scale(1) } }
+@keyframes dz-rowIn { 0% { opacity: 0; transform: translateX(-14px) } 100% { opacity: 1; transform: none } }
+@keyframes dz-rowSlideA { 0% { opacity: 0; transform: translateX(26px) } 100% { opacity: 1; transform: none } }
+@keyframes dz-rowSlideB { 0% { opacity: 0; transform: translateX(-26px) } 100% { opacity: 1; transform: none } }
+@keyframes dz-confettiFall { 0% { transform: translateY(-30px) rotate(0deg); opacity: 1 } 100% { transform: translateY(420px) rotate(640deg); opacity: 0 } }
+@keyframes dz-popperFire { 0% { transform: translate(0,0) rotate(0deg); opacity: 1 } 30% { opacity: 1 } 100% { transform: translate(var(--fx), var(--fy)) rotate(var(--rot)); opacity: 0 } }
+@keyframes dz-celebPop { 0% { opacity: 0; transform: scale(.85) translateY(10px) } 55% { transform: scale(1.04) } 100% { opacity: 1; transform: scale(1) translateY(0) } }
+@keyframes dz-trophyBounce { 0%, 100% { transform: translateY(0) rotate(-6deg) } 50% { transform: translateY(-4px) rotate(6deg) } }
+
+/* Entry helpers (delays set inline per index where staggered) */
+.cr-cardrise { animation: dz-cardRise .5s cubic-bezier(.22,1,.36,1) both; }
+.cr-cardinb  { animation: dz-cardInB .55s cubic-bezier(.22,1,.36,1) both; }
+.cr-pillin   { animation: dz-pillIn .4s cubic-bezier(.22,1,.36,1) both; }
+.cr-rowin2   { animation: dz-rowIn .42s cubic-bezier(.22,1,.36,1) both; }
+.cr-rowslide-a { animation: dz-rowSlideA .45s cubic-bezier(.22,1,.36,1) both; }
+.cr-rowslide-b { animation: dz-rowSlideB .45s cubic-bezier(.22,1,.36,1) both; }
+.cr-celebpop { animation: dz-celebPop .5s cubic-bezier(.22,1,.36,1) both; }
+.cr-daypop   { animation: dz-dayPop .3s cubic-bezier(.22,1,.36,1) both; }
+
+/* Animated meter fill (the bar's own width is set inline; cr-bar drives the grow-from-0). */
+.cr-bar { animation: dz-barGrow .9s cubic-bezier(.22,1,.36,1) both; }
+
+/* Celebration: confetti rain + 3-cannon poppers + trophy wobble (Results mockup) */
+.cr-confetti { position: absolute; border-radius: 2px; pointer-events: none; animation: dz-confettiFall linear forwards; }
+.cr-popper   { position: absolute; border-radius: 9999px; pointer-events: none; animation: dz-popperFire cubic-bezier(.15,.7,.3,1) forwards; }
+.cr-trophy   { animation: dz-trophyBounce 2.4s ease-in-out infinite; }
+
+/* Score ring / countdown lift reused on the result + homework heroes */
+.cr-ringbox { transition: transform .22s cubic-bezier(.22,1,.36,1), box-shadow .22s; }
+.cr-ringbox:hover { transform: translateY(-4px); }
+
+@media (prefers-reduced-motion: reduce) {
+  .cr-cardrise, .cr-cardinb, .cr-pillin, .cr-rowin2, .cr-rowslide-a, .cr-rowslide-b,
+  .cr-celebpop, .cr-daypop, .cr-bar, .cr-confetti, .cr-popper, .cr-trophy { animation: none !important; }
+  .cr-ringbox { transition: none !important; }
+}
