@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft, Clock, Upload, Play, RotateCcw, MessageSquare, CheckCircle2,
-  FileText, ExternalLink, Paperclip, GraduationCap, X,
+  FileText, ExternalLink, Paperclip, GraduationCap, X, Eye,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { normalizeApiError } from "@/lib/apiError";
@@ -209,12 +209,21 @@ function StudentView({ classId, assignment }: { classId: number; assignment: Ass
               <p className="flex-1 text-[15px] font-bold text-foreground">{c.name}</p>
               <Button
                 className="cr-press cr-ripple"
-                icon={Play}
+                icon={c.mode === "review" ? Eye : Play}
                 loading={c.startTestId != null && startingId === c.startTestId}
                 onPointerDown={spawnRipple}
-                onClick={() => (c.startTestId != null ? void startPastpaper(c.startTestId) : router.push(c.href))}
+                onClick={() => {
+                  // Only a fresh section POSTs a new attempt; resume/review follow href
+                  // so a finished attempt is never overwritten.
+                  if (c.mode === "start" && c.startTestId != null) return void startPastpaper(c.startTestId);
+                  const href =
+                    c.mode === "review" && c.kind === "PASTPAPER" && c.attemptId != null
+                      ? `${c.href}?back=${encodeURIComponent(`/classes/${classId}/assignments/${assignment.id}`)}`
+                      : c.href;
+                  router.push(href);
+                }}
               >
-                Start
+                {c.mode === "review" ? "Review" : c.mode === "resume" ? "Resume" : "Start"}
               </Button>
             </Card>
           ))}

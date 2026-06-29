@@ -19,7 +19,17 @@ export interface AssignmentDetail {
   external_url?: string | null;
   attachment_file_url?: string | null;
   attachment_urls?: { url: string; file_name?: string }[];
-  practice_bundle_tests?: { id: number; title?: string; collection_name?: string; name?: string; subject?: string }[];
+  practice_bundle_tests?: {
+    id: number;
+    title?: string;
+    collection_name?: string;
+    name?: string;
+    subject?: string;
+    state?: ContentState;
+    attempt_id?: number | null;
+  }[];
+  /** Requesting student's assessment attempt state (for the QUIZ launcher card). */
+  assessment_progress?: { state: ContentState; attempt_id: number | null };
   // New backend metadata (present on list, detail, and my-assignments payloads).
   content_type?: string;
   contents?: { kind: AssignmentKind; title: string; item_count: number | null }[];
@@ -105,6 +115,11 @@ function subjectShort(s?: string): string {
  * A single openable content within an assignment. An assignment can bundle several
  * (a past paper + an assessment + a practice test), each opened independently by the student.
  */
+/** A content's attempt state for the requesting student. */
+export type ContentState = "not_started" | "in_progress" | "completed";
+/** What the launcher button does for a content. */
+export type ContentMode = "start" | "resume" | "review";
+
 export interface ContentAction {
   kind: AssignmentKind;
   /** The content's own title (from `a.contents`), shown in the launcher. */
@@ -113,9 +128,16 @@ export interface ContentAction {
   label: string;
   href: string;
   /**
+   * Whether the student should Start (new attempt), Resume (existing in-progress), or
+   * Review (finished — opens results, never re-starts). Drives the launcher button.
+   */
+  mode: ContentMode;
+  /** The relevant attempt id for resume/review deep-links (null when not_started). */
+  attemptId?: number | null;
+  /**
    * Past papers have no detail page — the library starts the attempt and jumps
-   * straight to the exam welcome. When set, the launcher should start this section
-   * (POST attempt) and route to /exam/{attemptId}?welcome=1 instead of following `href`.
+   * straight to the exam welcome. Set ONLY for a not-yet-started section, so the
+   * launcher POSTs a new attempt and routes to /exam/{attemptId}?welcome=1.
    */
   startTestId?: number;
 }
@@ -142,32 +164,61 @@ export function contentActions(a: AssignmentDetail): ContentAction[] {
     }
     return fallback;
   };
-  const add = (out: ContentAction[], kind: AssignmentKind, label: string, href: string) =>
-    out.push({ kind, name: titleFor(kind, label || KIND_LABEL[kind]), label, href });
+  const add = (
+    out: ContentAction[],
+    kind: AssignmentKind,
+    label: string,
+    href: string,
+    extra?: Partial<Pick<ContentAction, "mode" | "attemptId" | "startTestId">>,
+  ) =>
+    out.push({
+      kind,
+      name: titleFor(kind, label || KIND_LABEL[kind]),
+      label,
+      href,
+      mode: extra?.mode ?? "start",
+      attemptId: extra?.attemptId ?? null,
+      startTestId: extra?.startTestId,
+    });
 
   const out: ContentAction[] = [];
-  if (a.assessment_homework != null) add(out, "QUIZ", "Start assessment", `/assessments/${a.id}`);
+  if (a.assessment_homework != null) {
+    // The assessment welcome page handles start/resume; finished → its result page.
+    const ap = a.assessment_progress;
+    const mode = stateToMode(ap?.state);
+    const href = mode === "review" ? `/assessments/result/${a.id}` : `/assessments/${a.id}`;
+    add(out, "QUIZ", "Start assessment", href, { mode, attemptId: ap?.attempt_id ?? null });
+  }
   if (a.mock_exam != null) add(out, "MOCK", "Open Mock Exam", `/mock/${a.mock_exam}`);
   if (a.practice_test_pack != null) {
     add(out, "PRACTICE", "Open Practice Test", `/practice-tests/${a.practice_test_pack}`);
   } else if (a.practice_test != null || (a.practice_test_ids && a.practice_test_ids.length)) {
     // Standalone pastpaper section(s). The authoritative, scope-resolved list is
-    // `practice_bundle_tests` — expand it into one launcher card per section, each
-    // opening THAT section's welcome page (never the generic /pastpapers listing).
-    // Section titles are blank; the real label is collection_name.
+    // `practice_bundle_tests` — expand it into one launcher card per section.
+    // Section titles are blank; the real label is collection_name. Per-section state
+    // decides Start (POST new) / Resume (open existing) / Review (results — no restart).
     const bundle = a.practice_bundle_tests ?? [];
-    if (bundle.length) {
-      const multi = bundle.length > 1;
-      for (const t of bundle) {
-        const base = t.name?.trim() || t.collection_name?.trim() || t.title?.trim() || "Past Paper";
-        const name = multi ? `${base} · ${subjectShort(t.subject)}` : base;
-        out.push({ kind: "PASTPAPER", name, label: "Open Past Paper", href: `/practice-test/${t.id}`, startTestId: t.id });
-      }
-    } else {
-      const single = singleSectionId(a);
-      if (single != null) {
-        out.push({ kind: "PASTPAPER", name: titleFor("PASTPAPER", "Past Paper"), label: "Open Past Paper", href: `/practice-test/${single}`, startTestId: single });
-      }
+    const sections = bundle.length
+      ? bundle
+      : (() => {
+          const single = singleSectionId(a);
+          return single != null ? [{ id: single } as NonNullable<AssignmentDetail["practice_bundle_tests"]>[number]] : [];
+        })();
+    const multi = sections.length > 1;
+    for (const t of sections) {
+      const base = t.name?.trim() || t.collection_name?.trim() || t.title?.trim() || "Past Paper";
+      const name = multi ? `${base} · ${subjectShort(t.subject)}` : base;
+      const mode = stateToMode(t.state);
+      const aid = t.attempt_id ?? null;
+      const href =
+        mode === "review" && aid != null ? `/review/${aid}`
+          : mode === "resume" && aid != null ? `/exam/${aid}?welcome=1`
+          : `/practice-test/${t.id}`;
+      out.push({
+        kind: "PASTPAPER", name, label: "Open Past Paper", href, mode, attemptId: aid,
+        // Only a fresh section starts a new attempt; resume/review follow href.
+        startTestId: mode === "start" ? t.id : undefined,
+      });
     }
   }
   if (a.module != null) {
@@ -175,6 +226,13 @@ export function contentActions(a: AssignmentDetail): ContentAction[] {
     if (tid != null) add(out, "MODULE", "Open Module Test", `/practice-test/${tid}`);
   }
   return out;
+}
+
+/** Map a backend content state to the launcher button mode. */
+function stateToMode(state?: ContentState): ContentMode {
+  if (state === "completed") return "review";
+  if (state === "in_progress") return "resume";
+  return "start";
 }
 
 /** Where the "Start …" action routes for auto-graded work. */

@@ -262,6 +262,9 @@ class AssignmentSerializer(serializers.ModelSerializer):
     item_count = serializers.SerializerMethodField(read_only=True)
     subject = serializers.SerializerMethodField(read_only=True)
     assigned_at = serializers.SerializerMethodField(read_only=True)
+    # The requesting student's assessment attempt state, so the launcher shows
+    # Start / Resume / Review (and never silently overwrites a finished attempt).
+    assessment_progress = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Assignment
@@ -283,6 +286,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "item_count",
             "subject",
             "assigned_at",
+            "assessment_progress",
             "module",
             "external_url",
             "attachment_file",
@@ -391,6 +395,9 @@ class AssignmentSerializer(serializers.ModelSerializer):
         order = {"READING_WRITING": 0, "MATH": 1}
         pts = list(PracticeTest.objects.filter(id__in=ids))
         pts.sort(key=lambda p: (order.get(p.subject, 9), p.id))
+        # Per-section attempt state for the requesting student (one query), so the
+        # launcher renders Start / Resume / Review per section.
+        states = self._exam_states([p.id for p in pts])
         return [
             {
                 "id": p.id,
@@ -400,9 +407,73 @@ class AssignmentSerializer(serializers.ModelSerializer):
                 "collection_name": (getattr(p, "collection_name", "") or "").strip(),
                 "name": self._section_name(p),
                 "subject": p.subject,
+                "state": states[p.id]["state"],
+                "attempt_id": states[p.id]["attempt_id"],
             }
             for p in pts
         ]
+
+    def _req_user(self):
+        """The authenticated requesting user, or None (anonymous / no request)."""
+        req = self.context.get("request")
+        u = getattr(req, "user", None)
+        return u if (u is not None and getattr(u, "is_authenticated", False)) else None
+
+    def _exam_states(self, ids):
+        """Map {practice_test_id: {"state","attempt_id"}} for the requesting student.
+        A completed attempt wins (→ review); else an active (started, non-abandoned)
+        attempt (→ resume); else not_started. One query for all ids."""
+        out = {tid: {"state": "not_started", "attempt_id": None} for tid in ids}
+        user = self._req_user()
+        if user is None or not ids:
+            return out
+        from exams.models import TestAttempt
+
+        completed: dict[int, int] = {}
+        active: dict[int, int] = {}
+        rows = (
+            TestAttempt.objects.filter(student=user, practice_test_id__in=ids)
+            .order_by("practice_test_id", "-id")
+            .values("id", "practice_test_id", "is_completed", "current_state")
+        )
+        for r in rows:  # ordered -id → first seen per test is the latest
+            tid = r["practice_test_id"]
+            if r["is_completed"] and r["current_state"] == TestAttempt.STATE_COMPLETED:
+                completed.setdefault(tid, r["id"])
+            elif r["current_state"] not in (TestAttempt.STATE_NOT_STARTED, TestAttempt.STATE_ABANDONED):
+                active.setdefault(tid, r["id"])
+        for tid in ids:
+            if tid in completed:
+                out[tid] = {"state": "completed", "attempt_id": completed[tid]}
+            elif tid in active:
+                out[tid] = {"state": "in_progress", "attempt_id": active[tid]}
+        return out
+
+    @extend_schema_field(serializers.DictField(allow_null=True, read_only=True))
+    def get_assessment_progress(self, obj):
+        """The requesting student's assessment attempt state for this homework:
+        {"state": not_started|in_progress|completed, "attempt_id": id|null}."""
+        user = self._req_user()
+        try:
+            hw = getattr(obj, "assessment_homework", None)
+        except Exception:
+            hw = None
+        if user is None or hw is None:
+            return {"state": "not_started", "attempt_id": None}
+        from assessments.models import AssessmentAttempt
+
+        att = (
+            AssessmentAttempt.objects.filter(homework=hw, student=user)
+            .order_by("-started_at", "-id")
+            .first()
+        )
+        if att is None:
+            return {"state": "not_started", "attempt_id": None}
+        if att.status in ("submitted", "graded"):
+            return {"state": "completed", "attempt_id": att.id}
+        if att.status == "in_progress":
+            return {"state": "in_progress", "attempt_id": att.id}
+        return {"state": "not_started", "attempt_id": att.id}
 
     @staticmethod
     def _section_name(pt) -> str:

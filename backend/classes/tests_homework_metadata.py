@@ -86,6 +86,36 @@ class HomeworkMetadataTests(TestCase):
         self.assertEqual(bundle[0]["name"], "December 2025 US A")
         self.assertEqual(bundle[0]["collection_name"], "December 2025 US A")
 
+    def test_pastpaper_attempt_state_progression(self):
+        """Per-section state drives Start → Resume → Review so a finished attempt is
+        never overwritten by re-pressing Start."""
+        from exams.models import TestAttempt
+
+        a = Assignment.objects.create(
+            classroom=self.classroom, created_by=self.owner, title="Read homework",
+            category=Assignment.CATEGORY_HOMEWORK, status=Assignment.STATUS_PUBLISHED,
+            practice_test=self.section,
+        )
+        self.client.force_authenticate(self.student)
+        # No attempt → not_started.
+        bt = self._detail(a)["practice_bundle_tests"][0]
+        self.assertEqual(bt["state"], "not_started")
+        self.assertIsNone(bt["attempt_id"])
+        # Active attempt → in_progress (resume).
+        att = TestAttempt.objects.create(student=self.student, practice_test=self.section)
+        att.current_state = TestAttempt.STATE_MODULE_1_ACTIVE
+        att.save(update_fields=["current_state"])
+        bt = self._detail(a)["practice_bundle_tests"][0]
+        self.assertEqual(bt["state"], "in_progress")
+        self.assertEqual(bt["attempt_id"], att.id)
+        # Completed → completed (review, not restart).
+        att.current_state = TestAttempt.STATE_COMPLETED
+        att.is_completed = True
+        att.save(update_fields=["current_state", "is_completed"])
+        bt = self._detail(a)["practice_bundle_tests"][0]
+        self.assertEqual(bt["state"], "completed")
+        self.assertEqual(bt["attempt_id"], att.id)
+
     def test_file_assignment_content_type(self):
         a = Assignment.objects.create(
             classroom=self.classroom, created_by=self.owner, title="Upload essay",
