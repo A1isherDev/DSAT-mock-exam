@@ -952,6 +952,16 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
             block
             className="text-base font-semibold text-foreground leading-relaxed"
           />
+          {/* Question instruction / stimulus — between the stem and the options */}
+          {Boolean(current?.question_prompt) && (
+            <div className="mt-4 border-l-4 border-primary/40 pl-4 py-1 bg-surface-2/50 rounded-r-xl">
+              <MathText
+                text={String(current!.question_prompt)}
+                block
+                className="text-sm text-foreground leading-relaxed font-[Georgia,serif] italic"
+              />
+            </div>
+          )}
           <div className="mt-5 pointer-events-none select-none opacity-75">
             <AnswerInput
               type={String(current?.question_type || "") as import("@/features/assessments/types").AssessmentQuestionType}
@@ -961,16 +971,6 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
               optionImages={optionImagesFromQuestion(current)}
             />
           </div>
-          {/* Passage/stimulus — rendered BELOW the question + answer */}
-          {Boolean(current?.question_prompt) && (
-            <div className="mt-5 border-l-4 border-primary/40 pl-4 py-1 bg-surface-2/50 rounded-r-xl">
-              <MathText
-                text={String(current!.question_prompt)}
-                block
-                className="text-sm text-foreground leading-relaxed font-[Georgia,serif] italic"
-              />
-            </div>
-          )}
         </div>
 
         {/* Navigation — browse only, no submit */}
@@ -1460,6 +1460,17 @@ function ExamSimulationView({
             html={processInstructionalText(String(current?.prompt || "").trim() || "—")}
           />
 
+          {/* Question instruction / stimulus — sits BETWEEN the stem and the
+              options (e.g. "Which choice completes the text…"). The id lives on
+              the stable content div so the annotator can repaint its marks. */}
+          {Boolean(current?.question_prompt) && (
+            <StableHtml
+              id="assessment-passage-content"
+              className={`mt-6 border-l-4 border-slate-300 pl-5 py-1 text-base text-slate-700 leading-relaxed font-[Georgia,serif] ${highlighterActive ? "cursor-text" : ""}`}
+              html={processInstructionalText(String(current!.question_prompt))}
+            />
+          )}
+
           {/* Answer input — single annotatable region for all choices */}
           <div id="assessment-choices" className="mt-8">
             <AnswerInput
@@ -1473,17 +1484,6 @@ function ExamSimulationView({
               optionImages={optionImagesFromQuestion(current)}
             />
           </div>
-
-          {/* Question prompt context (passage/stimulus) if any — rendered BELOW the
-              question + answer. The id lives on the stable content div so the
-              annotator can repaint its marks regardless of position. */}
-          {Boolean(current?.question_prompt) && (
-            <StableHtml
-              id="assessment-passage-content"
-              className={`mt-8 border-l-4 border-slate-300 pl-5 py-1 text-base text-slate-700 leading-relaxed font-[Georgia,serif] ${highlighterActive ? "cursor-text" : ""}`}
-              html={processInstructionalText(String(current!.question_prompt))}
-            />
-          )}
         </div>
       </main>
 
